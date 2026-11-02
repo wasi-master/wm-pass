@@ -57,16 +57,16 @@ impl KeepsLoser for Secret {
 }
 
 impl<T: Clone + PartialEq + KeepsLoser> Lww<T> {
+    /// The later write wins and the earlier one becomes a revision, even when both
+    /// hold the same value. A revision is therefore "a write that was overtaken", and
+    /// the set of them does not depend on the order devices sync in.
     fn merge_from(&mut self, other: &Self, field: &'static str, lost: &mut Vec<Revision>) {
         if other.at > self.at {
-            if self.v != other.v
-                && let Some(value) = self.v.loser()
-            {
+            if let Some(value) = self.v.loser() {
                 lost.push(Revision { field: field.to_owned(), value, at: self.at });
             }
             *self = other.clone();
         } else if other.at < self.at
-            && self.v != other.v
             && let Some(value) = other.v.loser()
         {
             lost.push(Revision { field: field.to_owned(), value, at: other.at });
@@ -86,6 +86,12 @@ macro_rules! record {
         impl $name {
             fn merge_from(&mut self, other: &Self, lost: &mut Vec<Revision>) {
                 $(self.$field.merge_from(&other.$field, stringify!($field), lost);)*
+            }
+
+            fn clear_up_to(&mut self, moment: Hlc) {
+                $(if self.$field.at <= moment {
+                    self.$field = Lww::default();
+                })*
             }
 
             /// The latest moment any field changed.
@@ -452,6 +458,23 @@ impl Kind {
         }
     }
 
+    fn clear_up_to(&mut self, moment: Hlc) {
+        match self {
+            Self::Login(v) => v.clear_up_to(moment),
+            Self::Card(v) => v.clear_up_to(moment),
+            Self::Identity(v) => v.clear_up_to(moment),
+            Self::Note(v) => v.clear_up_to(moment),
+            Self::Document(v) => v.clear_up_to(moment),
+            Self::SshKey(v) => v.clear_up_to(moment),
+            Self::ApiKey(v) => v.clear_up_to(moment),
+            Self::Database(v) => v.clear_up_to(moment),
+            Self::Licence(v) => v.clear_up_to(moment),
+            Self::Recovery(v) => v.clear_up_to(moment),
+            Self::Wifi(v) => v.clear_up_to(moment),
+            Self::Otp(v) => v.clear_up_to(moment),
+        }
+    }
+
     /// Merges two bodies of the same kind by field. If the kind itself changed on
     /// one side, the more recently edited body wins whole.
     fn merge_from(&mut self, other: &Self, lost: &mut Vec<Revision>) {
@@ -532,7 +555,22 @@ impl Entry {
                 self.history.push(revision);
             }
         }
-        self.history.sort_by_key(|r| r.at);
+        self.sort_history();
+    }
+
+    fn sort_history(&mut self) {
+        self.history.sort_by(|a, b| {
+            (a.at, &a.field, a.value.expose()).cmp(&(b.at, &b.field, b.value.expose()))
+        });
+    }
+
+    /// Removes everything a delete at `moment` covers, leaving only what was written
+    /// after it. Without this, a stale device's one later edit would bring the whole
+    /// deleted entry back, secrets included.
+    fn clear_up_to(&mut self, moment: Hlc) {
+        self.common.clear_up_to(moment);
+        self.kind.clear_up_to(moment);
+        self.history.retain(|revision| revision.at > moment);
     }
 
     /// The login body, if this is a login.
@@ -694,9 +732,16 @@ impl VaultDoc {
             let slot = self.tombstones.entry(id.clone()).or_default();
             *slot = (*slot).max(*at);
         }
-        // A delete wins unless something on the entry changed after it.
+        // A delete covers every write before it. Only later writes survive.
         let tombstones = &self.tombstones;
-        self.entries.retain(|id, entry| tombstones.get(id).is_none_or(|at| entry.latest() > *at));
+        self.entries.retain(|id, entry| {
+            let Some(deleted) = tombstones.get(id) else { return true };
+            if entry.latest() <= *deleted {
+                return false;
+            }
+            entry.clear_up_to(*deleted);
+            true
+        });
         self.folders.retain(|id, _| !tombstones.contains_key(id));
         for link in &other.linked {
             match self.linked.iter_mut().find(|mine| mine.file == link.file) {
