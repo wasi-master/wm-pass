@@ -148,6 +148,8 @@ function defaults(): PrefValues {
 
 class Prefs {
   v = $state<PrefValues>(defaults());
+  /** Rises after a theme reaches the page, for what reads its colours back. */
+  themeApplied = $state(0);
   private loaded = false;
 
   async load() {

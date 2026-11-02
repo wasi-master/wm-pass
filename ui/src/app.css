@@ -297,7 +297,8 @@ dialog.sheet::backdrop { background: rgb(0 0 0 / 0.32); }
   border-right: 1px solid var(--hair);
 }
 .sidebar .top { height: 12px; flex: none; }
-:root[data-titlebar='overlay'] .sidebar .top { height: 40px; }
+:root[data-titlebar='overlay'] .sidebar .top, :root[data-titlebar='overlay'] .list-pane > .top { height: 40px; }
+.list-pane > .top { height: 10px; }
 .sidebar .items { flex: 1; min-height: 0; padding: 0 8px 8px; }
 .side-title { display: flex; align-items: center; justify-content: space-between; font-size: var(--fs-s); font-weight: 600; color: var(--text2); padding: 12px 8px 4px; }
 .side-item {

@@ -95,6 +95,9 @@
       case 'palette':
         ui.searchFocus += 1;
         break;
+      case 'window-hidden':
+        if (prefs.v.lock_on_hide) void pass.lock();
+        break;
       default:
         if (name.startsWith('add:')) ui.add(name.slice(4));
     }
@@ -172,7 +175,7 @@
 <svelte:window onkeydown={keyed} />
 
 <div class="shell" class:narrow={ui.narrow} style={ui.narrow ? 'flex-direction:column' : ''}>
-  {#if !ui.narrow && prefs.v.sidebar_open}
+  {#if !ui.narrow && prefs.v.sidebar_open && !ui.section.startsWith('settings')}
     <Sidebar />
     <div class="drag-handle" class:dragging={dragging === 'sidebar'} role="separator" onpointerdown={(e) => startDrag('sidebar', e)}></div>
   {/if}

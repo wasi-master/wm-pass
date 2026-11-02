@@ -193,7 +193,7 @@ class PassStore {
     this.handle = handle;
     this.file = file;
     this.state = { kind: 'unlocked', name, file, readOnly };
-    host().stateChanged?.({ unlocked: true, name });
+    host().stateChanged?.({ unlocked: true, name, handle });
   }
 
   /** When typing a password next becomes allowed, or 0. */
@@ -609,7 +609,7 @@ class PassStore {
     this.account = accountId;
     await this.noteSuccess();
     this.state = { kind: 'unlocked', name: reply.json.name, file: accountId, readOnly: false };
-    host().stateChanged?.({ unlocked: true, name: reply.json.name });
+    host().stateChanged?.({ unlocked: true, name: reply.json.name, handle: reply.json.handle });
     await this.refresh();
   }
 
@@ -633,6 +633,7 @@ class PassStore {
     this.childBefore = before ?? null;
     this.child = reply.json.name;
     this.state = { kind: 'unlocked', name: reply.json.name, file: id, readOnly: false };
+    host().stateChanged?.({ unlocked: true, name: reply.json.name, handle: reply.json.handle });
     await this.refresh();
   }
 
@@ -648,6 +649,7 @@ class PassStore {
     this.file = back.file;
     this.child = null;
     this.state = back.state;
+    host().stateChanged?.({ unlocked: true, name: back.state.kind === 'unlocked' ? back.state.name : '', handle: back.handle });
     await this.refresh();
   }
 }

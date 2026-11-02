@@ -8,7 +8,7 @@
   import { icons } from './engine/icons.svelte';
   import { applyTheme } from './theme/themes';
   import { ui } from './vault/ui.svelte';
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
 
   let main = $state<Main>();
   let systemDark = $state(window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -31,6 +31,7 @@
     const look = prefs.v.look;
     const dark = look === 'SYSTEM' ? systemDark : look !== 'LIGHT';
     applyTheme(prefs.theme, dark, look === 'OBSIDIAN');
+    untrack(() => prefs.themeApplied++);
   });
 
   $effect(() => {
@@ -56,9 +57,22 @@
   // ---- locking on its own ----
 
   let lastActive = Date.now();
+  let lastTold = 0;
   function active() {
     lastActive = Date.now();
+    if (lastActive - lastTold > 5000) {
+      lastTold = lastActive;
+      void host().desktop?.activity();
+    }
   }
+
+  $effect(() => {
+    void host().desktop?.setLockRule(prefs.v.lock_after, prefs.v.lock_on_sleep);
+  });
+
+  $effect(() => {
+    void host().desktop?.setShortcuts(prefs.shortcuts);
+  });
 
   $effect(() => {
     if (pass.state.kind !== 'unlocked') return;

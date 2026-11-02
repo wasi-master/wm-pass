@@ -2174,6 +2174,48 @@ impl Service {
                     "fingerprint": key.fingerprint,
                 })))
             }
+            "ssh.agent_keys" => {
+                let keys: Vec<Value> = session
+                    .vault
+                    .visible()
+                    .filter_map(|entry| {
+                        let Kind::SshKey(key) = &entry.kind else { return None };
+                        if !key.agent_allowed.v {
+                            return None;
+                        }
+                        let public = ssh::public_blob(&key.public_key.v).ok()?;
+                        Some(json!({
+                            "title": entry.common.title.v,
+                            "comment": public.1,
+                            "blob": base64_encode(&public.0),
+                        }))
+                    })
+                    .collect();
+                Ok(Reply::view(json!(keys)))
+            }
+            "ssh.agent_sign" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    blob: String,
+                    data: String,
+                }
+                let a: A = parse(call.args)?;
+                let data = base64_decode(&a.data)?;
+                let entry = session
+                    .vault
+                    .visible()
+                    .find(|entry| {
+                        let Kind::SshKey(key) = &entry.kind else { return false };
+                        key.agent_allowed.v && ssh::public_blob(&key.public_key.v).is_ok_and(|public| base64_encode(&public.0) == a.blob)
+                    })
+                    .ok_or_else(|| invalid("that key is not offered"))?;
+                let Kind::SshKey(key) = &entry.kind else {
+                    return Err(invalid("that key is not offered"));
+                };
+                let signature = ssh::agent_sign(key.private_key.v.expose(), key.passphrase.v.expose(), &data)?;
+                Ok(Reply { json: "{}".to_owned(), secret: Some(signature), blobs: Vec::new() })
+            }
             _ => Err(invalid(format!("unknown call {method}"))),
         }
     }
@@ -2181,6 +2223,10 @@ impl Service {
 
 /// Decodes what a shell passes as text.
 #[cfg(feature = "net")]
+fn base64_encode(bytes: &[u8]) -> String {
+    B64.encode(bytes)
+}
+
 pub(crate) fn base64_decode(text: &str) -> Result<Vec<u8>, SessionError> {
     B64.decode(text).map_err(|_| invalid("bad data"))
 }
