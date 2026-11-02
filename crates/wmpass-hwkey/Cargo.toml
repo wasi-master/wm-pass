@@ -1,0 +1,32 @@
+[package]
+name = "wmpass-hwkey"
+description = "FIDO2 hmac-secret and YubiKey challenge-response, over any transport a platform provides."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = []
+# USB HID on desktop, through hidapi. Android supplies its own transports over JNI.
+desktop = ["dep:hidapi"]
+
+[dependencies]
+wmpass-core.workspace = true
+thiserror.workspace = true
+zeroize.workspace = true
+sha2.workspace = true
+hmac.workspace = true
+ciborium = "0.2.2"
+p256 = { version = "0.14", default-features = false, features = ["ecdh", "std", "getrandom"] }
+aes = "0.9"
+cbc = { version = "0.2", features = ["alloc"] }
+hidapi = { version = "2.6", optional = true }
+
+[dev-dependencies]
+sha1.workspace = true
