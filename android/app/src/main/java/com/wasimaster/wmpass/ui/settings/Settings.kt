@@ -70,6 +70,7 @@ import com.wasimaster.wmsuite.settings.ReorderableColumn
 import com.wasimaster.wmsuite.settings.SettingsGroup
 import com.wasimaster.wmsuite.settings.ToggleSetting
 import com.wasimaster.wmsuite.settings.WmScreen
+import com.wasimaster.wmsuite.settings.routeAccent
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -132,92 +133,92 @@ fun SettingsRoot() {
     ) {
         SettingsGroup("Protection") {
             item {
-                NavRow("Security", "Auto-lock, biometrics, duress and emergency access", route = "settings/security", icon = PassIcons.Shield) { nav.navigate("settings/security") }
+                NavRow("Security", "Auto-lock, biometrics, duress and emergency access", route = "settings/security", accent = routeAccent("settings/security"), icon = PassIcons.Shield) { nav.navigate("settings/security") }
             }
             item {
-                NavRow("Hidden shelf", "Hide items from lists and autofill", route = "settings/shelf", icon = PassIcons.VisibilityLock) { nav.navigate("settings/shelf") }
+                NavRow("Hidden shelf", "Hide items from lists and autofill", route = "settings/shelf", accent = routeAccent("settings/shelf"), icon = PassIcons.VisibilityLock) { nav.navigate("settings/shelf") }
             }
             item {
-                NavRow("Breaches", "Check passwords and email addresses against known leaks", route = "settings/breaches", icon = PassIcons.LocalFireDepartment) { nav.navigate("settings/breaches") }
+                NavRow("Breaches", "Check passwords and email addresses against known leaks", route = "settings/breaches", accent = routeAccent("settings/breaches"), icon = PassIcons.LocalFireDepartment) { nav.navigate("settings/breaches") }
             }
         }
         SettingsGroup("Your vault") {
             item {
-                NavRow("Folders", route = "settings/folders", icon = PassIcons.Folder) { nav.navigate("settings/folders") }
+                NavRow("Folders", route = "settings/folders", accent = routeAccent("settings/folders"), icon = PassIcons.Folder) { nav.navigate("settings/folders") }
             }
             item {
-                NavRow("Trash", route = "settings/trash", icon = PassIcons.Delete) { nav.navigate("settings/trash") }
+                NavRow("Trash", route = "settings/trash", accent = routeAccent("settings/trash"), icon = PassIcons.Delete) { nav.navigate("settings/trash") }
             }
             item {
-                NavRow("Import", "From 1Password, Bitwarden, Chrome, KeePass and more", route = "settings/import", icon = PassIcons.Download) { nav.navigate("settings/import") }
+                NavRow("Import", "From 1Password, Bitwarden, Chrome, KeePass and more", route = "settings/import", accent = routeAccent("settings/import"), icon = PassIcons.Download) { nav.navigate("settings/import") }
             }
             item {
-                NavRow("Export", route = "settings/export", icon = PassIcons.Upload) { nav.navigate("settings/export") }
+                NavRow("Export", route = "settings/export", accent = routeAccent("settings/export"), icon = PassIcons.Upload) { nav.navigate("settings/export") }
             }
         }
         SettingsGroup("Backup and sync") {
             item {
-                NavRow("Backups", "Encrypted copies on a schedule", route = "settings/backup", icon = PassIcons.Backup) { nav.navigate("settings/backup") }
+                NavRow("Backups", "Encrypted copies on a schedule", route = "settings/backup", accent = routeAccent("settings/backup"), icon = PassIcons.Backup) { nav.navigate("settings/backup") }
             }
             item {
-                NavRow("Sync and accounts", "Other devices, servers, Bitwarden and KeePass", route = "settings/sync", icon = PassIcons.Sync) { nav.navigate("settings/sync") }
+                NavRow("Sync and accounts", "Other devices, servers, Bitwarden and KeePass", route = "settings/sync", accent = routeAccent("settings/sync"), icon = PassIcons.Sync) { nav.navigate("settings/sync") }
             }
         }
         SettingsGroup("Tools") {
             item {
-                NavRow("Email aliases", "SimpleLogin, addy.io, Firefox Relay, DuckDuckGo", route = "settings/aliases", icon = PassIcons.AlternateEmail) { nav.navigate("settings/aliases") }
+                NavRow("Email aliases", "SimpleLogin, addy.io, Firefox Relay, DuckDuckGo", route = "settings/aliases", accent = routeAccent("settings/aliases"), icon = PassIcons.AlternateEmail) { nav.navigate("settings/aliases") }
             }
             item {
-                NavRow("Disposable inbox", "A throwaway address for one sign-up", route = "settings/inbox", icon = PassIcons.Inbox) { nav.navigate("settings/inbox") }
+                NavRow("Disposable inbox", "A throwaway address for one sign-up", route = "settings/inbox", accent = routeAccent("settings/inbox"), icon = PassIcons.Inbox) { nav.navigate("settings/inbox") }
             }
             item {
-                NavRow("Username checker", "See which sites have a name free", route = "settings/usernames", icon = PassIcons.PersonSearch) { nav.navigate("settings/usernames") }
+                NavRow("Username checker", "See which sites have a name free", route = "settings/usernames", accent = routeAccent("settings/usernames"), icon = PassIcons.PersonSearch) { nav.navigate("settings/usernames") }
             }
             item {
-                NavRow("Compare two passwords", route = "settings/compare", icon = PassIcons.Balance) { nav.navigate("settings/compare") }
+                NavRow("Compare two passwords", route = "settings/compare", accent = routeAccent("settings/compare"), icon = PassIcons.Balance) { nav.navigate("settings/compare") }
             }
         }
         SettingsGroup("Customise") {
             item {
-                NavRow("Appearance", "Style, theme, dark mode and motion", route = "settings/look", icon = PassIcons.Palette) { nav.navigate("settings/look") }
+                NavRow("Appearance", "Style, theme, dark mode and motion", route = "settings/look", accent = routeAccent("settings/look"), icon = PassIcons.Palette) { nav.navigate("settings/look") }
             }
             item {
-                NavRow("Icons", "App icons, site icons and these ones", route = "settings/icons", icon = PassIcons.Image) { nav.navigate("settings/icons") }
+                NavRow("Icons", "App icons, site icons and these ones", route = "settings/icons", accent = routeAccent("settings/icons"), icon = PassIcons.Image) { nav.navigate("settings/icons") }
             }
             item {
-                NavRow("Vault list", "Layout, sorting, rows and gestures", route = "settings/list", icon = PassIcons.ViewAgenda) { nav.navigate("settings/list") }
+                NavRow("Vault list", "Layout, sorting, rows and gestures", route = "settings/list", accent = routeAccent("settings/list"), icon = PassIcons.ViewAgenda) { nav.navigate("settings/list") }
             }
             item {
-                NavRow("Navigation", "Pages, labels and buttons", route = "settings/navigation", icon = PassIcons.Dashboard) { nav.navigate("settings/navigation") }
+                NavRow("Navigation", "Pages, labels and buttons", route = "settings/navigation", accent = routeAccent("settings/navigation"), icon = PassIcons.Dashboard) { nav.navigate("settings/navigation") }
             }
             item {
-                NavRow("Add menu", "Which types are offered, and in what order", route = "settings/add", icon = PassIcons.Add) { nav.navigate("settings/add") }
+                NavRow("Add menu", "Which types are offered, and in what order", route = "settings/add", accent = routeAccent("settings/add"), icon = PassIcons.Add) { nav.navigate("settings/add") }
             }
             item {
-                NavRow("Editor", "What starts open or folded", route = "settings/editor", icon = PassIcons.Edit) { nav.navigate("settings/editor") }
+                NavRow("Editor", "What starts open or folded", route = "settings/editor", accent = routeAccent("settings/editor"), icon = PassIcons.Edit) { nav.navigate("settings/editor") }
             }
             item {
-                NavRow("Item page", "Buttons, fields and history", route = "settings/entry", icon = PassIcons.Description) { nav.navigate("settings/entry") }
+                NavRow("Item page", "Buttons, fields and history", route = "settings/entry", accent = routeAccent("settings/entry"), icon = PassIcons.Description) { nav.navigate("settings/entry") }
             }
             item {
-                NavRow("Codes", "Size, grouping and privacy", route = "settings/codes", icon = PassIcons.Pin) { nav.navigate("settings/codes") }
+                NavRow("Codes", "Size, grouping and privacy", route = "settings/codes", accent = routeAccent("settings/codes"), icon = PassIcons.Pin) { nav.navigate("settings/codes") }
             }
             item {
-                NavRow("Generator", "What a new password looks like", route = "settings/generator", icon = PassIcons.Casino) { nav.navigate("settings/generator") }
+                NavRow("Generator", "What a new password looks like", route = "settings/generator", accent = routeAccent("settings/generator"), icon = PassIcons.Casino) { nav.navigate("settings/generator") }
             }
             item {
-                NavRow("Health checks", "Which problems are listed", route = "settings/health", icon = PassIcons.EcgHeart) { nav.navigate("settings/health") }
+                NavRow("Health checks", "Which problems are listed", route = "settings/health", accent = routeAccent("settings/health"), icon = PassIcons.EcgHeart) { nav.navigate("settings/health") }
             }
             item {
-                NavRow("Keyboard shortcuts", "For a keyboard plugged in or paired", route = "settings/shortcuts", icon = PassIcons.Keyboard) { nav.navigate("settings/shortcuts") }
+                NavRow("Keyboard shortcuts", "For a keyboard plugged in or paired", route = "settings/shortcuts", accent = routeAccent("settings/shortcuts"), icon = PassIcons.Keyboard) { nav.navigate("settings/shortcuts") }
             }
         }
         SettingsGroup("This app") {
             item {
-                NavRow("Settings file", "Export, import or reset", route = "settings/file", icon = PassIcons.ImportExport) { nav.navigate("settings/file") }
+                NavRow("Settings file", "Export, import or reset", route = "settings/file", accent = routeAccent("settings/file"), icon = PassIcons.ImportExport) { nav.navigate("settings/file") }
             }
             item {
-                NavRow("About", route = "settings/about", icon = PassIcons.Info) { nav.navigate("settings/about") }
+                NavRow("About", route = "settings/about", accent = routeAccent("settings/about"), icon = PassIcons.Info) { nav.navigate("settings/about") }
             }
         }
     }
