@@ -74,6 +74,7 @@ pub struct Vault {
     /// The contents.
     pub doc: VaultDoc,
     clock: Clock,
+    device: u32,
     read_only: bool,
 }
 
@@ -199,6 +200,7 @@ impl Vault {
             key,
             doc,
             clock,
+            device,
             read_only: false,
         })
     }
@@ -215,6 +217,7 @@ impl Vault {
             key,
             doc,
             clock,
+            device,
             read_only,
         })
     }
@@ -345,20 +348,30 @@ impl Vault {
         Ok(id)
     }
 
-    /// Merges another saved copy of this vault in. Refuses a file under a different
-    /// key, and adopts the other copy's slot records if they are newer.
-    pub fn merge_file(&mut self, file: &[u8]) -> Result<()> {
+    /// The name this device's sync file goes under. It is derived from the vault key,
+    /// so a sync location sees random names that reveal neither the vault nor the device.
+    pub fn sync_file_name(&self) -> Result<String> {
+        let name_key = crypto::hkdf(&self.key.0[..], self.header.vault_id(), "wmpass/sync-name/v1")?;
+        let tag = crypto::hmac_sha256(&name_key[..], &self.device.to_le_bytes())?;
+        Ok(hex(&tag[..16]))
+    }
+
+    /// Merges another saved copy of this vault in, returning that copy's generation.
+    /// Refuses a file under a different key, and adopts the other copy's slot records
+    /// if they are newer.
+    pub fn merge_file(&mut self, file: &[u8]) -> Result<u64> {
         let (header, plain) = format::open_file(file, &self.key)?;
         let other: VaultDoc = rmp_serde::from_slice(&plain).map_err(|_| Error::Encoding)?;
         observe_doc(&mut self.clock, &other);
         if other.slots_at > self.doc.slots_at {
             self.header = header;
         }
+        let generation = other.generation;
         self.doc.merge_from(&other);
         if self.doc.minor > DOC_MINOR {
             self.read_only = true;
         }
-        Ok(())
+        Ok(generation)
     }
 
     fn free_slot(&self) -> Result<usize> {
@@ -897,6 +910,21 @@ mod tests {
             entry.login().unwrap().password.v.is_empty(),
             "the deleted password must stay deleted"
         );
+    }
+
+    #[test]
+    fn sync_names_differ_by_device_and_vault_and_stay_stable() {
+        let a = fast_vault(1);
+        let b = Vault::from_file(&fast_vault_file(&a), a.key().clone_key(), 2).unwrap();
+        let again = Vault::from_file(&fast_vault_file(&a), a.key().clone_key(), 2).unwrap();
+        assert_ne!(a.sync_file_name().unwrap(), b.sync_file_name().unwrap());
+        assert_eq!(b.sync_file_name().unwrap(), again.sync_file_name().unwrap());
+        assert_ne!(a.sync_file_name().unwrap(), fast_vault(1).sync_file_name().unwrap());
+    }
+
+    fn fast_vault_file(vault: &Vault) -> Vec<u8> {
+        let plain = rmp_serde::to_vec_named(&vault.doc).unwrap();
+        format::seal_file(&vault.header, &vault.key, &plain).unwrap()
     }
 
     #[test]

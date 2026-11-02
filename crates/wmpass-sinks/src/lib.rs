@@ -1,0 +1,95 @@
+//! Places a vault file can be kept, and the routines that sync and back up over them.
+//!
+//! Everything that reaches a destination is already encrypted, so a destination learns
+//! file sizes and timing, and nothing else. The code is async so the browser extension
+//! can run it over `fetch`. Blocking clients run it with [`http::block_on`].
+
+pub mod dropbox;
+pub mod drive;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod folder;
+pub mod http;
+pub mod oauth;
+pub mod onedrive;
+pub mod routines;
+pub mod s3;
+pub mod webdav;
+
+use std::future::Future;
+
+/// One stored file.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Stored {
+    /// What addresses it at the destination.
+    pub id: String,
+    /// File name.
+    pub name: String,
+    /// Bytes.
+    pub size: u64,
+}
+
+/// Why a destination refused. No variant carries a path, key or address.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fault {
+    /// An address, user name or key is missing.
+    NotConfigured,
+    /// The credentials were refused or have expired.
+    PermissionLost,
+    /// The folder or bucket is not there.
+    TargetMissing,
+    /// Out of space or over quota.
+    OutOfSpace,
+    /// Network use is off, or this connection is not allowed.
+    Blocked,
+    /// No answer, or not the answer the service documents.
+    Io,
+    /// A file failed verification after being written.
+    NotVerified,
+}
+
+impl std::fmt::Display for Fault {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::NotConfigured => "this location is not fully set up",
+            Self::PermissionLost => "the location refused the sign-in",
+            Self::TargetMissing => "the folder or bucket is not there",
+            Self::OutOfSpace => "the location is out of space",
+            Self::Blocked => "network use is off",
+            Self::Io => "the location could not be reached",
+            Self::NotVerified => "the file could not be read back correctly",
+        })
+    }
+}
+
+impl std::error::Error for Fault {}
+
+/// Shorthand for results carrying [`Fault`].
+pub type Result<T> = std::result::Result<T, Fault>;
+
+/// What every destination offers.
+pub trait Sink {
+    /// Whether a write could succeed now: one cheap query, no transfer.
+    fn readiness(&self) -> impl Future<Output = Result<()>>;
+    /// Writes a file whole, replacing any of that name, staged and moved where the protocol allows.
+    fn write(&self, name: &str, bytes: &[u8]) -> impl Future<Output = Result<Stored>>;
+    /// Files here.
+    fn list(&self) -> impl Future<Output = Result<Vec<Stored>>>;
+    /// Reads a file.
+    fn read(&self, file: &Stored) -> impl Future<Output = Result<Vec<u8>>>;
+    /// Deletes a file. Already gone counts as done.
+    fn delete(&self, file: &Stored) -> impl Future<Output = Result<()>>;
+}
+
+pub(crate) fn status_fault(status: u16) -> Fault {
+    match status {
+        401 | 403 => Fault::PermissionLost,
+        404 | 409 => Fault::TargetMissing,
+        413 | 507 => Fault::OutOfSpace,
+        _ => Fault::Io,
+    }
+}
+
+/// Encodes one path segment.
+pub(crate) fn segment(name: &str) -> String {
+    wmpass_core::otp::percent_encode(name)
+}

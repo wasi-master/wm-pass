@@ -3134,6 +3134,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "wmpass-sinks"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "getrandom 0.4.3",
+ "hmac 0.13.0",
+ "quick-xml",
+ "serde_json",
+ "sha2 0.11.1",
+ "tempfile",
+ "url",
+ "wmpass-core",
+ "wmpass-net",
+]
+
+[[package]]
 name = "writeable"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
