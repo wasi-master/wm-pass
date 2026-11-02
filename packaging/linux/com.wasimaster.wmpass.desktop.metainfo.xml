@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.wasimaster.wmpass.desktop</id>
+  <name>WM Pass</name>
+  <summary>Password manager that keeps its vault on your own devices</summary>
+  <developer id="com.wasimaster">
+    <name>Wasi Master</name>
+  </developer>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <description>
+    <p>
+      WM Pass keeps passwords, one-time codes, cards, notes and SSH keys in an encrypted vault file.
+      Nothing leaves your computer unless you connect a sync or backup destination.
+    </p>
+    <ul>
+      <li>Fills logins in your browser through the WM Pass extension</li>
+      <li>Acts as an SSH agent while the vault is open</li>
+      <li>Syncs by file, over your local network, or through a server you run</li>
+      <li>Imports from KeePass, Bitwarden, 1Password and many others</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">WM Pass.desktop</launchable>
+  <icon type="stock">wm-pass</icon>
+  <url type="homepage">https://github.com/wasi-master/wm-pass</url>
+  <url type="bugtracker">https://github.com/wasi-master/wm-pass/issues</url>
+  <categories>
+    <category>Utility</category>
+    <category>Security</category>
+  </categories>
+  <content_rating type="oars-1.1" />
+</component>

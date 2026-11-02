@@ -8541,6 +8541,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "wmpass-bridge"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "blake3",
+ "getrandom 0.4.3",
+ "serde",
+ "serde_json",
+ "snow",
+ "subtle",
+ "thiserror 2.0.21",
+ "x25519-dalek",
+ "zeroize",
+]
+
+[[package]]
 name = "wmpass-bw"
 version = "0.1.0"
 dependencies = [
@@ -8640,12 +8656,30 @@ dependencies = [
  "tauri-plugin-global-shortcut",
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
+ "wmpass-bridge",
  "wmpass-core",
  "wmpass-hwkey",
  "wmpass-net",
  "wmpass-session",
  "wmpass-sinks",
  "zeroize",
+]
+
+[[package]]
+name = "wmpass-ffi"
+version = "0.1.0"
+dependencies = [
+ "wmpass-session",
+ "zeroize",
+]
+
+[[package]]
+name = "wmpass-host"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "interprocess",
+ "serde_json",
 ]
 
 [[package]]

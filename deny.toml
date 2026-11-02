@@ -2,7 +2,7 @@
 
 [licenses]
 allow = [
-    "MIT", "MIT-0", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "BSD-2-Clause", "BSD-3-Clause",
+    "MIT", "MIT-0", "0BSD", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "BSD-2-Clause", "BSD-3-Clause",
     "ISC", "Zlib", "Unicode-3.0", "Unicode-DFS-2016", "CC0-1.0", "Unlicense", "BSL-1.0", "CDLA-Permissive-2.0",
     # File-level copyleft, allowed only unmodified and with a notice.
     "MPL-2.0",
@@ -27,6 +27,10 @@ yanked = "deny"
 ignore = [
     # rsa, in wmpass-bw only. See .cargo/audit.toml for why this does not reach WM Pass.
     "RUSTSEC-2023-0071",
+    # Unmaintained, not vulnerable. Build-time only, pulled in by Tauri's Linux GTK bindings.
+    "RUSTSEC-2024-0370",
+    # Unmaintained, not vulnerable. D-Bus types behind the Linux keyring and file dialogs.
+    "RUSTSEC-2026-0370", "RUSTSEC-2026-0371", "RUSTSEC-2026-0372",
 ]
 
 [sources]

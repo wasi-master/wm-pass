@@ -75,6 +75,10 @@
   });
 
   $effect(() => {
+    void host().desktop?.bridgeSetEnabled(prefs.v.bridge_enabled, prefs.v.bridge_ask_every_site);
+  });
+
+  $effect(() => {
     if (pass.state.kind !== 'unlocked') return;
     let last = Date.now();
     const timer = setInterval(() => {

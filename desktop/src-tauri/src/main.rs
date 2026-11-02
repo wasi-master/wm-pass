@@ -5,6 +5,7 @@
 
 mod agent;
 mod autotype;
+mod bridge;
 mod browsers;
 mod clip;
 mod engine;
@@ -33,6 +34,7 @@ use wmpass_session::{Reply, SessionError, wire};
 use zeroize::Zeroizing;
 
 use agent::Agent;
+use bridge::Bridge;
 use engine::{Engine, now_ms};
 use store::Store;
 
@@ -609,6 +611,32 @@ fn ssh_state(agent: State<'_, Agent>) -> Result<Value, String> {
 }
 
 #[tauri::command]
+fn bridge_fingerprint(bridge: State<'_, Bridge>) -> Result<String, String> {
+    bridge.fingerprint()
+}
+
+#[tauri::command]
+fn bridge_state(bridge: State<'_, Bridge>) -> bridge::Shown {
+    bridge.shown()
+}
+
+#[tauri::command]
+fn bridge_set_enabled(bridge: State<'_, Bridge>, engine: State<'_, Engine>, on: bool, ask_sites: bool) -> Result<(), String> {
+    bridge.ask_sites.store(ask_sites, Ordering::SeqCst);
+    if on {
+        bridge.start(engine.inner().clone(), &agent::socket_folder()?)
+    } else {
+        bridge.stop();
+        Ok(())
+    }
+}
+
+#[tauri::command]
+fn bridge_forget(bridge: State<'_, Bridge>, id: String) -> Result<(), String> {
+    bridge.forget(&id)
+}
+
+#[tauri::command]
 fn ssh_set_enabled(agent: State<'_, Agent>, engine: State<'_, Engine>, on: bool, confirm: bool) -> Result<(), String> {
     agent.confirm.store(confirm, Ordering::SeqCst);
     if on {
@@ -817,6 +845,10 @@ fn main() {
             remove_browser_host,
             ssh_state,
             ssh_set_enabled,
+            bridge_fingerprint,
+            bridge_state,
+            bridge_set_enabled,
+            bridge_forget,
             auto_type,
             check_update,
             install_update,
@@ -851,6 +883,7 @@ fn main() {
             app.manage(engine);
             app.manage(store);
             app.manage(Agent::new());
+            app.manage(Bridge::new(app.state::<Store>().inner().clone()));
             app.manage(Shell {
                 close_to_tray: Mutex::new(true),
                 shortcuts: Mutex::new(HashMap::new()),
