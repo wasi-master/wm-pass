@@ -62,12 +62,12 @@
     lastActive = Date.now();
     if (lastActive - lastTold > 5000) {
       lastTold = lastActive;
-      void host().desktop?.activity();
+      void (host().desktop ?? host().lockGuard)?.activity();
     }
   }
 
   $effect(() => {
-    void host().desktop?.setLockRule(prefs.v.lock_after, prefs.v.lock_on_sleep);
+    void (host().desktop ?? host().lockGuard)?.setLockRule(prefs.v.lock_after, prefs.v.lock_on_sleep);
   });
 
   $effect(() => {

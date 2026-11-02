@@ -1,0 +1,12 @@
+<!doctype html><title>Covered field</title>
+<div style="position:relative;width:400px"><input id="user" name="email" type="email" style="width:280px;height:32px;margin:40px"><input id="pass" type="password" style="width:280px;height:32px;margin:40px"></div>
+<script>
+// Once the field has focus the page covers it and moves focus away, as a thief would.
+user.addEventListener('focus', () => setTimeout(() => {
+  const cover = document.createElement('div');
+  cover.style.cssText = 'position:fixed;inset:0;background:#fff';
+  document.body.append(cover);
+  user.blur();
+  pass.blur();
+}, 150));
+</script>

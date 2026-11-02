@@ -586,9 +586,23 @@ impl Service {
                 }
             }
             "vault.open_key" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    /// A number pages already know this vault by, when a suspended worker comes back.
+                    handle: Option<u64>,
+                }
+                let a: A = parse(call.args)?;
                 let raw: [u8; 32] = call.secret.try_into().map_err(|_| invalid("bad key"))?;
                 let vault = Vault::from_file(blob(&call, 0)?, VaultKey::from_bytes(raw), self.device)?;
-                let handle = self.adopt(vault);
+                let handle = match a.handle {
+                    Some(wanted) if !self.sessions.contains_key(&wanted) => {
+                        self.next = self.next.max(wanted + 1);
+                        self.sessions.insert(wanted, Session::new(vault));
+                        wanted
+                    }
+                    _ => self.adopt(vault),
+                };
                 let session = self.session(handle)?;
                 Ok(Reply::view(Self::opened(handle, 0, &session.vault)))
             }
@@ -1464,7 +1478,7 @@ impl Service {
                     "password": login.password.v.expose(),
                     "code": code.as_ref().map(|c| c.expose().to_owned()),
                 })).map_err(|_| invalid("that entry cannot be filled"))?);
-                Ok(Reply { json: String::new(), secret: Some(filled), blobs: Vec::new() })
+                Ok(Reply { json: "{}".to_owned(), secret: Some(filled), blobs: Vec::new() })
             }
             "match.app" => {
                 #[derive(Deserialize, Default)]

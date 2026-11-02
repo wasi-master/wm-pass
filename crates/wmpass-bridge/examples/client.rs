@@ -2,7 +2,7 @@
 //! names and lengths, never values. Usage: client <relay program> <page address> <other address>
 
 use std::io::{Read, Write};
-use std::process::{ChildStdin, ChildStdout, Command, Stdio};
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as B64;
@@ -10,8 +10,16 @@ use serde_json::{Value, json};
 use wmpass_bridge::{Client, Keys, fingerprint};
 
 struct Relay {
+    process: Child,
     input: ChildStdin,
     output: ChildStdout,
+}
+
+impl Drop for Relay {
+    fn drop(&mut self) {
+        let _ = self.process.kill();
+        let _ = self.process.wait();
+    }
 }
 
 impl Relay {
@@ -34,8 +42,9 @@ impl Relay {
 
 /// Connects and runs until the conversation is ready.
 fn connect(relay_program: &str, keys: &Keys, pinned: Option<[u8; 32]>) -> Option<(Client, Relay)> {
-    let child = Command::new(relay_program).arg("chrome-extension://test/").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
-    let mut relay = Relay { input: child.stdin.unwrap(), output: child.stdout.unwrap() };
+    let mut process = Command::new(relay_program).arg("chrome-extension://test/").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+    let (input, output) = (process.stdin.take().unwrap(), process.stdout.take().unwrap());
+    let mut relay = Relay { process, input, output };
     let (mut client, first) = Client::start(&keys.secret, pinned, "Test client").unwrap();
     relay.send(&first);
     loop {

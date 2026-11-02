@@ -52,12 +52,18 @@ export interface Host {
   /** Listens for app menu commands, tray items and shortcuts. */
   onCommand?(run: (command: string) => void): void;
   /** Tells the shell what is happening, for its menus and tray. */
-  stateChanged?(state: { unlocked: boolean; name: string; handle?: number }): void;
+  stateChanged?(state: { unlocked: boolean; name: string; handle?: number; file?: string; read_only?: boolean }): void;
   /** Keeps other programs from capturing the window. */
   setScreenProtection?(on: boolean): Promise<void>;
   /** Small things kept sealed by the system's keychain: logins for places, the network identity. */
   loadSealed?(name: string): Promise<string | null>;
   saveSealed?(name: string, text: string): Promise<void>;
+  /** A session that outlives this page. Says what is already open. */
+  attach?(): Promise<{ handle: number; file: string; name: string; read_only: boolean } | null>;
+  /** The lock timer, where something other than this page keeps it. */
+  lockGuard?: LockGuard;
+  /** The extension's connection to the desktop app. */
+  link?: DesktopLink;
   /** Calls that reach a network run in this shell. */
   network?: boolean;
   places?: PlacesHost;
@@ -65,6 +71,21 @@ export interface Host {
   outside?: OutsideFiles;
   lan?: LanHost;
   desktop?: DesktopHost;
+}
+
+export interface DesktopLink {
+  state(): Promise<any>;
+  connect(): Promise<any>;
+  answer(match: boolean): Promise<any>;
+  forget(): Promise<any>;
+  onChange(run: () => void): () => void;
+  option(name: string, fallback: unknown): Promise<unknown>;
+  setOption(name: string, value: unknown): Promise<void>;
+}
+
+export interface LockGuard {
+  activity(): Promise<void>;
+  setLockRule(afterSeconds: number, onSleep: boolean): Promise<void>;
 }
 
 /** A file somewhere the person keeps copies. */

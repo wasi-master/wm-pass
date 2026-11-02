@@ -10,7 +10,7 @@
     "check": "svelte-check --tsconfig ./tsconfig.json --threshold error",
     "desktop:dev": "npm run assets && vite --config desktop/vite.config.ts",
     "desktop:build": "npm run assets && vite build --config desktop/vite.config.ts",
-    "extension:build": "npm run wasm && npm run assets && vite build --config extension/vite.config.ts && sh extension/finish.sh"
+    "extension:build": "npm run wasm && npm run assets && VITE_PART=pages vite build --config extension/vite.config.ts && VITE_PART=background vite build --config extension/vite.config.ts && VITE_PART=content vite build --config extension/vite.config.ts && VITE_PART=page-world vite build --config extension/vite.config.ts && node extension/finish.mjs"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "7.3.1",
@@ -18,6 +18,7 @@
     "svelte": "5.57.3",
     "svelte-check": "4.7.8",
     "typescript": "6.0.3",
-    "vite": "8.3.5"
+    "vite": "8.3.5",
+    "playwright": "1.56.1"
   }
 }
