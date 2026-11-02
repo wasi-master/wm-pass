@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Themed-icon layer. Even-odd fill knocks the keyhole, pin gap and monogram out. -->
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:scaleX="0.6972"
+        android:scaleY="0.6972">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:fillType="evenOdd"
+            android:pathData="M31.4,45 H76.6 A6.4,6.4 0 0 1 83,51.4 V73 C83,85 67,93 54,99 C41,93 25,85 25,73 V51.4 A6.4,6.4 0 0 1 31.4,45 Z M52.7,80.36 A3.6,3.6 0 1 1 55.3,80.36 L56,86.6 H52 Z M43,15.9 H65 A11.1,11.1 0 0 1 76.1,27 V41 A11.1,11.1 0 0 1 65,52.1 H60.58 L54,63.2 L47.42,52.1 H43 A11.1,11.1 0 0 1 31.9,41 V27 A11.1,11.1 0 0 1 43,15.9 Z M43,17.5 H65 A9.5,9.5 0 0 1 74.5,27 V41 A9.5,9.5 0 0 1 65,50.5 H58.9 L54,60 L49.1,50.5 H43 A9.5,9.5 0 0 1 33.5,41 V27 A9.5,9.5 0 0 1 43,17.5 Z M45.63,39.30 L40.06,35.51V26.13L42.81 28.36V34.05L45.51 35.86V28.50L48.33 26.51V35.89L51.13 34.02V28.28L53.95 26.09V35.45L48.26 39.30Z M54.79,27.09H66.77Q67.94 27.38 67.94 28.59V36.68L64.55 38.76V29.58H63.13V36.55L59.60 38.90V29.58H58.18V38.49L54.79 40.71Z" />
+    </group>
+</vector>
