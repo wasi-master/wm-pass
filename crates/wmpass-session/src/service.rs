@@ -355,6 +355,13 @@ impl Service {
         self.sessions.keys().copied().collect()
     }
 
+    fn config_for(&mut self, kdf: &KdfArg, same_as: Option<u64>) -> Result<KdfConfig, SessionError> {
+        match same_as {
+            Some(handle) => Ok(self.session(handle)?.vault.kdf_config()?),
+            None => kdf.config(),
+        }
+    }
+
     fn opened(handle: u64, index: usize, vault: &Vault) -> Value {
         json!({
             "outcome": "opened",
@@ -385,9 +392,13 @@ impl Service {
                 struct A {
                     name: String,
                     kdf: KdfArg,
+                    same_kdf_as: Option<u64>,
                 }
                 let a: A = parse(call.args)?;
-                let vault = Vault::create(&a.name, call.secret, &a.kdf.config()?, self.device, now)?;
+                // Files that share a salt share one derivation, so a hidden vault beside
+                // the real one adds no time an observer could measure.
+                let config = self.config_for(&a.kdf, a.same_kdf_as)?;
+                let vault = Vault::create(&a.name, call.secret, &config, self.device, now)?;
                 let handle = self.adopt(vault);
                 let session = self.session(handle)?;
                 session.dirty = true;
@@ -435,10 +446,16 @@ impl Service {
                 #[serde(default)]
                 struct A {
                     size: usize,
+                    file_len: Option<usize>,
                     kdf: KdfArg,
+                    same_kdf_as: Option<u64>,
                 }
                 let a: A = parse(call.args)?;
-                let file = format::chaff_file(&a.kdf.config()?, a.size)?;
+                let config = self.config_for(&a.kdf, a.same_kdf_as)?;
+                let file = match a.file_len {
+                    Some(len) => format::chaff_like(&config, len)?,
+                    None => format::chaff_file(&config, a.size)?,
+                };
                 Ok(Reply {
                     json: "{}".to_owned(),
                     blobs: vec![file],
@@ -665,6 +682,7 @@ impl Service {
                 );
                 Ok(Reply::view(json!({"generation": generation, "rollback": rollback})))
             }
+            "vault.chaff_name" => Ok(Reply::view(json!({"name": session.vault.chaff_file_name()?}))),
             "vault.sync_name" => Ok(Reply::view(json!({"name": session.vault.sync_file_name()?}))),
             "vault.state_hash" => Ok(Reply::view(json!({"hash": hex(&session.vault.state_hash()?)}))),
             "vault.export_key" => {
@@ -937,6 +955,14 @@ impl Service {
                     } else {
                         Some(config.code(seconds)?.expose().to_owned())
                     };
+                    let left = config.seconds_left(seconds);
+                    // Near the end the next code is shown too, so a late copy still works.
+                    let next_code = match left {
+                        Some(left) if left <= 10 => {
+                            Some(config.code(seconds + u64::from(left))?.expose().to_owned())
+                        }
+                        _ => None,
+                    };
                     out.push(json!({
                         "id": entry.id,
                         "title": entry.common.title.v,
@@ -944,7 +970,8 @@ impl Service {
                         "icon": entry.common.icon.v,
                         "otp": view,
                         "code": code,
-                        "seconds_left": config.seconds_left(seconds),
+                        "next_code": next_code,
+                        "seconds_left": left,
                     }));
                 }
                 Ok(Reply::view(json!(out)))
@@ -1002,10 +1029,18 @@ impl Service {
                 #[serde(default)]
                 struct A {
                     old_after_days: Option<u32>,
+                    breached: BTreeMap<String, u64>,
                 }
                 let a: A = parse(call.args)?;
-                session.health = None;
-                let report = session.report(now, a.old_after_days.unwrap_or(365));
+                session.health = Some(health::report(
+                    &session.vault,
+                    &health::HealthInput {
+                        now_ms: now,
+                        old_after_days: a.old_after_days.unwrap_or(365),
+                        breached: a.breached,
+                    },
+                ));
+                let report = session.report(now, 365);
                 Ok(Reply::view(json!({
                     "weak": report.weak,
                     "reused": report.reused,
