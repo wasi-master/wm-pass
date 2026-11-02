@@ -71,6 +71,34 @@ fun CopyCapsule(modifier: Modifier = Modifier) {
     val content = secret ?: plain
     var remembered by remember { mutableStateOf(content) }
     if (content != null) remembered = content
+    if (colors.flat) {
+        AnimatedVisibility(
+            visible = content != null,
+            modifier = modifier.padding(horizontal = 16.dp),
+            enter = fadeIn(tween(120)) + slideInVertically(tween(180)) { it / 3 },
+            exit = fadeOut(tween(120)),
+        ) {
+            val shown = remembered ?: return@AnimatedVisibility
+            var seconds by remember { mutableStateOf(0L) }
+            LaunchedEffect(shown.endMs) {
+                val end = shown.endMs ?: return@LaunchedEffect
+                while (true) {
+                    seconds = ((end - System.currentTimeMillis() + 999) / 1000).coerceAtLeast(0)
+                    delay(250)
+                }
+            }
+            androidx.compose.material3.Snackbar(
+                action = if (shown.endMs != null) {
+                    { androidx.compose.material3.TextButton(onClick = { SecureClipboard.wipe(context) }) { Text("Clear now") } }
+                } else {
+                    null
+                },
+            ) {
+                Text(if (shown.endMs != null) "${shown.label} copied. Clears in ${seconds}s." else "${shown.label} copied.")
+            }
+        }
+        return
+    }
     AnimatedVisibility(
         visible = content != null,
         modifier = modifier.padding(top = 8.dp),
@@ -149,6 +177,21 @@ fun UndoBar(modifier: Modifier = Modifier) {
             if (shell.undo === offer) shell.undo = null
         }
     }
+    if (colors.flat) {
+        AnimatedVisibility(offer != null, modifier.padding(horizontal = 16.dp), enter = fadeIn(tween(120)), exit = fadeOut(tween(120))) {
+            val shown = remembered ?: return@AnimatedVisibility
+            androidx.compose.material3.Snackbar(
+                action = {
+                    androidx.compose.material3.TextButton(onClick = {
+                        val action = shown.action
+                        shell.undo = null
+                        scope.launch { action() }
+                    }) { Text("Undo") }
+                },
+            ) { Text(shown.message, maxLines = 2) }
+        }
+        return
+    }
     AnimatedVisibility(
         visible = offer != null,
         modifier = modifier,
@@ -216,7 +259,7 @@ fun ChildPill(modifier: Modifier = Modifier) {
         ) {
             Icon(PassIcons.ArrowBack, null, tint = colors.primary, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
-            Text("Leave ${remembered.orEmpty()}", color = colors.text, style = MaterialTheme.typography.labelLarge)
+            Text("Close ${remembered.orEmpty()}", color = colors.text, style = MaterialTheme.typography.labelLarge)
         }
     }
 }

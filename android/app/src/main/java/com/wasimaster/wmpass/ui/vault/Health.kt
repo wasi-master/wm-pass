@@ -57,6 +57,7 @@ import com.wasimaster.wmpass.ui.fx.Aurora
 import com.wasimaster.wmpass.ui.fx.rim
 import com.wasimaster.wmpass.ui.icons.PassIcons
 import com.wasimaster.wmpass.ui.parts.GlyphTile
+import com.wasimaster.wmpass.ui.parts.bleed
 import com.wasimaster.wmpass.ui.parts.Hairline
 import com.wasimaster.wmpass.ui.parts.PrimaryButton
 import com.wasimaster.wmpass.ui.parts.QuietButton
@@ -141,20 +142,50 @@ fun HealthTab() {
         )
         LazyColumn(
             Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(top = top + 8.dp, bottom = 190.dp, start = 16.dp, end = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(
+                top = if (colors.flat) 8.dp else top + 8.dp,
+                bottom = if (colors.flat) 32.dp else 190.dp,
+                start = 16.dp,
+                end = 16.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(if (colors.flat) 0.dp else 10.dp),
         ) {
-            item("title") {
-                Text(
-                    "Health",
-                    color = colors.text,
-                    style = MaterialTheme.typography.headlineLarge.copy(fontSize = 32.sp),
-                    modifier = Modifier.padding(start = 6.dp, top = 12.dp),
-                )
-            }
-            item("ring") {
-                Box(Modifier.fillMaxWidth().padding(vertical = 18.dp), contentAlignment = Alignment.Center) {
-                    ScoreRing(h?.score)
+            if (colors.flat) {
+                item("score") {
+                    Column(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+                        Row(verticalAlignment = Alignment.Bottom) {
+                            Text(h?.score?.toString() ?: "-", color = colors.text, style = MaterialTheme.typography.displaySmall.merge(PassType.numeric))
+                            Spacer(Modifier.width(8.dp))
+                            Text("out of 100", color = colors.textMid, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(bottom = 6.dp))
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        // Fills to the score once the check has an answer.
+                        val filled by animateFloatAsState((h?.score ?: 0) / 100f, androidx.compose.animation.core.tween(800), label = "score")
+                        androidx.compose.material3.LinearProgressIndicator(
+                            progress = { filled },
+                            modifier = Modifier.fillMaxWidth(),
+                            color = when {
+                                (h?.score ?: 0) >= 80 -> colors.primary
+                                (h?.score ?: 0) >= 50 -> colors.warn
+                                else -> colors.danger
+                            },
+                            trackColor = colors.surface3,
+                        )
+                    }
+                }
+            } else {
+                item("title") {
+                    Text(
+                        "Health",
+                        color = colors.text,
+                        style = MaterialTheme.typography.headlineLarge.copy(fontSize = 32.sp),
+                        modifier = Modifier.padding(start = 6.dp, top = 12.dp),
+                    )
+                }
+                item("ring") {
+                    Box(Modifier.fillMaxWidth().padding(vertical = 18.dp), contentAlignment = Alignment.Center) {
+                        ScoreRing(h?.score)
+                    }
                 }
             }
             item("line") {
@@ -163,20 +194,24 @@ fun HealthTab() {
                     when {
                         h == null -> " "
                         entries.isEmpty() -> "Nothing to check yet."
-                        count == 0 -> "Nothing needs you. Every password is strong and used once."
+                        count == 0 -> "No problems found."
                         else -> issues.first().lead
                     },
                     color = colors.textMid,
-                    style = MaterialTheme.typography.bodyLarge,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = if (colors.flat) androidx.compose.ui.text.style.TextAlign.Start else androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = if (colors.flat) 0.dp else 24.dp),
                 )
             }
             if (issues.isNotEmpty()) {
                 item("next") {
                     val first = issues.first().ids.first()
-                    PrimaryButton("Fix the most urgent", Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 6.dp), icon = PassIcons.Bolt) {
-                        shell.nav.navigate("edit/$first")
+                    if (colors.flat) {
+                        Spacer(Modifier.height(12.dp))
+                    } else {
+                        PrimaryButton("Fix the most urgent", Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 6.dp), icon = PassIcons.Bolt) {
+                            shell.nav.navigate("edit/$first")
+                        }
                     }
                 }
             }
@@ -186,7 +221,13 @@ fun HealthTab() {
                 }
             }
             item("tools") {
-                Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (colors.flat) {
+                    Column(Modifier.bleed(16.dp)) {
+                        com.wasimaster.wmpass.ui.parts.Eyebrow("Tools", Modifier.padding(horizontal = 16.dp))
+                        com.wasimaster.wmpass.ui.parts.NavRow("Check for breaches", "Look your passwords and email addresses up in known leaks", PassIcons.LocalFireDepartment) { shell.nav.navigate("settings/breaches") }
+                        com.wasimaster.wmpass.ui.parts.NavRow("Compare two passwords", icon = PassIcons.Balance) { shell.nav.navigate("settings/compare") }
+                    }
+                } else Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     QuietButton("Check for breaches", Modifier.fillMaxWidth(), PassIcons.LocalFireDepartment) { shell.nav.navigate("settings/breaches") }
                     QuietButton("Compare two passwords", Modifier.fillMaxWidth(), PassIcons.Balance) { shell.nav.navigate("settings/compare") }
                 }
@@ -259,11 +300,15 @@ private fun IssueCard(issue: Issue, entries: List<Summary>, modifier: Modifier =
     val turn by animateFloatAsState(if (open) 180f else 0f, Springs.glide(), label = "chevron")
     val tint = if (issue.serious) colors.danger else colors.warn
     Column(
-        modifier
-            .fillMaxWidth()
-            .clip(Shapes.card)
-            .background(colors.surface1)
-            .rim(Shapes.card, colors),
+        if (colors.flat) {
+            modifier.bleed(16.dp).fillMaxWidth()
+        } else {
+            modifier
+                .fillMaxWidth()
+                .clip(Shapes.card)
+                .background(colors.surface1)
+                .rim(Shapes.card, colors)
+        },
     ) {
         Row(
             Modifier
@@ -272,17 +317,17 @@ private fun IssueCard(issue: Issue, entries: List<Summary>, modifier: Modifier =
                     shell.haptics.tick()
                     open = !open
                 }
-                .padding(14.dp),
+                .padding(if (colors.flat) 16.dp else 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             GlyphTile(issue.icon, tint, size = 44.dp)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text(issue.title, color = colors.text, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold))
+                Text(issue.title, color = colors.text, style = if (colors.flat) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold))
                 Text(issue.why, color = colors.textMid, style = MaterialTheme.typography.bodySmall, maxLines = if (open) 4 else 2, overflow = TextOverflow.Ellipsis)
             }
             Spacer(Modifier.width(10.dp))
-            Text(issue.ids.distinct().size.toString(), color = tint, style = MaterialTheme.typography.titleLarge.merge(PassType.numeric))
+            Text(issue.ids.distinct().size.toString(), color = tint, style = (if (colors.flat) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge).merge(PassType.numeric))
             Spacer(Modifier.width(6.dp))
             Icon(PassIcons.ExpandMore, if (open) "Collapse" else "Expand", tint = colors.textLow, modifier = Modifier.graphicsLayer { rotationZ = turn })
         }

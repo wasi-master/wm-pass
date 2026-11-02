@@ -47,6 +47,7 @@ fun Context.systemAnimationsOff(): Boolean =
 /** Shrinks a little under the finger, and springs back. */
 @Composable
 fun Modifier.pressScale(source: MutableInteractionSource, pressed: Float = 0.97f): Modifier {
+    if (palette.flat) return this
     val isPressed by source.collectIsPressedAsState()
     val scale by animateFloatAsState(if (isPressed) pressed else 1f, Springs.snap(), label = "press")
     return graphicsLayer {
@@ -62,7 +63,7 @@ fun Modifier.pressScale(source: MutableInteractionSource, pressed: Float = 0.97f
 @Composable
 fun Modifier.arrive(index: Int, enabled: Boolean = true, rise: Dp = 18.dp): Modifier {
     val reduce = LocalReduceMotion.current
-    if (!enabled || reduce) return this
+    if (!enabled || reduce || palette.flat) return this
     val progress = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
         delay(minOf(index, 8) * 34L)

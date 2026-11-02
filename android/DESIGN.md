@@ -1,8 +1,76 @@
 # WM Pass design language
 
+People hand this app everything they are afraid of losing, so it cannot look like a weekend demo. The app has two styles, chosen under Settings, Appearance. **Standard** is the default and looks like a well made Android app. **Glass** is the original design, kept as an option for people who like it.
+
+These rules apply to Standard, and the ban list applies to the desktop app and the extension as well.
+
+## Banned
+
+Each of these is something people now read as generated. Check every new screen against this list before it ships.
+
+- Purple or indigo gradients, gradient text, and gradient buttons.
+- Glassmorphism, blurred blobs, aurora backgrounds, and glows behind anything.
+- Near-black with a single neon accent as the only idea on the page.
+- Centred hero with a tagline and two buttons.
+- A strip of big numbers with small labels. Health shows one score because it has one score.
+- Every section in an identical rounded card with the same shadow, and cards inside cards.
+- An icon in a tinted square on every row.
+- Sparkle icons, emoji used as icons, and status dots that mean nothing.
+- ALL-CAPS eyebrow labels above headings, numbered template chrome (01, 02, 03), and arrows on buttons.
+- Fade-up on every section and lift on every card.
+- Marketing voice inside the app: "Your secure digital fortress", "Lock it in", "That is not it".
+
+Swapping one default for another is its own tell. A cream page with a serif headline and terracotta buttons is on this list in spirit, so a replacement has to come from the product.
+
+## What it uses instead
+
+**Platform structure.** Top app bar, navigation bar, floating action button, list rows, outlined fields, dialogs, bottom sheets. Someone who has used any Android app already knows where everything is.
+
+**System type.** The phone's own font, with Material's scale and slightly tighter tracking. A theme may choose another family.
+
+**Depth from surfaces.** Solid colours at a few tonal levels. Rows sit directly on the page with no card, and sections are separated by space and a heading.
+
+**Plain words.** A label names the thing and a button starts with its verb: "Copy password", "Wrong password.", "Discard changes?". Sentences explain only what a person could not guess, and a warning says exactly what will be lost.
+
+**Identity from the product, not from decoration.**
+
+- The shield mark, in its own emerald, on the unlock screen and nowhere else.
+- Secrets in a monospaced face with a slashed zero, with digits and symbols in their own colours. People read passwords aloud and type them on televisions.
+- Real site marks in circles, like photos in Contacts. A brand keeps its colour and everything else takes the theme's tone.
+- A code's ring is the code's real lifetime.
+
+## Motion
+
+Motion answers something the person did, or shows something that is really happening.
+
+| Moment | What moves |
+|---|---|
+| Opening an entry | Its icon and title travel to the new page, the rest follows Material's shared axis |
+| Going back | Predictive back, on the versions that have it |
+| Opening an editor | Rises a short way, as a full-screen dialog does |
+| Copying | The button's glyph turns to a tick and its label says "Copied" for a moment |
+| Generating again | The refresh glyph turns once, and the new password replaces the old |
+| A code changing | The digits roll, because the code really did change |
+| Unlocking | A thin line runs round the shield for as long as the key takes to derive |
+| Wrong password | The shield shakes once and turns red, the field goes into its error state |
+| Health loading | The bar fills to the score once the check has an answer |
+| Holding a row | Its icon flips to a tick |
+
+Nothing loops while idle, nothing staggers in, and "Animations" under Appearance shortens all of it.
+
+## Themes
+
+A theme is a small JSON file: light colours, dark colours, corner size and font. Dracula, Catppuccin, Nord, Solarized, Gruvbox, Tokyo Night, One, Rose Pine, Everforest, Ayu, Kanagawa, Monokai and GitHub ship with the app, and on Android 12 and later the default follows the wallpaper.
+
+- **Colour reference:** each preset uses its published palette, with text nudged where a pair falls under readable contrast.
+- **Sharing:** a theme travels as a `wmpass-theme:` code, a QR code or a `.wmtheme` file, and holds nothing from a vault.
+- **Importing:** a theme from outside is treated as a stranger's data. It gets a new id, a cleaned name, values within range, and readable text.
+
+## The Glass style
+
 A password manager is opened a dozen times a day for about five seconds at a time: find it, copy it, leave. It also holds things people are afraid of losing. So the app has two jobs that pull in opposite directions. It has to be fast enough to disappear, and it has to feel like a place you would trust with everything.
 
-## Rules
+### Rules
 
 **Animation tells the truth.** The ring around the shield moves because Argon2 is working. The ring on a code is the code's real lifetime. The capsule at the top empties because the clipboard really will be wiped at zero. Nothing moves just to fill time, and every moving thing can be read as information.
 
@@ -16,7 +84,7 @@ A password manager is opened a dozen times a day for about five seconds at a tim
 
 **Depth comes from light, not shadow.** Cards are lit from above by a hairline rim. Glass floats over a slow aurora. Each entry tints its own page with its site's colour, so a page can be recognised before it is read.
 
-## Tokens
+### Tokens
 
 | Token | Dark | Light |
 |---|---|---|
@@ -34,7 +102,7 @@ A password manager is opened a dozen times a day for about five seconds at a tim
 
 **Motion.** Three springs and nothing else: *snap* for things under a finger, *glide* for things changing place, *lively* for things arriving with some joy. A press scales to 0.97. System animator scale 0 stills all of it, and the app stays fully usable.
 
-## Signature moments
+### Signature moments
 
 | Moment | What happens |
 |---|---|
@@ -48,6 +116,6 @@ A password manager is opened a dozen times a day for about five seconds at a tim
 | Entry | The row's tile and title fly to their place on the entry's page, which rises tinted in the site's colour. |
 | Select | Holding a row flips its tile to a tick, and the dock becomes the action bar. |
 
-## Keeping it honest
+### Keeping it honest
 
 Blur and shaders degrade gracefully: the aurora needs Android 13 and blur needs 12, and below that the same layout stands on gradients and solid glass. Lists never run an infinite animation. The aurora stops when it is off screen, when the screen is scrolled away from it, and when the system says to save power.

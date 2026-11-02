@@ -231,7 +231,7 @@ fun EntryRow(
     val colors = palette
     val shell = LocalShell.current
     val source = remember { MutableInteractionSource() }
-    val tileSize = if (compact) 36.dp else 46.dp
+    val tileSize = if (compact) 36.dp else if (colors.flat) 40.dp else 46.dp
     SwipeRow(
         modifier,
         shape,
@@ -242,9 +242,14 @@ fun EntryRow(
         Row(
             Modifier
                 .fillMaxWidth()
-                .background(if (selected) colors.surface3 else colors.surface1)
+                .background(if (selected) colors.surface3 else if (colors.flat) colors.ground else colors.surface1)
                 .combinedClickable(source, androidx.compose.material3.ripple(), onClick = onClick, onLongClick = onLongClick)
-                .padding(start = 14.dp, end = 10.dp, top = if (compact) 8.dp else 12.dp, bottom = if (compact) 8.dp else 12.dp),
+                .padding(
+                    start = if (colors.flat) 16.dp else 14.dp,
+                    end = if (colors.flat) 4.dp else 10.dp,
+                    top = if (compact) 8.dp else 12.dp,
+                    bottom = if (compact) 8.dp else 12.dp,
+                ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             FlipTile(entry, selected, tileSize)
@@ -254,7 +259,7 @@ fun EntryRow(
                     Text(
                         entry.title.ifEmpty { "Untitled" },
                         color = colors.text,
-                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                        style = if (colors.flat) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false).sharedEntry("title-${entry.id}"),
@@ -283,7 +288,8 @@ fun EntryRow(
 private fun Badges(entry: Summary) {
     val colors = palette
     val icons = buildList<Pair<ImageVector, Color>> {
-        if (entry.pinned) add(PassIcons.KeepFilled to colors.textLow)
+        // Pinned rows sit under their own heading in the standard look, so the mark says nothing new.
+        if (entry.pinned && !colors.flat) add(PassIcons.KeepFilled to colors.textLow)
         if (entry.favourite) add(PassIcons.StarFilled to colors.warn)
         if (entry.hasOtp) add(PassIcons.Pin to colors.textLow)
         if (entry.hasPasskey) add(PassIcons.KeyVertical to colors.textLow)
@@ -316,7 +322,7 @@ private fun FlipTile(entry: Summary, selected: Boolean, size: Dp) {
                 Modifier
                     .fillMaxSize()
                     .graphicsLayer { rotationY = 180f }
-                    .clip(com.wasimaster.wmpass.ui.theme.SquircleShape(size * 0.30f))
+                    .clip(if (colors.flat) androidx.compose.foundation.shape.CircleShape else com.wasimaster.wmpass.ui.theme.SquircleShape(size * 0.30f))
                     .background(colors.primary),
                 contentAlignment = Alignment.Center,
             ) {
@@ -343,22 +349,28 @@ fun SiteStackRow(
         Modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(colors.surface1)
+            .background(if (colors.flat) colors.ground else colors.surface1)
             .clickable(source, androidx.compose.material3.ripple()) {
                 shell.haptics.tick()
                 onToggle()
             }
-            .padding(start = 14.dp, end = 18.dp, top = 12.dp, bottom = 12.dp),
+            .padding(start = if (colors.flat) 16.dp else 14.dp, end = 18.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(46.dp)) {
-            // Two tiles fanned, like a small deck of the same card.
-            SiteTile(site, site, "login", Modifier.align(Alignment.TopEnd).graphicsLayer { rotationZ = 7f; alpha = 0.72f }, 38.dp)
-            SiteTile(site, site, "login", Modifier.align(Alignment.BottomStart), 40.dp)
+        if (colors.flat) {
+            SiteTile(site, site, "login", size = 40.dp)
+        } else {
+            Box(Modifier.size(46.dp)) {
+                // Two tiles fanned, like a small deck of the same card.
+                SiteTile(site, site, "login", Modifier.align(Alignment.TopEnd).graphicsLayer { rotationZ = 7f; alpha = 0.72f }, 38.dp)
+                SiteTile(site, site, "login", Modifier.align(Alignment.BottomStart), 40.dp)
+            }
         }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(site, color = colors.text, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // Everyone calls it Google, not google.com.
+            val name = entries.map { it.title }.distinct().singleOrNull()?.takeIf { it.isNotEmpty() } ?: site
+            Text(name, color = colors.text, style = if (colors.flat) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("${entries.size} accounts", color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
         }
         Icon(PassIcons.ExpandMore, if (expanded) "Collapse" else "Expand", tint = colors.textLow, modifier = Modifier.graphicsLayer { rotationZ = turn })

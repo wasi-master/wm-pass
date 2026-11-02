@@ -18,10 +18,44 @@ class Prefs(context: Context) {
 
     private fun edit(block: SharedPreferences.Editor.() -> Unit) = store.edit().apply(block).apply()
 
-    var look by mutableStateOf(runCatching { Look.valueOf(store.getString("look", null) ?: "") }.getOrDefault(Look.DARK))
+    var look by mutableStateOf(runCatching { Look.valueOf(store.getString("look", null) ?: "") }.getOrDefault(Look.SYSTEM))
         private set
     var accent by mutableStateOf(runCatching { Accent.valueOf(store.getString("accent", null) ?: "") }.getOrDefault(Accent.EMERALD))
         private set
+
+    /** `standard`, or `glass` for the expressive look. */
+    var uiStyle by mutableStateOf(store.getString("ui_style", "standard") ?: "standard")
+        private set
+
+    /** A built-in theme's id or a custom one's. Nothing here says anything about the vault. */
+    var themeId by mutableStateOf(store.getString("theme_id", null) ?: defaultTheme())
+        private set
+    var customThemes by mutableStateOf(com.wasimaster.wmpass.ui.theme.ThemeCodec.readList(store.getString("custom_themes", null)))
+        private set
+    var colouredIcons by mutableStateOf(store.getBoolean("coloured_icons", true))
+        private set
+
+    private fun defaultTheme() =
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            com.wasimaster.wmpass.ui.theme.BuiltInThemes.SYSTEM
+        } else {
+            com.wasimaster.wmpass.ui.theme.BuiltInThemes.DEFAULT
+        }
+
+    fun updateUiStyle(value: String) { uiStyle = value; edit { putString("ui_style", value) } }
+    fun updateTheme(value: String) { themeId = value; edit { putString("theme_id", value) } }
+    fun updateColouredIcons(value: Boolean) { colouredIcons = value; edit { putBoolean("coloured_icons", value) } }
+
+    fun saveCustomTheme(theme: com.wasimaster.wmpass.ui.theme.ThemeFile) {
+        customThemes = customThemes.filter { it.id != theme.id } + theme
+        edit { putString("custom_themes", com.wasimaster.wmpass.ui.theme.ThemeCodec.writeList(customThemes)) }
+    }
+
+    fun deleteCustomTheme(id: String) {
+        customThemes = customThemes.filter { it.id != id }
+        if (themeId == id) updateTheme(defaultTheme())
+        edit { putString("custom_themes", com.wasimaster.wmpass.ui.theme.ThemeCodec.writeList(customThemes)) }
+    }
 
     /** Seconds in the background before locking. Zero is at once, -1 never. */
     var lockAfter by mutableIntStateOf(store.getInt("lock_after", 60))
@@ -97,7 +131,7 @@ class Prefs(context: Context) {
 
     companion object {
         val DEFAULT_TABS = listOf("vault", "codes", "generator", "health")
-        val DEFAULT_WIDGETS = listOf("health", "codes", "favourites")
+        val DEFAULT_WIDGETS = listOf("health")
         val DEFAULT_SHORTCUTS: Map<String, String?> = mapOf(
             "search" to "Ctrl+F",
             "add" to "Ctrl+N",

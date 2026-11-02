@@ -29,12 +29,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicSecureTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.KeyboardActionHandler
 import androidx.compose.foundation.text.input.TextFieldState
@@ -150,11 +153,33 @@ fun PasswordPill(
     imeAction: ImeAction = ImeAction.Done,
     focus: FocusRequester? = null,
     onSubmit: () -> Unit = {},
+    error: Boolean = false,
     trailing: @Composable (() -> Unit)? = null,
 ) {
     val colors = palette
     var showing by remember { mutableStateOf(false) }
     val haptics = rememberHaptics()
+    if (colors.flat) {
+        androidx.compose.material3.OutlinedSecureTextField(
+            state = field,
+            modifier = modifier
+                .fillMaxWidth()
+                .then(if (focus != null) Modifier.focusRequester(focus) else Modifier),
+            enabled = enabled,
+            isError = error,
+            textStyle = TextStyle(fontFamily = MonoFamily, fontSize = 16.sp),
+            label = { Text(placeholder) },
+            trailingIcon = {
+                androidx.compose.material3.IconButton(onClick = { showing = !showing }) {
+                    Icon(if (showing) PassIcons.VisibilityOff else PassIcons.Visibility, if (showing) "Hide password" else "Show password")
+                }
+            },
+            textObfuscationMode = if (showing) TextObfuscationMode.Visible else TextObfuscationMode.RevealLastTyped,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false, imeAction = imeAction),
+            onKeyboardAction = KeyboardActionHandler { onSubmit() },
+        )
+        return
+    }
     Row(
         modifier
             .fillMaxWidth()
@@ -311,7 +336,7 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
                     }
                     else -> {
                         shield = ShieldState.REFUSED
-                        message = failure.message ?: "That is not it."
+                        message = failure.message ?: "Wrong password."
                         retryAt = Pass.noteWrongAccountPassword()
                         delay(900)
                         shield = ShieldState.IDLE
@@ -347,7 +372,7 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
                 is UnlockResult.Wrong -> {
                     haptics.reject()
                     shield = ShieldState.REFUSED
-                    message = "That is not it."
+                    message = "Wrong password."
                     retryAt = outcome.retryAtMs
                     delay(900)
                     shield = ShieldState.IDLE
@@ -364,7 +389,7 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
                 UnlockResult.HardLocked -> {
                     field.clearText()
                     shield = ShieldState.REFUSED
-                    message = "That is not it."
+                    message = "Wrong password."
                     retryAt = Pass.retryAt()
                 }
                 null -> {
@@ -396,7 +421,7 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
                             shield = ShieldState.OPENED
                         } else {
                             shield = ShieldState.IDLE
-                            message = "Fingerprint unlock could not open this vault. Use the password."
+                            message = "Fingerprint unlock failed. Enter your password."
                         }
                     }
                 }
@@ -422,6 +447,94 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
         }
     }
 
+    if (colors.flat) {
+        val busy = shield == ShieldState.WORKING
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(colors.ground)
+                .statusBarsPadding()
+                .imePadding()
+                .navigationBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp),
+        ) {
+            Spacer(Modifier.weight(1f))
+            // The mark's box has margin in it; pull it back so the shield lines up with the text.
+            ShieldMark(shield, Modifier.offset(x = (-17).dp).size(72.dp), 0)
+            Spacer(Modifier.height(20.dp))
+            Text(source?.label ?: "WM Pass", color = colors.text, style = MaterialTheme.typography.headlineMedium)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                when {
+                    remaining > 0 -> "Too many attempts. Try again in ${formatWait(remaining)}."
+                    busy -> "Unlocking…"
+                    else -> "Enter your password to unlock."
+                },
+                color = if (remaining > 0) colors.danger else colors.textMid,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Spacer(Modifier.height(24.dp))
+            if (accounts.isNotEmpty()) {
+                FlowRow(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (hasLocal) {
+                        Pill("This device", source == null) {
+                            source = null
+                            message = null
+                            needed = null
+                        }
+                    } else {
+                        Pill("New vault", false, icon = PassIcons.Add, onClick = onStartLocal)
+                    }
+                    accounts.forEach { account ->
+                        Pill(account.label, source?.id == account.id) {
+                            source = account
+                            message = null
+                            needed = null
+                            asksCode = false
+                            keyFile = null
+                        }
+                    }
+                }
+            }
+            needed?.let { factors ->
+                FactorEntry(factors, enabled = !busy) { kind, output -> submit(listOf(kind to output)) }
+            }
+            AnimatedVisibility(asksCode) {
+                Box(Modifier.padding(bottom = 10.dp)) { com.wasimaster.wmpass.ui.vault.SheetField(codeField, "Two-factor code") }
+            }
+            PasswordPill(
+                field,
+                source?.let { "Password" } ?: "Master password",
+                enabled = remaining == 0L && !busy,
+                imeAction = ImeAction.Go,
+                focus = focus,
+                error = message != null,
+                onSubmit = { submit() },
+            )
+            AnimatedVisibility(message != null, enter = fadeIn(), exit = fadeOut()) {
+                Text(message.orEmpty(), color = colors.danger, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 16.dp, top = 4.dp))
+            }
+            Spacer(Modifier.height(16.dp))
+            PrimaryButton(if (busy) "Unlocking…" else "Unlock", Modifier.fillMaxWidth(), enabled = field.text.isNotEmpty() && remaining == 0L && !busy) { submit() }
+            if (source?.kind == "kdbx") {
+                Spacer(Modifier.height(8.dp))
+                androidx.compose.material3.TextButton(onClick = { pickAccountKey.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (keyFile == null) "Add key file" else "Key file added")
+                }
+            }
+            if (biometricsReady && source == null) {
+                Spacer(Modifier.height(8.dp))
+                androidx.compose.material3.OutlinedButton(onClick = { promptBiometric() }, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+                    Icon(PassIcons.Fingerprint, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Use fingerprint")
+                }
+            }
+            Spacer(Modifier.weight(1.4f))
+        }
+        return
+    }
     Column(Modifier.fillMaxSize().statusBarsPadding().imePadding().navigationBarsPadding()) {
         ShieldSlot(shield, typed, Modifier.weight(1f))
         Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 16.dp)) {
@@ -579,8 +692,120 @@ private fun FactorEntry(factors: List<NeededFactor>, enabled: Boolean, onOutput:
 
 private enum class Step { HELLO, CHOOSE, CONFIRM, MAKING }
 
+/** First run in the standard look: one form, with everything it needs on one page. */
+@Composable
+private fun StandardWelcome(onBack: (() -> Unit)?) {
+    val colors = palette
+    val scope = rememberCoroutineScope()
+    val haptics = rememberHaptics()
+    val first = rememberTextFieldState()
+    val second = rememberTextFieldState()
+    var strength by remember { mutableStateOf(StrengthView()) }
+    var making by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var returning by remember { mutableStateOf(false) }
+    BackHandler(onBack != null) { onBack?.invoke() }
+    LaunchedEffect(first) {
+        snapshotFlow { first.text.toString() }.collectLatest { text ->
+            delay(120)
+            strength = if (text.isNotEmpty()) Pass.strength(text.toByteArray()) else StrengthView()
+        }
+    }
+    val matches = second.text.toString() == first.text.toString()
+    val ready = first.text.isNotEmpty() && matches && strength.score >= 3 && !making
+    fun make() {
+        making = true
+        error = null
+        val password = first.text.toString().toByteArray()
+        scope.launch {
+            val result = runCatching { Pass.create("Personal", password) }
+            password.fill(0)
+            result.onFailure {
+                error = it.message
+                making = false
+                haptics.reject()
+            }.onSuccess {
+                first.clearText()
+                second.clearText()
+                haptics.confirm()
+            }
+        }
+    }
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(colors.ground)
+            .statusBarsPadding()
+            .imePadding()
+            .navigationBarsPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp, vertical = 24.dp),
+    ) {
+        ShieldMark(ShieldState.IDLE, Modifier.offset(x = (-15).dp).size(64.dp), 0)
+        Spacer(Modifier.height(20.dp))
+        Text("Create your vault", color = colors.text, style = MaterialTheme.typography.headlineMedium)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Your master password encrypts everything on this device. It cannot be reset, so keep a copy somewhere safe.",
+            color = colors.textMid,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Spacer(Modifier.height(24.dp))
+        PasswordPill(first, "Master password", imeAction = ImeAction.Next, enabled = !making)
+        Spacer(Modifier.height(8.dp))
+        StrengthBar(strength.score, Modifier.fillMaxWidth(), active = first.text.isNotEmpty())
+        Spacer(Modifier.height(6.dp))
+        Text(
+            when {
+                first.text.isEmpty() -> "Four or five random words work well."
+                strength.warning != null -> strength.warning!!
+                else -> "Time to crack: ${strength.crackSlowHash}"
+            },
+            color = colors.textMid,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        androidx.compose.material3.TextButton(
+            onClick = {
+                scope.launch {
+                    val reply = Engine.call(
+                        "gen.generate",
+                        args = {
+                            putJsonObject("Passphrase") {
+                                put("words", 5)
+                                put("separator", "-")
+                                put("capitalize", false)
+                                put("include_digit", false)
+                            }
+                        },
+                    )
+                    val words = reply.secret!!.consumeText()
+                    first.edit { replace(0, length, words) }
+                    second.clearText()
+                    haptics.confirm()
+                }
+            },
+            enabled = !making,
+        ) { Text("Generate a passphrase") }
+        Spacer(Modifier.height(8.dp))
+        PasswordPill(second, "Confirm master password", enabled = !making, onSubmit = { if (ready) make() })
+        if (second.text.isNotEmpty() && !matches) {
+            Text("Passwords do not match.", color = colors.danger, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 16.dp, top = 4.dp))
+        }
+        error?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 16.dp, top = 4.dp)) }
+        Spacer(Modifier.height(20.dp))
+        PrimaryButton(if (making) "Creating vault…" else "Create vault", Modifier.fillMaxWidth(), enabled = ready) { make() }
+        Spacer(Modifier.height(8.dp))
+        androidx.compose.material3.TextButton(onClick = { returning = true }, modifier = Modifier.fillMaxWidth()) { Text("I already have a vault") }
+    }
+    if (returning) ComingBack { returning = false }
+}
+
 @Composable
 private fun Welcome(onBack: (() -> Unit)?) {
+    if (palette.flat) {
+        StandardWelcome(onBack)
+        return
+    }
     var step by rememberSaveable { mutableStateOf(Step.HELLO) }
     val first = rememberTextFieldState()
     val second = rememberTextFieldState()
@@ -715,11 +940,11 @@ private fun ComingBack(onDismiss: () -> Unit) {
         }
     }
     when (sheet) {
-        "menu" -> PassSheet(onDismiss, "Bring it here") {
-            DoorRow(PassIcons.Folder, "From a file", "A .wmvault file or a .wmbackup you saved") { openFile.launch(arrayOf("*/*")) }
-            DoorRow(PassIcons.Backup, "From a place you back up to", "A folder, WebDAV, S3 or SFTP") { sheet = "place" }
-            DoorRow(PassIcons.Sync, "KeePass, Bitwarden or a server", "Open it where it is, without moving it") { sheet = "account" }
-            DoorRow(PassIcons.FamilyRestroom, "With emergency shares", "When someone trusted you with part of a key") { sheet = "shares" }
+        "menu" -> PassSheet(onDismiss, "Existing vault") {
+            DoorRow(PassIcons.Folder, "Restore from a file", ".wmvault or .wmbackup") { openFile.launch(arrayOf("*/*")) }
+            DoorRow(PassIcons.Backup, "Restore from a backup location", "Folder, WebDAV, S3 or SFTP") { sheet = "place" }
+            DoorRow(PassIcons.Sync, "Open a KeePass file or sign in", "KeePass, Bitwarden, Vaultwarden or a WM Pass server") { sheet = "account" }
+            DoorRow(PassIcons.FamilyRestroom, "Recover with emergency shares", "When someone gave you part of their key") { sheet = "shares" }
             problem?.let {
                 Spacer(Modifier.height(8.dp))
                 Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium)
@@ -761,7 +986,7 @@ private fun SharesSheet(onDismiss: () -> Unit) {
     PassSheet(onDismiss, "Emergency shares") {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(
-                "The kit says how many shares it takes and how long you agreed to wait. WM Pass cannot enforce the wait. Please honour it.",
+                "The kit lists how many shares are needed and the agreed waiting period. WM Pass cannot enforce the wait.",
                 color = colors.textMid,
                 style = MaterialTheme.typography.bodyMedium,
             )

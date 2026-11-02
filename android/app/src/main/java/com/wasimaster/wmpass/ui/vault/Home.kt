@@ -64,7 +64,7 @@ data class Tab(val id: String, val label: String, val icon: ImageVector, val fil
 val AllTabs = listOf(
     Tab("vault", "Vault", PassIcons.Shield, PassIcons.ShieldFilled),
     Tab("codes", "Codes", PassIcons.Pin, PassIcons.PinFilled),
-    Tab("generator", "Generate", PassIcons.Casino, PassIcons.CasinoFilled),
+    Tab("generator", "Generator", PassIcons.Casino, PassIcons.CasinoFilled),
     Tab("health", "Health", PassIcons.EcgHeart, PassIcons.EcgHeartFilled),
     Tab("tools", "Tools", PassIcons.Widgets, PassIcons.WidgetsFilled),
 )
@@ -74,6 +74,10 @@ fun HomeScreen() {
     val shell = LocalShell.current
     val prefs = shell.prefs
     val colors = palette
+    if (colors.flat) {
+        StandardHome()
+        return
+    }
     BackHandler(shell.selecting) { shell.selection.clear() }
     BackHandler(shell.searching) { shell.searching = false }
     Box(Modifier.fillMaxSize().background(colors.ground)) {
@@ -185,7 +189,7 @@ private fun ActionStack() {
                 .clip(CircleShape)
                 .background(Brush.linearGradient(listOf(colors.brandFrom, colors.brandTo)))
                 .rim(CircleShape, colors)
-                .clickable(source, null, role = Role.Button, onClickLabel = "Search") {
+                .clickable(source, androidx.compose.material3.ripple(), role = Role.Button, onClickLabel = "Search") {
                     shell.haptics.click()
                     shell.searching = true
                 },
@@ -226,7 +230,7 @@ private fun TabButton(tab: Tab, selected: Boolean) {
             .height(52.dp)
             .clip(CircleShape)
             .background(colors.primary.copy(alpha = lit * if (colors.dark) 0.17f else 0.12f))
-            .clickable(source, null, role = Role.Tab, onClickLabel = tab.label) {
+            .clickable(source, androidx.compose.material3.ripple(), role = Role.Tab, onClickLabel = tab.label) {
                 if (shell.tab != tab.id) shell.haptics.tick()
                 shell.tab = tab.id
             }
@@ -289,13 +293,20 @@ private fun SelectionBar() {
 @Composable
 fun BarIcon(icon: ImageVector, label: String, tint: Color = palette.text, onClick: () -> Unit) {
     val shell = LocalShell.current
+    if (palette.flat) {
+        androidx.compose.material3.IconButton(onClick = {
+            shell.haptics.tick()
+            onClick()
+        }) { Icon(icon, label, tint = tint) }
+        return
+    }
     val source = remember { MutableInteractionSource() }
     Box(
         Modifier
             .pressScale(source, 0.88f)
             .size(46.dp)
             .clip(CircleShape)
-            .clickable(source, null, role = Role.Button, onClickLabel = label) {
+            .clickable(source, androidx.compose.material3.ripple(), role = Role.Button, onClickLabel = label) {
                 shell.haptics.tick()
                 onClick()
             },

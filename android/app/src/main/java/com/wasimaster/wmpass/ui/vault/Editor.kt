@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package com.wasimaster.wmpass.ui.vault
 
 import androidx.activity.compose.BackHandler
@@ -362,13 +364,35 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
 
     Box(Modifier.fillMaxSize().background(colors.ground)) {
         Column(Modifier.fillMaxSize().imePadding()) {
+            if (colors.flat) {
+                androidx.compose.material3.TopAppBar(
+                    title = { Text(if (entryId == null) "New ${kindName(kind).lowercase()}" else "Edit ${kindName(kind).lowercase()}") },
+                    navigationIcon = {
+                        androidx.compose.material3.IconButton(onClick = { leave() }) { Icon(PassIcons.Close, "Close") }
+                    },
+                    actions = {
+                        androidx.compose.material3.TextButton(onClick = { save() }, enabled = ready && !saving && (dirty || entryId == null)) { Text("Save") }
+                    },
+                    colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(containerColor = colors.ground),
+                )
+            }
             Column(
                 Modifier
                     .weight(1f)
                     .verticalScroll(rememberScrollState())
-                    .statusBarsPadding()
+                    .then(if (colors.flat) Modifier else Modifier.statusBarsPadding())
                     .padding(horizontal = 16.dp),
             ) {
+                if (colors.flat) {
+                    androidx.compose.material3.OutlinedTextField(
+                        state = title,
+                        modifier = Modifier.fillMaxWidth().focusRequester(titleFocus),
+                        label = { Text("Name") },
+                        placeholder = if (derived.isNotEmpty()) ({ Text(derived) }) else null,
+                        lineLimits = TextFieldLineLimits.SingleLine,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
+                    )
+                } else {
                 Spacer(Modifier.height(62.dp))
                 Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                     val seedSite = firstSite.trim().takeIf { it.isNotEmpty() }?.let { s -> runCatching { URI(if ("://" in s) s else "https://$s").host }.getOrNull() }
@@ -398,9 +422,10 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
+                }
                 if (ready) {
                     if (fields.isNotEmpty()) {
-                        Spacer(Modifier.height(18.dp))
+                        Spacer(Modifier.height(if (colors.flat) 4.dp else 18.dp))
                         GroupCard {
                             fields.forEachIndexed { index, field ->
                                 if (index > 0) Hairline()
@@ -428,10 +453,25 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                         }
                     }
                     if (kind == "login") {
-                        Eyebrow("Websites")
+                        if (colors.flat) Spacer(Modifier.height(8.dp)) else Eyebrow("Websites")
                         GroupCard {
                             sites.forEachIndexed { index, (state, _) ->
                                 if (index > 0) Hairline()
+                                if (colors.flat) {
+                                    androidx.compose.material3.OutlinedTextField(
+                                        state = state,
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                                        label = { Text("Website") },
+                                        placeholder = { Text("example.com") },
+                                        lineLimits = TextFieldLineLimits.SingleLine,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false),
+                                        trailingIcon = if (sites.size > 1 || state.text.isNotEmpty()) {
+                                            { RowIconButton(PassIcons.Close, "Remove website") { sites.removeAt(index) } }
+                                        } else {
+                                            null
+                                        },
+                                    )
+                                } else
                                 Row(Modifier.padding(start = 18.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Icon(PassIcons.Language, null, tint = colors.textMid, modifier = Modifier.size(20.dp))
                                     Spacer(Modifier.width(14.dp))
@@ -456,9 +496,26 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                         }
                     }
                     if (kind == "login" || kind == "otp") {
-                        Eyebrow("One-time code")
+                        if (colors.flat) Spacer(Modifier.height(8.dp)) else Eyebrow("One-time code")
                         GroupCard {
                             AnimatedVisibility(otpOpen) {
+                                if (colors.flat) {
+                                    androidx.compose.material3.OutlinedTextField(
+                                        state = otpSeed,
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                                        label = { Text("Setup key or otpauth link") },
+                                        placeholder = { Text(if (detail?.otp != null) "Saved. Type to replace" else "JBSWY3DPEHPK3PXP") },
+                                        textStyle = TextStyle(fontFamily = MonoFamily, fontSize = 16.sp),
+                                        lineLimits = TextFieldLineLimits.SingleLine,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
+                                        trailingIcon = {
+                                            RowIconButton(PassIcons.QrCodeScanner, "Scan a QR code", tint = colors.primary) {
+                                                shell.scanTarget = { uri -> otpSeed.setTextAndPlaceCursorAtEnd(uri) }
+                                                shell.nav.navigate("scan")
+                                            }
+                                        },
+                                    )
+                                } else
                                 Column(Modifier.padding(start = 18.dp, end = 12.dp, top = 12.dp, bottom = 12.dp)) {
                                     Text("Setup key or otpauth link", color = colors.textLow, style = MaterialTheme.typography.labelMedium)
                                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -491,9 +548,17 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                         }
                     }
                     if (kind != "note") {
-                        Eyebrow("Notes")
+                        if (colors.flat) Spacer(Modifier.height(8.dp)) else Eyebrow("Notes")
                         GroupCard {
-                            if (notesLoaded) {
+                            if (notesLoaded && colors.flat) {
+                                androidx.compose.material3.OutlinedTextField(
+                                    state = notes,
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                                    label = { Text("Notes") },
+                                    lineLimits = TextFieldLineLimits.MultiLine(minHeightInLines = 3),
+                                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                                )
+                            } else if (notesLoaded) {
                                 Box(Modifier.padding(horizontal = 18.dp, vertical = 14.dp).heightIn(min = 54.dp)) {
                                     if (notes.text.isEmpty()) Text("Anything worth remembering", color = colors.textLow, style = MaterialTheme.typography.bodyLarge)
                                     BasicTextField(
@@ -505,7 +570,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                                     )
                                 }
                             } else {
-                                AddLine(if (detail?.hasNotes == true) "Change the notes" else "Add notes", if (detail?.hasNotes == true) PassIcons.Edit else PassIcons.Add) {
+                                AddLine(if (detail?.hasNotes == true) "Edit notes" else "Add notes", if (detail?.hasNotes == true) PassIcons.Edit else PassIcons.Add) {
                                     val existing = detail
                                     scope.launch {
                                         if (existing?.hasNotes == true) {
@@ -519,7 +584,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                             }
                         }
                     }
-                    Eyebrow("More fields")
+                    if (colors.flat) Spacer(Modifier.height(8.dp)) else Eyebrow("More fields")
                     GroupCard {
                         customs.forEachIndexed { index, custom ->
                             if (!custom.remove) {
@@ -596,7 +661,10 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                 Spacer(Modifier.height(24.dp))
             }
             // Saving stays under the thumb, above the keyboard when there is one.
-            Column(Modifier.navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 10.dp)) {
+            if (colors.flat && error != null) {
+                Text(error.orEmpty(), color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.navigationBarsPadding().padding(16.dp))
+            }
+            if (!colors.flat) Column(Modifier.navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 10.dp)) {
                 AnimatedVisibility(error != null) {
                     Text(
                         error.orEmpty(),
@@ -608,8 +676,10 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                 PrimaryButton(if (entryId == null) "Save" else "Save changes", Modifier.fillMaxWidth(), enabled = ready && !saving && (dirty || entryId == null)) { save() }
             }
         }
-        Box(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 14.dp, vertical = 8.dp)) {
-            GlassCircle(PassIcons.Close, "Close") { leave() }
+        if (!colors.flat) {
+            Box(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 14.dp, vertical = 8.dp)) {
+                GlassCircle(PassIcons.Close, "Close") { leave() }
+            }
         }
     }
 
@@ -636,7 +706,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
         }
     }
     if (askDiscard) {
-        ConfirmSheet("Leave without saving?", "What you changed here will be lost.", "Discard changes", onDismiss = { askDiscard = false }) {
+        ConfirmSheet("Discard changes?", "Your edits to this item will be lost.", "Discard", onDismiss = { askDiscard = false }) {
             shell.nav.popBackStack()
         }
     }
@@ -706,6 +776,15 @@ fun PassSwitch(checked: Boolean, onChange: (Boolean) -> Unit) {
 @Composable
 private fun PlainField(state: TextFieldState, hint: String, mono: Boolean = false) {
     val colors = palette
+    if (colors.flat) {
+        androidx.compose.material3.OutlinedTextField(
+            state = state,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text(hint) },
+            textStyle = if (mono) TextStyle(fontFamily = MonoFamily, fontSize = 16.sp) else MaterialTheme.typography.bodyLarge,
+        )
+        return
+    }
     Box(Modifier.fillMaxWidth().heightIn(min = 28.dp), contentAlignment = Alignment.CenterStart) {
         if (state.text.isEmpty()) Text(hint, color = colors.textLow, style = MaterialTheme.typography.bodyLarge)
         BasicTextField(
@@ -788,7 +867,66 @@ private fun FieldEditor(
                 ) { DatePicker(state) }
             }
         }
-        else -> {
+        else -> if (colors.flat) {
+            val isSecret = spec.secret
+            val multiline = spec.input == "multiline"
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                val actions: @Composable () -> Unit = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (isSecret && !multiline && field.loaded && field.text.text.isNotEmpty()) {
+                            RowIconButton(if (field.showing) PassIcons.VisibilityOff else PassIcons.Visibility, if (field.showing) "Hide" else "Show") { field.showing = !field.showing }
+                        }
+                        if (spec.input == "password") RowIconButton(PassIcons.Casino, "Generate", tint = colors.primary, onClick = onGenerate)
+                        if (onAlias != null) RowIconButton(PassIcons.AlternateEmail, "Use an alias", tint = colors.primary, onClick = onAlias)
+                        if (onSsh != null) RowIconButton(PassIcons.Casino, "Generate a key", tint = colors.primary, onClick = onSsh)
+                    }
+                }
+                when {
+                    isSecret && !field.loaded -> androidx.compose.material3.OutlinedCard(
+                        onClick = {
+                            scope.launch {
+                                if (entryId != null) {
+                                    val text = Pass.reveal(entryId, spec.key).consumeText()
+                                    field.text.setTextAndPlaceCursorAtEnd(text)
+                                    field.original = text
+                                }
+                                field.loaded = true
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        shape = androidx.compose.material3.OutlinedTextFieldDefaults.shape,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                    ) {
+                        Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                            Text(spec.label, color = colors.textMid, style = MaterialTheme.typography.bodySmall)
+                            Text("Saved. Tap to change", color = colors.text, style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
+                    isSecret && !multiline -> androidx.compose.material3.OutlinedSecureTextField(
+                        state = field.text,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(spec.label) },
+                        textStyle = TextStyle(fontFamily = MonoFamily, fontSize = 16.sp),
+                        trailingIcon = actions,
+                        textObfuscationMode = if (field.showing) TextObfuscationMode.Visible else TextObfuscationMode.RevealLastTyped,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
+                    )
+                    else -> androidx.compose.material3.OutlinedTextField(
+                        state = field.text,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(spec.label) },
+                        placeholder = { Text(hintOf(spec)) },
+                        textStyle = if (isSecret) TextStyle(fontFamily = MonoFamily, fontSize = 15.sp) else MaterialTheme.typography.bodyLarge,
+                        trailingIcon = if (onAlias != null || onSsh != null) actions else null,
+                        lineLimits = if (multiline) TextFieldLineLimits.MultiLine(minHeightInLines = 3) else TextFieldLineLimits.SingleLine,
+                        keyboardOptions = keyboardFor(spec),
+                    )
+                }
+                if (spec.input == "password" && field.loaded && field.text.text.isNotEmpty()) {
+                    LiveStrength(field.text, context)
+                }
+            }
+        } else {
             val isSecret = spec.secret
             val multiline = spec.input == "multiline"
             Column(
@@ -911,7 +1049,7 @@ private fun LiveStrength(field: TextFieldState, context: List<String>) {
         StrengthBar(s.score, Modifier.fillMaxWidth())
         Spacer(Modifier.height(6.dp))
         Text(
-            s.warning?.takeIf { it.isNotEmpty() } ?: "Would hold for ${s.crackSlowHash}",
+            s.warning?.takeIf { it.isNotEmpty() } ?: "Time to crack: ${s.crackSlowHash}",
             color = if (s.score < 2) colors.danger else colors.textMid,
             style = MaterialTheme.typography.bodySmall,
         )
@@ -957,7 +1095,7 @@ private fun GeneratorSheet(onDismiss: () -> Unit, onUse: (String) -> Unit) {
     val state = remember { GenState() }
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { state.roll() }
-    PassSheet(onDismiss, "A new password") {
+    PassSheet(onDismiss, "Generate password") {
         GeneratedValue(state, large = false)
         GeneratedStrength(state, Modifier.padding(horizontal = 4.dp))
         Spacer(Modifier.height(16.dp))
@@ -965,7 +1103,7 @@ private fun GeneratorSheet(onDismiss: () -> Unit, onUse: (String) -> Unit) {
         Spacer(Modifier.height(18.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             PrimaryButton("Use this", Modifier.weight(1f)) { onUse(state.value) }
-            RollButton({ scope.launch { state.roll() } })
+            if (!palette.flat) RollButton({ scope.launch { state.roll() } })
         }
     }
 }

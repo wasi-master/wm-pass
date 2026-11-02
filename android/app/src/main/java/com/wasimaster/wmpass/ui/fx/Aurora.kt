@@ -60,6 +60,7 @@ half4 main(float2 here) {
 @Composable
 fun Aurora(modifier: Modifier = Modifier, moving: Boolean = true, strength: Float = 1f) {
     val colors = palette
+    if (colors.flat) return
     val reduce = LocalReduceMotion.current
     var time by remember { mutableFloatStateOf(37f) }
     LaunchedEffect(moving, reduce) {

@@ -68,6 +68,7 @@ fun Modifier.backdropSource(backdrop: Backdrop?): Modifier {
  */
 fun Modifier.glass(shape: Shape, blur: Dp = 28.dp, tint: Color? = null, rim: Boolean = true): Modifier = composed {
     val colors = palette
+    if (colors.flat) return@composed clip(shape).background(colors.surface2)
     val backdrop = LocalBackdrop.current
     val blurPx = with(LocalDensity.current) { blur.toPx() }
     val blurLayer = if (backdrop != null) rememberGraphicsLayer() else null
@@ -95,11 +96,11 @@ fun Modifier.glass(shape: Shape, blur: Dp = 28.dp, tint: Color? = null, rim: Boo
 }
 
 /** The hairline lit from above that gives every pane its edge. */
-fun Modifier.rim(shape: Shape, colors: Palette, width: Dp = 1.dp): Modifier = border(
-    width,
-    Brush.verticalGradient(listOf(colors.rimTop, colors.rimBottom)),
-    shape,
-)
+fun Modifier.rim(shape: Shape, colors: Palette, width: Dp = 1.dp): Modifier = if (colors.flat) {
+    this
+} else {
+    border(width, Brush.verticalGradient(listOf(colors.rimTop, colors.rimBottom)), shape)
+}
 
 /** A solid card on the page. */
 @Composable

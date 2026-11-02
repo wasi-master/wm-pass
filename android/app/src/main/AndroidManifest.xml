@@ -19,6 +19,7 @@
 
     <!-- allowBackup off: a vault leaves this phone only by the owner's hand. -->
     <application
+        android:enableOnBackInvokedCallback="true"
         android:name=".app.PassApplication"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/no_extraction"

@@ -7,11 +7,71 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.dp
 
+/**
+ * SVG lets an arc's two flags run straight into what follows, as in `a1 1 0 00-1 2`, and minified
+ * icon sets do. The path parser reads `00` as one number, which shifts every argument after it
+ * and draws wreckage, so the flags are spaced out before it sees them.
+ */
+internal fun spaceArcFlags(path: String): String {
+    val out = StringBuilder(path.length + 32)
+    var i = 0
+    fun skipGaps() {
+        while (i < path.length && (path[i] == ' ' || path[i] == ',' || path[i] == '\n' || path[i] == '\t')) i++
+    }
+    fun number(): String {
+        skipGaps()
+        val start = i
+        if (i < path.length && (path[i] == '-' || path[i] == '+')) i++
+        var dot = false
+        while (i < path.length) {
+            val c = path[i]
+            if (c.isDigit()) {
+                i++
+            } else if (c == '.' && !dot) {
+                dot = true
+                i++
+            } else if ((c == 'e' || c == 'E') && i + 1 < path.length) {
+                i++
+                if (path[i] == '-' || path[i] == '+') i++
+            } else {
+                break
+            }
+        }
+        return path.substring(start, i)
+    }
+    while (i < path.length) {
+        val c = path[i]
+        if (c != 'a' && c != 'A') {
+            out.append(c)
+            i++
+            continue
+        }
+        out.append(c)
+        i++
+        while (true) {
+            skipGaps()
+            if (i >= path.length || !(path[i].isDigit() || path[i] == '.' || path[i] == '-' || path[i] == '+')) break
+            val rx = number()
+            val ry = number()
+            val turn = number()
+            skipGaps()
+            val large = path[i++]
+            skipGaps()
+            val sweep = path[i++]
+            val x = number()
+            val y = number()
+            out.append(rx).append(' ').append(ry).append(' ').append(turn).append(' ')
+                .append(large).append(' ').append(sweep).append(' ').append(x).append(' ').append(y).append(' ')
+        }
+    }
+    return out.toString()
+}
+
 /** A site's mark and colour, from `data/brands`. Bundled, so showing one asks nobody anything. */
 class Brand(val slug: String, val name: String, val color: Color, private val path: String) {
     val glyph: ImageVector by lazy {
         ImageVector.Builder(slug, 24.dp, 24.dp, 24f, 24f)
-            .addPath(pathData = addPathNodes(path), fill = SolidColor(Color.White))
+            .addPath(pathData = addPathNodes(spaceArcFlags(path)), fill = SolidColor(Color.White))
             .build()
     }
 }

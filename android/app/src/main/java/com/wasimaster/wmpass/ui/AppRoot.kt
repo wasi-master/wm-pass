@@ -48,6 +48,13 @@ private val OpenEase = CubicBezierEasing(0.65f, 0f, 0.15f, 1f)
 fun AppRoot(prefs: Prefs) {
     val colors = palette
     val state by Pass.state.collectAsStateWithLifecycle()
+    if (colors.flat) {
+        // The standard look opens the way any app moves between screens.
+        androidx.compose.animation.Crossfade(state is LockState.Unlocked, Modifier.fillMaxSize().background(colors.ground), tween(180), label = "door") { open ->
+            if (open) NoLearningInput { VaultShell(prefs) } else DoorScreen(state, prefs)
+        }
+        return
+    }
     val reduce = LocalReduceMotion.current
     val haptics = rememberHaptics()
     val unlocked = state is LockState.Unlocked
