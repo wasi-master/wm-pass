@@ -32,7 +32,11 @@ pub fn assess(password: &str, context: &[&str]) -> Strength {
     let (warning, suggestions) = entropy.feedback().map_or((None, Vec::new()), |feedback| {
         (
             feedback.warning().map(|w| w.to_string()),
-            feedback.suggestions().iter().map(ToString::to_string).collect(),
+            feedback
+                .suggestions()
+                .iter()
+                .map(ToString::to_string)
+                .collect(),
         )
     });
     Strength {
@@ -80,7 +84,12 @@ pub fn compare(first: &str, second: &str, context: &[&str]) -> Comparison {
     } else {
         Winner::Second
     };
-    Comparison { first: a, second: b, winner, factor: 10f64.powf(gap.abs()) }
+    Comparison {
+        first: a,
+        second: b,
+        winner,
+        factor: 10f64.powf(gap.abs()),
+    }
 }
 
 /// The entropy a generator recipe guarantees, for showing beside its output. A
@@ -112,7 +121,10 @@ mod tests {
         let result = compare("letmein", "correct-horse-battery-staple-9", &[]);
         assert_eq!(result.winner, Winner::Second);
         assert!(result.factor > 10.0);
-        assert_eq!(compare("Tr0ub4dor&3", "Tr0ub4dor&3", &[]).winner, Winner::Even);
+        assert_eq!(
+            compare("Tr0ub4dor&3", "Tr0ub4dor&3", &[]).winner,
+            Winner::Even
+        );
     }
 
     #[test]

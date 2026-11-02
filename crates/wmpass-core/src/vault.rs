@@ -59,7 +59,11 @@ pub enum Freshness {
 
 /// Compares a file's generation with the highest this device has seen.
 pub fn check_freshness(seen: u64, file: u64) -> Freshness {
-    if file < seen { Freshness::Rollback { seen, file } } else { Freshness::Fresh }
+    if file < seen {
+        Freshness::Rollback { seen, file }
+    } else {
+        Freshness::Fresh
+    }
 }
 
 /// An unlocked vault.
@@ -115,50 +119,88 @@ fn open_set_with(
     let mut roots: Vec<(KdfConfig, RootKey)> = Vec::new();
     let mut needed = Vec::new();
     for (index, file) in files.iter().enumerate() {
-        let Ok(header) = Header::parse(file) else { continue };
+        let Ok(header) = Header::parse(file) else {
+            continue;
+        };
         let config = header.config()?;
         if !roots.iter().any(|(known, _)| *known == config) {
             let root = derive(&config)?;
             roots.push((config.clone(), root));
         }
-        let Some((_, root)) = roots.iter().find(|(known, _)| *known == config) else { continue };
+        let Some((_, root)) = roots.iter().find(|(known, _)| *known == config) else {
+            continue;
+        };
         match header.unlock(root, factors)? {
-            Unlock::Opened { action: SlotAction::Open, key } => {
+            Unlock::Opened {
+                action: SlotAction::Open,
+                key,
+            } => {
                 let vault = Vault::from_file(file, key, device)?;
-                return Ok(OpenOutcome::Opened { index, vault: Box::new(vault) });
+                return Ok(OpenOutcome::Opened {
+                    index,
+                    vault: Box::new(vault),
+                });
             }
             Unlock::Opened { action, .. } => return Ok(OpenOutcome::Duress { action }),
             Unlock::NeedsFactor(kinds) => needed.extend(kinds),
             Unlock::NoMatch => {}
         }
     }
-    if needed.is_empty() { Ok(OpenOutcome::NoMatch) } else { Ok(OpenOutcome::NeedsFactor(needed)) }
+    if needed.is_empty() {
+        Ok(OpenOutcome::NoMatch)
+    } else {
+        Ok(OpenOutcome::NeedsFactor(needed))
+    }
 }
 
 impl Vault {
     /// Creates a vault with one password. The master key is new and random.
-    pub fn create(name: &str, password: &[u8], config: &KdfConfig, device: u32, now_ms: u64) -> Result<Self> {
+    pub fn create(
+        name: &str,
+        password: &[u8],
+        config: &KdfConfig,
+        device: u32,
+        now_ms: u64,
+    ) -> Result<Self> {
         let root = config.derive(password)?;
         Self::create_with_root(name, &root, config, device, now_ms)
     }
 
-    fn create_with_root(name: &str, root: &RootKey, config: &KdfConfig, device: u32, now_ms: u64) -> Result<Self> {
+    fn create_with_root(
+        name: &str,
+        root: &RootKey,
+        config: &KdfConfig,
+        device: u32,
+        now_ms: u64,
+    ) -> Result<Self> {
         let mut header = Header::new(config)?;
         let key = VaultKey::generate()?;
         header.write_slot(0, root, &key, SlotAction::Open, None)?;
         let mut clock = Clock::new(device);
         let at = clock.tick(now_ms);
         let mut slots = vec![SlotInfo::default(); SLOTS];
-        slots[0] = SlotInfo { used: true, label: "Master password".to_owned() };
+        slots[0] = SlotInfo {
+            used: true,
+            label: "Master password".to_owned(),
+        };
         let doc = VaultDoc {
             minor: DOC_MINOR,
             name: name.to_owned(),
             slots,
             slots_at: at,
-            prefs: crate::model::VaultPrefs { trash_days: DEFAULT_TRASH_DAYS, history_limit: 0 },
+            prefs: crate::model::VaultPrefs {
+                trash_days: DEFAULT_TRASH_DAYS,
+                history_limit: 0,
+            },
             ..VaultDoc::default()
         };
-        Ok(Self { header, key, doc, clock, read_only: false })
+        Ok(Self {
+            header,
+            key,
+            doc,
+            clock,
+            read_only: false,
+        })
     }
 
     /// Opens a file with a key that a slot or hardware keystore supplied.
@@ -168,7 +210,13 @@ impl Vault {
         let read_only = doc.minor > DOC_MINOR;
         let mut clock = Clock::new(device);
         observe_doc(&mut clock, &doc);
-        Ok(Self { header, key, doc, clock, read_only })
+        Ok(Self {
+            header,
+            key,
+            doc,
+            clock,
+            read_only,
+        })
     }
 
     /// Whether this build must not save, because the file is newer than it knows.
@@ -184,10 +232,13 @@ impl Vault {
     /// Encrypts for saving and bumps the generation. Write the result atomically.
     pub fn save(&mut self) -> Result<Vec<u8>> {
         if self.read_only {
-            return Err(Error::Invalid("this vault was written by a newer version of WM Pass".into()));
+            return Err(Error::Invalid(
+                "this vault was written by a newer version of WM Pass".into(),
+            ));
         }
         self.doc.generation = self.doc.generation.saturating_add(1);
-        let plain = Zeroizing::new(rmp_serde::to_vec_named(&self.doc).map_err(|_| Error::Encoding)?);
+        let plain =
+            Zeroizing::new(rmp_serde::to_vec_named(&self.doc).map_err(|_| Error::Encoding)?);
         format::seal_file(&self.header, &self.key, &plain)
     }
 
@@ -215,9 +266,18 @@ impl Vault {
     }
 
     /// Changes an entry through a closure given the current moment.
-    pub fn edit<R>(&mut self, id: &str, now_ms: u64, edit: impl FnOnce(&mut Entry, Hlc) -> R) -> Result<R> {
+    pub fn edit<R>(
+        &mut self,
+        id: &str,
+        now_ms: u64,
+        edit: impl FnOnce(&mut Entry, Hlc) -> R,
+    ) -> Result<R> {
         let at = self.clock.tick(now_ms);
-        let entry = self.doc.entries.get_mut(id).ok_or_else(|| Error::Invalid("no such entry".into()))?;
+        let entry = self
+            .doc
+            .entries
+            .get_mut(id)
+            .ok_or_else(|| Error::Invalid("no such entry".into()))?;
         let result = edit(entry, at);
         let limit = self.doc.prefs.history_limit as usize;
         trim_history(entry, limit);
@@ -226,18 +286,26 @@ impl Vault {
 
     /// Moves to the trash. [`Vault::restore`] brings it back.
     pub fn trash(&mut self, id: &str, now_ms: u64) -> Result<()> {
-        self.edit(id, now_ms, |entry, at| entry.common.deleted_at_ms = Lww::new(Some(now_ms), at))
+        self.edit(id, now_ms, |entry, at| {
+            entry.common.deleted_at_ms = Lww::new(Some(now_ms), at)
+        })
     }
 
     /// Takes out of the trash.
     pub fn restore(&mut self, id: &str, now_ms: u64) -> Result<()> {
-        self.edit(id, now_ms, |entry, at| entry.common.deleted_at_ms = Lww::new(None, at))
+        self.edit(id, now_ms, |entry, at| {
+            entry.common.deleted_at_ms = Lww::new(None, at)
+        })
     }
 
     /// Removes for good. Returns the blobs to delete, whose keys are now gone.
     pub fn purge(&mut self, id: &str, now_ms: u64) -> Vec<String> {
         let at = self.clock.tick(now_ms);
-        let blobs = self.doc.entries.remove(id).map(|entry| blob_names(&entry.common.attachments.v));
+        let blobs = self
+            .doc
+            .entries
+            .remove(id)
+            .map(|entry| blob_names(&entry.common.attachments.v));
         self.doc.tombstones.insert(id.to_owned(), at);
         blobs.unwrap_or_default()
     }
@@ -252,7 +320,11 @@ impl Vault {
             .filter(|entry| {
                 let destroyed = entry.common.destroy_at_ms.v.is_some_and(|at| at <= now_ms);
                 let expired = trash_ms > 0
-                    && entry.common.deleted_at_ms.v.is_some_and(|at| at.saturating_add(trash_ms) <= now_ms);
+                    && entry
+                        .common
+                        .deleted_at_ms
+                        .v
+                        .is_some_and(|at| at.saturating_add(trash_ms) <= now_ms);
                 destroyed || expired
             })
             .map(|entry| entry.id.clone())
@@ -264,7 +336,11 @@ impl Vault {
     pub fn add_folder(&mut self, name: &str, parent: Option<Id>, now_ms: u64) -> Result<Id> {
         let at = self.clock.tick(now_ms);
         let id = new_id()?;
-        let folder = Folder { id: id.clone(), name: Lww::new(name.to_owned(), at), parent: Lww::new(parent, at) };
+        let folder = Folder {
+            id: id.clone(),
+            name: Lww::new(name.to_owned(), at),
+            parent: Lww::new(parent, at),
+        };
         self.doc.folders.insert(id.clone(), folder);
         Ok(id)
     }
@@ -286,12 +362,19 @@ impl Vault {
     }
 
     fn free_slot(&self) -> Result<usize> {
-        self.doc.slots.iter().position(|slot| !slot.used).ok_or(Error::NoFreeSlot)
+        self.doc
+            .slots
+            .iter()
+            .position(|slot| !slot.used)
+            .ok_or(Error::NoFreeSlot)
     }
 
     fn note_slot(&mut self, index: usize, label: &str, used: bool, now_ms: u64) {
         let at = self.clock.tick(now_ms);
-        self.doc.slots[index] = SlotInfo { used, label: label.to_owned() };
+        self.doc.slots[index] = SlotInfo {
+            used,
+            label: label.to_owned(),
+        };
         self.doc.slots_at = at;
     }
 
@@ -318,8 +401,17 @@ impl Vault {
         factor: Option<(&FactorKind, &FactorOutput)>,
         now_ms: u64,
     ) -> Result<usize> {
+        // A password already in use would make the first matching slot win, so a
+        // duress password equal to the master password would never fire, and the
+        // owner would not find out until the moment it mattered.
+        if factor.is_none() && matches!(self.header.unlock(root, &[])?, Unlock::Opened { .. }) {
+            return Err(Error::Invalid(
+                "that password is already in use on this vault".into(),
+            ));
+        }
         let index = self.free_slot()?;
-        self.header.write_slot(index, root, &self.key, action, factor)?;
+        self.header
+            .write_slot(index, root, &self.key, action, factor)?;
         self.note_slot(index, label, true, now_ms);
         Ok(index)
     }
@@ -339,8 +431,14 @@ impl Vault {
     /// password; [`Vault::rekey`] is what cuts them off.
     pub fn change_password(&mut self, index: usize, password: &[u8], now_ms: u64) -> Result<()> {
         let root = self.header.config()?.derive(password)?;
-        let label = self.doc.slots.get(index).map(|slot| slot.label.clone()).unwrap_or_default();
-        self.header.write_slot(index, &root, &self.key, SlotAction::Open, None)?;
+        let label = self
+            .doc
+            .slots
+            .get(index)
+            .map(|slot| slot.label.clone())
+            .unwrap_or_default();
+        self.header
+            .write_slot(index, &root, &self.key, SlotAction::Open, None)?;
         self.note_slot(index, &label, true, now_ms);
         Ok(())
     }
@@ -386,14 +484,20 @@ impl Vault {
         let raw = Zeroizing::new(unhex(record.key.expose()).ok_or(Error::Integrity)?);
         let key: [u8; 32] = raw.as_slice().try_into().map_err(|_| Error::Integrity)?;
         let key = Zeroizing::new(key);
-        let (prefix, body) = sealed.split_at_checked(crypto::STREAM_PREFIX_LEN).ok_or(Error::Integrity)?;
-        let prefix: [u8; crypto::STREAM_PREFIX_LEN] = prefix.try_into().map_err(|_| Error::Integrity)?;
+        let (prefix, body) = sealed
+            .split_at_checked(crypto::STREAM_PREFIX_LEN)
+            .ok_or(Error::Integrity)?;
+        let prefix: [u8; crypto::STREAM_PREFIX_LEN] =
+            prefix.try_into().map_err(|_| Error::Integrity)?;
         crypto::stream_open(&key, &prefix, body, record.blob.as_bytes())
     }
 
     /// Entries that are not trashed or on the hidden shelf, as lists and autofill see them.
     pub fn visible(&self) -> impl Iterator<Item = &Entry> {
-        self.doc.entries.values().filter(|e| !e.is_trashed() && !e.common.hidden.v)
+        self.doc
+            .entries
+            .values()
+            .filter(|e| !e.is_trashed() && !e.common.hidden.v)
     }
 }
 
@@ -459,22 +563,34 @@ mod tests {
     use crate::crypto::KdfParams;
 
     fn set_outcome(files: &[&[u8]], password: &[u8], factors: &[FactorOutput]) -> OpenOutcome {
-        open_set_with(files, factors, 2, |config| config.derive_for_tests(password)).unwrap()
+        open_set_with(files, factors, 2, |config| {
+            config.derive_for_tests(password)
+        })
+        .unwrap()
     }
 
     #[test]
     fn save_and_reopen_keeps_everything_and_raises_the_generation() {
         let mut vault = fast_vault(1);
         let at = vault.tick(2000);
-        let id = vault.add(login_entry("Mail", "me", "s3cret", at), 2000).unwrap();
+        let id = vault
+            .add(login_entry("Mail", "me", "s3cret", at), 2000)
+            .unwrap();
         let first = vault.save().unwrap();
         let second = vault.save().unwrap();
-        let OpenOutcome::Opened { vault: again, index } = set_outcome(&[&second], b"pw", &[]) else {
+        let OpenOutcome::Opened {
+            vault: again,
+            index,
+        } = set_outcome(&[&second], b"pw", &[])
+        else {
             panic!("expected to open");
         };
         assert_eq!(index, 0);
         assert_eq!(again.doc.generation, 2);
-        assert_eq!(again.get(&id).unwrap().login().unwrap().password.v.expose(), "s3cret");
+        assert_eq!(
+            again.get(&id).unwrap().login().unwrap().password.v.expose(),
+            "s3cret"
+        );
         let OpenOutcome::Opened { vault: old, .. } = set_outcome(&[&first], b"pw", &[]) else {
             panic!("expected to open");
         };
@@ -505,7 +621,10 @@ mod tests {
         };
         assert_eq!((index, vault.doc.name.as_str()), (1, "Decoy"));
         assert!(vault.doc.linked.is_empty());
-        assert!(matches!(set_outcome(&files, b"nope", &[]), OpenOutcome::NoMatch));
+        assert!(matches!(
+            set_outcome(&files, b"nope", &[]),
+            OpenOutcome::NoMatch
+        ));
     }
 
     #[test]
@@ -514,13 +633,33 @@ mod tests {
         let root = config.derive_for_tests(b"real").unwrap();
         let mut vault = Vault::create_with_root("V", &root, &config, 1, 1).unwrap();
         let duress = config.derive_for_tests(b"panic").unwrap();
-        vault.add_slot_with_root(&duress, "Panic", SlotAction::WipeLocal, None, 2).unwrap();
+        vault
+            .add_slot_with_root(&duress, "Panic", SlotAction::WipeLocal, None, 2)
+            .unwrap();
         let file = vault.save().unwrap();
         assert!(matches!(
             set_outcome(&[&file], b"panic", &[]),
-            OpenOutcome::Duress { action: SlotAction::WipeLocal }
+            OpenOutcome::Duress {
+                action: SlotAction::WipeLocal
+            }
         ));
-        assert!(matches!(set_outcome(&[&file], b"real", &[]), OpenOutcome::Opened { .. }));
+        assert!(matches!(
+            set_outcome(&[&file], b"real", &[]),
+            OpenOutcome::Opened { .. }
+        ));
+    }
+
+    #[test]
+    fn a_duress_password_equal_to_an_existing_one_is_refused() {
+        let mut vault = fast_vault(1);
+        let same = vault
+            .header
+            .config()
+            .unwrap()
+            .derive_for_tests(b"pw")
+            .unwrap();
+        let refused = vault.add_slot_with_root(&same, "Panic", SlotAction::WipeLocal, None, 2);
+        assert!(refused.is_err());
     }
 
     #[test]
@@ -530,22 +669,43 @@ mod tests {
         let root = config.derive_for_tests(b"second").unwrap();
         let output = format::key_file_factor(b"file");
         vault
-            .add_slot_with_root(&root, "With file", SlotAction::Open, Some((&FactorKind::KeyFile, &output)), 2)
+            .add_slot_with_root(
+                &root,
+                "With file",
+                SlotAction::Open,
+                Some((&FactorKind::KeyFile, &output)),
+                2,
+            )
             .unwrap();
         let file = vault.save().unwrap();
-        assert!(matches!(set_outcome(&[&file], b"second", &[]), OpenOutcome::NeedsFactor(_)));
-        assert!(matches!(set_outcome(&[&file], b"second", &[output]), OpenOutcome::Opened { .. }));
+        assert!(matches!(
+            set_outcome(&[&file], b"second", &[]),
+            OpenOutcome::NeedsFactor(_)
+        ));
+        assert!(matches!(
+            set_outcome(&[&file], b"second", &[output]),
+            OpenOutcome::Opened { .. }
+        ));
     }
 
     #[test]
     fn password_edits_keep_the_old_value_in_history() {
         let mut vault = fast_vault(1);
         let at = vault.tick(2000);
-        let id = vault.add(login_entry("Mail", "me", "one", at), 2000).unwrap();
-        vault.edit(&id, 3000, |entry, at| entry.set_password("two".into(), at)).unwrap();
-        vault.edit(&id, 4000, |entry, at| entry.set_password("two".into(), at)).unwrap();
+        let id = vault
+            .add(login_entry("Mail", "me", "one", at), 2000)
+            .unwrap();
+        vault
+            .edit(&id, 3000, |entry, at| entry.set_password("two".into(), at))
+            .unwrap();
+        vault
+            .edit(&id, 4000, |entry, at| entry.set_password("two".into(), at))
+            .unwrap();
         let entry = vault.get(&id).unwrap();
-        let past: Vec<_> = entry.history_of("password").map(|r| r.value.expose().to_owned()).collect();
+        let past: Vec<_> = entry
+            .history_of("password")
+            .map(|r| r.value.expose().to_owned())
+            .collect();
         assert_eq!(past, vec!["one"]);
     }
 
@@ -554,12 +714,22 @@ mod tests {
         let mut vault = fast_vault(1);
         vault.doc.prefs.history_limit = 2;
         let at = vault.tick(2000);
-        let id = vault.add(login_entry("Mail", "me", "p0", at), 2000).unwrap();
+        let id = vault
+            .add(login_entry("Mail", "me", "p0", at), 2000)
+            .unwrap();
         for n in 1..=5 {
-            vault.edit(&id, 2000 + n, |entry, at| entry.set_password(format!("p{n}").into(), at)).unwrap();
+            vault
+                .edit(&id, 2000 + n, |entry, at| {
+                    entry.set_password(format!("p{n}").into(), at)
+                })
+                .unwrap();
         }
-        let past: Vec<_> =
-            vault.get(&id).unwrap().history_of("password").map(|r| r.value.expose().to_owned()).collect();
+        let past: Vec<_> = vault
+            .get(&id)
+            .unwrap()
+            .history_of("password")
+            .map(|r| r.value.expose().to_owned())
+            .collect();
         assert_eq!(past, vec!["p3", "p4"]);
     }
 
@@ -601,7 +771,11 @@ mod tests {
         let at = vault.tick(2000);
         let id = vault.add(login_entry("Secret", "", "", at), 2000).unwrap();
         assert_eq!(vault.visible().count(), 1);
-        vault.edit(&id, 2100, |entry, at| entry.common.hidden = Lww::new(true, at)).unwrap();
+        vault
+            .edit(&id, 2100, |entry, at| {
+                entry.common.hidden = Lww::new(true, at)
+            })
+            .unwrap();
         assert_eq!(vault.visible().count(), 0);
         assert!(vault.get(&id).is_some());
     }
@@ -609,10 +783,17 @@ mod tests {
     #[test]
     fn attachments_round_trip_and_reject_tampering() {
         let plain = vec![42u8; 200_000];
-        let (record, mut sealed) = Vault::seal_attachment("doc.pdf", "application/pdf", &plain).unwrap();
-        assert_eq!(Vault::open_attachment(&record, &sealed).unwrap().as_slice(), plain.as_slice());
+        let (record, mut sealed) =
+            Vault::seal_attachment("doc.pdf", "application/pdf", &plain).unwrap();
+        assert_eq!(
+            Vault::open_attachment(&record, &sealed).unwrap().as_slice(),
+            plain.as_slice()
+        );
         sealed[40] ^= 1;
-        assert_eq!(Vault::open_attachment(&record, &sealed).err(), Some(Error::Integrity));
+        assert_eq!(
+            Vault::open_attachment(&record, &sealed).err(),
+            Some(Error::Integrity)
+        );
     }
 
     #[test]
@@ -623,15 +804,24 @@ mod tests {
         let shared = a.save().unwrap();
         let mut b = Vault::from_file(&shared, a.key().clone_key(), 2).unwrap();
 
-        a.edit(&id, 3000, |entry, at| entry.common.title = Lww::new("Mail A".into(), at)).unwrap();
-        a.edit(&id, 3000, |entry, at| entry.set_password("from-a".into(), at)).unwrap();
+        a.edit(&id, 3000, |entry, at| {
+            entry.common.title = Lww::new("Mail A".into(), at)
+        })
+        .unwrap();
+        a.edit(&id, 3000, |entry, at| {
+            entry.set_password("from-a".into(), at)
+        })
+        .unwrap();
         b.edit(&id, 4000, |entry, at| {
             if let Some(login) = entry.login_mut() {
                 login.username = Lww::new("me@b".into(), at);
             }
         })
         .unwrap();
-        b.edit(&id, 4000, |entry, at| entry.set_password("from-b".into(), at)).unwrap();
+        b.edit(&id, 4000, |entry, at| {
+            entry.set_password("from-b".into(), at)
+        })
+        .unwrap();
 
         let (file_a, file_b) = (a.save().unwrap(), b.save().unwrap());
         a.merge_file(&file_b).unwrap();
@@ -642,9 +832,15 @@ mod tests {
         let login = entry.login().unwrap();
         assert_eq!(login.username.v, "me@b");
         assert_eq!(login.password.v.expose(), "from-b");
-        let past: Vec<_> = entry.history_of("password").map(|r| r.value.expose().to_owned()).collect();
+        let past: Vec<_> = entry
+            .history_of("password")
+            .map(|r| r.value.expose().to_owned())
+            .collect();
         assert!(past.contains(&"base".to_owned()));
-        assert!(past.contains(&"from-a".to_owned()), "the losing password must survive");
+        assert!(
+            past.contains(&"from-a".to_owned()),
+            "the losing password must survive"
+        );
         assert_eq!(a.doc.entries, b.doc.entries, "both devices must converge");
     }
 
@@ -655,7 +851,10 @@ mod tests {
         let id = a.add(login_entry("X", "", "", at), 2000).unwrap();
         let shared = a.save().unwrap();
         let mut b = Vault::from_file(&shared, a.key().clone_key(), 2).unwrap();
-        a.edit(&id, 3000, |entry, at| entry.common.title = Lww::new("older".into(), at)).unwrap();
+        a.edit(&id, 3000, |entry, at| {
+            entry.common.title = Lww::new("older".into(), at)
+        })
+        .unwrap();
         b.purge(&id, 4000);
         let file_b = b.save().unwrap();
         a.merge_file(&file_b).unwrap();
@@ -667,7 +866,10 @@ mod tests {
         let shared = c.save().unwrap();
         let mut d = Vault::from_file(&shared, c.key().clone_key(), 2).unwrap();
         d.purge(&id, 3000);
-        c.edit(&id, 4000, |entry, at| entry.common.title = Lww::new("newer".into(), at)).unwrap();
+        c.edit(&id, 4000, |entry, at| {
+            entry.common.title = Lww::new("newer".into(), at)
+        })
+        .unwrap();
         let file_d = d.save().unwrap();
         c.merge_file(&file_d).unwrap();
         assert_eq!(c.get(&id).unwrap().common.title.v, "newer");
@@ -677,16 +879,24 @@ mod tests {
     fn a_stale_edit_after_a_delete_brings_back_only_what_it_wrote() {
         let mut a = fast_vault(1);
         let at = a.tick(2000);
-        let id = a.add(login_entry("Bank", "me", "secret-before-delete", at), 2000).unwrap();
+        let id = a
+            .add(login_entry("Bank", "me", "secret-before-delete", at), 2000)
+            .unwrap();
         let shared = a.save().unwrap();
         let mut b = Vault::from_file(&shared, a.key().clone_key(), 2).unwrap();
         a.purge(&id, 3000);
-        b.edit(&id, 4000, |entry, at| entry.common.title = Lww::new("Renamed".into(), at)).unwrap();
+        b.edit(&id, 4000, |entry, at| {
+            entry.common.title = Lww::new("Renamed".into(), at)
+        })
+        .unwrap();
         let file_b = b.save().unwrap();
         a.merge_file(&file_b).unwrap();
         let entry = a.get(&id).unwrap();
         assert_eq!(entry.common.title.v, "Renamed");
-        assert!(entry.login().unwrap().password.v.is_empty(), "the deleted password must stay deleted");
+        assert!(
+            entry.login().unwrap().password.v.is_empty(),
+            "the deleted password must stay deleted"
+        );
     }
 
     #[test]
@@ -696,11 +906,15 @@ mod tests {
         let mut b = Vault::from_file(&shared, a.key().clone_key(), 2).unwrap();
         let config = a.header.config().unwrap();
         let root = config.derive_for_tests(b"added").unwrap();
-        a.add_slot_with_root(&root, "Added", SlotAction::Open, None, 5000).unwrap();
+        a.add_slot_with_root(&root, "Added", SlotAction::Open, None, 5000)
+            .unwrap();
         let file_a = a.save().unwrap();
         b.merge_file(&file_a).unwrap();
         let merged = b.save().unwrap();
-        assert!(matches!(set_outcome(&[&merged], b"added", &[]), OpenOutcome::Opened { .. }));
+        assert!(matches!(
+            set_outcome(&[&merged], b"added", &[]),
+            OpenOutcome::Opened { .. }
+        ));
     }
 
     #[test]
@@ -708,16 +922,27 @@ mod tests {
         let mut vault = fast_vault(1);
         let config = vault.header.config().unwrap();
         let other = config.derive_for_tests(b"other").unwrap();
-        vault.add_slot_with_root(&other, "Other", SlotAction::Open, None, 2).unwrap();
+        vault
+            .add_slot_with_root(&other, "Other", SlotAction::Open, None, 2)
+            .unwrap();
         let before = vault.save().unwrap();
         let old_key = vault.key().clone_key();
         let new_root = config.derive_for_tests(b"new").unwrap();
         vault.rekey_with_root(&new_root, &config, 3).unwrap();
         let after = vault.save().unwrap();
-        assert!(matches!(set_outcome(&[&after], b"other", &[]), OpenOutcome::NoMatch));
-        assert!(matches!(set_outcome(&[&after], b"new", &[]), OpenOutcome::Opened { .. }));
+        assert!(matches!(
+            set_outcome(&[&after], b"other", &[]),
+            OpenOutcome::NoMatch
+        ));
+        assert!(matches!(
+            set_outcome(&[&after], b"new", &[]),
+            OpenOutcome::Opened { .. }
+        ));
         assert!(format::open_file(&after, &old_key).is_err());
-        assert!(vault.merge_file(&before).is_err(), "an old copy under the old key must not merge");
+        assert!(
+            vault.merge_file(&before).is_err(),
+            "an old copy under the old key must not merge"
+        );
     }
 
     #[test]
@@ -725,16 +950,25 @@ mod tests {
         let mut vault = fast_vault(1);
         assert!(vault.remove_slot(0, 2).is_err());
         let config = vault.header.config().unwrap();
-        let root = config.derive_for_tests(b"x").unwrap();
-        for _ in 1..SLOTS {
-            vault.add_slot_with_root(&root, "x", SlotAction::Open, None, 2).unwrap();
+        let root = |n: usize| config.derive_for_tests(format!("x{n}").as_bytes()).unwrap();
+        for n in 1..SLOTS {
+            vault
+                .add_slot_with_root(&root(n), "x", SlotAction::Open, None, 2)
+                .unwrap();
         }
         assert_eq!(
-            vault.add_slot_with_root(&root, "x", SlotAction::Open, None, 2).err(),
+            vault
+                .add_slot_with_root(&root(100), "x", SlotAction::Open, None, 2)
+                .err(),
             Some(Error::NoFreeSlot)
         );
         vault.remove_slot(0, 3).unwrap();
-        assert_eq!(vault.add_slot_with_root(&root, "x", SlotAction::Open, None, 4).unwrap(), 0);
+        assert_eq!(
+            vault
+                .add_slot_with_root(&root(101), "x", SlotAction::Open, None, 4)
+                .unwrap(),
+            0
+        );
     }
 
     #[test]
@@ -751,7 +985,12 @@ mod tests {
     fn no_secret_appears_in_the_file_or_in_debug_output() {
         let mut vault = fast_vault(1);
         let at = vault.tick(2000);
-        vault.add(login_entry("TitleMarker", "UserMarker", "PasswordMarker", at), 2000).unwrap();
+        vault
+            .add(
+                login_entry("TitleMarker", "UserMarker", "PasswordMarker", at),
+                2000,
+            )
+            .unwrap();
         let file = vault.save().unwrap();
         for marker in [&b"TitleMarker"[..], b"UserMarker", b"PasswordMarker"] {
             assert!(!file.windows(marker.len()).any(|window| window == marker));

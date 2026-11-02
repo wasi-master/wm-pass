@@ -8,11 +8,20 @@ use wmpass_core::model::{Entry, Kind, Login, Lww, VaultDoc};
 use wmpass_core::{Secret, format, io, otp, search};
 
 fn hlc() -> impl Strategy<Value = Hlc> {
-    (0u64..50, 0u32..3, 0u32..3).prop_map(|(ms, counter, device)| Hlc { ms, counter, device })
+    (0u64..50, 0u32..3, 0u32..3).prop_map(|(ms, counter, device)| Hlc {
+        ms,
+        counter,
+        device,
+    })
 }
 
 fn value() -> impl Strategy<Value = String> {
-    prop_oneof![Just("a".to_owned()), Just("b".to_owned()), Just("c".to_owned()), Just(String::new())]
+    prop_oneof![
+        Just("a".to_owned()),
+        Just("b".to_owned()),
+        Just("c".to_owned()),
+        Just(String::new())
+    ]
 }
 
 prop_compose! {

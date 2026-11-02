@@ -12,7 +12,11 @@ fn attr(start: &BytesStart<'_>, name: &str) -> String {
         .attributes()
         .flatten()
         .find(|a| a.key.as_ref() == name)
-        .and_then(|a| a.normalized_value(quick_xml::XmlVersion::Implicit1_0).ok().map(|v| v.into_owned()))
+        .and_then(|a| {
+            a.normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                .ok()
+                .map(|v| v.into_owned())
+        })
         .unwrap_or_default()
 }
 
@@ -34,7 +38,10 @@ pub(super) fn safeincloud(xml: &str, at: Hlc) -> Result<Imported> {
                         reader.read_to_end(start.name()).map_err(|_| bad())?;
                         continue;
                     }
-                    card = Some(Draft { title: attr(&start, "title"), ..Draft::default() });
+                    card = Some(Draft {
+                        title: attr(&start, "title"),
+                        ..Draft::default()
+                    });
                 }
                 "field" => {
                     field = Some((attr(&start, "name"), attr(&start, "type")));
@@ -50,7 +57,8 @@ pub(super) fn safeincloud(xml: &str, at: Hlc) -> Result<Imported> {
             Event::GeneralRef(reference) => {
                 if let Some(ch) = reference.resolve_char_ref().map_err(|_| bad())? {
                     body.push(ch);
-                } else if let Some(text) = quick_xml::escape::resolve_predefined_entity(&reference) {
+                } else if let Some(text) = quick_xml::escape::resolve_predefined_entity(&reference)
+                {
                     body.push_str(text);
                 }
             }

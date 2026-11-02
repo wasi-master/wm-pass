@@ -1,0 +1,31 @@
+# Licence and advisory gate: `cargo deny check`.
+
+[licenses]
+allow = [
+    "MIT", "MIT-0", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "BSD-2-Clause", "BSD-3-Clause",
+    "ISC", "Zlib", "Unicode-3.0", "Unicode-DFS-2016", "CC0-1.0", "Unlicense", "BSL-1.0", "CDLA-Permissive-2.0",
+    # File-level copyleft, allowed only unmodified and with a notice.
+    "MPL-2.0",
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+deny = [
+    { name = "openssl" },
+    { name = "bitwarden-core" },
+    { name = "bitwarden-crypto" },
+    { name = "bitwarden-exporters" },
+    { name = "kdbx-rs" },
+    { name = "eff-wordlist" },
+]
+
+[advisories]
+yanked = "deny"
+ignore = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

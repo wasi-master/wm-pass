@@ -26,7 +26,9 @@ pub fn generate_ed25519(comment: &str) -> Result<GeneratedKey> {
 }
 
 fn describe(key: &PrivateKey) -> Result<GeneratedKey> {
-    let private = key.to_openssh(LineEnding::LF).map_err(|_| Error::Encoding)?;
+    let private = key
+        .to_openssh(LineEnding::LF)
+        .map_err(|_| Error::Encoding)?;
     let public = key.public_key().to_openssh().map_err(|_| Error::Encoding)?;
     Ok(GeneratedKey {
         private_key: Secret::new(private.as_str()),
@@ -59,8 +61,12 @@ pub fn public_fingerprint(line: &str) -> Result<String> {
 pub fn encrypt_private(text: &str, passphrase: &str) -> Result<Secret> {
     let key = PrivateKey::from_openssh(text.trim())
         .map_err(|_| Error::Invalid("that is not an OpenSSH private key".into()))?;
-    let locked = key.encrypt(&mut OsRng, passphrase).map_err(|_| Error::Crypto)?;
-    let out = locked.to_openssh(LineEnding::LF).map_err(|_| Error::Encoding)?;
+    let locked = key
+        .encrypt(&mut OsRng, passphrase)
+        .map_err(|_| Error::Crypto)?;
+    let out = locked
+        .to_openssh(LineEnding::LF)
+        .map_err(|_| Error::Encoding)?;
     Ok(Secret::new(out.as_str()))
 }
 
@@ -76,12 +82,18 @@ mod tests {
         assert!(key.fingerprint.starts_with("SHA256:"));
         let again = read_private(key.private_key.expose()).unwrap();
         assert_eq!(again.fingerprint, key.fingerprint);
-        assert_eq!(public_fingerprint(&key.public_key).unwrap(), key.fingerprint);
+        assert_eq!(
+            public_fingerprint(&key.public_key).unwrap(),
+            key.fingerprint
+        );
     }
 
     #[test]
     fn two_keys_differ() {
-        assert_ne!(generate_ed25519("a").unwrap().fingerprint, generate_ed25519("a").unwrap().fingerprint);
+        assert_ne!(
+            generate_ed25519("a").unwrap().fingerprint,
+            generate_ed25519("a").unwrap().fingerprint
+        );
     }
 
     #[test]

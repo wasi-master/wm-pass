@@ -45,9 +45,23 @@ macro_rules! plain_fields {
 }
 
 plain_fields!(
-    String, bool, u32, u64, Option<String>, Option<u64>, Vec<String>, Vec<Field>, Vec<Attachment>,
-    Vec<SiteMatcher>, Vec<Passkey>, Option<OtpConfig>, Reminders, Option<AliasRef>, Option<u16>,
-    WifiSecurity, RecoveryForm,
+    String,
+    bool,
+    u32,
+    u64,
+    Option<String>,
+    Option<u64>,
+    Vec<String>,
+    Vec<Field>,
+    Vec<Attachment>,
+    Vec<SiteMatcher>,
+    Vec<Passkey>,
+    Option<OtpConfig>,
+    Reminders,
+    Option<AliasRef>,
+    Option<u16>,
+    WifiSecurity,
+    RecoveryForm,
 );
 
 impl KeepsLoser for Secret {
@@ -63,13 +77,21 @@ impl<T: Clone + PartialEq + KeepsLoser> Lww<T> {
     fn merge_from(&mut self, other: &Self, field: &'static str, lost: &mut Vec<Revision>) {
         if other.at > self.at {
             if let Some(value) = self.v.loser() {
-                lost.push(Revision { field: field.to_owned(), value, at: self.at });
+                lost.push(Revision {
+                    field: field.to_owned(),
+                    value,
+                    at: self.at,
+                });
             }
             *self = other.clone();
         } else if other.at < self.at
             && let Some(value) = other.v.loser()
         {
-            lost.push(Revision { field: field.to_owned(), value, at: other.at });
+            lost.push(Revision {
+                field: field.to_owned(),
+                value,
+                at: other.at,
+            });
         }
     }
 }
@@ -735,7 +757,9 @@ impl VaultDoc {
         // A delete covers every write before it. Only later writes survive.
         let tombstones = &self.tombstones;
         self.entries.retain(|id, entry| {
-            let Some(deleted) = tombstones.get(id) else { return true };
+            let Some(deleted) = tombstones.get(id) else {
+                return true;
+            };
             if entry.latest() <= *deleted {
                 return false;
             }

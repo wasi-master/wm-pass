@@ -16,7 +16,10 @@ pub(super) fn text(value: &Value, key: &str) -> String {
 }
 
 pub(super) fn list<'a>(value: &'a Value, key: &str) -> &'a [Value] {
-    value.get(key).and_then(Value::as_array).map_or(&[], Vec::as_slice)
+    value
+        .get(key)
+        .and_then(Value::as_array)
+        .map_or(&[], Vec::as_slice)
 }
 
 pub(super) fn parse(json: &str) -> Result<Value> {
@@ -42,7 +45,13 @@ pub(super) fn detect(json: &str) -> Option<Format> {
         Some(Format::ProtonPass)
     } else if root.get("records").is_some() {
         Some(Format::KeeperJson)
-    } else if root.get("encrypted").is_some() || root.get("folders").is_some() && root.get("items").is_some() && list(&root, "items").first().is_some_and(|item| item.get("type").is_some_and(Value::is_number)) {
+    } else if root.get("encrypted").is_some()
+        || root.get("folders").is_some()
+            && root.get("items").is_some()
+            && list(&root, "items")
+                .first()
+                .is_some_and(|item| item.get("type").is_some_and(Value::is_number))
+    {
         Some(Format::BitwardenJson)
     } else if root.get("items").is_some() {
         Some(Format::EnpassJson)
@@ -54,23 +63,42 @@ pub(super) fn detect(json: &str) -> Option<Format> {
 pub(super) fn bitwarden(json: &str, at: Hlc) -> Result<Imported> {
     let root = parse(json)?;
     if root.get("encrypted").and_then(Value::as_bool) == Some(true) {
-        return Err(Error::Import("this Bitwarden export is encrypted. Export it again as unencrypted JSON".into()));
+        return Err(Error::Import(
+            "this Bitwarden export is encrypted. Export it again as unencrypted JSON".into(),
+        ));
     }
     let mut out = Imported::default();
-    let folder_names: std::collections::HashMap<String, String> =
-        list(&root, "folders").iter().map(|f| (text(f, "id"), text(f, "name"))).collect();
+    let folder_names: std::collections::HashMap<String, String> = list(&root, "folders")
+        .iter()
+        .map(|f| (text(f, "id"), text(f, "name")))
+        .collect();
     for item in list(&root, "items") {
-        let folder = item.get("folderId").and_then(Value::as_str).and_then(|id| folder_names.get(id).cloned());
+        let folder = item
+            .get("folderId")
+            .and_then(Value::as_str)
+            .and_then(|id| folder_names.get(id).cloned());
         let custom: Vec<(String, String, bool)> = list(item, "fields")
             .iter()
-            .map(|f| (text(f, "name"), text(f, "value"), f.get("type").and_then(Value::as_i64) == Some(1)))
+            .map(|f| {
+                (
+                    text(f, "name"),
+                    text(f, "value"),
+                    f.get("type").and_then(Value::as_i64) == Some(1),
+                )
+            })
             .collect();
-        let favourite = item.get("favorite").and_then(Value::as_bool).unwrap_or(false);
+        let favourite = item
+            .get("favorite")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
         let (title, notes) = (text(item, "name"), text(item, "notes"));
         match item.get("type").and_then(Value::as_i64) {
             Some(1) => {
                 let login = item.get("login").cloned().unwrap_or(Value::Null);
-                let urls = list(&login, "uris").iter().map(|u| text(u, "uri")).collect();
+                let urls = list(&login, "uris")
+                    .iter()
+                    .map(|u| text(u, "uri"))
+                    .collect();
                 let history = list(item, "passwordHistory")
                     .iter()
                     .map(|h| (text(h, "password"), 0))
@@ -116,7 +144,10 @@ pub(super) fn bitwarden(json: &str, at: Hlc) -> Result<Imported> {
                         Kind::Card(Card {
                             holder: Lww::new(text(&c, "cardholderName"), at),
                             number: Lww::new(Secret::from(text(&c, "number")), at),
-                            expiry: Lww::new(format!("{}/{}", text(&c, "expMonth"), text(&c, "expYear")), at),
+                            expiry: Lww::new(
+                                format!("{}/{}", text(&c, "expMonth"), text(&c, "expYear")),
+                                at,
+                            ),
                             cvv: Lww::new(Secret::from(text(&c, "code")), at),
                             issuer: Lww::new(text(&c, "brand"), at),
                             ..Card::default()
@@ -124,16 +155,27 @@ pub(super) fn bitwarden(json: &str, at: Hlc) -> Result<Imported> {
                     }
                     Some(4) => {
                         let i = item.get("identity").cloned().unwrap_or(Value::Null);
-                        let name = [text(&i, "firstName"), text(&i, "middleName"), text(&i, "lastName")]
-                            .into_iter()
-                            .filter(|p| !p.is_empty())
-                            .collect::<Vec<_>>()
-                            .join(" ");
-                        let address = [text(&i, "address1"), text(&i, "address2"), text(&i, "city"), text(&i, "state"), text(&i, "postalCode"), text(&i, "country")]
-                            .into_iter()
-                            .filter(|p| !p.is_empty())
-                            .collect::<Vec<_>>()
-                            .join(", ");
+                        let name = [
+                            text(&i, "firstName"),
+                            text(&i, "middleName"),
+                            text(&i, "lastName"),
+                        ]
+                        .into_iter()
+                        .filter(|p| !p.is_empty())
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                        let address = [
+                            text(&i, "address1"),
+                            text(&i, "address2"),
+                            text(&i, "city"),
+                            text(&i, "state"),
+                            text(&i, "postalCode"),
+                            text(&i, "country"),
+                        ]
+                        .into_iter()
+                        .filter(|p| !p.is_empty())
+                        .collect::<Vec<_>>()
+                        .join(", ");
                         let numbers = vec![
                             ("SSN".to_owned(), text(&i, "ssn"), true),
                             ("Passport".to_owned(), text(&i, "passportNumber"), true),
@@ -158,13 +200,16 @@ pub(super) fn bitwarden(json: &str, at: Hlc) -> Result<Imported> {
                         })
                     }
                     _ => {
-                        out.skipped.push(format!("{title}: unknown Bitwarden item type"));
+                        out.skipped
+                            .push(format!("{title}: unknown Bitwarden item type"));
                         continue;
                     }
                 };
                 let mut entry = if matches!(kind, Kind::Note(_)) {
                     let mut entry = base_entry(&title, "", at);
-                    entry.kind = Kind::Note(Note { body: Lww::new(Secret::from(notes), at) });
+                    entry.kind = Kind::Note(Note {
+                        body: Lww::new(Secret::from(notes), at),
+                    });
                     entry
                 } else {
                     let mut entry = base_entry(&title, &notes, at);
@@ -173,7 +218,11 @@ pub(super) fn bitwarden(json: &str, at: Hlc) -> Result<Imported> {
                 };
                 entry.common.favourite = Lww::new(favourite, at);
                 entry.common.custom_fields = Lww::new(fields(custom), at);
-                out.entries.push(ImportedEntry { entry, folder, files: Vec::new() });
+                out.entries.push(ImportedEntry {
+                    entry,
+                    folder,
+                    files: Vec::new(),
+                });
             }
         }
     }
@@ -183,13 +232,19 @@ pub(super) fn bitwarden(json: &str, at: Hlc) -> Result<Imported> {
 pub(super) fn enpass(json: &str, at: Hlc) -> Result<Imported> {
     let root = parse(json)?;
     let mut out = Imported::default();
-    let folder_names: std::collections::HashMap<String, String> =
-        list(&root, "folders").iter().map(|f| (text(f, "uuid"), text(f, "title"))).collect();
+    let folder_names: std::collections::HashMap<String, String> = list(&root, "folders")
+        .iter()
+        .map(|f| (text(f, "uuid"), text(f, "title")))
+        .collect();
     for item in list(&root, "items") {
         if item.get("trashed").and_then(Value::as_i64).unwrap_or(0) != 0 {
             continue;
         }
-        let mut draft = Draft { title: text(item, "title"), notes: text(item, "note"), ..Draft::default() };
+        let mut draft = Draft {
+            title: text(item, "title"),
+            notes: text(item, "note"),
+            ..Draft::default()
+        };
         for field in list(item, "fields") {
             let value = text(field, "value");
             match text(field, "type").as_str() {
@@ -199,7 +254,8 @@ pub(super) fn enpass(json: &str, at: Hlc) -> Result<Imported> {
                 "url" => draft.urls.push(value),
                 "totp" => draft.otp = value,
                 kind => {
-                    let hidden = field.get("sensitive").and_then(Value::as_i64).unwrap_or(0) != 0 || kind == "pin";
+                    let hidden = field.get("sensitive").and_then(Value::as_i64).unwrap_or(0) != 0
+                        || kind == "pin";
                     draft.fields.push((text(field, "label"), value, hidden));
                 }
             }
@@ -233,11 +289,16 @@ pub(super) fn keeper(json: &str, at: Hlc) -> Result<Imported> {
                 if name == "$oneTimeCode" || name == "TFC:Keeper" {
                     draft.otp = value;
                 } else {
-                    draft.fields.push((name.trim_start_matches('$').to_owned(), value, false));
+                    draft
+                        .fields
+                        .push((name.trim_start_matches('$').to_owned(), value, false));
                 }
             }
         }
-        draft.folder = list(record, "folders").first().map(|f| text(f, "folder")).unwrap_or_default();
+        draft.folder = list(record, "folders")
+            .first()
+            .map(|f| text(f, "folder"))
+            .unwrap_or_default();
         let entry = draft.into_login(at, &mut out.skipped);
         out.entries.push(entry);
     }
@@ -247,7 +308,9 @@ pub(super) fn keeper(json: &str, at: Hlc) -> Result<Imported> {
 pub(super) fn proton(json: &str, at: Hlc) -> Result<Imported> {
     let root = parse(json)?;
     if root.get("encrypted").and_then(Value::as_bool) == Some(true) {
-        return Err(Error::Import("this Proton Pass export is encrypted. Export it again without a passphrase".into()));
+        return Err(Error::Import(
+            "this Proton Pass export is encrypted. Export it again without a passphrase".into(),
+        ));
     }
     let mut out = Imported::default();
     let Some(vaults) = root.get("vaults").and_then(Value::as_object) else {
@@ -266,7 +329,9 @@ pub(super) fn proton(json: &str, at: Hlc) -> Result<Imported> {
             let extra: Vec<(String, String, bool)> = list(&data, "extraFields")
                 .iter()
                 .map(|f| {
-                    let value = f.get("data").map_or_else(String::new, |d| text(d, "content"));
+                    let value = f
+                        .get("data")
+                        .map_or_else(String::new, |d| text(d, "content"));
                     (text(f, "fieldName"), value, text(f, "type") == "hidden")
                 })
                 .collect();
@@ -274,13 +339,20 @@ pub(super) fn proton(json: &str, at: Hlc) -> Result<Imported> {
                 "login" => {
                     let username = {
                         let name = text(&content, "itemUsername");
-                        if name.is_empty() { text(&content, "itemEmail") } else { name }
+                        if name.is_empty() {
+                            text(&content, "itemEmail")
+                        } else {
+                            name
+                        }
                     };
                     let draft = Draft {
                         title,
                         username,
                         password: text(&content, "password"),
-                        urls: list(&content, "urls").iter().filter_map(|u| u.as_str().map(str::to_owned)).collect(),
+                        urls: list(&content, "urls")
+                            .iter()
+                            .filter_map(|u| u.as_str().map(str::to_owned))
+                            .collect(),
                         notes: note,
                         otp: text(&content, "totpUri"),
                         fields: extra,
@@ -292,9 +364,15 @@ pub(super) fn proton(json: &str, at: Hlc) -> Result<Imported> {
                 }
                 "note" => {
                     let mut entry = base_entry(&title, "", at);
-                    entry.kind = Kind::Note(Note { body: Lww::new(Secret::from(note), at) });
+                    entry.kind = Kind::Note(Note {
+                        body: Lww::new(Secret::from(note), at),
+                    });
                     entry.common.custom_fields = Lww::new(fields(extra), at);
-                    out.entries.push(ImportedEntry { entry, folder: folder.clone(), files: Vec::new() });
+                    out.entries.push(ImportedEntry {
+                        entry,
+                        folder: folder.clone(),
+                        files: Vec::new(),
+                    });
                 }
                 "creditCard" => {
                     let mut entry = base_entry(&title, &note, at);
@@ -306,9 +384,15 @@ pub(super) fn proton(json: &str, at: Hlc) -> Result<Imported> {
                         pin: Lww::new(Secret::from(text(&content, "pin")), at),
                         ..Card::default()
                     });
-                    out.entries.push(ImportedEntry { entry, folder: folder.clone(), files: Vec::new() });
+                    out.entries.push(ImportedEntry {
+                        entry,
+                        folder: folder.clone(),
+                        files: Vec::new(),
+                    });
                 }
-                other => out.skipped.push(format!("{title}: Proton Pass {other} items are not brought across")),
+                other => out.skipped.push(format!(
+                    "{title}: Proton Pass {other} items are not brought across"
+                )),
             }
         }
     }

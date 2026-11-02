@@ -99,7 +99,10 @@ impl FactorKind {
         let mut out = Zeroizing::new([0u8; HINT_PLAIN]);
         match self {
             Self::KeyFile => out[0] = 1,
-            Self::Fido2 { credential_id, salt } => {
+            Self::Fido2 {
+                credential_id,
+                salt,
+            } => {
                 if credential_id.len() > HINT_PLAIN - 35 {
                     return Err(Error::TooLong);
                 }
@@ -125,7 +128,10 @@ impl FactorKind {
                 let len = usize::from(u16::from_le_bytes(bytes.get(1..3)?.try_into().ok()?));
                 let salt = bytes.get(3..35)?.try_into().ok()?;
                 let credential_id = bytes.get(35..35 + len)?.to_vec();
-                Some(Self::Fido2 { credential_id, salt })
+                Some(Self::Fido2 {
+                    credential_id,
+                    salt,
+                })
             }
             3 => {
                 let slot = *bytes.get(1)?;
@@ -160,7 +166,10 @@ pub struct KdfConfig {
 impl KdfConfig {
     /// A fresh config with a random salt.
     pub fn new(params: KdfParams) -> Result<Self> {
-        Ok(Self { params: params.check()?, salt: crypto::random_array()? })
+        Ok(Self {
+            params: params.check()?,
+            salt: crypto::random_array()?,
+        })
     }
 
     /// Derives the root key for a typed password.
@@ -222,7 +231,9 @@ pub struct Header {
 
 impl std::fmt::Debug for Header {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Header").field("vault_id", &self.vault_id()).finish_non_exhaustive()
+        f.debug_struct("Header")
+            .field("vault_id", &self.vault_id())
+            .finish_non_exhaustive()
     }
 }
 
@@ -301,7 +312,9 @@ impl Header {
         if version != VERSION {
             return Err(Error::UnsupportedVersion(version));
         }
-        let header = Self { bytes: file[..HEADER_LEN].to_vec() };
+        let header = Self {
+            bytes: file[..HEADER_LEN].to_vec(),
+        };
         header.config()?;
         Ok(header)
     }
@@ -310,13 +323,21 @@ impl Header {
     pub fn config(&self) -> Result<KdfConfig> {
         let field = |at: usize| -> Result<u32> {
             let raw = self.bytes.get(at..at + 4).ok_or(Error::Malformed)?;
-            Ok(u32::from_le_bytes(raw.try_into().map_err(|_| Error::Malformed)?))
+            Ok(u32::from_le_bytes(
+                raw.try_into().map_err(|_| Error::Malformed)?,
+            ))
         };
-        let params =
-            KdfParams { m_kib: field(OFF_KDF)?, t: field(OFF_KDF + 4)?, p: field(OFF_KDF + 8)? };
+        let params = KdfParams {
+            m_kib: field(OFF_KDF)?,
+            t: field(OFF_KDF + 4)?,
+            p: field(OFF_KDF + 8)?,
+        };
         let mut salt = [0u8; SALT_LEN];
         salt.copy_from_slice(&self.bytes[OFF_SALT..OFF_ID]);
-        Ok(KdfConfig { params: params.check()?, salt })
+        Ok(KdfConfig {
+            params: params.check()?,
+            salt,
+        })
     }
 
     /// The random id of this file.
@@ -477,7 +498,10 @@ pub fn open_file(file: &[u8], key: &VaultKey) -> Result<(Header, Zeroizing<Vec<u
         header.vault_id(),
     )
     .ok_or(Error::Integrity)?;
-    let file_key: [u8; 32] = file_key.as_slice().try_into().map_err(|_| Error::Integrity)?;
+    let file_key: [u8; 32] = file_key
+        .as_slice()
+        .try_into()
+        .map_err(|_| Error::Integrity)?;
     let file_key = Zeroizing::new(file_key);
     let mut prefix = [0u8; STREAM_PREFIX_LEN];
     prefix.copy_from_slice(&header.bytes[OFF_PREFIX..OFF_MAC]);
@@ -533,7 +557,9 @@ mod tests {
         let mut header = Header::new(config).unwrap();
         let key = VaultKey::generate().unwrap();
         let root = config.derive_for_tests(password).unwrap();
-        header.write_slot(0, &root, &key, SlotAction::Open, None).unwrap();
+        header
+            .write_slot(0, &root, &key, SlotAction::Open, None)
+            .unwrap();
         (header, key)
     }
 
@@ -548,7 +574,11 @@ mod tests {
         let config = config();
         let (header, key) = vault(&config, b"correct horse");
         let file = seal_file(&header, &key, b"hello vault").unwrap();
-        let Unlock::Opened { key: opened, action } = open_with(&file, b"correct horse", &[]) else {
+        let Unlock::Opened {
+            key: opened,
+            action,
+        } = open_with(&file, b"correct horse", &[])
+        else {
             panic!("expected to open");
         };
         assert_eq!(action, SlotAction::Open);
@@ -569,7 +599,9 @@ mod tests {
         let config = config();
         let (mut header, key) = vault(&config, b"real");
         let root = config.derive_for_tests(b"duress").unwrap();
-        header.write_slot(3, &root, &key, SlotAction::WipeLocal, None).unwrap();
+        header
+            .write_slot(3, &root, &key, SlotAction::WipeLocal, None)
+            .unwrap();
         let file = seal_file(&header, &key, b"x").unwrap();
         let Unlock::Opened { action, .. } = open_with(&file, b"duress", &[]) else {
             panic!("expected to open");
@@ -585,7 +617,13 @@ mod tests {
         let root = config.derive_for_tests(b"pw").unwrap();
         let output = key_file_factor(b"the key file");
         header
-            .write_slot(0, &root, &key, SlotAction::Open, Some((&FactorKind::KeyFile, &output)))
+            .write_slot(
+                0,
+                &root,
+                &key,
+                SlotAction::Open,
+                Some((&FactorKind::KeyFile, &output)),
+            )
             .unwrap();
         let file = seal_file(&header, &key, b"x").unwrap();
 
@@ -595,8 +633,14 @@ mod tests {
             other => panic!("expected a factor request, got {other:?}"),
         }
         let wrong = key_file_factor(b"another file");
-        assert!(matches!(open_with(&file, b"pw", &[wrong]), Unlock::NeedsFactor(_)));
-        assert!(matches!(open_with(&file, b"pw", &[output]), Unlock::Opened { .. }));
+        assert!(matches!(
+            open_with(&file, b"pw", &[wrong]),
+            Unlock::NeedsFactor(_)
+        ));
+        assert!(matches!(
+            open_with(&file, b"pw", &[output]),
+            Unlock::Opened { .. }
+        ));
     }
 
     #[test]
@@ -605,11 +649,21 @@ mod tests {
         let mut header = Header::new(&config).unwrap();
         let key = VaultKey::generate().unwrap();
         let root = config.derive_for_tests(b"pw").unwrap();
-        let fido = FactorKind::Fido2 { credential_id: vec![9; 64], salt: [4; 32] };
-        let yubi = FactorKind::YubiKey { challenge: [5; 32], slot: 2 };
+        let fido = FactorKind::Fido2 {
+            credential_id: vec![9; 64],
+            salt: [4; 32],
+        };
+        let yubi = FactorKind::YubiKey {
+            challenge: [5; 32],
+            slot: 2,
+        };
         let output: FactorOutput = Zeroizing::new(vec![1; 32]);
-        header.write_slot(1, &root, &key, SlotAction::Open, Some((&fido, &output))).unwrap();
-        header.write_slot(2, &root, &key, SlotAction::Open, Some((&yubi, &output))).unwrap();
+        header
+            .write_slot(1, &root, &key, SlotAction::Open, Some((&fido, &output)))
+            .unwrap();
+        header
+            .write_slot(2, &root, &key, SlotAction::Open, Some((&yubi, &output)))
+            .unwrap();
         let file = seal_file(&header, &key, b"x").unwrap();
         match open_with(&file, b"pw", &[]) {
             Unlock::NeedsFactor(kinds) => assert_eq!(kinds, vec![fido, yubi]),
@@ -619,7 +673,10 @@ mod tests {
 
     #[test]
     fn over_long_credential_id_is_refused() {
-        let kind = FactorKind::Fido2 { credential_id: vec![0; 300], salt: [0; 32] };
+        let kind = FactorKind::Fido2 {
+            credential_id: vec![0; 300],
+            salt: [0; 32],
+        };
         assert_eq!(kind.encode().err(), Some(Error::TooLong));
     }
 
@@ -629,10 +686,15 @@ mod tests {
         let (mut header, key) = vault(&config, b"pw");
         header.clear_slot(0).unwrap();
         let root = config.derive_for_tests(b"new").unwrap();
-        header.write_slot(1, &root, &key, SlotAction::Open, None).unwrap();
+        header
+            .write_slot(1, &root, &key, SlotAction::Open, None)
+            .unwrap();
         let file = seal_file(&header, &key, b"x").unwrap();
         assert!(matches!(open_with(&file, b"pw", &[]), Unlock::NoMatch));
-        assert!(matches!(open_with(&file, b"new", &[]), Unlock::Opened { .. }));
+        assert!(matches!(
+            open_with(&file, b"new", &[]),
+            Unlock::Opened { .. }
+        ));
     }
 
     #[test]
@@ -641,7 +703,14 @@ mod tests {
         let (header, key) = vault(&config, b"pw");
         let file = seal_file(&header, &key, b"some contents").unwrap();
         // Salt and KDF bytes change the derived key; the rest fail the MAC or AEAD.
-        for at in [OFF_ID + 1, OFF_HINTS + 5, OFF_WRAPPED + 30, OFF_PREFIX + 1, OFF_MAC + 1, HEADER_LEN + 2] {
+        for at in [
+            OFF_ID + 1,
+            OFF_HINTS + 5,
+            OFF_WRAPPED + 30,
+            OFF_PREFIX + 1,
+            OFF_MAC + 1,
+            HEADER_LEN + 2,
+        ] {
             let mut bad = file.clone();
             bad[at] ^= 1;
             assert!(open_file(&bad, &key).is_err(), "byte {at} went unnoticed");
@@ -683,7 +752,10 @@ mod tests {
         let (header, key) = vault(&config, b"pw");
         let mut file = seal_file(&header, &key, b"x").unwrap();
         file[4] = 9;
-        assert_eq!(Header::parse(&file).err(), Some(Error::UnsupportedVersion(9)));
+        assert_eq!(
+            Header::parse(&file).err(),
+            Some(Error::UnsupportedVersion(9))
+        );
         assert_eq!(Header::parse(b"PK\x03\x04").err(), Some(Error::Malformed));
     }
 
@@ -710,14 +782,24 @@ mod tests {
 
     #[test]
     fn real_kdf_settings_work_end_to_end() {
-        let config = KdfConfig::new(KdfParams { m_kib: 64 * 1024, t: 3, p: 1 }).unwrap();
+        let config = KdfConfig::new(KdfParams {
+            m_kib: 64 * 1024,
+            t: 3,
+            p: 1,
+        })
+        .unwrap();
         let mut header = Header::new(&config).unwrap();
         let key = VaultKey::generate().unwrap();
         let root = config.derive(b"pw").unwrap();
-        header.write_slot(0, &root, &key, SlotAction::Open, None).unwrap();
+        header
+            .write_slot(0, &root, &key, SlotAction::Open, None)
+            .unwrap();
         let file = seal_file(&header, &key, b"x").unwrap();
         let header = Header::parse(&file).unwrap();
         let root = header.config().unwrap().derive(b"pw").unwrap();
-        assert!(matches!(header.unlock(&root, &[]).unwrap(), Unlock::Opened { .. }));
+        assert!(matches!(
+            header.unlock(&root, &[]).unwrap(),
+            Unlock::Opened { .. }
+        ));
     }
 }

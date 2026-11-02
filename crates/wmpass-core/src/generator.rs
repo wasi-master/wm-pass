@@ -73,7 +73,13 @@ pub struct PassphraseSpec {
 
 impl Default for PassphraseSpec {
     fn default() -> Self {
-        Self { words: 6, separator: "-".into(), capitalize: false, include_digit: false, list: WordList::EffLong }
+        Self {
+            words: 6,
+            separator: "-".into(),
+            capitalize: false,
+            include_digit: false,
+            list: WordList::EffLong,
+        }
     }
 }
 
@@ -137,12 +143,27 @@ pub struct Preset {
 
 /// Presets every vault starts with.
 pub fn default_presets() -> Vec<Preset> {
-    let symbols_off = PasswordSpec { symbols: false, ..PasswordSpec::default() };
+    let symbols_off = PasswordSpec {
+        symbols: false,
+        ..PasswordSpec::default()
+    };
     vec![
-        Preset { name: "Strong".into(), recipe: Recipe::default() },
-        Preset { name: "No symbols".into(), recipe: Recipe::Password(symbols_off) },
-        Preset { name: "Memorable".into(), recipe: Recipe::Passphrase(PassphraseSpec::default()) },
-        Preset { name: "PIN".into(), recipe: Recipe::Pin { length: 6 } },
+        Preset {
+            name: "Strong".into(),
+            recipe: Recipe::default(),
+        },
+        Preset {
+            name: "No symbols".into(),
+            recipe: Recipe::Password(symbols_off),
+        },
+        Preset {
+            name: "Memorable".into(),
+            recipe: Recipe::Passphrase(PassphraseSpec::default()),
+        },
+        Preset {
+            name: "PIN".into(),
+            recipe: Recipe::Pin { length: 6 },
+        },
     ]
 }
 
@@ -187,18 +208,25 @@ fn classes(spec: &PasswordSpec) -> Vec<Vec<char>> {
 }
 
 fn too_many_repeats(chars: &[char], limit: u32) -> bool {
-    limit > 0 && chars.windows(limit as usize + 1).any(|run| run.iter().all(|c| *c == run[0]))
+    limit > 0
+        && chars
+            .windows(limit as usize + 1)
+            .any(|run| run.iter().all(|c| *c == run[0]))
 }
 
 /// Random characters with at least one from each chosen class.
 pub fn password(spec: &PasswordSpec) -> Result<Secret> {
     let classes = classes(spec);
     if classes.is_empty() {
-        return Err(Error::Invalid("choose at least one kind of character".into()));
+        return Err(Error::Invalid(
+            "choose at least one kind of character".into(),
+        ));
     }
     let length = spec.length as usize;
     if length < classes.len() || !(4..=1024).contains(&length) {
-        return Err(Error::Invalid("that length does not fit the settings".into()));
+        return Err(Error::Invalid(
+            "that length does not fit the settings".into(),
+        ));
     }
     let all: Vec<char> = classes.iter().flatten().copied().collect();
     for _ in 0..256 {
@@ -214,7 +242,9 @@ pub fn password(spec: &PasswordSpec) -> Result<Secret> {
             return Ok(Secret::from(chars.into_iter().collect::<String>()));
         }
     }
-    Err(Error::Invalid("those settings leave too few possibilities".into()))
+    Err(Error::Invalid(
+        "those settings leave too few possibilities".into(),
+    ))
 }
 
 /// Random words.
@@ -227,7 +257,11 @@ pub fn passphrase(spec: &PassphraseSpec) -> Result<Secret> {
     let mut words = Vec::with_capacity(spec.words as usize);
     for _ in 0..spec.words {
         let word = list[random_below(bound)? as usize];
-        words.push(if spec.capitalize { capitalise(word) } else { word.to_owned() });
+        words.push(if spec.capitalize {
+            capitalise(word)
+        } else {
+            word.to_owned()
+        });
     }
     if spec.include_digit {
         let at = random_below(spec.words)? as usize;
@@ -238,7 +272,9 @@ pub fn passphrase(spec: &PassphraseSpec) -> Result<Secret> {
 
 fn capitalise(word: &str) -> String {
     let mut chars = word.chars();
-    chars.next().map_or_else(String::new, |first| first.to_uppercase().chain(chars).collect())
+    chars.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(chars).collect()
+    })
 }
 
 fn pronounceable(syllables: u32, separator: &str) -> Result<Secret> {
@@ -274,7 +310,12 @@ fn pattern(template: &str) -> Result<Secret> {
     let upper: Vec<char> = UPPER.chars().collect();
     let digits: Vec<char> = DIGITS.chars().collect();
     let symbols: Vec<char> = SYMBOLS.chars().collect();
-    let any: Vec<char> = LOWER.chars().chain(UPPER.chars()).chain(DIGITS.chars()).chain(SYMBOLS.chars()).collect();
+    let any: Vec<char> = LOWER
+        .chars()
+        .chain(UPPER.chars())
+        .chain(DIGITS.chars())
+        .chain(SYMBOLS.chars())
+        .collect();
     let mut out = String::new();
     let mut chars = template.chars();
     while let Some(ch) = chars.next() {
@@ -296,7 +337,10 @@ pub fn generate(recipe: &Recipe) -> Result<Secret> {
     match recipe {
         Recipe::Password(spec) => password(spec),
         Recipe::Passphrase(spec) => passphrase(spec),
-        Recipe::Pronounceable { syllables, separator } => pronounceable(*syllables, separator),
+        Recipe::Pronounceable {
+            syllables,
+            separator,
+        } => pronounceable(*syllables, separator),
         Recipe::Pin { length } => pin(*length),
         Recipe::Pattern(template) => pattern(template),
     }
@@ -382,19 +426,26 @@ fn class_chars(token: &str) -> Option<String> {
 pub fn parse_site_rules(text: &str) -> SiteRules {
     let mut rules = SiteRules::default();
     for clause in text.split(';') {
-        let Some((key, value)) = clause.split_once(':') else { continue };
+        let Some((key, value)) = clause.split_once(':') else {
+            continue;
+        };
         match key.trim() {
             "minlength" => rules.min_length = value.trim().parse().ok(),
             "maxlength" => rules.max_length = value.trim().parse().ok(),
             "max-consecutive" => rules.max_consecutive = value.trim().parse().ok(),
             "required" => {
-                let joined: String = split_classes(value).iter().filter_map(|t| class_chars(t)).collect();
+                let joined: String = split_classes(value)
+                    .iter()
+                    .filter_map(|t| class_chars(t))
+                    .collect();
                 if !joined.is_empty() {
                     rules.required.push(joined);
                 }
             }
             "allowed" => {
-                rules.allowed.extend(split_classes(value).iter().filter_map(|t| class_chars(t)));
+                rules
+                    .allowed
+                    .extend(split_classes(value).iter().filter_map(|t| class_chars(t)));
             }
             _ => {}
         }
@@ -443,7 +494,11 @@ pub fn password_for_rules(rules: &SiteRules, wanted_length: u32) -> Result<Secre
     if let Some(min) = rules.min_length {
         length = length.max(min);
     }
-    let mut pools: Vec<Vec<char>> = rules.required.iter().map(|set| set.chars().collect()).collect();
+    let mut pools: Vec<Vec<char>> = rules
+        .required
+        .iter()
+        .map(|set| set.chars().collect())
+        .collect();
     if rules.required.is_empty() && rules.allowed.is_empty() {
         return password(&PasswordSpec {
             length: length.max(4),
@@ -484,7 +539,11 @@ mod tests {
     #[test]
     fn password_has_every_class_and_the_right_length() {
         for _ in 0..200 {
-            let out = password(&PasswordSpec { length: 8, ..PasswordSpec::default() }).unwrap();
+            let out = password(&PasswordSpec {
+                length: 8,
+                ..PasswordSpec::default()
+            })
+            .unwrap();
             let text = out.expose();
             assert_eq!(text.chars().count(), 8);
             assert!(text.chars().any(|c| c.is_ascii_lowercase()));
@@ -496,28 +555,56 @@ mod tests {
 
     #[test]
     fn exclusions_hold() {
-        let spec = PasswordSpec { exclude_ambiguous: true, exclude: "abc".into(), ..PasswordSpec::default() };
+        let spec = PasswordSpec {
+            exclude_ambiguous: true,
+            exclude: "abc".into(),
+            ..PasswordSpec::default()
+        };
         for _ in 0..100 {
             let out = password(&spec).unwrap();
-            assert!(!out.expose().chars().any(|c| AMBIGUOUS.contains(c) || "abc".contains(c)));
+            assert!(
+                !out.expose()
+                    .chars()
+                    .any(|c| AMBIGUOUS.contains(c) || "abc".contains(c))
+            );
         }
     }
 
     #[test]
     fn impossible_settings_are_refused() {
-        let none = PasswordSpec { lower: false, upper: false, digits: false, symbols: false, ..PasswordSpec::default() };
+        let none = PasswordSpec {
+            lower: false,
+            upper: false,
+            digits: false,
+            symbols: false,
+            ..PasswordSpec::default()
+        };
         assert!(password(&none).is_err());
-        assert!(password(&PasswordSpec { length: 2, ..PasswordSpec::default() }).is_err());
+        assert!(
+            password(&PasswordSpec {
+                length: 2,
+                ..PasswordSpec::default()
+            })
+            .is_err()
+        );
         let one_char = PasswordSpec {
-            lower: false, upper: false, symbols: false, exclude: "012345678".into(),
-            max_consecutive: 1, length: 8, ..PasswordSpec::default()
+            lower: false,
+            upper: false,
+            symbols: false,
+            exclude: "012345678".into(),
+            max_consecutive: 1,
+            length: 8,
+            ..PasswordSpec::default()
         };
         assert!(password(&one_char).is_err());
     }
 
     #[test]
     fn two_runs_differ_and_distribution_is_flat() {
-        let spec = PasswordSpec { length: 64, ..PasswordSpec::default() };
+        let spec = PasswordSpec {
+            length: 64,
+            ..PasswordSpec::default()
+        };
         assert_ne!(password(&spec).unwrap(), password(&spec).unwrap());
         // Each digit of a long PIN should appear roughly equally.
         let mut counts = [0u32; 10];
@@ -528,7 +615,10 @@ mod tests {
         }
         let expected = 3200.0;
         for count in counts {
-            assert!((f64::from(count) - expected).abs() < expected * 0.12, "{counts:?}");
+            assert!(
+                (f64::from(count) - expected).abs() < expected * 0.12,
+                "{counts:?}"
+            );
         }
     }
 
@@ -544,10 +634,19 @@ mod tests {
 
     #[test]
     fn passphrase_options() {
-        let spec = PassphraseSpec { words: 4, separator: " ".into(), capitalize: true, include_digit: true, ..PassphraseSpec::default() };
+        let spec = PassphraseSpec {
+            words: 4,
+            separator: " ".into(),
+            capitalize: true,
+            include_digit: true,
+            ..PassphraseSpec::default()
+        };
         let out = passphrase(&spec).unwrap();
         let text = out.expose();
-        assert!(text.split(' ').all(|w| w.chars().next().is_some_and(char::is_uppercase)));
+        assert!(
+            text.split(' ')
+                .all(|w| w.chars().next().is_some_and(char::is_uppercase))
+        );
         assert_eq!(text.chars().filter(char::is_ascii_digit).count(), 1);
     }
 
@@ -557,7 +656,13 @@ mod tests {
         assert!((entropy_bits(&six) - 77.5).abs() < 0.1);
         let pin6 = Recipe::Pin { length: 6 };
         assert!((entropy_bits(&pin6) - 19.9).abs() < 0.1);
-        let digits_only = Recipe::Password(PasswordSpec { lower: false, upper: false, symbols: false, length: 10, ..PasswordSpec::default() });
+        let digits_only = Recipe::Password(PasswordSpec {
+            lower: false,
+            upper: false,
+            symbols: false,
+            length: 10,
+            ..PasswordSpec::default()
+        });
         assert!((entropy_bits(&digits_only) - 33.2).abs() < 0.1);
         assert!((entropy_bits(&Recipe::Pattern("99\\a".into())) - 6.64).abs() < 0.01);
     }
@@ -575,7 +680,11 @@ mod tests {
 
     #[test]
     fn pronounceable_and_presets_run() {
-        let out = generate(&Recipe::Pronounceable { syllables: 6, separator: "-".into() }).unwrap();
+        let out = generate(&Recipe::Pronounceable {
+            syllables: 6,
+            separator: "-".into(),
+        })
+        .unwrap();
         assert_eq!(out.expose().len(), 13);
         for preset in default_presets() {
             assert!(generate(&preset.recipe).is_ok(), "{}", preset.name);
@@ -584,7 +693,9 @@ mod tests {
 
     #[test]
     fn site_rules_parse() {
-        let rules = parse_site_rules("minlength: 8; maxlength: 12; required: lower, upper; required: digit; allowed: [-_]; max-consecutive: 2;");
+        let rules = parse_site_rules(
+            "minlength: 8; maxlength: 12; required: lower, upper; required: digit; allowed: [-_]; max-consecutive: 2;",
+        );
         assert_eq!(rules.min_length, Some(8));
         assert_eq!(rules.max_length, Some(12));
         assert_eq!(rules.required.len(), 2);
@@ -594,14 +705,19 @@ mod tests {
 
     #[test]
     fn generated_password_satisfies_site_rules() {
-        let rules = parse_site_rules("minlength: 8; maxlength: 10; required: lower; required: digit; allowed: [-]; max-consecutive: 2;");
+        let rules = parse_site_rules(
+            "minlength: 8; maxlength: 10; required: lower; required: digit; allowed: [-]; max-consecutive: 2;",
+        );
         for _ in 0..100 {
             let out = password_for_rules(&rules, 20).unwrap();
             let text = out.expose();
             assert!(text.len() == 10, "{}", text.len());
             assert!(text.chars().any(|c| c.is_ascii_lowercase()));
             assert!(text.chars().any(|c| c.is_ascii_digit()));
-            assert!(text.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'));
+            assert!(
+                text.chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+            );
             let chars: Vec<char> = text.chars().collect();
             assert!(!too_many_repeats(&chars, 2));
         }

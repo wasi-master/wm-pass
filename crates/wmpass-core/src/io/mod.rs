@@ -158,10 +158,17 @@ impl Draft {
             .map(|(value, ms)| Revision {
                 field: "password".to_owned(),
                 value: Secret::from(value),
-                at: Hlc { ms, ..Hlc::default() },
+                at: Hlc {
+                    ms,
+                    ..Hlc::default()
+                },
             })
             .collect();
-        ImportedEntry { entry, folder: non_empty(self.folder), files: Vec::new() }
+        ImportedEntry {
+            entry,
+            folder: non_empty(self.folder),
+            files: Vec::new(),
+        }
     }
 }
 
@@ -175,7 +182,11 @@ pub(crate) fn fields(list: Vec<(String, String, bool)>) -> Vec<Field> {
         .map(|(name, value, hidden)| Field {
             name,
             value: Secret::from(value),
-            kind: if hidden { FieldKind::Hidden } else { FieldKind::Text },
+            kind: if hidden {
+                FieldKind::Hidden
+            } else {
+                FieldKind::Text
+            },
         })
         .collect()
 }
@@ -188,14 +199,28 @@ pub(crate) fn base_entry(title: &str, notes: &str, at: Hlc) -> Entry {
 }
 
 pub(crate) fn otp_entry(config: OtpConfig, at: Hlc) -> ImportedEntry {
-    let title = if config.issuer.is_empty() { config.account.clone() } else { config.issuer.clone() };
+    let title = if config.issuer.is_empty() {
+        config.account.clone()
+    } else {
+        config.issuer.clone()
+    };
     let mut entry = base_entry(&title, "", at);
-    entry.kind = Kind::Otp(Otp { config: Lww::new(Some(config), at) });
-    ImportedEntry { entry, ..ImportedEntry::default() }
+    entry.kind = Kind::Otp(Otp {
+        config: Lww::new(Some(config), at),
+    });
+    ImportedEntry {
+        entry,
+        ..ImportedEntry::default()
+    }
 }
 
 /// Reads a code from a link or a bare base32 seed.
-pub(crate) fn parse_otp(text: &str, title: &str, account: &str, skipped: &mut Vec<String>) -> Option<OtpConfig> {
+pub(crate) fn parse_otp(
+    text: &str,
+    title: &str,
+    account: &str,
+    skipped: &mut Vec<String>,
+) -> Option<OtpConfig> {
     let text = text.trim();
     if text.is_empty() {
         return None;
@@ -227,7 +252,10 @@ pub fn detect(data: &[u8]) -> Option<Format> {
     if data.starts_with(b"PK\x03\x04") {
         return onepux::detect_zip(data);
     }
-    let text = std::str::from_utf8(data).ok()?.trim_start_matches('\u{feff}').trim();
+    let text = std::str::from_utf8(data)
+        .ok()?
+        .trim_start_matches('\u{feff}')
+        .trim();
     if text.starts_with('<') {
         return text.contains("<database").then_some(Format::SafeInCloudXml);
     }
@@ -244,11 +272,14 @@ pub fn detect(data: &[u8]) -> Option<Format> {
 pub fn import(format: Format, data: &[u8], password: Option<&str>, at: Hlc) -> Result<Imported> {
     match format {
         Format::Kdbx => {
-            let password = password.ok_or_else(|| Error::Import("this database needs its password".into()))?;
+            let password =
+                password.ok_or_else(|| Error::Import("this database needs its password".into()))?;
             kdbx::import(data, password, None, at)
         }
         Format::OnePux => onepux::import_1pux(data, at),
-        Format::ProtonPass if data.starts_with(b"PK\x03\x04") => onepux::import_proton_zip(data, at),
+        Format::ProtonPass if data.starts_with(b"PK\x03\x04") => {
+            onepux::import_proton_zip(data, at)
+        }
         _ => {
             let text = std::str::from_utf8(data)
                 .map_err(|_| Error::Import("the file is not text".into()))?
@@ -291,7 +322,12 @@ pub struct ColumnMap {
 }
 
 /// Imports any CSV through a mapping. The first row is the header when `has_header`.
-pub fn import_mapped_csv(text: &str, map: &ColumnMap, has_header: bool, at: Hlc) -> Result<Imported> {
+pub fn import_mapped_csv(
+    text: &str,
+    map: &ColumnMap,
+    has_header: bool,
+    at: Hlc,
+) -> Result<Imported> {
     csv_formats::mapped(text, map, has_header, at)
 }
 
@@ -305,17 +341,33 @@ fn identity_key(entry: &Entry) -> Option<(String, String, [u8; 32])> {
     if login.password.v.is_empty() {
         return None;
     }
-    let site = entry_domains(entry).first().cloned().unwrap_or_else(|| entry.common.title.v.to_lowercase());
-    Some((site, login.username.v.to_lowercase(), *blake3::hash(login.password.v.expose().as_bytes()).as_bytes()))
+    let site = entry_domains(entry)
+        .first()
+        .cloned()
+        .unwrap_or_else(|| entry.common.title.v.to_lowercase());
+    Some((
+        site,
+        login.username.v.to_lowercase(),
+        *blake3::hash(login.password.v.expose().as_bytes()).as_bytes(),
+    ))
 }
 
 /// Adds imported items to a vault, creating folders by path and leaving out
 /// logins identical to one already there.
 pub fn apply(vault: &mut Vault, imported: Imported, now_ms: u64) -> Result<ApplyReport> {
     let mut report = ApplyReport::default();
-    let mut seen: HashSet<_> = vault.doc.entries.values().filter_map(identity_key).collect();
-    let mut folders: BTreeMap<String, String> =
-        vault.doc.folders.values().map(|f| (f.name.v.clone(), f.id.clone())).collect();
+    let mut seen: HashSet<_> = vault
+        .doc
+        .entries
+        .values()
+        .filter_map(identity_key)
+        .collect();
+    let mut folders: BTreeMap<String, String> = vault
+        .doc
+        .folders
+        .values()
+        .map(|f| (f.name.v.clone(), f.id.clone()))
+        .collect();
     for item in imported.entries {
         let mut entry = item.entry;
         if let Some(key) = identity_key(&entry)
@@ -337,7 +389,8 @@ pub fn apply(vault: &mut Vault, imported: Imported, now_ms: u64) -> Result<Apply
             entry.common.folder = Lww::new(Some(id), at);
         }
         for (name, bytes) in item.files {
-            let (record, sealed) = Vault::seal_attachment(&name, "application/octet-stream", &bytes)?;
+            let (record, sealed) =
+                Vault::seal_attachment(&name, "application/octet-stream", &bytes)?;
             report.blobs.push((record.blob.clone(), sealed));
             let at = entry.common.title.at;
             let mut list = entry.common.attachments.v.clone();

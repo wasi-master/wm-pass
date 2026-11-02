@@ -1,0 +1,27 @@
+[package]
+name = "wmpass-cli"
+description = "Command line client for WM Pass vaults."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "wmpass"
+path = "src/main.rs"
+
+[dependencies]
+wmpass-core.workspace = true
+clap = { version = "4", features = ["derive"] }
+rpassword = "7"
+serde_json.workspace = true
+getrandom.workspace = true
+
+[dev-dependencies]
+assert_cmd = "2"
+tempfile = "3"

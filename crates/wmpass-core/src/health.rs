@@ -56,7 +56,12 @@ fn matcher_domain(matcher: &SiteMatcher) -> Option<String> {
 /// Registrable domains a login is saved for.
 pub fn entry_domains(entry: &Entry) -> Vec<String> {
     entry.login().map_or_else(Vec::new, |login| {
-        let mut out: Vec<String> = login.site_matchers.v.iter().filter_map(matcher_domain).collect();
+        let mut out: Vec<String> = login
+            .site_matchers
+            .v
+            .iter()
+            .filter_map(matcher_domain)
+            .collect();
         out.sort();
         out.dedup();
         out
@@ -83,7 +88,11 @@ fn fingerprint(value: &str) -> [u8; 32] {
 /// Builds the report over everything not in the trash, shelved entries included.
 pub fn report(vault: &Vault, input: &HealthInput) -> HealthReport {
     let mut out = HealthReport::default();
-    let old_after = u64::from(if input.old_after_days == 0 { 365 } else { input.old_after_days });
+    let old_after = u64::from(if input.old_after_days == 0 {
+        365
+    } else {
+        input.old_after_days
+    });
     let tfa = two_factor_domains();
     let mut by_password: HashMap<[u8; 32], Vec<Id>> = HashMap::new();
     let mut by_identity: HashMap<(String, String, [u8; 32]), Vec<Id>> = HashMap::new();
@@ -97,7 +106,9 @@ pub fn report(vault: &Vault, input: &HealthInput) -> HealthReport {
                 out.expiring.push(entry.id.clone());
             }
         }
-        let Kind::Login(login) = &entry.kind else { continue };
+        let Kind::Login(login) = &entry.kind else {
+            continue;
+        };
         let password = login.password.v.expose();
         if password.is_empty() {
             continue;
@@ -112,7 +123,10 @@ pub fn report(vault: &Vault, input: &HealthInput) -> HealthReport {
         }
         let print = fingerprint(password);
         by_password.entry(print).or_default().push(entry.id.clone());
-        let site = domains.first().cloned().unwrap_or_else(|| entry.common.title.v.to_lowercase());
+        let site = domains
+            .first()
+            .cloned()
+            .unwrap_or_else(|| entry.common.title.v.to_lowercase());
         by_identity
             .entry((site, login.username.v.to_lowercase(), print))
             .or_default()
@@ -165,8 +179,16 @@ fn groups<K: std::hash::Hash + Eq>(map: HashMap<K, Vec<Id>>) -> Vec<Vec<Id>> {
 /// Folds `remove` into `keep` and sends `remove` to the trash. Newer values win
 /// field by field, and any password that loses lands in history, so clearing a
 /// duplicate cannot lose a credential.
-pub fn merge_duplicates(vault: &mut Vault, keep: &str, remove: &str, now_ms: u64) -> crate::Result<()> {
-    let other = vault.get(remove).cloned().ok_or_else(|| crate::Error::Invalid("no such entry".into()))?;
+pub fn merge_duplicates(
+    vault: &mut Vault,
+    keep: &str,
+    remove: &str,
+    now_ms: u64,
+) -> crate::Result<()> {
+    let other = vault
+        .get(remove)
+        .cloned()
+        .ok_or_else(|| crate::Error::Invalid("no such entry".into()))?;
     vault.edit(keep, now_ms, |entry, at| {
         let mut tags = entry.common.tags.v.clone();
         for tag in &other.common.tags.v {
@@ -197,19 +219,32 @@ mod tests {
         let at = vault.tick(NOW);
         let mut entry = login_entry(title, user, password, at);
         if let Some(site) = site {
-            entry.login_mut().unwrap().site_matchers = Lww::new(vec![SiteMatcher::Url(site.into())], at);
+            entry.login_mut().unwrap().site_matchers =
+                Lww::new(vec![SiteMatcher::Url(site.into())], at);
         }
         vault.add(entry, NOW).unwrap()
     }
 
     fn run(vault: &Vault) -> HealthReport {
-        report(vault, &HealthInput { now_ms: NOW, ..HealthInput::default() })
+        report(
+            vault,
+            &HealthInput {
+                now_ms: NOW,
+                ..HealthInput::default()
+            },
+        )
     }
 
     #[test]
     fn weak_reused_and_duplicate_are_told_apart() {
         let mut vault = fast_vault(1);
-        let weak = add(&mut vault, "Weak", Some("https://weak.example"), "me", "password");
+        let weak = add(
+            &mut vault,
+            "Weak",
+            Some("https://weak.example"),
+            "me",
+            "password",
+        );
         let a = add(&mut vault, "A", Some("https://a.example"), "me", STRONG);
         let b = add(&mut vault, "B", Some("https://b.example"), "me", STRONG);
         let c = add(&mut vault, "C", Some("https://a.example"), "ME", STRONG);
@@ -227,12 +262,22 @@ mod tests {
     #[test]
     fn old_uses_the_entrys_own_reminder_first() {
         let mut vault = fast_vault(1);
-        let at = crate::clock::Hlc { ms: NOW - 100 * DAY_MS, counter: 0, device: 1 };
+        let at = crate::clock::Hlc {
+            ms: NOW - 100 * DAY_MS,
+            counter: 0,
+            device: 1,
+        };
         let mut entry = login_entry("Fresh enough", "u", STRONG, at);
         entry.id = "a".into();
         let mut strict = entry.clone();
         strict.id = "b".into();
-        strict.common.reminders = Lww::new(Reminders { change_every_days: Some(30), ..Reminders::default() }, at);
+        strict.common.reminders = Lww::new(
+            Reminders {
+                change_every_days: Some(30),
+                ..Reminders::default()
+            },
+            at,
+        );
         vault.add(entry, NOW).unwrap();
         vault.add(strict, NOW).unwrap();
         assert_eq!(run(&vault).old, vec!["b".to_owned()]);
@@ -243,7 +288,14 @@ mod tests {
         let mut vault = fast_vault(1);
         let id = add(&mut vault, "A", None, "u", STRONG);
         let breached = BTreeMap::from([(id.clone(), 42)]);
-        let result = report(&vault, &HealthInput { now_ms: NOW, breached, ..HealthInput::default() });
+        let result = report(
+            &vault,
+            &HealthInput {
+                now_ms: NOW,
+                breached,
+                ..HealthInput::default()
+            },
+        );
         assert_eq!(result.breached, vec![(id, 42)]);
         assert_eq!(result.score, 0);
     }
@@ -251,25 +303,54 @@ mod tests {
     #[test]
     fn missing_two_factor_uses_the_directory_and_respects_saved_codes() {
         let mut vault = fast_vault(1);
-        let bare = add(&mut vault, "GitHub", Some("https://github.com/login"), "u", STRONG);
-        let covered = add(&mut vault, "GitHub 2", Some("https://github.com/login"), "v", "yT5!pQ8@zM3#kL9$wR2&");
+        let bare = add(
+            &mut vault,
+            "GitHub",
+            Some("https://github.com/login"),
+            "u",
+            STRONG,
+        );
+        let covered = add(
+            &mut vault,
+            "GitHub 2",
+            Some("https://github.com/login"),
+            "v",
+            "yT5!pQ8@zM3#kL9$wR2&",
+        );
         vault
             .edit(&covered, NOW, |entry, at| {
-                entry.login_mut().unwrap().otp = Lww::new(Some(OtpConfig::totp("JBSWY3DPEHPK3PXP")), at);
+                entry.login_mut().unwrap().otp =
+                    Lww::new(Some(OtpConfig::totp("JBSWY3DPEHPK3PXP")), at);
             })
             .unwrap();
-        add(&mut vault, "Nowhere", Some("https://no-such-site.example"), "w", "uH7%nB4^cX6*dF1!sA3#");
+        add(
+            &mut vault,
+            "Nowhere",
+            Some("https://no-such-site.example"),
+            "w",
+            "uH7%nB4^cX6*dF1!sA3#",
+        );
         assert_eq!(run(&vault).missing_two_factor, vec![bare]);
     }
 
     #[test]
     fn plain_http_and_expiry_are_flagged() {
         let mut vault = fast_vault(1);
-        let http = add(&mut vault, "Old", Some("http://intranet.example"), "u", STRONG);
+        let http = add(
+            &mut vault,
+            "Old",
+            Some("http://intranet.example"),
+            "u",
+            STRONG,
+        );
         let expiring = add(&mut vault, "Licence", None, "x", "mN2@bV5#cX8$zL1!kJ4%");
         vault
             .edit(&expiring, NOW, |entry, at| {
-                let reminders = Reminders { expires_ms: Some(NOW + 3 * DAY_MS), warn_days: 7, ..Reminders::default() };
+                let reminders = Reminders {
+                    expires_ms: Some(NOW + 3 * DAY_MS),
+                    warn_days: 7,
+                    ..Reminders::default()
+                };
                 entry.common.reminders = Lww::new(reminders, at);
             })
             .unwrap();
@@ -291,8 +372,20 @@ mod tests {
     #[test]
     fn clearing_a_duplicate_keeps_every_password_and_all_tags() {
         let mut vault = fast_vault(1);
-        let keep = add(&mut vault, "A", Some("https://a.example"), "me", "old-password-1");
-        let remove = add(&mut vault, "B", Some("https://a.example"), "me", "newer-password-2");
+        let keep = add(
+            &mut vault,
+            "A",
+            Some("https://a.example"),
+            "me",
+            "old-password-1",
+        );
+        let remove = add(
+            &mut vault,
+            "B",
+            Some("https://a.example"),
+            "me",
+            "newer-password-2",
+        );
         vault
             .edit(&remove, NOW + 5, |entry, at| {
                 entry.set_password("newest-password-3".into(), at);
@@ -301,8 +394,14 @@ mod tests {
             .unwrap();
         merge_duplicates(&mut vault, &keep, &remove, NOW + 10).unwrap();
         let entry = vault.get(&keep).unwrap();
-        assert_eq!(entry.login().unwrap().password.v.expose(), "newest-password-3");
-        let past: Vec<_> = entry.history_of("password").map(|r| r.value.expose().to_owned()).collect();
+        assert_eq!(
+            entry.login().unwrap().password.v.expose(),
+            "newest-password-3"
+        );
+        let past: Vec<_> = entry
+            .history_of("password")
+            .map(|r| r.value.expose().to_owned())
+            .collect();
         assert!(past.contains(&"old-password-1".to_owned()), "{past:?}");
         assert!(past.contains(&"newer-password-2".to_owned()), "{past:?}");
         assert_eq!(entry.common.tags.v, vec!["work".to_owned()]);
