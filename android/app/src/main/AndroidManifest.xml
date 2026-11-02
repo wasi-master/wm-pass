@@ -132,6 +132,12 @@
             </intent-filter>
         </activity>
 
+        <!-- Every call checks the caller's signing certificate. See KeyboardProvider. -->
+        <provider
+            android:name=".system.KeyboardProvider"
+            android:authorities="com.wasimaster.wmpass.keyboard"
+            android:exported="true" />
+
         <receiver
             android:name=".system.QuickWidgetReceiver"
             android:exported="true"

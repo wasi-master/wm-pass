@@ -201,6 +201,8 @@ class Prefs(context: Context) {
     val networkAllowed: Boolean get() = networkOpt.value
     val autofillInline = flag("autofill_inline", true, portable = false)
     val autofillSave = flag("autofill_save", true, portable = false)
+    val keyboardAccess = flag("keyboard_access", false, portable = false)
+    val wearAccess = flag("wear_access", false, portable = false)
     private val panicActionOpt = local("panic_action", "lock")
     val panicAction: String get() = panicActionOpt.value
     private val panicAppOpt = local("panic_app", "")

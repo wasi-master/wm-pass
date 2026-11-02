@@ -30,3 +30,5 @@ includeBuild("vendor/wm-suite")
 
 include(":core")
 include(":app")
+include(":wear")
+include(":wearlink")
