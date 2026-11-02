@@ -274,6 +274,10 @@ impl InPlace {
         );
         if upgraded {
             database.config = strong_config();
+        } else {
+            // The writer only produces the current KDBX 4 minor version. KeePassXC
+            // writes 4.0 when it can, and every 4.x reader opens the newer minor.
+            database.config.version = DatabaseConfig::default().version;
         }
         Ok(Self { database, upgraded })
     }
