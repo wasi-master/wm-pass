@@ -18,6 +18,7 @@ pub mod net;
 mod remote;
 mod service;
 mod views;
+pub mod wire;
 
 pub use service::{Call, Reply, Service, SessionError, factor_of};
 pub use views::*;

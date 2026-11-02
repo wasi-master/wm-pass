@@ -26,3 +26,4 @@ serde_json.workspace = true
 thiserror.workspace = true
 zeroize.workspace = true
 base64 = "0.23.1"
+qrcode = { version = "0.14", default-features = false }

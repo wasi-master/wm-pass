@@ -1,0 +1,27 @@
+[package]
+name = "wmpass-wasm"
+description = "The WM Pass session for the browser extension, built for WebAssembly."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[lints.rust]
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+
+[dependencies]
+wmpass-session = { path = "../wmpass-session" }
+wasm-bindgen = "0.2"
+
+# Each generation of getrandom in the tree has to be told to ask the browser for randomness.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom_02 = { package = "getrandom", version = "0.2", features = ["js"] }
+getrandom_04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
