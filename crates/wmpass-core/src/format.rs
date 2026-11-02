@@ -268,6 +268,7 @@ impl VaultKey {
         &self.0
     }
 
+    #[cfg(test)]
     pub(crate) fn clone_key(&self) -> Self {
         Self(self.0.clone())
     }

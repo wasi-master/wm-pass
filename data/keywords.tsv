@@ -1,0 +1,84 @@
+# Words that teach the classifier what a name tends to mean. text<TAB>category
+bank	Banking
+banking	Banking
+credit union	Banking
+savings bank	Banking
+national bank	Banking
+pay	Finance
+payments	Finance
+invest	Finance
+insurance	Finance
+broker	Finance
+loan	Finance
+tax	Finance
+coin	Crypto
+crypto	Crypto
+wallet	Crypto
+token exchange	Crypto
+blockchain	Crypto
+git	Developer
+api	Developer
+dev	Developer
+code	Developer
+hosting	Developer
+server	Developer
+domain registrar	Developer
+cloud	Cloud
+backup	Cloud
+vpn	Cloud
+storage	Cloud
+drive	Cloud
+mail	Email
+webmail	Email
+inbox	Email
+chat	Social
+forum	Social
+community	Social
+messenger	Social
+social	Social
+shop	Shopping
+store	Shopping
+market	Shopping
+tickets	Shopping
+delivery	Shopping
+game	Gaming
+gaming	Gaming
+games	Gaming
+casino	Gaming
+tv	Entertainment
+stream	Entertainment
+music	Entertainment
+movies	Entertainment
+video	Entertainment
+crm	Work
+marketing	Work
+office	Work
+project management	Work
+hr payroll	Work
+university	Education
+college	Education
+school	Education
+academy	Education
+learn	Education
+courses	Education
+gov	Government
+government	Government
+ministry	Government
+tax authority	Government
+health	Health
+hospital	Health
+clinic	Health
+pharmacy	Health
+medical	Health
+airline	Travel
+airways	Travel
+hotel	Travel
+travel	Travel
+flights	Travel
+rail	Travel
+electric	Utilities
+water utility	Utilities
+gas energy	Utilities
+internet provider	Utilities
+telecom	Utilities
+mobile carrier	Utilities
