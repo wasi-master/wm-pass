@@ -1,9 +1,14 @@
 package com.wasimaster.wmpass.ui.theme
 
+import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -12,13 +17,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.wasimaster.wmpass.R
+import androidx.compose.material3.Shapes as MaterialShapes
 import com.wasimaster.wmsuite.theme.WmShapes
 import com.wasimaster.wmsuite.theme.WmTypography
 
@@ -49,6 +57,11 @@ data class Palette(
     val danger: Color,
     val info: Color,
     val glassTint: Color,
+    /**
+     * True for the standard look: solid surfaces, no lit rims, no gradients. Read by the shared
+     * pieces, so a page built from them follows without knowing which look is on.
+     */
+    val flat: Boolean = false,
 ) {
     val brand: Brush get() = Brush.linearGradient(listOf(brandFrom, brandTo))
 }
@@ -216,22 +229,219 @@ object PassType {
     val eyebrow = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 12.sp, letterSpacing = 0.06.em)
 }
 
+private fun String?.orThemeColor(fallback: Color) = if (isNullOrEmpty()) fallback else toThemeColor()
+
+/** A palette from a theme's colours, for the standard look or for Glass. */
+fun ThemeColors.toPalette(dark: Boolean, black: Boolean, flat: Boolean): Palette {
+    val c = readableOn()
+    val bg = if (black && dark) Color.Black else c.background.toThemeColor()
+    val low = if (black && dark) Color(0xFF0B0B0B) else c.surface.toThemeColor()
+    val high = if (black && dark) Color(0xFF161616) else c.surfaceHigh.toThemeColor()
+    val highest = if (black && dark) Color(0xFF222222) else c.surfaceHighest.toThemeColor()
+    val text = c.text.toThemeColor()
+    val primary = c.primary.toThemeColor()
+    val on = when {
+        c.onPrimary.isNotEmpty() -> c.onPrimary.toThemeColor()
+        contrast(c.background.toThemeColor(), primary) >= 4.5 -> c.background.toThemeColor()
+        contrast(Color.White, primary) >= contrast(Color.Black, primary) -> Color.White
+        else -> Color.Black
+    }
+    val hair = mixColors(bg, text, 0.16f)
+    return Palette(
+        dark = dark,
+        ground = bg,
+        surface1 = low,
+        surface2 = high,
+        surface3 = highest,
+        rimTop = if (flat) Color.Transparent else text.copy(alpha = 0.13f),
+        rimBottom = if (flat) Color.Transparent else text.copy(alpha = 0.025f),
+        hairline = hair,
+        text = text,
+        textMid = c.textMid.toThemeColor(),
+        textLow = c.textLow.toThemeColor(),
+        primary = primary,
+        onPrimary = on,
+        brandFrom = primary,
+        brandTo = mixColors(primary, bg, 0.18f),
+        auroraA = mixColors(primary, bg, 0.5f),
+        auroraB = mixColors(primary, bg, 0.65f),
+        auroraC = mixColors(c.info.toThemeColor(), bg, 0.72f),
+        digit = c.digit.orThemeColor(c.info.toThemeColor()),
+        symbol = c.symbol.orThemeColor(c.warn.toThemeColor()),
+        warn = c.warn.toThemeColor(),
+        danger = c.danger.toThemeColor(),
+        info = c.info.toThemeColor(),
+        glassTint = high.copy(alpha = 0.62f),
+        flat = flat,
+    )
+}
+
+/** Material's roles from a theme, as exactly as it specifies them. */
+fun Palette.flatScheme(source: ThemeColors?): ColorScheme {
+    val container = source?.primaryContainer.orThemeColor(mixColors(surface2, primary, if (dark) 0.28f else 0.20f))
+    val second = source?.secondaryContainer.orThemeColor(mixColors(surface2, primary, if (dark) 0.18f else 0.14f))
+    val outlineColor = source?.outline.orThemeColor(textLow)
+    val base = if (dark) darkColorScheme() else lightColorScheme()
+    return base.copy(
+        primary = primary,
+        onPrimary = onPrimary,
+        primaryContainer = container,
+        onPrimaryContainer = text,
+        secondary = primary,
+        onSecondary = onPrimary,
+        secondaryContainer = second,
+        onSecondaryContainer = text,
+        tertiary = info,
+        onTertiary = onPrimary,
+        tertiaryContainer = mixColors(surface2, info, 0.2f),
+        onTertiaryContainer = text,
+        background = ground,
+        onBackground = text,
+        surface = ground,
+        onSurface = text,
+        surfaceVariant = surface2,
+        onSurfaceVariant = textMid,
+        surfaceTint = primary,
+        inverseSurface = text,
+        inverseOnSurface = ground,
+        inversePrimary = mixColors(primary, ground, 0.4f),
+        surfaceContainerLowest = ground,
+        surfaceContainerLow = surface1,
+        surfaceContainer = mixColors(surface1, surface2, 0.5f),
+        surfaceContainerHigh = surface2,
+        surfaceContainerHighest = surface3,
+        surfaceBright = surface3,
+        surfaceDim = ground,
+        outline = outlineColor,
+        outlineVariant = hairline,
+        error = danger,
+        onError = if (contrast(Color.White, danger) >= contrast(Color.Black, danger)) Color.White else Color.Black,
+        errorContainer = mixColors(surface2, danger, 0.22f),
+        onErrorContainer = text,
+    )
+}
+
+/** The phone's own colours, seen through the app's palette. */
+private fun ColorScheme.toPalette(dark: Boolean, black: Boolean): Palette {
+    val bg = if (black && dark) Color.Black else surface
+    return Palette(
+        dark = dark,
+        ground = bg,
+        surface1 = surfaceContainerLow,
+        surface2 = surfaceContainerHigh,
+        surface3 = surfaceContainerHighest,
+        rimTop = Color.Transparent,
+        rimBottom = Color.Transparent,
+        hairline = outlineVariant,
+        text = onSurface,
+        textMid = onSurfaceVariant,
+        textLow = outline,
+        primary = primary,
+        onPrimary = onPrimary,
+        brandFrom = primary,
+        brandTo = primary,
+        auroraA = primaryContainer,
+        auroraB = secondaryContainer,
+        auroraC = tertiaryContainer,
+        digit = tertiary,
+        symbol = secondary,
+        warn = if (dark) Color(0xFFFFB95C) else Color(0xFF8A5300),
+        danger = error,
+        info = tertiary,
+        glassTint = surfaceContainerHigh.copy(alpha = 0.62f),
+        flat = true,
+    )
+}
+
+private fun Typography.inFamily(family: FontFamily) = Typography(
+    displayLarge.copy(fontFamily = family), displayMedium.copy(fontFamily = family), displaySmall.copy(fontFamily = family),
+    headlineLarge.copy(fontFamily = family), headlineMedium.copy(fontFamily = family), headlineSmall.copy(fontFamily = family),
+    titleLarge.copy(fontFamily = family), titleMedium.copy(fontFamily = family), titleSmall.copy(fontFamily = family),
+    bodyLarge.copy(fontFamily = family), bodyMedium.copy(fontFamily = family), bodySmall.copy(fontFamily = family),
+    labelLarge.copy(fontFamily = family), labelMedium.copy(fontFamily = family), labelSmall.copy(fontFamily = family),
+)
+
+private fun typeFor(font: String): Typography = when (font) {
+    "inter" -> WmTypography
+    "serif" -> Typography().inFamily(FontFamily.Serif)
+    "mono" -> Typography().inFamily(FontFamily.Monospace)
+    else -> Typography().let { type ->
+        // Material's tracking was set for Roboto at low density. Tighter reads better on today's
+        // screens and in the fonts phones ship with now.
+        type.copy(
+            bodyLarge = type.bodyLarge.copy(letterSpacing = 0.15.sp),
+            bodyMedium = type.bodyMedium.copy(letterSpacing = 0.1.sp),
+            bodySmall = type.bodySmall.copy(letterSpacing = 0.2.sp),
+            labelLarge = type.labelLarge.copy(letterSpacing = 0.05.sp),
+            labelMedium = type.labelMedium.copy(letterSpacing = 0.2.sp),
+        )
+    }
+}
+
+private fun shapesFor(corners: Int): MaterialShapes = MaterialShapes(
+    extraSmall = RoundedCornerShape((corners / 3).dp),
+    small = RoundedCornerShape((corners * 2 / 3).dp),
+    medium = RoundedCornerShape(corners.dp),
+    large = RoundedCornerShape((corners * 4 / 3).dp),
+    extraLarge = RoundedCornerShape((corners * 7 / 3).dp),
+)
+
+/** The app's colours and type. [style] is `standard` or `glass`; see DESIGN.md for why. */
 @Composable
-fun PassTheme(look: Look = Look.DARK, accent: Accent = Accent.EMERALD, content: @Composable () -> Unit) {
+fun PassTheme(
+    look: Look = Look.SYSTEM,
+    accent: Accent = Accent.EMERALD,
+    themeId: String = BuiltInThemes.DEFAULT,
+    style: String = "standard",
+    custom: List<ThemeFile> = emptyList(),
+    colouredIcons: Boolean = true,
+    content: @Composable () -> Unit,
+) {
     val systemDark = isSystemInDarkTheme()
+    val context = LocalContext.current
     val dark = when (look) {
         Look.SYSTEM -> systemDark
         Look.DARK, Look.OBSIDIAN -> true
         Look.LIGHT -> false
     }
-    val palette = remember(dark, look, accent) {
-        if (dark) darkPalette(accent, look == Look.OBSIDIAN) else lightPalette(accent)
+    val black = look == Look.OBSIDIAN
+    val flat = style != "glass"
+    val theme = remember(themeId, custom) { (BuiltInThemes.all + custom).firstOrNull { it.id == themeId } }
+    val resolved = remember(dark, black, flat, accent, themeId, theme) {
+        val colors = theme?.let { if (dark) it.dark ?: it.light else it.light ?: it.dark }
+        when {
+            themeId == BuiltInThemes.SYSTEM && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+                val scheme = if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+                val made = scheme.toPalette(dark, black)
+                val finished = if (black && dark) scheme.copy(surface = Color.Black, background = Color.Black) else scheme
+                (if (flat) made else made.copy(flat = false)) to finished
+            }
+            // Glass with no theme chosen keeps the colours it was drawn in.
+            !flat && (themeId == BuiltInThemes.SYSTEM || themeId == BuiltInThemes.DEFAULT) -> {
+                val made = if (dark) darkPalette(accent, black) else lightPalette(accent)
+                made to made.scheme()
+            }
+            else -> {
+                val source = colors ?: if (dark) BuiltInThemes.all.first().dark!! else BuiltInThemes.all.first().light!!
+                // A theme with one side, on a phone asking for the other, stays what it is.
+                val made = source.toPalette(if (colors != null) colors === theme?.dark else dark, black, flat)
+                made to if (flat) made.flatScheme(source) else made.scheme()
+            }
+        }
     }
-    val scheme = remember(palette) { palette.scheme() }
-    CompositionLocalProvider(LocalPalette provides palette) {
-        MaterialTheme(colorScheme = scheme, typography = WmTypography, shapes = WmShapes, content = content)
+    val type = remember(flat, theme) { if (flat) typeFor(theme?.font ?: "system") else WmTypography }
+    val shapes = remember(flat, theme) { if (flat) shapesFor(theme?.corners ?: 12) else WmShapes }
+    CompositionLocalProvider(
+        LocalPalette provides resolved.first,
+        LocalColouredIcons provides colouredIcons,
+        com.wasimaster.wmsuite.settings.LocalWmPlainGroups provides flat,
+    ) {
+        MaterialTheme(colorScheme = resolved.second, typography = type, shapes = shapes, content = content)
     }
 }
+
+/** Whether known brands show in their own colour on an entry's icon. */
+val LocalColouredIcons = staticCompositionLocalOf { true }
 
 val palette: Palette
     @Composable get() = LocalPalette.current

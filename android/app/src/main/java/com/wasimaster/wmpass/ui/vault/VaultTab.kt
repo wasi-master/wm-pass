@@ -99,7 +99,7 @@ private sealed interface Item {
 }
 
 /** Pinned first, then the rest by name, with several logins on one site folded together. */
-private fun arrange(entries: List<Summary>, grouping: String, open: Set<String>): List<Item> {
+private fun arrange(entries: List<Summary>, grouping: String, open: Set<String>, flat: Boolean): List<Item> {
     fun card(run: List<Any>, into: MutableList<Item>) {
         run.forEachIndexed { index, value ->
             val first = index == 0
@@ -145,7 +145,7 @@ private fun arrange(entries: List<Summary>, grouping: String, open: Set<String>)
             row += entry
         }
     }
-    if (pinned.isNotEmpty()) out += Item.Gap
+    if (pinned.isNotEmpty()) out += if (flat) Item.Heading("All items") else Item.Gap
     card(row, out)
     return out
 }
@@ -167,7 +167,7 @@ fun VaultTab() {
             else -> entries.filter { it.kind == filter }
         }
     }
-    val items = remember(shown, prefs.grouping, openSites.toList()) { arrange(shown, prefs.grouping, openSites.toSet()) }
+    val items = remember(shown, prefs.grouping, openSites.toList(), colors.flat) { arrange(shown, prefs.grouping, openSites.toSet(), colors.flat) }
     val listState = rememberLazyListState()
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val scrolled by remember {
@@ -204,10 +204,16 @@ fun VaultTab() {
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(top = top + 8.dp, bottom = 190.dp, start = 16.dp, end = 16.dp),
+            contentPadding = if (colors.flat) {
+                PaddingValues(bottom = 96.dp)
+            } else {
+                PaddingValues(top = top + 8.dp, bottom = 190.dp, start = 16.dp, end = 16.dp)
+            },
         ) {
-            item("header") {
-                Header((state as? LockState.Unlocked)?.name.orEmpty(), entries.size)
+            if (!colors.flat) {
+                item("header") {
+                    Header((state as? LockState.Unlocked)?.name.orEmpty(), entries.size)
+                }
             }
             item("widgets") {
                 Dashboard(entries)
@@ -240,14 +246,14 @@ private fun androidx.compose.foundation.lazy.LazyListScope.itemsIndexedStable(
             val shell = LocalShell.current
             val modifier = Modifier.animateItem(fadeInSpec = tween(180), fadeOutSpec = tween(120)).arrive(index, !arrived)
             when (item) {
-                is Item.Heading -> Eyebrow(item.text, modifier)
+                is Item.Heading -> Eyebrow(item.text, if (palette.flat) modifier.padding(horizontal = 16.dp) else modifier)
                 Item.Gap -> Spacer(modifier.height(12.dp))
                 is Item.One -> {
                     val selected = item.entry.id in shell.selection
                     Column(modifier) {
                         EntryRow(
                             item.entry,
-                            remember(item.first, item.last) { SegmentShape(28.dp, item.first, item.last) },
+                            if (palette.flat) androidx.compose.ui.graphics.RectangleShape else remember(item.first, item.last) { SegmentShape(28.dp, item.first, item.last) },
                             compact,
                             shell.selecting,
                             selected,
@@ -264,7 +270,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.itemsIndexedStable(
                     SiteStackRow(
                         item.site,
                         item.entries,
-                        remember(item.first, item.last) { SegmentShape(28.dp, item.first, item.last) },
+                        if (palette.flat) androidx.compose.ui.graphics.RectangleShape else remember(item.first, item.last) { SegmentShape(28.dp, item.first, item.last) },
                         open,
                     ) { if (open) openSites.remove(item.site) else openSites.add(item.site) }
                     if (!item.last) Hairline(Modifier.background(palette.surface1), inset = 74.dp)
@@ -278,7 +284,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.itemsIndexedStable(
 private fun EntryGrid(entries: List<Summary>, arrived: Boolean) {
     val shell = LocalShell.current
     // A plain two-column flow, because this already sits inside the page's own list.
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(if (palette.flat) Modifier.padding(horizontal = 16.dp) else Modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         entries.chunked(2).forEachIndexed { rowIndex, row ->
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 row.forEachIndexed { index, entry ->
@@ -322,6 +328,10 @@ private fun Dashboard(entries: List<Summary>) {
     val shell = LocalShell.current
     val prefs = shell.prefs
     if (entries.isEmpty()) return
+    if (palette.flat) {
+        FlatDashboard(entries)
+        return
+    }
     Column {
         val wide = prefs.widgets.filter { it == "health" || it == "codes" }
         if (wide.isNotEmpty()) {
@@ -343,6 +353,43 @@ private fun Dashboard(entries: List<Summary>) {
     }
 }
 
+/** The same choices as plain rows: a number in a list needs no card to be read. */
+@Composable
+private fun FlatDashboard(entries: List<Summary>) {
+    val colors = palette
+    val shell = LocalShell.current
+    var health by remember { mutableStateOf<HealthView?>(null) }
+    LaunchedEffect(entries.size, entries.maxOfOrNull { it.modifiedMs }) {
+        if ("health" in shell.prefs.widgets) {
+            delay(600)
+            health = runCatching { Pass.health() }.getOrNull()
+        }
+    }
+    for (widget in shell.prefs.widgets) {
+        when (widget) {
+            "health" -> health?.let { h ->
+                val issues = h.weak.size + h.reused.sumOf { it.size } + h.breached.size
+                if (issues > 0) {
+                    com.wasimaster.wmpass.ui.parts.NavRow(
+                        if (issues == 1) "1 password needs attention" else "$issues passwords need attention",
+                        "Password health",
+                        icon = PassIcons.EcgHeart,
+                        tint = colors.warn,
+                    ) { shell.tab = "health" }
+                }
+            }
+            "codes" -> {
+                val count = entries.count { it.hasOtp }
+                if (count > 0) {
+                    com.wasimaster.wmpass.ui.parts.NavRow(if (count == 1) "1 code" else "$count codes", "Authenticator", icon = PassIcons.Pin) { shell.tab = "codes" }
+                }
+            }
+            "favourites" -> TileShelf("Favourites", entries.filter { it.favourite })
+            "recent" -> TileShelf("Recently changed", entries.sortedByDescending { it.modifiedMs }.take(10))
+        }
+    }
+}
+
 @Composable
 private fun WidgetCard(modifier: Modifier, onClick: () -> Unit, content: @Composable () -> Unit) {
     val colors = palette
@@ -355,7 +402,7 @@ private fun WidgetCard(modifier: Modifier, onClick: () -> Unit, content: @Compos
             .clip(Shapes.card)
             .background(colors.surface1)
             .rim(Shapes.card, colors)
-            .clickable(source, null) {
+            .clickable(source, androidx.compose.material3.ripple()) {
                 shell.haptics.tick()
                 onClick()
             }
@@ -442,11 +489,11 @@ private fun TileShelf(title: String, entries: List<Summary>) {
     val colors = palette
     val shell = LocalShell.current
     if (entries.isEmpty()) return
-    Eyebrow(title)
+    Eyebrow(title, if (colors.flat) Modifier.padding(horizontal = 16.dp) else Modifier)
     LazyRow(
-        Modifier.bleed(16.dp).fadeEdges(),
+        if (colors.flat) Modifier else Modifier.bleed(16.dp).fadeEdges(),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
-        contentPadding = PaddingValues(horizontal = 18.dp),
+        contentPadding = PaddingValues(horizontal = if (colors.flat) 16.dp else 18.dp),
     ) {
         items(entries, key = { it.id }) { entry ->
             val source = remember { MutableInteractionSource() }
@@ -454,7 +501,7 @@ private fun TileShelf(title: String, entries: List<Summary>) {
                 Modifier
                     .width(68.dp)
                     .pressScale(source, 0.93f)
-                    .clickable(source, null) { shell.open(entry.id) },
+                    .clickable(source, androidx.compose.material3.ripple()) { shell.open(entry.id) },
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 SiteTile(entry.title, entry.site, entry.kind, size = 56.dp, label = entry.color, icon = entry.icon)
@@ -477,6 +524,21 @@ private fun Filters(entries: List<Summary>, selected: String, onSelect: (String)
     val prefs = shell.prefs
     val kinds = remember(entries) { entries.groupingBy { it.kind }.eachCount().toList().sortedByDescending { it.second } }
     if (entries.isEmpty()) return
+    if (palette.flat) {
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp),
+        ) {
+            item { Pill("All", selected == "all") { onSelect("all") } }
+            if (entries.any { it.favourite }) {
+                item { Pill("Favourites", selected == "favourite") { onSelect("favourite") } }
+            }
+            items(kinds, key = { it.first }) { (kind, _) ->
+                Pill(kindName(kind), selected == kind) { onSelect(kind) }
+            }
+        }
+        return
+    }
     Column {
         val next = when (prefs.layout) {
             "list" -> "compact"
@@ -527,6 +589,18 @@ private fun Filters(entries: List<Summary>, selected: String, onSelect: (String)
 private fun EmptyVault() {
     val colors = palette
     val shell = LocalShell.current
+    if (colors.flat) {
+        Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+            Text("No items yet", color = colors.text, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp))
+            Spacer(Modifier.height(4.dp))
+            Text("Import from another app, or add your first login.", color = colors.textMid, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 16.dp))
+            Spacer(Modifier.height(12.dp))
+            com.wasimaster.wmpass.ui.parts.NavRow("Import", "1Password, Bitwarden, LastPass, Chrome, KeePass and others", icon = PassIcons.Download) { shell.nav.navigate("settings/import") }
+            com.wasimaster.wmpass.ui.parts.NavRow("Add a login", icon = PassIcons.Key) { shell.nav.navigate("new/login") }
+            com.wasimaster.wmpass.ui.parts.NavRow("Add a two-factor code", icon = PassIcons.QrCodeScanner) { shell.nav.navigate("new/otp") }
+        }
+        return
+    }
     Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Nothing here yet", color = colors.text, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 6.dp, top = 12.dp))
         Text(
@@ -558,7 +632,7 @@ private fun StartCard(icon: androidx.compose.ui.graphics.vector.ImageVector, tit
             .clip(Shapes.cardSmall)
             .background(colors.surface1)
             .rim(Shapes.cardSmall, colors)
-            .clickable(source, null, onClick = onClick)
+            .clickable(source, androidx.compose.material3.ripple(), onClick = onClick)
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

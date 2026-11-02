@@ -69,6 +69,23 @@ fun PrimaryButton(
 ) {
     val colors = palette
     val haptics = rememberHaptics()
+    if (colors.flat) {
+        androidx.compose.material3.Button(
+            onClick = {
+                haptics.click()
+                onClick()
+            },
+            modifier = modifier.height(48.dp),
+            enabled = enabled,
+        ) {
+            if (icon != null) {
+                Icon(icon, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+            }
+            Text(text, maxLines = 1)
+        }
+        return
+    }
     val source = remember { MutableInteractionSource() }
     val fade by animateFloatAsState(if (enabled) 1f else 0.38f, tween(180), label = "enabled")
     Row(
@@ -79,7 +96,7 @@ fun PrimaryButton(
             .clip(CircleShape)
             .background(Brush.linearGradient(listOf(colors.brandFrom, colors.brandTo)))
             .rim(CircleShape, colors)
-            .clickable(source, null, enabled, role = Role.Button) {
+            .clickable(source, androidx.compose.material3.ripple(), enabled, role = Role.Button) {
                 haptics.click()
                 onClick()
             }
@@ -108,6 +125,26 @@ fun QuietButton(
 ) {
     val colors = palette
     val haptics = rememberHaptics()
+    if (colors.flat) {
+        androidx.compose.material3.OutlinedButton(
+            onClick = {
+                haptics.click()
+                onClick()
+            },
+            modifier = modifier.height(48.dp),
+            enabled = enabled,
+            colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                contentColor = if (tint == colors.text) colors.primary else tint,
+            ),
+        ) {
+            if (icon != null) {
+                Icon(icon, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+            }
+            Text(text, maxLines = 1)
+        }
+        return
+    }
     val source = remember { MutableInteractionSource() }
     Row(
         modifier
@@ -117,7 +154,7 @@ fun QuietButton(
             .clip(CircleShape)
             .background(colors.surface2)
             .rim(CircleShape, colors)
-            .clickable(source, null, enabled, role = Role.Button) {
+            .clickable(source, androidx.compose.material3.ripple(), enabled, role = Role.Button) {
                 haptics.click()
                 onClick()
             }
@@ -144,13 +181,17 @@ fun GlassCircle(
     onClick: () -> Unit,
 ) {
     val haptics = rememberHaptics()
+    if (palette.flat) {
+        androidx.compose.material3.IconButton(onClick = onClick, modifier = modifier) { Icon(icon, label, tint = tint) }
+        return
+    }
     val source = remember { MutableInteractionSource() }
     Box(
         modifier
             .pressScale(source, 0.92f)
             .size(size)
             .glass(CircleShape)
-            .clickable(source, null, role = Role.Button, onClickLabel = label) {
+            .clickable(source, androidx.compose.material3.ripple(), role = Role.Button, onClickLabel = label) {
                 haptics.click()
                 onClick()
             },
@@ -171,6 +212,18 @@ fun RowIconButton(
 ) {
     val colors = palette
     val haptics = rememberHaptics()
+    if (colors.flat) {
+        androidx.compose.material3.IconButton(
+            onClick = {
+                haptics.click()
+                onClick()
+            },
+            modifier = modifier,
+        ) {
+            Icon(icon, label, tint = tint, modifier = Modifier.size(22.dp))
+        }
+        return
+    }
     val source = remember { MutableInteractionSource() }
     Box(
         modifier
@@ -178,7 +231,7 @@ fun RowIconButton(
             .size(40.dp)
             .clip(CircleShape)
             .background(colors.surface2)
-            .clickable(source, null, role = Role.Button, onClickLabel = label) {
+            .clickable(source, androidx.compose.material3.ripple(), role = Role.Button, onClickLabel = label) {
                 haptics.click()
                 onClick()
             },
@@ -199,6 +252,19 @@ fun Pill(
 ) {
     val colors = palette
     val haptics = rememberHaptics()
+    if (colors.flat) {
+        androidx.compose.material3.FilterChip(
+            selected = selected,
+            onClick = {
+                haptics.tick()
+                onClick()
+            },
+            label = { Text(text, maxLines = 1) },
+            modifier = modifier,
+            leadingIcon = if (icon != null) ({ Icon(icon, null, modifier = Modifier.size(18.dp)) }) else null,
+        )
+        return
+    }
     val source = remember { MutableInteractionSource() }
     val on by animateFloatAsState(if (selected) 1f else 0f, tween(180), label = "pill")
     Row(
@@ -212,7 +278,7 @@ fun Pill(
                 drawContent()
             }
             .rim(CircleShape, colors)
-            .clickable(source, null, role = Role.Tab) {
+            .clickable(source, androidx.compose.material3.ripple(), role = Role.Tab) {
                 haptics.tick()
                 onClick()
             }
@@ -232,6 +298,13 @@ fun Pill(
 @Composable
 fun Eyebrow(text: String, modifier: Modifier = Modifier, trailing: (@Composable RowScope.() -> Unit)? = null) {
     val colors = palette
+    if (colors.flat) {
+        Row(modifier.fillMaxWidth().padding(top = 20.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(text, style = MaterialTheme.typography.titleSmall, color = colors.primary, modifier = Modifier.weight(1f))
+            trailing?.invoke(this)
+        }
+        return
+    }
     Row(modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, top = 22.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(text.uppercase(), style = PassType.eyebrow, color = colors.textLow, modifier = Modifier.weight(1f))
         trailing?.invoke(this)
@@ -242,6 +315,11 @@ fun Eyebrow(text: String, modifier: Modifier = Modifier, trailing: (@Composable 
 @Composable
 fun GroupCard(modifier: Modifier = Modifier, shape: Shape = Shapes.card, content: @Composable () -> Unit) {
     val colors = palette
+    // The standard look has no cards: rows run edge to edge, past the page's margin.
+    if (colors.flat) {
+        Column(modifier.bleed(16.dp).fillMaxWidth()) { content() }
+        return
+    }
     Column(
         modifier
             .fillMaxWidth()
@@ -254,12 +332,18 @@ fun GroupCard(modifier: Modifier = Modifier, shape: Shape = Shapes.card, content
 @Composable
 fun Hairline(modifier: Modifier = Modifier, inset: Dp = 18.dp) {
     val colors = palette
+    if (colors.flat) return
     Box(modifier.fillMaxWidth().padding(start = inset).height(1.dp).background(colors.hairline))
 }
 
 /** Tile with a glyph: the small lit square at the start of a settings row. */
 @Composable
 fun GlyphTile(icon: ImageVector, tint: Color, modifier: Modifier = Modifier, size: Dp = 38.dp) {
+    if (palette.flat) {
+        // A plain icon: a tinted square on every row is one of the surest signs of a template.
+        Icon(icon, null, tint = if (tint == palette.primary) palette.textMid else tint, modifier = modifier.size(24.dp))
+        return
+    }
     Box(
         modifier
             .size(size)

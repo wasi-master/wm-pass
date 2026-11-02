@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -138,6 +139,10 @@ private fun rememberReach(open: Boolean): Float? {
 fun SearchLayer() {
     val shell = LocalShell.current
     val colors = palette
+    if (colors.flat) {
+        StandardSearch()
+        return
+    }
     val reach = rememberReach(shell.searching) ?: return
     val all by Pass.entries.collectAsStateWithLifecycle()
     val focus = remember { FocusRequester() }
@@ -252,7 +257,7 @@ fun SearchLayer() {
                         .clip(CircleShape)
                         .background(colors.surface2)
                         .rim(CircleShape, colors)
-                        .clickable(source, null, onClickLabel = "Close search") {
+                        .clickable(source, androidx.compose.material3.ripple(), onClickLabel = "Close search") {
                             shell.haptics.tick()
                             shell.searching = false
                         },
@@ -266,10 +271,30 @@ fun SearchLayer() {
 }
 
 @Composable
-private fun SearchRow(entry: Summary, query: String, modifier: Modifier = Modifier) {
+internal fun SearchRow(entry: Summary, query: String, modifier: Modifier = Modifier) {
     val colors = palette
     val shell = LocalShell.current
     val source = remember { MutableInteractionSource() }
+    if (colors.flat) {
+        Row(
+            modifier
+                .fillMaxWidth()
+                .clickable(source, androidx.compose.material3.ripple()) { shell.open(entry.id) }
+                .padding(start = 16.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SiteTile(entry.title, entry.site, entry.kind, Modifier.sharedEntry("tile-${entry.id}", inSearch = true), 40.dp, entry.color, entry.icon)
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text(highlighted(entry.title.ifEmpty { "Untitled" }, query, colors.primary), color = colors.text, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (entry.subtitle.isNotEmpty()) {
+                    Text(highlighted(entry.subtitle, query, colors.primary), color = colors.textMid, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            if (entry.hasPassword) RowIconButton(PassIcons.ContentCopy, "Copy password for ${entry.title}") { shell.copyPassword(entry.id) }
+        }
+        return
+    }
     Row(
         modifier
             .pressScale(source)
@@ -277,7 +302,7 @@ private fun SearchRow(entry: Summary, query: String, modifier: Modifier = Modifi
             .clip(Shapes.cardSmall)
             .background(colors.surface1)
             .rim(Shapes.cardSmall, colors)
-            .clickable(source, null) { shell.open(entry.id) }
+            .clickable(source, androidx.compose.material3.ripple()) { shell.open(entry.id) }
             .padding(start = 12.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -321,14 +346,14 @@ private fun highlighted(text: String, query: String, color: androidx.compose.ui.
     }
 }
 
-private val QueryChips = listOf(
+internal val QueryChips = listOf(
     Triple("Weak", "weak", PassIcons.GppMaybe),
     Triple("Reused", "reused", PassIcons.SwapHoriz),
-    Triple("Has a code", "has:totp", PassIcons.Pin),
+    Triple("Has code", "has:totp", PassIcons.Pin),
     Triple("Favourites", "favourite", PassIcons.StarFilled),
     Triple("Pinned", "pinned", PassIcons.KeepFilled),
-    Triple("Changed this month", "modified<30d", PassIcons.Schedule),
-    Triple("In the trash", "trashed", PassIcons.Delete),
+    Triple("Changed recently", "modified<30d", PassIcons.Schedule),
+    Triple("Trash", "trashed", PassIcons.Delete),
 )
 
 /**
@@ -388,7 +413,7 @@ private fun NoMatch(query: String) {
                     .clip(Shapes.cardSmall)
                     .background(colors.surface1)
                     .rim(Shapes.cardSmall, colors)
-                    .clickable(source, null) {
+                    .clickable(source, androidx.compose.material3.ripple()) {
                         shell.nav.navigate("new/login?title=${android.net.Uri.encode(query)}")
                     }
                     .padding(14.dp),
@@ -410,7 +435,7 @@ private fun NoMatch(query: String) {
 
 // ---- adding ----
 
-private val KindOrder = listOf("login", "otp", "note", "card", "identity", "recovery", "wifi", "ssh", "api", "database", "licence", "document")
+internal val KindOrder = listOf("login", "otp", "note", "card", "identity", "recovery", "wifi", "ssh", "api", "database", "licence", "document")
 
 /** The small glass button that opens the choice of what to add. */
 @Composable
@@ -426,6 +451,19 @@ fun AddButton(modifier: Modifier = Modifier) {
 fun AddLayer() {
     val shell = LocalShell.current
     val colors = palette
+    if (colors.flat) {
+        if (shell.adding) {
+            PassSheet({ shell.adding = false }, "Add") {
+                KindOrder.forEach { kind ->
+                    SheetRow(kindIcon(kind), kindName(kind)) {
+                        shell.adding = false
+                        shell.nav.navigate("new/$kind")
+                    }
+                }
+            }
+        }
+        return
+    }
     val reach = rememberReach(shell.adding) ?: return
     BackHandler(shell.adding) { shell.adding = false }
     Box(
@@ -460,7 +498,7 @@ fun AddLayer() {
                                 .arrive(rowIndex * 4 + index)
                                 .pressScale(source, 0.92f)
                                 .clip(Shapes.tile)
-                                .clickable(source, null) {
+                                .clickable(source, androidx.compose.material3.ripple()) {
                                     shell.haptics.tick()
                                     shell.adding = false
                                     shell.nav.navigate("new/$kind")
@@ -483,3 +521,88 @@ private val KindHue = mapOf(
     "login" to "165", "otp" to "195", "note" to "85", "card" to "265", "identity" to "235", "recovery" to "25",
     "wifi" to "215", "ssh" to "145", "api" to "305", "database" to "340", "licence" to "55", "document" to "120",
 )
+
+/** A full page with an ordinary search field at the top. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun StandardSearch() {
+    val shell = LocalShell.current
+    val colors = palette
+    if (!shell.searching) return
+    val all by Pass.entries.collectAsStateWithLifecycle()
+    val focus = remember { FocusRequester() }
+    var results by remember { mutableStateOf<List<Summary>>(emptyList()) }
+    var query by remember { mutableStateOf(shell.searchField.text.toString()) }
+    LaunchedEffect(Unit) {
+        snapshotFlow { shell.searchField.text.toString() }.collectLatest { text ->
+            query = text
+            results = if (text.isBlank()) emptyList() else runCatching { Pass.search(text.trim(), "relevance") }.getOrDefault(emptyList())
+        }
+    }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    androidx.compose.foundation.layout.Column(
+        Modifier
+            .fillMaxSize()
+            .background(colors.ground)
+            .clickable(remember { MutableInteractionSource() }, null) {}
+            .statusBarsPadding()
+            .imePadding()
+            .navigationBarsPadding(),
+    ) {
+        Row(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            BarIcon(PassIcons.ArrowBack, "Back") {
+                shell.searching = false
+                shell.searchField.clearText()
+            }
+            Box(Modifier.weight(1f).padding(horizontal = 4.dp)) {
+                if (query.isEmpty()) Text("Search vault", color = colors.textMid, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
+                BasicTextField(
+                    state = shell.searchField,
+                    modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.text),
+                    cursorBrush = SolidColor(colors.primary),
+                    lineLimits = TextFieldLineLimits.SingleLine,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, autoCorrectEnabled = false, imeAction = ImeAction.Search),
+                    onKeyboardAction = KeyboardActionHandler { results.firstOrNull()?.let { shell.open(it.id) } },
+                )
+            }
+            if (query.isNotEmpty()) BarIcon(PassIcons.Close, "Clear", colors.textMid) { shell.searchField.clearText() }
+        }
+        androidx.compose.material3.HorizontalDivider(color = colors.hairline)
+        val lead = query.trim()
+        LazyColumn(Modifier.fillMaxSize()) {
+            when {
+                lead.isEmpty() -> {
+                    item("chips") {
+                        FlowRow(
+                            Modifier.padding(16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            QueryChips.forEach { (label, text, _) ->
+                                Pill(label, false) { shell.searchField.setTextAndPlaceCursorAtEnd(text) }
+                            }
+                        }
+                    }
+                    val recent = shell.recents.mapNotNull { id -> all.firstOrNull { it.id == id } }.take(5)
+                    if (recent.isNotEmpty()) {
+                        item("recent") { Eyebrow("Recent", Modifier.padding(horizontal = 16.dp)) }
+                        items(recent, key = { "r" + it.id }) { SearchRow(it, "") }
+                    }
+                }
+                results.isEmpty() -> item("none") {
+                    Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                        Text("No results for “$lead”", color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
+                        if (':' !in lead && '>' !in lead && '<' !in lead) {
+                            Spacer(Modifier.height(12.dp))
+                            com.wasimaster.wmpass.ui.parts.QuietButton("Add “$lead” as a login", icon = PassIcons.Add) {
+                                shell.nav.navigate("new/login?title=${android.net.Uri.encode(lead)}")
+                            }
+                        }
+                    }
+                }
+                else -> items(results, key = { it.id }) { entry -> SearchRow(entry, lead) }
+            }
+        }
+    }
+}

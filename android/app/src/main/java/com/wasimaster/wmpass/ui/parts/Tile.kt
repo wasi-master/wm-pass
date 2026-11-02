@@ -51,6 +51,41 @@ fun oklch(l: Float, c: Float, hueDegrees: Float): Color {
 }
 
 /**
+ * The standard look's icon: a flat circle, as in Contacts. A known brand keeps its colour, a
+ * label its hue, and everything else sits on the theme's own tone rather than a random one.
+ */
+@Composable
+private fun FlatTile(face: TileFace, label: String?, modifier: Modifier, size: Dp) {
+    val scheme = androidx.compose.material3.MaterialTheme.colorScheme
+    val coloured = com.wasimaster.wmpass.ui.theme.LocalColouredIcons.current
+    val hue = label?.toFloatOrNull()
+    // The two ends sit either side of the brand's own colour, so their middle is close to it.
+    val brandFill = mix(face.from, face.to, 0.5f)
+    val showsBrand = face.brand && coloured && com.wasimaster.wmpass.ui.theme.contrast(brandFill, palette.ground) >= 1.3f
+    val fill = when {
+        hue != null -> oklch(0.58f, 0.11f, hue)
+        showsBrand -> brandFill
+        else -> scheme.secondaryContainer
+    }
+    val ink = when {
+        hue != null -> Color.White
+        showsBrand -> face.glyphTint
+        else -> scheme.onSecondaryContainer
+    }
+    Box(modifier.size(size).clip(androidx.compose.foundation.shape.CircleShape).background(fill), contentAlignment = Alignment.Center) {
+        if (face.glyph != null) {
+            Icon(face.glyph, null, tint = ink, modifier = Modifier.size(size * 0.52f))
+        } else {
+            Text(
+                face.letter.orEmpty(),
+                color = ink,
+                style = TextStyle(fontSize = (size.value * 0.42f).sp, fontWeight = FontWeight.Medium),
+            )
+        }
+    }
+}
+
+/**
  * A site or title's own hue: always the same for the same name. Yellow-greens are left out,
  * because at this brightness they come out as olive and tint a whole page the colour of mud.
  */
@@ -82,12 +117,12 @@ private fun mix(a: Color, b: Color, amount: Float) = Color(
  * reads as a tile on a dark page, and a page tinted with it still has some light in it.
  */
 fun brandColors(brand: Color): Pair<Color, Color> {
-    val base = if (luminance(brand) < 0.09f) Color(0xFF3C4552) else brand
+    val base = if (luminance(brand) < 0.16f) Color(0xFF3C4552) else brand
     return mix(base, Color.White, 0.14f) to mix(base, Color.Black, 0.16f)
 }
 
 /** What an entry looks like: its colours, and a mark or a letter. */
-class TileFace(val from: Color, val to: Color, val glyph: ImageVector?, val letter: String?, val glyphTint: Color = Color.White)
+class TileFace(val from: Color, val to: Color, val glyph: ImageVector?, val letter: String?, val glyphTint: Color = Color.White, val brand: Boolean = false)
 
 /** Everything an entry's look depends on, worked out once. */
 @Composable
@@ -106,7 +141,7 @@ fun rememberFace(title: String, site: String?, kind: String, label: String? = nu
         val tint = if (luminance(colors.second) > 0.62f) Color(0xFF16181C) else Color.White
         when {
             chosenGlyph != null -> TileFace(colors.first, colors.second, chosenGlyph, null, tint)
-            brand != null -> TileFace(colors.first, colors.second, brand.glyph, null, tint)
+            brand != null -> TileFace(colors.first, colors.second, brand.glyph, null, tint, brand = true)
             kind != "login" && site == null -> TileFace(colors.first, colors.second, kindIcon(kind), null, tint)
             else -> {
                 val letter = (site ?: title).firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString()
@@ -195,6 +230,10 @@ fun SiteTile(
 ) {
     val colors = palette
     val face = rememberFace(title, site, kind, label, icon)
+    if (colors.flat) {
+        FlatTile(face, label, modifier, size)
+        return
+    }
     val shape = remember(size) { SquircleShape(size * 0.30f) }
     Box(
         modifier

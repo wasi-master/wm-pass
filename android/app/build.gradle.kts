@@ -36,6 +36,7 @@ android {
         resources.excludes += setOf("META-INF/{AL2.0,LGPL2.1}", "META-INF/LICENSE*", "META-INF/versions/9/OSGI-INF/MANIFEST.MF")
         jniLibs.useLegacyPackaging = false
     }
+    androidResources { ignoreAssetsPatterns += "*.md" }
     sourceSets["main"].assets.directories.add("../../data/brands")
     sourceSets["main"].assets.directories.add("../../data/passkeys")
     // The offline build drops the permission, so no line of code can reach a network.

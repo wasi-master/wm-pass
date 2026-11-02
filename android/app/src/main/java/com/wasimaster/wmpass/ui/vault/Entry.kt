@@ -7,6 +7,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -58,6 +59,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.wasimaster.wmpass.core.AttachmentView
 import com.wasimaster.wmpass.core.Detail
@@ -156,6 +158,10 @@ fun EntryScreen(id: String) {
     val face = com.wasimaster.wmpass.ui.parts.rememberFace(entry?.title.orEmpty(), entry?.site, entry?.kind.orEmpty(), entry?.color, entry?.icon)
     val from = face.from
     val to = face.to
+    if (colors.flat) {
+        StandardEntry(id, entry, revealed, scroll)
+        return
+    }
     Box(Modifier.fillMaxSize().background(colors.ground)) {
         // The site's own light, falling away with the scroll.
         Box(
@@ -218,6 +224,75 @@ fun EntryScreen(id: String) {
     }
 }
 
+/** An ordinary detail page: an app bar, a heading, and rows. */
+@OptIn(ExperimentalLayoutApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun StandardEntry(id: String, entry: Detail?, revealed: MutableMap<String, String>, scroll: androidx.compose.foundation.ScrollState) {
+    val colors = palette
+    val shell = LocalShell.current
+    androidx.compose.material3.Scaffold(
+        containerColor = colors.ground,
+        topBar = {
+            androidx.compose.material3.TopAppBar(
+                title = {
+                    if (scroll.value > 180 && entry != null) {
+                        Text(entry.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                },
+                navigationIcon = {
+                    androidx.compose.material3.IconButton(onClick = { shell.nav.popBackStack() }) { Icon(PassIcons.ArrowBack, "Back") }
+                },
+                actions = {
+                    if (entry != null) {
+                        androidx.compose.material3.IconButton(onClick = {
+                            shell.launch {
+                                Pass.change("entry.common") {
+                                    put("id", entry.id)
+                                    put("favourite", !entry.favourite)
+                                }
+                            }
+                        }) {
+                            Icon(
+                                if (entry.favourite) PassIcons.StarFilled else PassIcons.Star,
+                                if (entry.favourite) "Remove from favourites" else "Add to favourites",
+                                tint = if (entry.favourite) colors.warn else colors.textMid,
+                            )
+                        }
+                        if (!entry.trashed) {
+                            androidx.compose.material3.IconButton(onClick = { shell.nav.navigate("edit/${entry.id}") }) { Icon(PassIcons.Edit, "Edit") }
+                        }
+                    }
+                },
+                colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(containerColor = colors.ground),
+            )
+        },
+    ) { inner ->
+        if (entry != null) {
+            Column(
+                Modifier
+                    .padding(inner)
+                    .fillMaxSize()
+                    .verticalScroll(scroll)
+                    .padding(horizontal = 16.dp),
+            ) {
+                Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    val inSearch = shell.searching
+                    SiteTile(entry.title, entry.site, entry.kind, Modifier.sharedEntry("tile-$id", inSearch), 56.dp, entry.color, entry.icon)
+                    Spacer(Modifier.width(16.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(entry.title.ifEmpty { "Untitled" }, color = colors.text, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.sharedEntry("title-$id", inSearch))
+                        Text(entry.subtitle.ifEmpty { kindName(entry.kind) }, color = colors.textMid, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                if (entry.trashed) TrashedActions(entry) else QuickActions(entry)
+                entry.destroyAtMs?.let { at -> DestructBanner(at) }
+                Sections(entry, revealed)
+                Spacer(Modifier.height(32.dp))
+            }
+        }
+    }
+}
+
 @Composable
 private fun TopBar(entry: Detail?, scrolled: Int) {
     val colors = palette
@@ -267,6 +342,21 @@ private fun QuickActions(entry: Detail) {
     val shell = LocalShell.current
     val username = entry.fields.firstOrNull { it.key == "username" || it.key == "user" }?.text.orEmpty()
     val url = entry.sites.firstNotNullOfOrNull { siteLine(it)?.openable }
+    if (palette.flat) {
+        // As in Contacts: every action says what it does, and the likeliest one is filled.
+        Row(Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (entry.hasPassword) {
+                LabelledAction(PassIcons.ContentCopy, "Copy password", filled = true, confirms = true, Modifier.weight(1f)) { shell.copyPassword(entry.id) }
+            }
+            if (username.isNotEmpty()) {
+                LabelledAction(PassIcons.Person, "Copy username", filled = !entry.hasPassword, confirms = true, Modifier.weight(1f)) { shell.copyPlain("Username", username) }
+            }
+            if (url != null) {
+                LabelledAction(PassIcons.OpenInNew, "Open site", filled = false, confirms = false, Modifier.weight(1f)) { shell.openUrl(url) }
+            }
+        }
+        return
+    }
     Row(Modifier.fillMaxWidth().padding(top = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         if (entry.hasPassword) {
             PrimaryButton("Copy password", Modifier.weight(1f), icon = PassIcons.ContentCopy) { shell.copyPassword(entry.id) }
@@ -280,17 +370,69 @@ private fun QuickActions(entry: Detail) {
     }
 }
 
+/** The glyph turns to a tick for a moment after copying, so the tap has an answer on the spot. */
+@Composable
+private fun LabelledAction(icon: ImageVector, label: String, filled: Boolean, confirms: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val colors = palette
+    val scheme = MaterialTheme.colorScheme
+    val shell = LocalShell.current
+    var done by remember { mutableStateOf(false) }
+    LaunchedEffect(done) {
+        if (done) {
+            delay(1400)
+            done = false
+        }
+    }
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        androidx.compose.material3.Surface(
+            onClick = {
+                shell.haptics.click()
+                onClick()
+                if (confirms) done = true
+            },
+            shape = CircleShape,
+            color = if (filled) scheme.primary else scheme.secondaryContainer,
+            contentColor = if (filled) scheme.onPrimary else scheme.onSecondaryContainer,
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                androidx.compose.animation.AnimatedContent(
+                    done,
+                    transitionSpec = {
+                        (fadeIn(tween(150)) + androidx.compose.animation.scaleIn(tween(220), 0.6f)) togetherWith androidx.compose.animation.fadeOut(tween(90))
+                    },
+                    label = "copied",
+                ) { copied ->
+                    Icon(if (copied) PassIcons.Check else icon, label, modifier = Modifier.size(22.dp))
+                }
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(if (done) "Copied" else label, color = colors.textMid, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
 @Composable
 private fun RoundAction(icon: ImageVector, label: String, onClick: () -> Unit) {
     val shell = LocalShell.current
     val colors = palette
     val source = remember { MutableInteractionSource() }
+    if (colors.flat) {
+        androidx.compose.material3.FilledTonalIconButton(
+            onClick = {
+                shell.haptics.click()
+                onClick()
+            },
+            modifier = Modifier.size(48.dp),
+        ) { Icon(icon, label) }
+        return
+    }
     Box(
         Modifier
             .pressScale(source, 0.9f)
             .size(56.dp)
             .glass(CircleShape)
-            .clickable(source, null, onClickLabel = label) {
+            .clickable(source, androidx.compose.material3.ripple(), onClickLabel = label) {
                 shell.haptics.click()
                 onClick()
             },
@@ -343,7 +485,7 @@ private fun DestructBanner(at: Long) {
         Icon(PassIcons.Timer, null, tint = colors.danger, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(10.dp))
         Text(
-            "Destroys itself on ${DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(at))}",
+            "Deletes itself on ${DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(at))}",
             color = colors.text,
             style = MaterialTheme.typography.bodyMedium,
         )
@@ -365,11 +507,11 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
     var linking by remember { mutableStateOf(false) }
     val pickAttachment = rememberAttachmentPicker(entry.id)
 
-    if (entry.otp != null) OtpCard(entry)
+    if (entry.otp != null && !colors.flat) OtpCard(entry)
 
     val shownFields = entry.fields.filter { it.hasValue || it.flag }
     if (shownFields.isNotEmpty()) {
-        Eyebrow(kindName(entry.kind))
+        if (!colors.flat) Eyebrow(kindName(entry.kind))
         GroupCard {
             shownFields.forEachIndexed { index, field ->
                 if (index > 0) Hairline()
@@ -377,9 +519,30 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
             }
         }
     }
+    if (entry.otp != null && colors.flat) OtpCard(entry)
 
     val sites = entry.sites.mapNotNull(::siteLine)
-    if (sites.isNotEmpty()) {
+    if (sites.isNotEmpty() && colors.flat) {
+        GroupCard {
+            sites.forEach { site ->
+                val open = site.openable?.let { url -> { shell.openUrl(url) } }
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .then(if (open != null) Modifier.clickable(onClick = open) else Modifier)
+                        .padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Website", color = colors.textMid, style = MaterialTheme.typography.bodySmall)
+                        Spacer(Modifier.height(2.dp))
+                        Text(site.label, color = colors.text, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    if (open != null) RowIconButton(PassIcons.OpenInNew, "Open ${site.label}", onClick = open)
+                }
+            }
+        }
+    } else if (sites.isNotEmpty()) {
         Eyebrow(if (sites.size == 1) "Website" else "Websites")
         GroupCard {
             sites.forEachIndexed { index, site ->
@@ -463,7 +626,7 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
     Linked(entry, linking) { linking = it }
     History(entry, revealed)
 
-    Eyebrow("Reminders and more")
+    Eyebrow("More")
     GroupCard {
         val remind = entry.reminders
         val reminderText = when {
@@ -477,7 +640,7 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
                 guess = runCatching { Pass.plainCall("categorise.suggest") { put("id", entry.id) }.obj["category"]?.jsonPrimitive?.contentOrNull }.getOrNull()
             }
             guess?.let { category ->
-                ActionLine(PassIcons.AutoAwesome, "Tag it $category", tint = colors.primary) {
+                ActionLine(PassIcons.Sell, "Tag as $category", tint = colors.primary) {
                     shell.launch {
                         Pass.change("entry.common") {
                             put("id", entry.id)
@@ -494,7 +657,7 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
         Hairline(inset = 58.dp)
         ActionLine(PassIcons.Link, "Link another item") { linking = true }
         Hairline(inset = 58.dp)
-        ActionLine(PassIcons.Snooze, "Remind me to change it", reminderText) { sheet = "reminders" }
+        ActionLine(PassIcons.Snooze, "Change reminder", reminderText) { sheet = "reminders" }
         Hairline(inset = 58.dp)
         val folderName = Pass.folders.collectAsStateWithLifecycle().value.firstOrNull { it.id == entry.folder }?.name
         ActionLine(PassIcons.Folder, "Folder", folderName ?: "None") { sheet = "folder" }
@@ -510,7 +673,7 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
             }
         }
         Hairline(inset = 58.dp)
-        ActionLine(PassIcons.VisibilityLock, if (entry.hidden) "Take off the hidden shelf" else "Put on the hidden shelf") {
+        ActionLine(PassIcons.VisibilityLock, if (entry.hidden) "Remove from hidden shelf" else "Move to hidden shelf") {
             shell.launch {
                 Pass.change("entry.common") {
                     put("id", entry.id)
@@ -519,9 +682,9 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
             }
         }
         Hairline(inset = 58.dp)
-        ActionLine(PassIcons.Timer, "Destroy itself", entry.destroyAtMs?.let { "Set" } ?: "Never") { sheet = "destruct" }
+        ActionLine(PassIcons.Timer, "Self-destruct", entry.destroyAtMs?.let { "Set" } ?: "Never") { sheet = "destruct" }
         Hairline(inset = 58.dp)
-        ActionLine(PassIcons.Layers, "Make a copy") {
+        ActionLine(PassIcons.Layers, "Duplicate") {
             shell.launch {
                 val made = Pass.change("entry.duplicate") { put("id", entry.id) }
                 made.obj["id"]?.jsonPrimitive?.content?.let { copy ->
@@ -596,7 +759,7 @@ private fun OtpCard(entry: Detail) {
         }
     }
     val otp = entry.otp ?: return
-    Eyebrow("One-time code")
+    if (!colors.flat) Eyebrow("One-time code")
     GroupCard {
         val current = row?.code ?: hotp
         Row(
@@ -609,10 +772,14 @@ private fun OtpCard(entry: Detail) {
                         shell.copySecret("Code") { Pass.code(entry.id) }
                     }
                 }
-                .padding(horizontal = 18.dp, vertical = 16.dp),
+                .padding(horizontal = if (colors.flat) 16.dp else 18.dp, vertical = if (colors.flat) 12.dp else 16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
+                if (colors.flat) {
+                    Text("One-time code", color = colors.textMid, style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(2.dp))
+                }
                 if (current != null) {
                     RollingCode(current)
                 } else {
@@ -676,7 +843,7 @@ private fun HoldsFor(password: String) {
     Column(Modifier.padding(top = 10.dp)) {
         StrengthBar(s.score, Modifier.fillMaxWidth())
         Spacer(Modifier.height(6.dp))
-        Text("Would hold for ${s.crackSlowHash}", color = colors.textMid, style = MaterialTheme.typography.bodySmall)
+        Text("Time to crack: ${s.crackSlowHash}", color = colors.textMid, style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -695,11 +862,22 @@ private fun TextRow(label: String, value: String, copyAs: String) {
                 ink.splash(at)
                 shell.copyPlain(copyAs, value)
             }
-            .padding(horizontal = 18.dp, vertical = 13.dp),
+            .padding(start = if (colors.flat) 16.dp else 18.dp, end = if (colors.flat) 4.dp else 18.dp, top = if (colors.flat) 12.dp else 13.dp, bottom = if (colors.flat) 12.dp else 13.dp),
     ) {
-        Text(label, color = colors.textLow, style = MaterialTheme.typography.labelMedium)
-        Spacer(Modifier.height(3.dp))
-        Text(value, color = colors.text, style = MaterialTheme.typography.bodyLarge)
+        if (colors.flat) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(label, color = colors.textMid, style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(2.dp))
+                    Text(value, color = colors.text, style = MaterialTheme.typography.bodyLarge)
+                }
+                RowIconButton(PassIcons.ContentCopy, "Copy $label") { shell.copyPlain(copyAs, value) }
+            }
+        } else {
+            Text(label, color = colors.textLow, style = MaterialTheme.typography.labelMedium)
+            Spacer(Modifier.height(3.dp))
+            Text(value, color = colors.text, style = MaterialTheme.typography.bodyLarge)
+        }
     }
 }
 
@@ -724,13 +902,17 @@ private fun SecretRow(
                 ink.splash(at)
                 onCopy()
             }
-            .padding(start = 18.dp, end = 10.dp, top = 12.dp, bottom = 12.dp),
+            .padding(start = if (colors.flat) 16.dp else 18.dp, end = if (colors.flat) 4.dp else 10.dp, top = 12.dp, bottom = 12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(label, color = colors.textLow, style = MaterialTheme.typography.labelMedium)
-                Spacer(Modifier.height(3.dp))
-                SecretText(shown, style = style)
+                Text(
+                    label,
+                    color = if (colors.flat) colors.textMid else colors.textLow,
+                    style = if (colors.flat) MaterialTheme.typography.bodySmall else MaterialTheme.typography.labelMedium,
+                )
+                Spacer(Modifier.height(if (colors.flat) 2.dp else 3.dp))
+                SecretText(shown, style = if (colors.flat && style == PassType.secret) PassType.secretSmall.copy(fontSize = 16.sp) else style)
             }
             Spacer(Modifier.width(10.dp))
             RowIconButton(

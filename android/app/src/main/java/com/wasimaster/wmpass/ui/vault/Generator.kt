@@ -237,7 +237,7 @@ class GenState {
 private val Modes = listOf(
     "password" to "Random",
     "passphrase" to "Words",
-    "pronounceable" to "Sayable",
+    "pronounceable" to "Pronounceable",
     "pin" to "PIN",
     "pattern" to "Pattern",
 )
@@ -254,6 +254,30 @@ fun GeneratedValue(state: GenState, modifier: Modifier = Modifier, large: Boolea
     val pull = remember { Animatable(0f) }
     val threshold = with(LocalDensity.current) { 72.dp.toPx() }
     var armed by remember { mutableStateOf(false) }
+    if (colors.flat) {
+        androidx.compose.material3.Surface(
+            modifier.fillMaxWidth().heightIn(min = 112.dp),
+            color = colors.surface1,
+            shape = MaterialTheme.shapes.medium,
+        ) {
+            // Generating again belongs next to what it replaces, and its one turn says it did.
+            var rolls by remember { mutableStateOf(0) }
+            val spin by androidx.compose.animation.core.animateFloatAsState(rolls * 360f, androidx.compose.animation.core.tween(420), label = "spin")
+            Row(Modifier.padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f)) {
+                    SecretText(state.value.ifEmpty { " " }, style = PassType.secret.copy(fontSize = 20.sp, lineHeight = 28.sp))
+                }
+                androidx.compose.material3.IconButton(onClick = {
+                    rolls++
+                    shell.haptics.click()
+                    scope.launch { state.roll() }
+                }) {
+                    Icon(PassIcons.Refresh, "Generate again", Modifier.graphicsLayer { rotationZ = spin })
+                }
+            }
+        }
+        return
+    }
     Box(
         modifier
             .fillMaxWidth()
@@ -336,7 +360,7 @@ fun GeneratedStrength(state: GenState, modifier: Modifier = Modifier) {
                 label = "crack",
             ) { crack ->
                 Text(
-                    if (crack.isEmpty()) " " else "Would hold for $crack",
+                    if (crack.isEmpty()) " " else "Time to crack: $crack",
                     color = colors.textMid,
                     style = MaterialTheme.typography.bodyMedium,
                 )
@@ -360,6 +384,27 @@ fun StepDial(label: String, value: Int, range: IntRange, modifier: Modifier = Mo
     val shell = LocalShell.current
     var dragging by remember { mutableStateOf(false) }
     val lift by androidx.compose.animation.core.animateFloatAsState(if (dragging) 1f else 0f, Springs.snap(), label = "lift")
+    if (colors.flat) {
+        Column(modifier.fillMaxWidth()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(label, color = colors.text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                Text(value.toString(), color = colors.textMid, style = MaterialTheme.typography.bodyLarge.merge(PassType.numeric))
+            }
+            androidx.compose.material3.Slider(
+                value = value.toFloat(),
+                onValueChange = {
+                    val next = it.roundToInt()
+                    if (next != value) {
+                        shell.haptics.tick()
+                        onChange(next)
+                    }
+                },
+                valueRange = range.first.toFloat()..range.last.toFloat(),
+                onValueChangeFinished = onSettle,
+            )
+        }
+        return
+    }
     Column(modifier.fillMaxWidth()) {
         Text(label, color = colors.textMid, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(start = 2.dp, bottom = 8.dp))
         BoxWithConstraints(Modifier.fillMaxWidth().height(44.dp)) {
@@ -443,7 +488,7 @@ fun GeneratorControls(state: GenState) {
     fun reroll() { scope.launch { state.roll() } }
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         LazyRow(
-            Modifier.bleed(16.dp).fadeEdges(16.dp),
+            if (palette.flat) Modifier.bleed(16.dp) else Modifier.bleed(16.dp).fadeEdges(16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(horizontal = 16.dp),
         ) {
@@ -458,21 +503,21 @@ fun GeneratorControls(state: GenState) {
             "password" -> {
                 StepDial("Length", state.length, 8..BUFFER, onChange = { state.length = it }, onSettle = { scope.launch { state.settle() } })
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Pill("abc", state.lower) { state.lower = !state.lower; reroll() }
-                    Pill("ABC", state.upper) { state.upper = !state.upper; reroll() }
-                    Pill("123", state.digits) { state.digits = !state.digits; reroll() }
-                    Pill("#%&", state.symbols) { state.symbols = !state.symbols; reroll() }
-                    Pill("No look-alikes", state.noAmbiguous) { state.noAmbiguous = !state.noAmbiguous; reroll() }
+                    Pill("a-z", state.lower) { state.lower = !state.lower; reroll() }
+                    Pill("A-Z", state.upper) { state.upper = !state.upper; reroll() }
+                    Pill("0-9", state.digits) { state.digits = !state.digits; reroll() }
+                    Pill("!@#", state.symbols) { state.symbols = !state.symbols; reroll() }
+                    Pill("Avoid look-alikes", state.noAmbiguous) { state.noAmbiguous = !state.noAmbiguous; reroll() }
                 }
             }
             "passphrase" -> {
                 StepDial("Words", state.words, 3..12, onChange = { state.words = it }, onSettle = { reroll() })
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("-" to "dash", " " to "space", "." to "dot", "_" to "underscore").forEach { (sep, name) ->
+                    listOf("-" to "Dash", " " to "Space", "." to "Dot", "_" to "Underscore").forEach { (sep, name) ->
                         Pill(name, state.separator == sep) { state.separator = sep; reroll() }
                     }
                     Pill("Capitals", state.capitalize) { state.capitalize = !state.capitalize; reroll() }
-                    Pill("A number", state.includeDigit) { state.includeDigit = !state.includeDigit; reroll() }
+                    Pill("Number", state.includeDigit) { state.includeDigit = !state.includeDigit; reroll() }
                 }
             }
             "pronounceable" -> StepDial("Syllables", state.syllables, 3..14, onChange = { state.syllables = it }, onSettle = { reroll() })
@@ -504,6 +549,16 @@ fun RollButton(onRoll: () -> Unit, modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
     val spin = remember { Animatable(0f) }
     val source = remember { MutableInteractionSource() }
+    if (colors.flat) {
+        androidx.compose.material3.FilledTonalIconButton(
+            onClick = {
+                shell.haptics.click()
+                onRoll()
+            },
+            modifier = modifier.size(48.dp),
+        ) { Icon(PassIcons.Refresh, "Generate again") }
+        return
+    }
     Box(
         modifier
             .pressScale(source, 0.9f)
@@ -511,7 +566,7 @@ fun RollButton(onRoll: () -> Unit, modifier: Modifier = Modifier) {
             .clip(CircleShape)
             .background(colors.surface2)
             .rim(CircleShape, colors)
-            .clickable(source, null, onClickLabel = "Roll again") {
+            .clickable(source, androidx.compose.material3.ripple(), onClickLabel = "Roll again") {
                 shell.haptics.click()
                 onRoll()
                 scope.launch {
@@ -547,33 +602,40 @@ fun GeneratorTab() {
             Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .statusBarsPadding()
+                .then(if (colors.flat) Modifier else Modifier.statusBarsPadding())
                 .padding(horizontal = 16.dp),
         ) {
-            Text(
-                "Generate",
-                color = colors.text,
-                style = MaterialTheme.typography.headlineLarge.copy(fontSize = 32.sp),
-                modifier = Modifier.padding(start = 6.dp, top = 20.dp, bottom = 6.dp),
-            )
-            GeneratedValue(state, Modifier.padding(vertical = 18.dp))
-            GeneratedStrength(state, Modifier.padding(horizontal = 6.dp))
+            if (!colors.flat) {
+                Text(
+                    "Generate",
+                    color = colors.text,
+                    style = MaterialTheme.typography.headlineLarge.copy(fontSize = 32.sp),
+                    modifier = Modifier.padding(start = 6.dp, top = 20.dp, bottom = 6.dp),
+                )
+            }
+            GeneratedValue(state, Modifier.padding(vertical = if (colors.flat) 8.dp else 18.dp))
+            GeneratedStrength(state, Modifier.padding(horizontal = if (colors.flat) 0.dp else 6.dp))
             Spacer(Modifier.height(20.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 PrimaryButton("Copy", Modifier.weight(1f), icon = PassIcons.ContentCopy) {
                     val value = state.value
                     shell.copySecret("Password") { SecretBytes(value.toByteArray()) }
                 }
-                RollButton({ scope.launch { state.roll() } })
+                if (!colors.flat) RollButton({ scope.launch { state.roll() } })
                 val source = remember { MutableInteractionSource() }
-                Box(
+                if (colors.flat) {
+                    com.wasimaster.wmpass.ui.parts.QuietButton("Save as login", Modifier.weight(1f), PassIcons.Add, height = 48.dp) {
+                        shell.pendingPassword = state.value
+                        shell.nav.navigate("new/login")
+                    }
+                } else Box(
                     Modifier
                         .pressScale(source, 0.9f)
                         .size(56.dp)
                         .clip(CircleShape)
                         .background(colors.surface2)
                         .rim(CircleShape, colors)
-                        .clickable(source, null, onClickLabel = "Save as a new login") {
+                        .clickable(source, androidx.compose.material3.ripple(), onClickLabel = "Save as a new login") {
                             shell.haptics.click()
                             shell.pendingPassword = state.value
                             shell.nav.navigate("new/login")
@@ -583,21 +645,25 @@ fun GeneratorTab() {
                     Icon(PassIcons.Add, "Save as a new login", tint = colors.text, modifier = Modifier.size(25.dp))
                 }
             }
-            Eyebrow("Shape")
+            Eyebrow(if (colors.flat) "Options" else "Shape")
             Column(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(Shapes.card)
-                    .background(colors.surface1)
-                    .rim(Shapes.card, colors)
-                    .padding(16.dp),
+                if (colors.flat) {
+                    Modifier.fillMaxWidth()
+                } else {
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(Shapes.card)
+                        .background(colors.surface1)
+                        .rim(Shapes.card, colors)
+                        .padding(16.dp)
+                },
             ) {
                 GeneratorControls(state)
             }
             if (presets.isNotEmpty()) {
                 Eyebrow("Presets")
                 LazyRow(
-                    Modifier.bleed(16.dp).fadeEdges(),
+                    if (colors.flat) Modifier.bleed(16.dp) else Modifier.bleed(16.dp).fadeEdges(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(horizontal = 16.dp),
                 ) {
@@ -609,7 +675,7 @@ fun GeneratorTab() {
                     }
                 }
             }
-            Spacer(Modifier.height(170.dp))
+            Spacer(Modifier.height(if (colors.flat) 24.dp else 170.dp))
         }
     }
 }

@@ -80,7 +80,7 @@ fun SecretText(value: String?, modifier: Modifier = Modifier, style: TextStyle =
     var shown by remember { mutableStateOf(target) }
     LaunchedEffect(target) {
         if (shown == target) return@LaunchedEffect
-        if (reduce) {
+        if (reduce || colors.flat) {
             shown = target
             return@LaunchedEffect
         }
@@ -201,7 +201,7 @@ fun StrengthBar(score: Int, modifier: Modifier = Modifier, active: Boolean = tru
                 drawRoundRect(colors.hairline, cornerRadius = radius)
                 if (lit > 0f) {
                     drawRoundRect(
-                        Brush.horizontalGradient(listOf(color.copy(alpha = 0.75f), color)),
+                        if (colors.flat) androidx.compose.ui.graphics.SolidColor(color) else Brush.horizontalGradient(listOf(color.copy(alpha = 0.75f), color)),
                         size = Size(size.width * lit, size.height),
                         cornerRadius = radius,
                     )

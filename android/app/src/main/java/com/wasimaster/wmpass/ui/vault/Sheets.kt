@@ -74,11 +74,15 @@ fun PassSheet(onDismiss: () -> Unit, title: String? = null, content: @Composable
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = state,
-        containerColor = colors.surface1,
+        containerColor = if (colors.flat) androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow else colors.surface1,
         contentColor = colors.text,
-        shape = Shapes.sheet,
+        shape = if (colors.flat) androidx.compose.material3.BottomSheetDefaults.ExpandedShape else Shapes.sheet,
         dragHandle = {
-            Box(Modifier.padding(top = 10.dp, bottom = 6.dp).size(36.dp, 4.dp).clip(CircleShape).background(colors.hairline))
+            if (colors.flat) {
+                androidx.compose.material3.BottomSheetDefaults.DragHandle()
+            } else {
+                Box(Modifier.padding(top = 10.dp, bottom = 6.dp).size(36.dp, 4.dp).clip(CircleShape).background(colors.hairline))
+            }
         },
     ) {
         Column(
@@ -115,7 +119,7 @@ fun SheetRow(
             .pressScale(source, 0.98f)
             .fillMaxWidth()
             .clip(Shapes.tile)
-            .clickable(source, null) {
+            .clickable(source, androidx.compose.material3.ripple()) {
                 shell.haptics.tick()
                 onClick()
             }
@@ -143,6 +147,24 @@ fun ConfirmSheet(
     onConfirm: () -> Unit,
 ) {
     val colors = palette
+    if (colors.flat) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text(title) },
+            text = { Text(body) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        onDismiss()
+                        onConfirm()
+                    },
+                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = if (danger) colors.danger else colors.primary),
+                ) { Text(action) }
+            },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") } },
+        )
+        return
+    }
     PassSheet(onDismiss, title) {
         Text(body, color = colors.textMid, style = MaterialTheme.typography.bodyLarge)
         Spacer(Modifier.height(20.dp))
@@ -166,6 +188,15 @@ fun ConfirmSheet(
 @Composable
 fun SheetField(state: androidx.compose.foundation.text.input.TextFieldState, placeholder: String, modifier: Modifier = Modifier) {
     val colors = palette
+    if (colors.flat) {
+        androidx.compose.material3.OutlinedTextField(
+            state = state,
+            modifier = modifier.fillMaxWidth(),
+            label = { Text(placeholder) },
+            lineLimits = androidx.compose.foundation.text.input.TextFieldLineLimits.SingleLine,
+        )
+        return
+    }
     Box(
         modifier
             .fillMaxWidth()
@@ -244,7 +275,7 @@ fun ColourSheet(current: String?, onDismiss: () -> Unit, onPick: (String?) -> Un
                         .clip(CircleShape)
                         .background(Brush.linearGradient(listOf(oklch(0.70f, 0.14f, hue.toFloat()), oklch(0.52f, 0.15f, hue + 28f))))
                         .then(if (selected) Modifier.border(3.dp, colors.text, CircleShape) else Modifier)
-                        .clickable(source, null, onClickLabel = "Colour") {
+                        .clickable(source, androidx.compose.material3.ripple(), onClickLabel = "Colour") {
                             shell.haptics.tick()
                             onPick(hue.toString())
                             onDismiss()

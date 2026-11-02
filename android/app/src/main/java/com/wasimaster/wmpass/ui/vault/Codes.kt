@@ -73,22 +73,28 @@ fun CodesTab() {
     LazyColumn(
         state = rememberLazyListState(),
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(top = top + 8.dp, bottom = 190.dp, start = 16.dp, end = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = if (colors.flat) {
+            PaddingValues(bottom = 96.dp)
+        } else {
+            PaddingValues(top = top + 8.dp, bottom = 190.dp, start = 16.dp, end = 16.dp)
+        },
+        verticalArrangement = Arrangement.spacedBy(if (colors.flat) 0.dp else 10.dp),
     ) {
-        item("title") {
-            Text(
-                "Codes",
-                color = colors.text,
-                style = MaterialTheme.typography.headlineLarge.copy(fontSize = 32.sp),
-                modifier = Modifier.padding(start = 6.dp, top = 12.dp, bottom = 10.dp),
-            )
+        if (!colors.flat) {
+            item("title") {
+                Text(
+                    "Codes",
+                    color = colors.text,
+                    style = MaterialTheme.typography.headlineLarge.copy(fontSize = 32.sp),
+                    modifier = Modifier.padding(start = 6.dp, top = 12.dp, bottom = 10.dp),
+                )
+            }
         }
         if (list != null && list.isEmpty()) {
             item("empty") {
-                Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.fillMaxWidth().padding(top = 8.dp, start = if (colors.flat) 16.dp else 0.dp, end = if (colors.flat) 16.dp else 0.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        "No codes yet. Sites that offer two-factor sign-in show a QR code or a setup key. Add it here and this page keeps the codes.",
+                        "No codes yet. When a site offers two-factor sign-in, scan its QR code or enter its setup key here.",
                         color = colors.textMid,
                         style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier.padding(start = 6.dp, end = 12.dp, bottom = 10.dp),
@@ -117,9 +123,7 @@ private fun CodeCard(row: OtpRow, modifier: Modifier = Modifier) {
     Row(
         modifier
             .fillMaxWidth()
-            .clip(Shapes.card)
-            .background(colors.surface1)
-            .rim(Shapes.card, colors)
+            .then(if (colors.flat) Modifier else Modifier.clip(Shapes.card).background(colors.surface1).rim(Shapes.card, colors))
             .inkSurface(ink, colors.primary)
             .tapAt(onLongPress = { shell.open(row.id) }) { at ->
                 if (code != null) {
@@ -131,14 +135,14 @@ private fun CodeCard(row: OtpRow, modifier: Modifier = Modifier) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.padding(end = 14.dp)) {
-            SiteTile(row.otp.issuer.ifEmpty { row.title }, row.site, "otp", size = 46.dp, icon = row.icon)
+            SiteTile(row.otp.issuer.ifEmpty { row.title }, row.site, "otp", size = if (colors.flat) 40.dp else 46.dp, icon = row.icon)
         }
         Column(Modifier.weight(1f)) {
             val account = row.otp.account
             Text(
                 row.otp.issuer.ifEmpty { row.title }.ifEmpty { "Code" },
                 color = colors.text,
-                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                style = if (colors.flat) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -162,7 +166,7 @@ private fun CodeCard(row: OtpRow, modifier: Modifier = Modifier) {
         }
         if (row.otp.period != null) {
             Spacer(Modifier.width(12.dp))
-            LifeRing(row.otp.period!!, size = 34.dp, stroke = 3.5.dp)
+            LifeRing(row.otp.period!!, size = if (colors.flat) 26.dp else 34.dp, stroke = if (colors.flat) 3.dp else 3.5.dp)
         }
     }
 }

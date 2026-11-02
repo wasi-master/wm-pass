@@ -85,14 +85,21 @@ enum class ShieldState { IDLE, WORKING, OPENED, REFUSED }
 fun ShieldMark(state: ShieldState, modifier: Modifier = Modifier, typed: Int = 0) {
     val colors = palette
     val reduce = LocalReduceMotion.current
+    val flat = colors.flat
+    // The standard look's logo is the logo: its own colours, still until there is work to show.
+    val markFrom = if (flat) Color(0xFF10B981) else colors.brandFrom
+    val markTo = if (flat) Color(0xFF0D9488) else colors.brandTo
     val loop = rememberInfiniteTransition(label = "shield")
-    val breathe by loop.animateFloat(
-        0f,
-        1f,
-        infiniteRepeatable(tween(3600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "breathe",
-    )
-    val orbit by loop.animateFloat(0f, 1f, infiniteRepeatable(tween(1100, easing = LinearEasing)), label = "orbit")
+    val breathe by if (flat) {
+        remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    } else {
+        loop.animateFloat(0f, 1f, infiniteRepeatable(tween(3600, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "breathe")
+    }
+    val orbit by if (flat && state != ShieldState.WORKING) {
+        remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    } else {
+        loop.animateFloat(0f, 1f, infiniteRepeatable(tween(1100, easing = LinearEasing)), label = "orbit")
+    }
 
     val shake = remember { Animatable(0f) }
     val fill = remember { Animatable(0f) }
@@ -130,7 +137,7 @@ fun ShieldMark(state: ShieldState, modifier: Modifier = Modifier, typed: Int = 0
     Box(modifier, contentAlignment = Alignment.Center) {
         // The light under the mark. Its own canvas, because the mark's offscreen layer clips
         // to its bounds and a glow has to reach well past them.
-        Canvas(Modifier.fillMaxSize()) {
+        if (!flat) Canvas(Modifier.fillMaxSize()) {
             val glow = 0.34f + 0.12f * breathe + 0.45f * pulse.value + 0.45f * fill.value
             val tone = if (refuse.value > 0f) colors.danger else colors.brandFrom
             val centre = Offset(size.width / 2, size.height * 0.68f)
@@ -164,7 +171,7 @@ fun ShieldMark(state: ShieldState, modifier: Modifier = Modifier, typed: Int = 0
                     Offset(54f, 99f),
                 )
             } else {
-                Brush.linearGradient(listOf(colors.brandFrom, colors.brandTo), Offset(54f, 45f), Offset(54f, 99f))
+                Brush.linearGradient(listOf(markFrom, markTo), Offset(54f, 45f), Offset(54f, 99f))
             }
             drawPath(ShieldGeometry.shield, body)
             drawPath(ShieldGeometry.keyhole, Color.Black, blendMode = BlendMode.Clear)
@@ -175,14 +182,14 @@ fun ShieldMark(state: ShieldState, modifier: Modifier = Modifier, typed: Int = 0
                 drawPath(ShieldGeometry.shield, Color.White.copy(alpha = fill.value * 0.9f))
             }
             if (state == ShieldState.WORKING) {
-                comet(measure, segment, orbit, colors.text)
+                comet(measure, segment, orbit, colors.text, glow = !flat)
             }
         }
     }
     }
 }
 
-private fun DrawScope.comet(measure: PathMeasure, segment: Path, phase: Float, color: Color) {
+private fun DrawScope.comet(measure: PathMeasure, segment: Path, phase: Float, color: Color, glow: Boolean) {
     val length = measure.length
     val tail = length * 0.28f
     val head = phase * length
@@ -200,7 +207,7 @@ private fun DrawScope.comet(measure: PathMeasure, segment: Path, phase: Float, c
         } else {
             measure.getSegment(from, to, segment, true)
         }
-        drawPath(segment, color.copy(alpha = alpha * 0.16f), style = Stroke(3.2f, cap = StrokeCap.Round))
+        if (glow) drawPath(segment, color.copy(alpha = alpha * 0.16f), style = Stroke(3.2f, cap = StrokeCap.Round))
         drawPath(segment, color.copy(alpha = alpha), style = Stroke(1.1f, cap = StrokeCap.Round))
     }
 }

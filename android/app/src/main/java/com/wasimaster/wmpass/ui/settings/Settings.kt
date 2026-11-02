@@ -97,6 +97,8 @@ fun NavGraphBuilder.settingsGraph() {
     composable("settings/vaults") { VaultsScreen() }
     composable("settings/receive") { ReceiveScreen() }
     composable("settings/shortcuts") { ShortcutsScreen() }
+    composable("settings/themes") { ThemesScreen() }
+    composable("settings/theme_edit/{id}") { entry -> ThemeEditor(entry.arguments?.getString("id").orEmpty()) }
     composable("scan") { com.wasimaster.wmpass.ui.vault.ScanScreen() }
 }
 
@@ -113,13 +115,13 @@ fun SettingsRoot() {
     WmScreen("Settings", onBack = back()) {
         SettingsGroup("Protection") {
             item {
-                NavRow("Security", "Lock timer, fingerprint, duress and emergency access", route = "settings/security", icon = PassIcons.Shield) { nav.navigate("settings/security") }
+                NavRow("Security", "Auto-lock, biometrics, duress and emergency access", route = "settings/security", icon = PassIcons.Shield) { nav.navigate("settings/security") }
             }
             item {
-                NavRow("Hidden shelf", "Entries kept out of lists and autofill", route = "settings/shelf", icon = PassIcons.VisibilityLock) { nav.navigate("settings/shelf") }
+                NavRow("Hidden shelf", "Hide items from lists and autofill", route = "settings/shelf", icon = PassIcons.VisibilityLock) { nav.navigate("settings/shelf") }
             }
             item {
-                NavRow("Breaches", "Check your passwords and emails against known leaks", route = "settings/breaches", icon = PassIcons.LocalFireDepartment) { nav.navigate("settings/breaches") }
+                NavRow("Breaches", "Check passwords and email addresses against known leaks", route = "settings/breaches", icon = PassIcons.LocalFireDepartment) { nav.navigate("settings/breaches") }
             }
         }
         SettingsGroup("Your vault") {
@@ -136,12 +138,12 @@ fun SettingsRoot() {
                 NavRow("Export", route = "settings/export", icon = PassIcons.Upload) { nav.navigate("settings/export") }
             }
         }
-        SettingsGroup("Keeping it safe elsewhere") {
+        SettingsGroup("Backup and sync") {
             item {
-                NavRow("Backups", "Encrypted copies, on your schedule", route = "settings/backup", icon = PassIcons.Backup) { nav.navigate("settings/backup") }
+                NavRow("Backups", "Encrypted copies on a schedule", route = "settings/backup", icon = PassIcons.Backup) { nav.navigate("settings/backup") }
             }
             item {
-                NavRow("Sync and accounts", "Another device, a server, a Bitwarden or KeePass account", route = "settings/sync", icon = PassIcons.Sync) { nav.navigate("settings/sync") }
+                NavRow("Sync and accounts", "Other devices, servers, Bitwarden and KeePass", route = "settings/sync", icon = PassIcons.Sync) { nav.navigate("settings/sync") }
             }
         }
         SettingsGroup("Tools") {
@@ -160,7 +162,7 @@ fun SettingsRoot() {
         }
         SettingsGroup("This app") {
             item {
-                NavRow("Look", "Colours, layout, motion, what the dock shows", route = "settings/look", icon = PassIcons.Palette) { nav.navigate("settings/look") }
+                NavRow("Appearance", "Style, theme, layout and navigation", route = "settings/look", icon = PassIcons.Palette) { nav.navigate("settings/look") }
             }
             item {
                 NavRow("About", route = "settings/about", icon = PassIcons.Info) { nav.navigate("settings/about") }
@@ -281,7 +283,7 @@ private fun SecurityScreen() {
                 ) { prefs.updateClipboard(it) }
             }
         }
-        SettingsGroup("Your master password") {
+        SettingsGroup("Master password") {
             item {
                 NavRow("Change it", "Old backups still open with the old password", icon = PassIcons.Password) { sheet = "change" }
             }
@@ -289,7 +291,7 @@ private fun SecurityScreen() {
                 NavRow("Change it and rekey", "A new vault key too, so old copies of the file cannot follow new changes", icon = PassIcons.LockReset) { sheet = "rekey" }
             }
         }
-        SettingsGroup("Ways to open this vault") {
+        SettingsGroup("Unlock methods") {
             slots.forEach { slot ->
                 item {
                     NavRow(slot.label.ifEmpty { "Password ${slot.index + 1}" }, icon = PassIcons.Key) { sheet = "slot:${slot.index}" }
@@ -302,23 +304,23 @@ private fun SecurityScreen() {
                 NavRow("Add a key file", "Both the password and the file will be needed", icon = PassIcons.FileOpen) { keyFile.launch(arrayOf("*/*")) }
             }
             item {
-                NavRow("Add a hardware key", "YubiKey or another FIDO2 key, by USB or NFC", icon = PassIcons.SecurityKey) { shell.nav.navigate("settings/hardware") }
+                NavRow("Add a security key", "YubiKey or another FIDO2 key, by USB or NFC", icon = PassIcons.SecurityKey) { shell.nav.navigate("settings/hardware") }
             }
         }
-        SettingsGroup("Under pressure") {
+        SettingsGroup("Duress") {
             item {
-                NavRow("A password that wipes", "Typing it erases this phone's vault. It looks like a mistyped password.", icon = PassIcons.Dangerous) { sheet = "duress:wipe" }
+                NavRow("Wipe password", "Erases the vault on this device. Looks like a wrong password.", icon = PassIcons.Dangerous) { sheet = "duress:wipe" }
             }
             item {
-                NavRow("A password that locks hard", "Typing it refuses every attempt for an hour.", icon = PassIcons.Lock) { sheet = "duress:lock" }
+                NavRow("Lockout password", "Refuses every attempt for an hour.", icon = PassIcons.Lock) { sheet = "duress:lock" }
             }
             item {
-                NavRow("A decoy vault", "A separate vault with its own password and harmless contents.", icon = PassIcons.Layers) { sheet = "decoy" }
+                NavRow("Decoy vault", "A separate vault with its own password.", icon = PassIcons.Layers) { sheet = "decoy" }
             }
         }
         SettingsGroup("Autofill and panic") {
             item {
-                NavRow("Use WM Pass for autofill", "Choose it as the phone's autofill service", icon = PassIcons.TextFields) {
+                NavRow("Autofill service", "Set WM Pass as this device's autofill service", icon = PassIcons.TextFields) {
                     runCatching {
                         context.startActivity(
                             android.content.Intent(android.provider.Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
@@ -337,9 +339,9 @@ private fun SecurityScreen() {
                 ) { action -> if (action == "wipe") sheet = "panic" else prefs.updatePanic("lock", null) }
             }
         }
-        SettingsGroup("If something happens to you") {
+        SettingsGroup("Emergency access") {
             item {
-                NavRow("Emergency kit", "Split your key between people you trust", icon = PassIcons.FamilyRestroom) { sheet = "kit" }
+                NavRow("Emergency kit", "Split your key between trusted people", icon = PassIcons.FamilyRestroom) { sheet = "kit" }
             }
         }
     }
@@ -350,11 +352,11 @@ private fun SecurityScreen() {
         current == "add" -> AddPasswordSheet("Add a password", "Opens the same vault.", "open") { sheet = null; refresh++ }
         current == "keyfile" -> AddPasswordSheet("Password for the key file", "This password and the file together will open the vault.", "open", keyFile = true) { sheet = null; refresh++ }
         current == "duress:wipe" -> AddPasswordSheet(
-            "A password that wipes",
-            "Anyone typing this erases this phone's copy of the vault. Flash storage may still hold traces, and backups and synced copies are not touched.",
+            "Wipe password",
+            "Entering this erases the vault on this device. Flash storage may keep traces, and backups and synced copies are not affected.",
             "wipe",
         ) { sheet = null; refresh++ }
-        current == "duress:lock" -> AddPasswordSheet("A password that locks hard", "Typing it refuses every attempt for an hour.", "lock") { sheet = null; refresh++ }
+        current == "duress:lock" -> AddPasswordSheet("Lockout password", "Refuses every attempt for an hour.", "lock") { sheet = null; refresh++ }
         current == "decoy" -> DecoySheet { sheet = null }
         current == "kit" -> KitSheet { sheet = null }
         current == "panic" -> {
@@ -581,21 +583,36 @@ private fun KitSheet(onDismiss: () -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun LookScreen() {
+internal fun LookScreen() {
     val shell = LocalShell.current
     val prefs = shell.prefs
     val colors = palette
-    WmScreen("Look", onBack = back()) {
-        SettingsGroup("Colours") {
+    WmScreen("Appearance", onBack = back()) {
+        SettingsGroup("Interface") {
             item {
                 ChoiceSetting(
-                    "Theme",
-                    options = listOf(Look.SYSTEM to "System", Look.DARK to "Dark", Look.OBSIDIAN to "Black", Look.LIGHT to "Light"),
+                    "Style",
+                    subtitle = if (prefs.uiStyle == "glass") "Blur, glow and larger animations." else "Plain surfaces and the usual Android layout.",
+                    options = listOf("standard" to "Standard", "glass" to "Glass"),
+                    selected = prefs.uiStyle,
+                    icon = PassIcons.Layers,
+                ) { prefs.updateUiStyle(it) }
+            }
+            item {
+                NavRow("Theme", "Dracula, Catppuccin, Nord, Solarized and more, or your own", icon = PassIcons.Palette) { shell.nav.navigate("settings/themes") }
+            }
+            item {
+                ChoiceSetting(
+                    "Dark mode",
+                    options = listOf(Look.SYSTEM to "System", Look.LIGHT to "Light", Look.DARK to "Dark", Look.OBSIDIAN to "Black"),
                     selected = prefs.look,
                     icon = PassIcons.Contrast,
                 ) { prefs.updateLook(it) }
             }
             item {
+                ToggleSetting("Coloured site icons", "Show known sites in their own colour.", prefs.colouredIcons, icon = PassIcons.Image) { prefs.updateColouredIcons(it) }
+            }
+            if (prefs.uiStyle == "glass") item {
                 FlowRow(
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -617,7 +634,7 @@ private fun LookScreen() {
                 }
             }
         }
-        SettingsGroup("The list") {
+        SettingsGroup("List") {
             item {
                 ChoiceSetting(
                     "Layout",
@@ -640,15 +657,15 @@ private fun LookScreen() {
                 NavRow("Keyboard shortcuts", "For a keyboard plugged in or paired", icon = PassIcons.Keyboard) { shell.nav.navigate("settings/shortcuts") }
             }
         }
-        SettingsGroup("Hands and motion") {
+        SettingsGroup("Layout and motion") {
             item {
-                ToggleSetting("Left-handed", "Search and add move to the other side.", prefs.leftHanded, icon = PassIcons.TouchApp) { prefs.updateLeftHanded(it) }
+                ToggleSetting("Left-handed", "Move search and add to the other side. Applies to Glass.", prefs.leftHanded, icon = PassIcons.TouchApp) { prefs.updateLeftHanded(it) }
             }
             item {
-                ToggleSetting("Rich motion", "Turning this off keeps the transitions short and still.", prefs.richMotion, icon = PassIcons.Animation) { prefs.updateRichMotion(it) }
+                ToggleSetting("Animations", "Turn off for shorter transitions.", prefs.richMotion, icon = PassIcons.Animation) { prefs.updateRichMotion(it) }
             }
         }
-        SettingsGroup("The dock") {
+        SettingsGroup("Navigation bar") {
             val names = AllTabs.associate { it.id to it.label }
             item {
                 ReorderableColumn(
@@ -664,7 +681,7 @@ private fun LookScreen() {
                 }
             }
         }
-        SettingsGroup("Cards above the list") {
+        SettingsGroup("Above the list") {
             val all = listOf("favourites" to "Favourites", "recent" to "Recently changed", "health" to "Health", "codes" to "Codes")
             val names = all.toMap()
             item {

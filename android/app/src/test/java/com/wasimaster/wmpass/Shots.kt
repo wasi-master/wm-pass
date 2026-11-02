@@ -55,11 +55,18 @@ class Shots {
         prefs.updateTabs(Prefs.DEFAULT_TABS)
     }
 
-    private fun shot(name: String, look: Look = Look.DARK, advance: Long = 1600, content: @Composable () -> Unit) {
+    private fun shot(
+        name: String,
+        look: Look = Look.DARK,
+        advance: Long = 1600,
+        theme: String = com.wasimaster.wmpass.ui.theme.BuiltInThemes.DEFAULT,
+        style: String = "standard",
+        content: @Composable () -> Unit,
+    ) {
         // The clock only moves by hand: the door has animations that never end, so the
         // app is never "idle" in the sense a test usually waits for.
         rule.mainClock.autoAdvance = false
-        rule.setContent { PassTheme(look) { content() } }
+        rule.setContent { PassTheme(look, themeId = theme, style = style) { content() } }
         rule.mainClock.advanceTimeBy(advance)
         // Engine calls finish on another thread; let them land, then let the UI catch up.
         repeat(6) {
@@ -243,5 +250,59 @@ class Shots {
     fun settings() {
         seed()
         shot("settings-root") { WithShell { com.wasimaster.wmpass.ui.settings.SettingsRoot() } }
+    }
+
+    @Test
+    fun dracula() {
+        val ids = seed()
+        shot("theme-dracula", theme = "dracula") { WithShell { HomeScreen() } }
+    }
+
+    @Test
+    fun nordEntry() {
+        val ids = seed()
+        shot("theme-nord-entry", theme = "nord") { WithShell { EntryScreen(ids.getValue("GitHub")) } }
+    }
+
+    @Test
+    fun catppuccinLight() {
+        seed()
+        shot("theme-catppuccin-light", Look.LIGHT, theme = "catppuccin") { WithShell { HomeScreen() } }
+    }
+
+    @Test
+    fun solarizedLight() {
+        val ids = seed()
+        shot("theme-solarized-light", Look.LIGHT, theme = "solarized") { WithShell { EntryScreen(ids.getValue("GitHub")) } }
+    }
+
+    @Test
+    fun glass() {
+        seed()
+        shot("glass-vault", style = "glass") { WithShell { HomeScreen() } }
+    }
+
+    @Test
+    fun themes() {
+        seed()
+        shot("settings-themes") { WithShell { com.wasimaster.wmpass.ui.settings.ThemesScreen() } }
+    }
+
+    @Test
+    fun themeEditor() {
+        seed()
+        shot("settings-theme-edit") { WithShell { com.wasimaster.wmpass.ui.settings.ThemeEditor("dracula") } }
+    }
+
+    @Test
+    fun look() {
+        seed()
+        shot("settings-look") { WithShell { com.wasimaster.wmpass.ui.settings.LookScreen() } }
+    }
+
+    @Test
+    fun arcFlagsAreSpacedOut() {
+        val spaced = com.wasimaster.wmpass.ui.parts.spaceArcFlags("M1 2a1 1 0 00-1 2.5.5.5 0 01.5.5l3 4")
+        org.junit.Assert.assertEquals("M1 2a1 1 0 0 0 -1 2.5 .5 .5 0 0 1 .5 .5 l3 4", spaced)
     }
 }

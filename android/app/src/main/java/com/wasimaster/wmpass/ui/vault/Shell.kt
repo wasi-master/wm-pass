@@ -235,6 +235,7 @@ fun VaultShell(prefs: Prefs) {
     val haptics = rememberHaptics()
     val shell = remember(nav) { Shell(nav, prefs, scope, context, haptics) }
     val backdrop = rememberBackdrop()
+    val axisTravel = with(androidx.compose.ui.platform.LocalDensity.current) { 30.dp.roundToPx() }
     CompositionLocalProvider(LocalShell provides shell, LocalBackdrop provides backdrop) {
         Box(
             Modifier
@@ -260,10 +261,24 @@ fun VaultShell(prefs: Prefs) {
                     NavHost(
                         nav,
                         startDestination = "home",
-                        enterTransition = { fadeIn(tween(260, 60)) + slideInHorizontally(tween(340)) { it / 7 } },
-                        exitTransition = { fadeOut(tween(160)) + slideOutHorizontally(tween(340)) { -it / 12 } },
-                        popEnterTransition = { fadeIn(tween(240, 40)) + slideInHorizontally(tween(320)) { -it / 12 } },
-                        popExitTransition = { fadeOut(tween(160)) + slideOutHorizontally(tween(320)) { it / 7 } },
+                        // The standard look uses Material's shared axis: both pages move the same short
+                        // way, one fading out as the other fades in.
+                        enterTransition = {
+                            if (colors.flat) fadeIn(tween(210, 90)) + slideInHorizontally(tween(300)) { axisTravel }
+                            else fadeIn(tween(260, 60)) + slideInHorizontally(tween(340)) { it / 7 }
+                        },
+                        exitTransition = {
+                            if (colors.flat) fadeOut(tween(90)) + slideOutHorizontally(tween(300)) { -axisTravel }
+                            else fadeOut(tween(160)) + slideOutHorizontally(tween(340)) { -it / 12 }
+                        },
+                        popEnterTransition = {
+                            if (colors.flat) fadeIn(tween(210, 90)) + slideInHorizontally(tween(300)) { -axisTravel }
+                            else fadeIn(tween(240, 40)) + slideInHorizontally(tween(320)) { -it / 12 }
+                        },
+                        popExitTransition = {
+                            if (colors.flat) fadeOut(tween(90)) + slideOutHorizontally(tween(300)) { axisTravel }
+                            else fadeOut(tween(160)) + slideOutHorizontally(tween(320)) { it / 7 }
+                        },
                     ) {
                         composable("home") {
                             CompositionLocalProvider(LocalRouteScope provides this) { HomeScreen() }
@@ -271,10 +286,10 @@ fun VaultShell(prefs: Prefs) {
                         composable(
                             "entry/{id}",
                             listOf(navArgument("id") { type = NavType.StringType }),
-                            enterTransition = { fadeIn(tween(220, 40)) + scaleIn(tween(340), 0.97f) + slideInVertically(tween(340)) { it / 24 } },
-                            exitTransition = { fadeOut(tween(140)) },
-                            popEnterTransition = { fadeIn(tween(200, 40)) },
-                            popExitTransition = { fadeOut(tween(180)) + scaleOut(tween(280), 0.97f) + slideOutVertically(tween(280)) { it / 24 } },
+                            enterTransition = if (colors.flat) null else ({ fadeIn(tween(220, 40)) + scaleIn(tween(340), 0.97f) + slideInVertically(tween(340)) { it / 24 } }),
+                            exitTransition = if (colors.flat) null else ({ fadeOut(tween(140)) }),
+                            popEnterTransition = if (colors.flat) null else ({ fadeIn(tween(200, 40)) }),
+                            popExitTransition = if (colors.flat) null else ({ fadeOut(tween(180)) + scaleOut(tween(280), 0.97f) + slideOutVertically(tween(280)) { it / 24 } }),
                         ) { entry ->
                             CompositionLocalProvider(LocalRouteScope provides this) {
                                 EntryScreen(entry.arguments?.getString("id").orEmpty())
@@ -283,6 +298,8 @@ fun VaultShell(prefs: Prefs) {
                         composable(
                             "edit/{id}",
                             listOf(navArgument("id") { type = NavType.StringType }),
+                            enterTransition = if (colors.flat) ({ fadeIn(tween(210)) + slideInVertically(tween(300)) { it / 12 } }) else null,
+                            popExitTransition = if (colors.flat) ({ fadeOut(tween(150)) + slideOutVertically(tween(220)) { it / 12 } }) else null,
                         ) { entry -> EditorScreen(entryId = entry.arguments?.getString("id").orEmpty(), newKind = null) }
                         composable(
                             "new/{kind}?title={title}",
@@ -293,6 +310,8 @@ fun VaultShell(prefs: Prefs) {
                                     defaultValue = ""
                                 },
                             ),
+                            enterTransition = if (colors.flat) ({ fadeIn(tween(210)) + slideInVertically(tween(300)) { it / 12 } }) else null,
+                            popExitTransition = if (colors.flat) ({ fadeOut(tween(150)) + slideOutVertically(tween(220)) { it / 12 } }) else null,
                         ) { entry ->
                             EditorScreen(
                                 entryId = null,
@@ -305,7 +324,11 @@ fun VaultShell(prefs: Prefs) {
                 }
             }
             // Above every page: the capsule that counts a copied secret down.
-            CopyCapsule(Modifier.align(Alignment.TopCenter).statusBarsPadding())
+            if (colors.flat) {
+                CopyCapsule(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 88.dp))
+            } else {
+                CopyCapsule(Modifier.align(Alignment.TopCenter).statusBarsPadding())
+            }
             ChildPill(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 96.dp))
         }
     }
