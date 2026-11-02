@@ -1,0 +1,37 @@
+[package]
+name = "wmpass-server"
+description = "Self-hosted sync server speaking Bitwarden's client API, plus WM Pass's own routes."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+wmpass-core.workspace = true
+axum = { version = "0.8", features = ["ws"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "time"] }
+tower-http = { version = "0.7", features = ["cors", "limit", "set-header"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "any", "sqlite-bundled", "postgres", "tls-rustls-ring-webpki"] }
+serde.workspace = true
+serde_json.workspace = true
+rmp-serde.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+subtle.workspace = true
+getrandom.workspace = true
+base64 = "0.23.1"
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+
+[dev-dependencies]
+wmpass-bw = { path = "../wmpass-bw", features = ["native"] }
+wmpass-net = { path = "../wmpass-net", features = ["native"] }
+tokio-tungstenite = "0.30"
+tempfile = "3"
+rcgen = "0.14"
+axum-server = { version = "0.8", default-features = false, features = ["tls-rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }

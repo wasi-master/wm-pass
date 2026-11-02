@@ -2,6 +2,58 @@
 
 use serde::{Deserialize, Serialize};
 
+/// `2026-11-02T10:00:00.000Z` to milliseconds.
+pub fn parse_date(value: &str) -> Option<u64> {
+    let bytes = value.as_bytes();
+    if bytes.len() < 19 {
+        return None;
+    }
+    let digits = |range: std::ops::Range<usize>| value.get(range)?.parse::<i64>().ok();
+    let (year, month, day) = (digits(0..4)?, digits(5..7)?, digits(8..10)?);
+    let (hour, minute, second) = (digits(11..13)?, digits(14..16)?, digits(17..19)?);
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    // Days from civil, after Howard Hinnant.
+    let y = if month <= 2 { year - 1 } else { year };
+    let era = y.div_euclid(400);
+    let yoe = y.rem_euclid(400);
+    let mp = (month + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    let mut millis = 0;
+    if bytes.get(19) == Some(&b'.') {
+        let fraction: String = value[20..].chars().take_while(char::is_ascii_digit).take(3).collect();
+        let scale = 10_i64.pow(3 - u32::try_from(fraction.len()).ok()?);
+        millis = fraction.parse::<i64>().ok()? * scale;
+    }
+    u64::try_from((days * 86_400 + hour * 3600 + minute * 60 + second) * 1000 + millis).ok()
+}
+
+/// Milliseconds to the API's date format.
+pub fn format_date(ms: u64) -> String {
+    let seconds = ms / 1000;
+    let days = i64::try_from(seconds / 86_400).unwrap_or(0);
+    let rest = seconds % 86_400;
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{:03}Z",
+        rest / 3600,
+        rest % 3600 / 60,
+        rest % 60,
+        ms % 1000
+    )
+}
+
 /// One moment. Ordered by time, then counter, then device, so any two values have
 /// a winner and every device picks the same one.
 #[derive(

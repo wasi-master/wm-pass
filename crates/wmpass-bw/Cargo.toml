@@ -1,0 +1,38 @@
+[package]
+name = "wmpass-bw"
+description = "Client for the Bitwarden API, written from its wire formats: no Bitwarden code is used."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = []
+native = ["wmpass-net/native"]
+
+[dependencies]
+wmpass-core.workspace = true
+wmpass-net = { path = "../wmpass-net" }
+serde.workspace = true
+serde_json.workspace = true
+rmp-serde.workspace = true
+zeroize.workspace = true
+thiserror.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+hkdf.workspace = true
+argon2.workspace = true
+subtle.workspace = true
+getrandom.workspace = true
+base64 = "0.23.1"
+aes = "0.9"
+cbc = { version = "0.2", features = ["alloc", "block-padding"] }
+pbkdf2 = { version = "0.13", default-features = false, features = ["hmac"] }
+# Organisation keys are RSA-OAEP in Bitwarden's format. See `.cargo/audit.toml` for the advisory.
+rsa = { version = "0.9", default-features = false, features = ["std", "u64_digit", "getrandom"] }
+sha1_digest010 = { package = "sha1", version = "0.10", default-features = false }

@@ -184,12 +184,23 @@ impl<T> Call<T> {
     }
 }
 
-fn is_local(host: &str) -> bool {
-    host == "localhost"
-        || host == "[::1]"
-        || host == "::1"
-        || host.starts_with("127.")
-        || host.ends_with(".local")
+/// Where plain http is acceptable, because nothing readable crosses a network: this
+/// device, or Tailscale, which encrypts below this layer. `.local` names are deliberately
+/// not here. Anyone on the same network can answer for one, and would be handed the
+/// credentials in the clear. Compared as parsed addresses, since a text prefix check
+/// would also accept a domain such as `127.example.com`.
+fn is_local(host: &url::Host<&str>) -> bool {
+    match host {
+        url::Host::Domain(name) => {
+            let name = name.trim_end_matches('.').to_ascii_lowercase();
+            name == "localhost" || name.ends_with(".localhost") || name.ends_with(".ts.net")
+        }
+        url::Host::Ipv4(ip) => {
+            let [a, b, ..] = ip.octets();
+            ip.is_loopback() || (a == 100 && (64..128).contains(&b))
+        }
+        url::Host::Ipv6(ip) => ip.is_loopback(),
+    }
 }
 
 /// The rule every request passes. A browser or platform client must call this too.
@@ -206,7 +217,7 @@ pub fn check(request: &Request, policy: NetPolicy) -> Result<(), NetError> {
         .map_err(|_| NetError::Invalid("that address is not valid".into()))?;
     match url.scheme() {
         "https" => Ok(()),
-        "http" if url.host_str().is_some_and(is_local) => Ok(()),
+        "http" if url.host().is_some_and(|host| is_local(&host)) => Ok(()),
         _ => Err(NetError::Insecure),
     }
 }
@@ -349,6 +360,39 @@ pub mod fake {
 mod tests {
     use super::fake::FakeHttp;
     use super::*;
+
+    #[test]
+    fn plain_http_only_where_nothing_readable_crosses_a_network() {
+        let allowed = |url: &str| check(&Request::get(url), NetPolicy::Any).is_ok();
+        for good in [
+            "http://localhost:80/",
+            "http://LOCALHOST/",
+            "http://app.localhost/",
+            "http://127.0.0.1:9/",
+            "http://127.8.8.8/",
+            "http://[::1]:9/",
+            "http://100.64.0.1/",
+            "http://100.127.255.254/",
+            "http://box.tail1234.ts.net/",
+            "https://anything.example/",
+        ] {
+            assert!(allowed(good), "{good}");
+        }
+        for bad in [
+            "http://127.example.com/",
+            "http://127.0.0.1.example.com/",
+            "http://localhost.example.com/",
+            "http://nas.local/",
+            "http://192.168.1.10/",
+            "http://10.0.0.1/",
+            "http://100.63.0.1/",
+            "http://100.128.0.1/",
+            "http://example.ts.net.evil.com/",
+            "ftp://localhost/",
+        ] {
+            assert!(!allowed(bad), "{bad}");
+        }
+    }
 
     fn call(url: &str) -> Call<u16> {
         Call::new(Request::get(url), |response| Ok(response.status))

@@ -1,0 +1,25 @@
+# TLS is required: WM Pass and official Bitwarden clients both refuse plain http to a
+# server on another machine. Caddy obtains a certificate for the domain by itself.
+services:
+  wmpass:
+    build:
+      context: ../..
+      dockerfile: packaging/server/Dockerfile
+    restart: unless-stopped
+    environment:
+      # closed, open, or a comma-separated list of addresses
+      WMPASS_SIGNUPS: ${WMPASS_SIGNUPS:-closed}
+    volumes:
+      - wmpass-data:/data
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    command: caddy reverse-proxy --from ${WMPASS_DOMAIN:?set WMPASS_DOMAIN} --to wmpass:8222
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy-data:/data
+volumes:
+  wmpass-data:
+  caddy-data:
