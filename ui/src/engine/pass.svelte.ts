@@ -87,6 +87,11 @@ class PassStore {
       await this.writeDoor();
     }
     await this.refreshDoorState();
+    const open = await host().attach?.();
+    if (open) {
+      this.adopt(open.handle, open.file, open.name, open.read_only);
+      await this.refresh();
+    }
   }
 
   private async writeDoor() {
@@ -193,7 +198,7 @@ class PassStore {
     this.handle = handle;
     this.file = file;
     this.state = { kind: 'unlocked', name, file, readOnly };
-    host().stateChanged?.({ unlocked: true, name, handle });
+    host().stateChanged?.({ unlocked: true, name, handle, file, read_only: readOnly });
   }
 
   /** When typing a password next becomes allowed, or 0. */

@@ -16,6 +16,7 @@
   import BackupPage from './BackupPage.svelte';
   import BreachPage from './BreachPage.svelte';
   import BrowserPage from './BrowserPage.svelte';
+  import DesktopLinkPage from './DesktopLinkPage.svelte';
   import CodesSettingsPage from './CodesSettingsPage.svelte';
   import ComparePage from './ComparePage.svelte';
   import DesktopPage from './DesktopPage.svelte';
@@ -77,6 +78,7 @@
     file: FilePage,
     about: AboutPage,
     browser: BrowserPage,
+    'desktop-link': DesktopLinkPage,
     ssh: SshPage,
     updates: UpdatesPage,
     desktop: DesktopPage,
@@ -91,6 +93,7 @@
 
   function shown(info: PageInfo) {
     if (info.desktop && !isDesktop) return false;
+    if (info.extension && host().kind !== 'extension') return false;
     if (info.parent) return false;
     if (info.needsNetwork && !host().network) return false;
     return true;

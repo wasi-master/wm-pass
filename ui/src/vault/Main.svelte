@@ -95,6 +95,9 @@
       case 'palette':
         ui.searchFocus += 1;
         break;
+      case 'reload':
+        void pass.reload();
+        break;
       case 'window-hidden':
         if (prefs.v.lock_on_hide) void pass.lock();
         break;

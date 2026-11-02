@@ -167,7 +167,7 @@ export async function run() {
   ui.go('all');
   ui.open(id);
   await step('done', async () => 'waiting');
-  await sleep(15_000);
+  await sleep(30_000);
   await pass.lock();
   await step('agent after lock', async () => 'locked');
   await sleep(6000);

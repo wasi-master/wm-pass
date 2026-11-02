@@ -5,7 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 const HOST_NAME: &str = "com.wasimaster.wmpass";
-const CHROME_EXTENSION: &str = "chrome-extension://kifdmnjgfmldnolhgcfbanmabbkjdlfd/";
+const CHROME_EXTENSION: &str = "chrome-extension://blpbdcnicidapbjjopepnaofggclabom/";
 const FIREFOX_EXTENSION: &str = "wmpass@wasimaster.com";
 
 struct Browser {

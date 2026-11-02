@@ -10,6 +10,8 @@ export interface PageInfo {
   /** Reached from another page rather than the list. */
   parent?: string;
   desktop?: boolean;
+  /** Only in the browser extension. */
+  extension?: boolean;
   needsNetwork?: boolean;
 }
 
@@ -44,6 +46,7 @@ export const PAGES: PageInfo[] = [
   { id: 'generator', title: 'Generator', group: 'Customise', icon: 'casino' },
   { id: 'health', title: 'Health checks', group: 'Customise', icon: 'ecg_heart' },
   { id: 'shortcuts', title: 'Keyboard shortcuts', group: 'Customise', icon: 'keyboard' },
+  { id: 'desktop-link', title: 'Desktop app', group: 'This computer', icon: 'computer', extension: true },
   { id: 'desktop', title: 'Desktop', group: 'This computer', icon: 'computer', desktop: true },
   { id: 'browser', title: 'Browser extension', group: 'This computer', icon: 'extension', desktop: true },
   { id: 'ssh', title: 'SSH agent', group: 'This computer', icon: 'terminal', desktop: true },

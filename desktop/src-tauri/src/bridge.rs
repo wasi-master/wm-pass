@@ -400,7 +400,7 @@ impl Conversation {
         let (already, name) = {
             let saved = self.saved.lock().map_err(|_| "busy")?;
             let paired = saved.paired.iter().find(|p| p.key == wanted).ok_or("this extension is not connected")?;
-            (paired.sites.iter().any(|s| *s == site), paired.name.clone())
+            (paired.sites.contains(&site), paired.name.clone())
         };
         if already {
             return Ok(());

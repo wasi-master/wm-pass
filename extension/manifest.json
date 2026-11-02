@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "WM Pass",
+  "version": "0.1.0",
+  "description": "Fills your logins from a vault on this device, or from the WM Pass app.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAn6FBOtBSxDIaOsYHLB/MlZy7wT7aBsiFQDNWWs1K4rB9eaLGUWY/squfTWMtKYbfy4fpFc9Y8C7zt5O7Lfz2wrh1+0UJ0Hirm9OIG07xgf0DroHcZ5CNGmMFXQmnpAw14OAB0KOr9cJWEZzZgKyRKE6t0/GupEO6oAenKHExLAgTY0efVsokmOFgVNP0w6nQ0m8nZkyUIqypSt7wHyL1GGFLi+9bnZeJN+Du1GsORYgrVa4YSpOmUJqHajHX+R+7wvSJ12D/+rK9Y+Wi9WwFQIHKbVeuFhUafg5a8lBX0zF5YQHBpubfzDXlFTp3eqLq7WP2KQzvg9lT1B4FuDuZlQIDAQAB",
+  "minimum_chrome_version": "116",
+  "icons": { "16": "icon-16.png", "32": "icon-32.png", "48": "icon-48.png", "128": "icon-128.png" },
+  "action": { "default_popup": "popup.html", "default_title": "WM Pass" },
+  "background": { "service_worker": "background.js", "type": "module" },
+  "permissions": ["storage", "alarms", "idle", "offscreen", "clipboardWrite", "nativeMessaging", "tabs", "scripting"],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "content_security_policy": { "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; base-uri 'none'; frame-ancestors 'none'" },
+  "commands": { "_execute_action": { "suggested_key": { "default": "Ctrl+Shift+L", "mac": "Command+Shift+L" } } },
+  "content_scripts": [
+    { "matches": ["http://*/*", "https://*/*"], "js": ["content.js"], "all_frames": true, "run_at": "document_idle" },
+    { "matches": ["https://*/*"], "js": ["page-world.js"], "all_frames": true, "run_at": "document_start", "world": "MAIN" }
+  ],
+  "web_accessible_resources": []
+}
