@@ -1,6 +1,8 @@
 package com.wasimaster.wmpass.ui.door
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.compose.animation.AnimatedContent
@@ -18,6 +20,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -69,7 +73,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.wasimaster.wmpass.app.Prefs
+import com.wasimaster.wmpass.core.NativeFailure
+import com.wasimaster.wmpass.system.AccountRef
+import com.wasimaster.wmpass.system.Accounts
+import com.wasimaster.wmpass.system.Destination
+import com.wasimaster.wmpass.system.HardwareKeys
+import com.wasimaster.wmpass.ui.parts.Pill
+import com.wasimaster.wmpass.ui.vault.PassSheet
+import kotlinx.serialization.json.buildJsonObject
 import com.wasimaster.wmpass.core.Engine
 import com.wasimaster.wmpass.core.LockState
 import com.wasimaster.wmpass.core.NeededFactor
@@ -100,11 +113,15 @@ import kotlinx.serialization.json.putJsonObject
 /** Everything in front of the vault: the first visit, and every visit after. */
 @Composable
 fun DoorScreen(state: LockState, prefs: Prefs) {
-    Box(Modifier.fillMaxSize()) {
-        Aurora(Modifier.fillMaxSize())
-        when (state) {
-            LockState.NoVault -> Welcome()
-            else -> Unlock()
+    val accounts by Accounts.list.collectAsStateWithLifecycle()
+    var starting by remember { mutableStateOf(false) }
+    com.wasimaster.wmpass.ui.NoLearningInput {
+        Box(Modifier.fillMaxSize()) {
+            Aurora(Modifier.fillMaxSize())
+            when {
+                state == LockState.NoVault && (accounts.isEmpty() || starting) -> Welcome(if (accounts.isEmpty()) null else ({ starting = false }))
+                else -> Unlock(state != LockState.NoVault, accounts) { starting = true }
+            }
         }
     }
 }
@@ -223,8 +240,9 @@ private fun formatWait(ms: Long): String {
     return if (seconds >= 60) "${seconds / 60} min ${seconds % 60} s" else "$seconds s"
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Unlock() {
+private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: () -> Unit) {
     val colors = palette
     val context = LocalContext.current
     val haptics = rememberHaptics()
@@ -238,6 +256,13 @@ private fun Unlock() {
     var retryAt by remember { mutableStateOf(Pass.retryAt()) }
     var remaining by remember { mutableStateOf(0L) }
     var needed by remember { mutableStateOf<List<NeededFactor>?>(null) }
+    var source by remember { mutableStateOf(if (hasLocal) null else accounts.firstOrNull()) }
+    val codeField = rememberTextFieldState()
+    var asksCode by remember { mutableStateOf(false) }
+    var keyFile by remember { mutableStateOf<ByteArray?>(null) }
+    val pickAccountKey = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) keyFile = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+    }
     val activity = context as? FragmentActivity
     val quick = remember { runCatching { QuickUnlock(context) }.getOrNull() }
     val biometricsReady = remember(activity) {
@@ -256,7 +281,53 @@ private fun Unlock() {
         snapshotFlow { field.text.length }.collectLatest { typed++ }
     }
 
+    fun submitAccount(ref: AccountRef) {
+        if (shield == ShieldState.WORKING || field.text.isEmpty() || remaining > 0) return
+        val password = field.text.toString().toByteArray()
+        shield = ShieldState.WORKING
+        message = null
+        scope.launch {
+            try {
+                if (ref.kind == "kdbx") {
+                    Accounts.openKdbx(context, ref, password, keyFile)
+                } else {
+                    Accounts.openBitwarden(context, ref, password, codeField.text.toString().trim().ifEmpty { null })
+                }
+                field.clearText()
+                keyboard?.hide()
+                haptics.confirm()
+                shield = ShieldState.OPENED
+            } catch (failure: NativeFailure) {
+                haptics.reject()
+                when (failure.code) {
+                    "two_factor" -> {
+                        asksCode = true
+                        shield = ShieldState.IDLE
+                        message = "This account also needs a code from your authenticator."
+                    }
+                    "network" -> {
+                        shield = ShieldState.IDLE
+                        message = "The server could not be reached."
+                    }
+                    else -> {
+                        shield = ShieldState.REFUSED
+                        message = failure.message ?: "That is not it."
+                        retryAt = Pass.noteWrongAccountPassword()
+                        delay(900)
+                        shield = ShieldState.IDLE
+                    }
+                }
+            } finally {
+                password.fill(0)
+            }
+        }
+    }
+
     fun submit(factors: List<Pair<String, ByteArray>> = emptyList()) {
+        source?.let {
+            submitAccount(it)
+            return
+        }
         if (shield == ShieldState.WORKING || field.text.isEmpty() || remaining > 0) return
         val password = field.text.toString().toByteArray()
         shield = ShieldState.WORKING
@@ -264,8 +335,10 @@ private fun Unlock() {
         scope.launch {
             val result = runCatching { Pass.unlock(password, factors) }
             password.fill(0)
+            factors.forEach { it.second.fill(0) }
             when (val outcome = result.getOrNull()) {
                 UnlockResult.Opened -> {
+                    needed = null
                     field.clearText()
                     keyboard?.hide()
                     haptics.confirm()
@@ -340,7 +413,7 @@ private fun Unlock() {
     }
 
     LaunchedEffect(Unit) {
-        if (biometricsReady) {
+        if (biometricsReady && source == null) {
             delay(240)
             promptBiometric()
         } else if (remaining == 0L) {
@@ -372,19 +445,42 @@ private fun Unlock() {
                     modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
                 )
             }
+            if (accounts.isNotEmpty()) {
+                FlowRow(
+                    Modifier.fillMaxWidth().padding(bottom = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (hasLocal) {
+                        Pill("This phone", source == null) {
+                            source = null
+                            message = null
+                            needed = null
+                        }
+                    } else {
+                        Pill("Make a vault here", false, icon = PassIcons.Add, onClick = onStartLocal)
+                    }
+                    accounts.forEach { account ->
+                        Pill(account.label, source?.id == account.id) {
+                            source = account
+                            message = null
+                            needed = null
+                            asksCode = false
+                            keyFile = null
+                        }
+                    }
+                }
+            }
             val factors = needed
             if (factors != null) {
-                Text(
-                    factorPrompt(factors),
-                    color = colors.textMid,
-                    style = MaterialTheme.typography.bodyMedium,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                )
+                FactorEntry(factors, enabled = shield != ShieldState.WORKING) { kind, output -> submit(listOf(kind to output)) }
+            }
+            AnimatedVisibility(asksCode) {
+                Box(Modifier.padding(bottom = 10.dp)) { com.wasimaster.wmpass.ui.vault.SheetField(codeField, "Six-digit code") }
             }
             PasswordPill(
                 field,
-                "Master password",
+                source?.let { "Password for ${it.label}" } ?: "Master password",
                 enabled = remaining == 0L && shield != ShieldState.WORKING,
                 imeAction = ImeAction.Go,
                 focus = focus,
@@ -392,7 +488,17 @@ private fun Unlock() {
             ) {
                 GoButton(field.text.isNotEmpty() && remaining == 0L && shield != ShieldState.WORKING) { submit() }
             }
-            if (biometricsReady) {
+            if (source?.kind == "kdbx") {
+                Spacer(Modifier.height(12.dp))
+                QuietButton(
+                    if (keyFile == null) "Add its key file, if it has one" else "Key file chosen",
+                    Modifier.fillMaxWidth(),
+                    PassIcons.Key,
+                    colors.primary,
+                    height = 52.dp,
+                ) { pickAccountKey.launch(arrayOf("*/*")) }
+            }
+            if (biometricsReady && source == null) {
                 Spacer(Modifier.height(12.dp))
                 QuietButton(
                     "Use fingerprint",
@@ -406,11 +512,67 @@ private fun Unlock() {
     }
 }
 
-private fun factorPrompt(factors: List<NeededFactor>): String = when (factors.firstOrNull()?.kind) {
-    "key_file" -> "This vault also needs its key file."
-    "fido2" -> "Touch your security key."
-    "yubikey" -> "Touch your YubiKey."
-    else -> "This vault needs a second factor."
+/**
+ * The second thing a vault asks for, once the password has gone through. A key file is chosen; a
+ * hardware key answers as soon as it is held to the phone or plugged in.
+ */
+@Composable
+private fun FactorEntry(factors: List<NeededFactor>, enabled: Boolean, onOutput: (String, ByteArray) -> Unit) {
+    val colors = palette
+    val context = LocalContext.current
+    val activity = context as? FragmentActivity
+    val hardware = factors.filter { it.kind != "key_file" }
+    var problem by remember { mutableStateOf<String?>(null) }
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) context.contentResolver.openInputStream(uri)?.use { it.readBytes() }?.let { onOutput("key_file", it) }
+    }
+    if (hardware.isNotEmpty() && activity != null) {
+        LaunchedEffect(factors, enabled) {
+            if (!enabled) return@LaunchedEffect
+            var index = 0
+            while (true) {
+                val factor = hardware[index % hardware.size]
+                val json = buildJsonObject {
+                    put("kind", factor.kind)
+                    factor.credentialId?.let { put("credential_id", it) }
+                    factor.salt?.let { put("salt", it) }
+                    factor.challenge?.let { put("challenge", it) }
+                    factor.slot?.let { put("slot", it) }
+                }.toString()
+                try {
+                    val (_, output) = HardwareKeys.tap(activity, factor.kind == "fido2", json)
+                    onOutput(factor.kind, output)
+                    return@LaunchedEffect
+                } catch (failure: NativeFailure) {
+                    problem = if (hardware.size > 1) "That key did not answer. Trying the next one." else failure.message
+                    index++
+                    delay(1200)
+                }
+            }
+        }
+        Column(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            com.wasimaster.wmpass.ui.parts.Listening(PassIcons.SecurityKey, size = 128.dp)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                problem ?: "Hold your key to the back of the phone, or plug it in and touch it.",
+                color = if (problem != null) colors.danger else colors.textMid,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+    if (factors.any { it.kind == "key_file" }) {
+        Text(
+            "This vault also needs its key file.",
+            color = colors.textMid,
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+        )
+        QuietButton("Choose the key file", Modifier.fillMaxWidth().padding(bottom = 12.dp), PassIcons.Key, colors.primary, height = 52.dp) {
+            pick.launch(arrayOf("*/*"))
+        }
+    }
 }
 
 // ---- the first visit ----
@@ -418,7 +580,7 @@ private fun factorPrompt(factors: List<NeededFactor>): String = when (factors.fi
 private enum class Step { HELLO, CHOOSE, CONFIRM, MAKING }
 
 @Composable
-private fun Welcome() {
+private fun Welcome(onBack: (() -> Unit)?) {
     var step by rememberSaveable { mutableStateOf(Step.HELLO) }
     val first = rememberTextFieldState()
     val second = rememberTextFieldState()
@@ -428,6 +590,7 @@ private fun Welcome() {
     BackHandler(step == Step.CHOOSE || step == Step.CONFIRM) {
         step = if (step == Step.CONFIRM) Step.CHOOSE else Step.HELLO
     }
+    BackHandler(step == Step.HELLO && onBack != null) { onBack?.invoke() }
 
     fun make() {
         step = Step.MAKING
@@ -496,9 +659,149 @@ private fun Headline(title: String, body: String) {
 
 @Composable
 private fun Hello(onCreate: () -> Unit) {
+    var returning by remember { mutableStateOf(false) }
     Headline("A vault only you can open", "Your passwords stay on this phone, encrypted, and nothing leaves unless you send it.")
     Spacer(Modifier.height(28.dp))
     PrimaryButton("Create your vault", Modifier.fillMaxWidth(), onClick = onCreate)
+    Spacer(Modifier.height(10.dp))
+    QuietButton("I already have one", Modifier.fillMaxWidth()) { returning = true }
+    if (returning) ComingBack { returning = false }
+}
+
+@Composable
+private fun DoorRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
+    val colors = palette
+    val haptics = rememberHaptics()
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(com.wasimaster.wmpass.ui.theme.Shapes.cardSmall)
+            .clickable {
+                haptics.tick()
+                onClick()
+            }
+            .padding(vertical = 12.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        com.wasimaster.wmpass.ui.parts.GlyphTile(icon, colors.primary, size = 44.dp)
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, color = colors.text, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold))
+            Text(subtitle, color = colors.textMid, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+/** Every way back to a vault that already exists somewhere. */
+@Composable
+private fun ComingBack(onDismiss: () -> Unit) {
+    val colors = palette
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var sheet by remember { mutableStateOf("menu") }
+    var problem by remember { mutableStateOf<String?>(null) }
+    var place by remember { mutableStateOf<Destination?>(null) }
+    val openFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                try {
+                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@launch
+                    Pass.restore(bytes)
+                    onDismiss()
+                } catch (failure: Exception) {
+                    problem = failure.message ?: "That file could not be used."
+                }
+            }
+        }
+    }
+    when (sheet) {
+        "menu" -> PassSheet(onDismiss, "Bring it here") {
+            DoorRow(PassIcons.Folder, "From a file", "A .wmvault file or a .wmbackup you saved") { openFile.launch(arrayOf("*/*")) }
+            DoorRow(PassIcons.Backup, "From a place you back up to", "A folder, WebDAV, S3 or SFTP") { sheet = "place" }
+            DoorRow(PassIcons.Sync, "KeePass, Bitwarden or a server", "Open it where it is, without moving it") { sheet = "account" }
+            DoorRow(PassIcons.FamilyRestroom, "With emergency shares", "When someone trusted you with part of a key") { sheet = "shares" }
+            problem?.let {
+                Spacer(Modifier.height(8.dp))
+                Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+        "place" -> com.wasimaster.wmpass.ui.settings.DestinationSheet(null, onDismiss) { saved ->
+            place = saved
+            sheet = "copies"
+        }
+        "copies" -> place?.let { saved ->
+            com.wasimaster.wmpass.ui.settings.CopiesSheet(saved, onDismiss) { bytes ->
+                runCatching { Pass.restore(bytes) }
+                    .onSuccess { onDismiss() }
+                    .onFailure {
+                        problem = it.message
+                        sheet = "menu"
+                    }
+            }
+        }
+        "account" -> com.wasimaster.wmpass.ui.settings.AddAccountSheet(onDismiss)
+        "shares" -> SharesSheet(onDismiss)
+    }
+}
+
+/** A trustee's way in: their shares, a copy of the vault, and a new password to replace the lost one. */
+@Composable
+private fun SharesSheet(onDismiss: () -> Unit) {
+    val colors = palette
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val shares = rememberTextFieldState()
+    val password = rememberTextFieldState()
+    var file by remember { mutableStateOf<ByteArray?>(null) }
+    var problem by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) file = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+    }
+    PassSheet(onDismiss, "Emergency shares") {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                "The kit says how many shares it takes and how long you agreed to wait. WM Pass cannot enforce the wait. Please honour it.",
+                color = colors.textMid,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            QuietButton(if (file == null) "Choose a copy of the vault" else "Vault copy chosen", Modifier.fillMaxWidth(), PassIcons.Folder, colors.primary) { pick.launch(arrayOf("*/*")) }
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(130.dp)
+                    .clip(com.wasimaster.wmpass.ui.theme.Shapes.cardSmall)
+                    .background(colors.surface2)
+                    .padding(16.dp),
+            ) {
+                if (shares.text.isEmpty()) Text("Paste the shares, one on each line", color = colors.textLow, style = MaterialTheme.typography.bodyLarge)
+                androidx.compose.foundation.text.BasicTextField(
+                    shares,
+                    Modifier.fillMaxWidth(),
+                    textStyle = PassType.secretSmall.copy(color = colors.text),
+                    cursorBrush = SolidColor(colors.primary),
+                    keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Password),
+                )
+            }
+            PasswordPill(password, "A new password for it")
+            problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
+            PrimaryButton(if (busy) "Opening…" else "Open it", Modifier.fillMaxWidth(), enabled = !busy && file != null && shares.text.isNotBlank() && password.text.isNotEmpty()) {
+                busy = true
+                scope.launch {
+                    val secret = password.text.toString().toByteArray()
+                    try {
+                        Pass.recover(file!!, shares.text.lines().map { it.trim() }.filter { it.isNotEmpty() }, secret)
+                        onDismiss()
+                    } catch (failure: NativeFailure) {
+                        problem = failure.message
+                    } finally {
+                        secret.fill(0)
+                        busy = false
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable

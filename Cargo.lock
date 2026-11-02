@@ -4737,6 +4737,9 @@ name = "wmpass-jni"
 version = "0.1.0"
 dependencies = [
  "jni",
+ "serde_json",
+ "wmpass-core",
+ "wmpass-hwkey",
  "wmpass-session",
  "zeroize",
 ]
@@ -4806,7 +4809,9 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+ "wmpass-bw",
  "wmpass-core",
+ "wmpass-lan",
  "wmpass-net",
  "zeroize",
 ]

@@ -188,3 +188,35 @@ fun UndoBar(modifier: Modifier = Modifier) {
         }
     }
 }
+
+/** While inside a nested or shared vault: which one, and the way back out. */
+@Composable
+fun ChildPill(modifier: Modifier = Modifier) {
+    val colors = palette
+    val shell = LocalShell.current
+    val child by com.wasimaster.wmpass.core.Pass.child.collectAsStateWithLifecycle()
+    var remembered by remember { mutableStateOf(child) }
+    if (child != null) remembered = child
+    AnimatedVisibility(
+        visible = child != null,
+        modifier = modifier,
+        enter = slideInVertically(com.wasimaster.wmpass.ui.theme.Springs.lively()) { it } + fadeIn(tween(140)),
+        exit = slideOutVertically(tween(200)) { it } + fadeOut(tween(160)),
+    ) {
+        Row(
+            Modifier
+                .height(42.dp)
+                .glass(CircleShape, tint = colors.surface3.copy(alpha = 0.86f))
+                .clickable {
+                    shell.haptics.click()
+                    shell.launch { com.wasimaster.wmpass.core.Pass.leaveChild() }
+                }
+                .padding(start = 12.dp, end = 18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(PassIcons.ArrowBack, null, tint = colors.primary, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Leave ${remembered.orEmpty()}", color = colors.text, style = MaterialTheme.typography.labelLarge)
+        }
+    }
+}

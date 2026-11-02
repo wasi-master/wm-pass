@@ -89,6 +89,32 @@ object Engine {
         }
     }
 
+    private fun unpack(reply: Array<Any?>): EngineReply {
+        val parsed = json.parseToJsonElement(reply[0] as String)
+        val out = reply[1] as ByteArray?
+        @Suppress("UNCHECKED_CAST")
+        val files = (reply[2] as Array<ByteArray>).toList()
+        return EngineReply(parsed, out?.let(::SecretBytes), files)
+    }
+
+    /** A call that waits on a network. It does not hold up the vault's own thread. */
+    suspend fun net(
+        method: String,
+        handle: Long = 0,
+        online: Boolean,
+        secret: ByteArray? = null,
+        args: JsonObjectBuilder.() -> Unit = {},
+    ): EngineReply {
+        val text = buildJsonObject(args).toString()
+        return withContext(Dispatchers.IO) {
+            unpack(Native.net(method, handle, text, secret, online, System.currentTimeMillis()))
+        }
+    }
+
+    /** A hardware key operation. Blocks its thread until the key answers or gives up. */
+    suspend fun hardware(method: String, factor: String, device: HwDevice): EngineReply =
+        withContext(Dispatchers.IO) { unpack(Native.hardware(method, factor, device)) }
+
     suspend fun <T> view(
         method: String,
         serializer: DeserializationStrategy<T>,

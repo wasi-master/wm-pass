@@ -155,6 +155,13 @@ pub fn leakcheck_pro(email: &str, api_key: &Secret) -> Call<Vec<Breach>> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VaultEmail(String);
 
+impl VaultEmail {
+    /// The address.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 /// The addresses in a vault's logins and identities, as the only values Proxynova may be asked about.
 pub fn vault_emails<'a>(
     entries: impl IntoIterator<Item = &'a wmpass_core::model::Entry>,

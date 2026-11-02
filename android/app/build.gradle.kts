@@ -15,6 +15,7 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
+        buildConfigField("boolean", "OFFLINE", (providers.gradleProperty("wmpass.offline").orNull == "true").toString())
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -36,6 +37,11 @@ android {
         jniLibs.useLegacyPackaging = false
     }
     sourceSets["main"].assets.directories.add("../../data/brands")
+    sourceSets["main"].assets.directories.add("../../data/passkeys")
+    // The offline build drops the permission, so no line of code can reach a network.
+    if (providers.gradleProperty("wmpass.offline").orNull == "true") {
+        sourceSets["main"].manifest.srcFile("src/offline/AndroidManifest.xml")
+    }
     testOptions.unitTests.isIncludeAndroidResources = true
     testOptions.unitTests.all {
         it.systemProperty("java.library.path", rootProject.file("../target/debug").absolutePath)
@@ -58,6 +64,7 @@ dependencies {
     implementation("com.wasimaster.wmsuite:theme")
     implementation("com.wasimaster.wmsuite:ui-core")
     implementation("com.wasimaster.wmsuite:settings-ui")
+    implementation("com.wasimaster.wmsuite:sinks")
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
@@ -71,6 +78,16 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.autofill)
+    implementation("androidx.credentials:credentials:1.6.0")
+    implementation("androidx.glance:glance-appwidget:1.2.0")
+    implementation("androidx.glance:glance-material3:1.2.0")
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.zxing.core)
+    implementation("androidx.work:work-runtime-ktx:2.12.0")
 
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)

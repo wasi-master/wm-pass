@@ -172,6 +172,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
     var error by remember { mutableStateOf<String?>(null) }
     var sheet by remember { mutableStateOf<String?>(null) }
     var generating by remember { mutableStateOf<EditField?>(null) }
+    var aliasFor by remember { mutableStateOf<EditField?>(null) }
     var askDiscard by remember { mutableStateOf(false) }
     val titleFocus = remember { FocusRequester() }
 
@@ -211,6 +212,15 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                 },
             )
             if (newKind == "login") sites.add(TextFieldState() to null)
+            shell.pendingOtp?.let { link ->
+                otpSeed.setTextAndPlaceCursorAtEnd(link)
+                otpOpen = true
+                shell.pendingOtp = null
+            }
+            shell.pendingNote?.let { text ->
+                fields.firstOrNull { it.spec.key == "body" }?.text?.setTextAndPlaceCursorAtEnd(text)
+                shell.pendingNote = null
+            }
             shell.pendingPassword?.let { generated ->
                 fields.firstOrNull { it.spec.input == "password" }?.text?.setTextAndPlaceCursorAtEnd(generated)
                 shell.pendingPassword = null
@@ -398,6 +408,21 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                                     entryId,
                                     field,
                                     context = listOfNotNull(title.text.toString().takeIf { it.isNotEmpty() }),
+                                    onAlias = if (field.spec.key == "username") ({ aliasFor = field }) else null,
+                                    onSsh = if (field.spec.key == "private_key") {
+                                        {
+                                            shell.launch {
+                                                val reply = com.wasimaster.wmpass.core.Engine.call("ssh.new", args = { put("comment", title.text.toString()) })
+                                                field.text.setTextAndPlaceCursorAtEnd(reply.secret!!.consumeText())
+                                                field.loaded = true
+                                                fields.firstOrNull { it.spec.key == "public_key" }?.text?.setTextAndPlaceCursorAtEnd(reply.obj["public_key"]!!.jsonPrimitive.content)
+                                                fields.firstOrNull { it.spec.key == "fingerprint" }?.text?.setTextAndPlaceCursorAtEnd(reply.obj["fingerprint"]!!.jsonPrimitive.content)
+                                                shell.haptics.confirm()
+                                            }
+                                        }
+                                    } else {
+                                        null
+                                    },
                                 ) { generating = field }
                             }
                         }
@@ -594,6 +619,12 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
         "icon" -> IconSheet(icon, { sheet = null }) { icon = it }
         "tags" -> TagSheet(tags, { sheet = null }) { tag, on -> tags = if (on) (tags + tag).distinct() else tags - tag }
     }
+    aliasFor?.let { field ->
+        com.wasimaster.wmpass.ui.settings.AliasPickerSheet(title.text.toString(), { aliasFor = null }) { address ->
+            field.text.setTextAndPlaceCursorAtEnd(address)
+            aliasFor = null
+        }
+    }
     generating?.let { field ->
         GeneratorSheet(
             onDismiss = { generating = null },
@@ -692,7 +723,14 @@ private fun PlainField(state: TextFieldState, hint: String, mono: Boolean = fals
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
-private fun FieldEditor(entryId: String?, field: EditField, context: List<String>, onGenerate: () -> Unit) {
+private fun FieldEditor(
+    entryId: String?,
+    field: EditField,
+    context: List<String>,
+    onAlias: (() -> Unit)? = null,
+    onSsh: (() -> Unit)? = null,
+    onGenerate: () -> Unit,
+) {
     val colors = palette
     val shell = LocalShell.current
     val spec = field.spec
@@ -817,6 +855,14 @@ private fun FieldEditor(entryId: String?, field: EditField, context: List<String
                             shell.haptics.click()
                             onGenerate()
                         }
+                    }
+                    if (onAlias != null) {
+                        Spacer(Modifier.width(6.dp))
+                        RowIconButton(PassIcons.AlternateEmail, "Use an alias", tint = colors.primary, onClick = onAlias)
+                    }
+                    if (onSsh != null) {
+                        Spacer(Modifier.width(6.dp))
+                        RowIconButton(PassIcons.Casino, "Make a new key", tint = colors.primary, onClick = onSsh)
                     }
                 }
                 if (spec.input == "password" && field.loaded && field.text.text.isNotEmpty()) {

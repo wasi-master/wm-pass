@@ -1,25 +1,37 @@
 package com.wasimaster.wmpass.app
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.fragment.app.FragmentActivity
 import com.wasimaster.wmpass.BuildConfig
+import com.wasimaster.wmpass.system.SecureActivity
 import com.wasimaster.wmpass.ui.AppRoot
 import com.wasimaster.wmpass.ui.theme.LocalReduceMotion
 import com.wasimaster.wmpass.ui.theme.PassTheme
 import com.wasimaster.wmpass.ui.theme.systemAnimationsOff
+import kotlinx.coroutines.flow.MutableStateFlow
 
-class MainActivity : FragmentActivity() {
+/** Something arriving from outside the app, waiting for the vault to be open. */
+sealed interface Incoming {
+    data class Route(val name: String) : Incoming
+    data class SharedText(val text: String) : Incoming
+    data class SharedFile(val uri: Uri, val mime: String) : Incoming
+    data class OtpLink(val uri: String) : Incoming
+}
+
+object Inbox {
+    val pending = MutableStateFlow<Incoming?>(null)
+}
+
+class MainActivity : SecureActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
-        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        // A touch through another app's overlay is refused, so nothing can lure a tap on
-        // "Copy password" through a window drawn on top of this one.
-        window.decorView.filterTouchesWhenObscured = true
+        if (savedInstanceState == null) receive(intent)
         val prefs = Prefs.of(this)
         setContent {
             // Off only by the owner's hand, and debug builds so screens can be inspected.
@@ -36,5 +48,45 @@ class MainActivity : FragmentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        receive(intent)
+    }
+
+    private fun receive(intent: Intent?) {
+        intent ?: return
+        Inbox.pending.value = when (intent.action) {
+            Intent.ACTION_SEND -> {
+                val text = intent.getStringExtra(Intent.EXTRA_TEXT)
+                val file = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM)
+                }
+                when {
+                    file != null -> Incoming.SharedFile(file, intent.type.orEmpty())
+                    text != null -> Incoming.SharedText(text)
+                    else -> null
+                }
+            }
+            Intent.ACTION_VIEW -> {
+                val data = intent.dataString
+                val route = intent.getStringExtra(EXTRA_ROUTE)
+                when {
+                    data != null && data.startsWith("otpauth://") -> Incoming.OtpLink(data)
+                    route != null -> Incoming.Route(route)
+                    else -> null
+                }
+            }
+            else -> null
+        }
+    }
+
+    companion object {
+        const val EXTRA_ROUTE = "route"
     }
 }

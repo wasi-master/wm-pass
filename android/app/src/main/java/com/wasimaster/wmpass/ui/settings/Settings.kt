@@ -93,6 +93,10 @@ fun NavGraphBuilder.settingsGraph() {
     composable("settings/aliases") { AliasScreen() }
     composable("settings/usernames") { UsernameScreen() }
     composable("settings/inbox") { InboxScreen() }
+    composable("settings/hardware") { HardwareScreen() }
+    composable("settings/vaults") { VaultsScreen() }
+    composable("settings/receive") { ReceiveScreen() }
+    composable("settings/shortcuts") { ShortcutsScreen() }
     composable("scan") { com.wasimaster.wmpass.ui.vault.ScanScreen() }
 }
 
@@ -312,6 +316,27 @@ private fun SecurityScreen() {
                 NavRow("A decoy vault", "A separate vault with its own password and harmless contents.", icon = PassIcons.Layers) { sheet = "decoy" }
             }
         }
+        SettingsGroup("Autofill and panic") {
+            item {
+                NavRow("Use WM Pass for autofill", "Choose it as the phone's autofill service", icon = PassIcons.TextFields) {
+                    runCatching {
+                        context.startActivity(
+                            android.content.Intent(android.provider.Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
+                                .setData(android.net.Uri.parse("package:${context.packageName}")),
+                        )
+                    }
+                }
+            }
+            item {
+                ChoiceSetting(
+                    "When a panic app signals",
+                    subtitle = if (prefs.panicAction == "wipe") "Wipes only for ${prefs.panicTrustedApp ?: "the app you name"}. Others just lock." else "Locks and refuses passwords for an hour.",
+                    options = listOf("lock" to "Lock", "wipe" to "Wipe"),
+                    selected = prefs.panicAction,
+                    icon = PassIcons.Dangerous,
+                ) { action -> if (action == "wipe") sheet = "panic" else prefs.updatePanic("lock", null) }
+            }
+        }
         SettingsGroup("If something happens to you") {
             item {
                 NavRow("Emergency kit", "Split your key between people you trust", icon = PassIcons.FamilyRestroom) { sheet = "kit" }
@@ -332,6 +357,23 @@ private fun SecurityScreen() {
         current == "duress:lock" -> AddPasswordSheet("A password that locks hard", "Typing it refuses every attempt for an hour.", "lock") { sheet = null; refresh++ }
         current == "decoy" -> DecoySheet { sheet = null }
         current == "kit" -> KitSheet { sheet = null }
+        current == "panic" -> {
+            val app = rememberTextFieldState(prefs.panicTrustedApp.orEmpty())
+            PassSheet({ sheet = null }, "Wipe on a panic signal") {
+                Text(
+                    "Type the package name of the panic app you use, such as info.guardianproject.ripple. A signal from it erases this phone's vault with no warning. Backups and synced copies stay.",
+                    color = palette.textMid,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(14.dp))
+                SheetField(app, "Package name")
+                Spacer(Modifier.height(14.dp))
+                QuietButton("Wipe on its signal", Modifier.fillMaxWidth(), PassIcons.Dangerous, palette.danger, enabled = app.text.isNotBlank()) {
+                    prefs.updatePanic("wipe", app.text.toString().trim())
+                    sheet = null
+                }
+            }
+        }
         current?.startsWith("slot:") == true -> {
             val index = current.removePrefix("slot:").toInt()
             ConfirmSheet(
@@ -591,6 +633,11 @@ private fun LookScreen() {
                     selected = prefs.grouping,
                     icon = PassIcons.Sort,
                 ) { prefs.updateGrouping(it) }
+            }
+        }
+        SettingsGroup("Keyboard") {
+            item {
+                NavRow("Keyboard shortcuts", "For a keyboard plugged in or paired", icon = PassIcons.Keyboard) { shell.nav.navigate("settings/shortcuts") }
             }
         }
         SettingsGroup("Hands and motion") {

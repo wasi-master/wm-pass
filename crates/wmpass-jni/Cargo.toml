@@ -19,6 +19,9 @@ missing_debug_implementations = "warn"
 all = { level = "deny", priority = -1 }
 
 [dependencies]
-wmpass-session = { path = "../wmpass-session" }
+wmpass-session = { path = "../wmpass-session", features = ["net"] }
+wmpass-hwkey = { path = "../wmpass-hwkey" }
+wmpass-core.workspace = true
+serde_json.workspace = true
 jni = { version = "0.21", default-features = false }
 zeroize.workspace = true

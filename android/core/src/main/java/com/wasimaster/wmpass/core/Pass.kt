@@ -91,7 +91,35 @@ object Pass {
     private var handle = 0L
     private var file: File? = null
 
+    /** For an account held elsewhere: where its bytes go when it saves. */
+    private var accountWriter: (suspend (ByteArray) -> Unit)? = null
+
+    /** The account behind what is open, if it is not a vault in this folder. */
+    private val mutableAccount = MutableStateFlow<String?>(null)
+    val account: StateFlow<String?> = mutableAccount.asStateFlow()
+
+    /** Called after an account has saved, to take its changes to a server if it has one. */
+    var afterAccountSave: (suspend () -> Unit)? = null
+
+    /** Called after the vault in this folder has saved, for a sync that follows it. */
+    var afterSave: (() -> Unit)? = null
+
+    /** Run on a wipe, so that what the app keeps beside the vault goes with it. */
+    val onWipe = mutableListOf<() -> Unit>()
+
+    /** The vault this one was opened from, while inside a nested or shared one. */
+    private class Outer(val handle: Long, val file: File?, val state: LockState)
+
+    private var outer: Outer? = null
+    private var childWriter: (suspend (ByteArray) -> Unit)? = null
+    private var childBefore: (suspend () -> Unit)? = null
+
+    /** The name of the nested or shared vault in use, or null. */
+    private val mutableChild = MutableStateFlow<String?>(null)
+    val child: StateFlow<String?> = mutableChild.asStateFlow()
+
     private val vaultDir: File get() = File(context.filesDir, "vaults")
+    private val linkedDir: File get() = File(context.filesDir, "linked")
     private fun blobDir(name: String) = File(File(context.filesDir, "blobs"), name)
     val handleForTests: Long get() = handle
 
@@ -291,24 +319,44 @@ object Pass {
 
     /** Saves anything pending and forgets every key. */
     suspend fun lock() {
+        leaveChild()
         flush()
         Engine.lockAll()
         handle = 0
         file = null
+        accountWriter = null
+        afterAccountSave = null
+        mutableAccount.value = null
         mutableEntries.value = emptyList()
         mutableFolders.value = emptyList()
         mutableState.value = if (vaultFiles().isEmpty()) LockState.NoVault else LockState.Locked
     }
+
+    /** A panic: locked at once, and every password refused for an hour. */
+    suspend fun panic() {
+        lock()
+        prefs.edit().putLong("retry_at", System.currentTimeMillis() + 3_600_000L).apply()
+    }
+
+    suspend fun wipe() = wipeEverything()
 
     private suspend fun wipeEverything() {
         Engine.lockAll()
         vaultDir.deleteRecursively()
         File(context.filesDir, "blobs").deleteRecursively()
         File(context.filesDir, "quick").deleteRecursively()
+        linkedDir.deleteRecursively()
         vaultDir.mkdirs()
         prefs.edit().clear().apply()
+        onWipe.forEach { runCatching { it() } }
         handle = 0
         file = null
+        outer = null
+        childWriter = null
+        childBefore = null
+        accountWriter = null
+        mutableChild.value = null
+        mutableAccount.value = null
         mutableEntries.value = emptyList()
         mutableState.value = LockState.NoVault
     }
@@ -324,12 +372,27 @@ object Pass {
     }
 
     private suspend fun saveNow() {
+        childWriter?.let { writer ->
+            val active = handle.takeIf { it != 0L } ?: return
+            childBefore?.let { runCatching { it() } }
+            writer(Engine.call("vault.save", active).blobs[0])
+            refresh()
+            return
+        }
+        accountWriter?.let { writer ->
+            val active = handle.takeIf { it != 0L } ?: return
+            val reply = Engine.call("remote.save", active)
+            writer(reply.blobs[0])
+            afterAccountSave?.invoke()
+            return
+        }
         val target = file ?: return
         val active = handle.takeIf { it != 0L } ?: return
         val reply = Engine.call("vault.save", active)
         target.writeAtomically(reply.blobs[0])
         prefs.edit().putLong("seen_${target.name}", reply.obj["generation"]!!.jsonPrimitive.long).apply()
         coverTracks(target)
+        afterSave?.invoke()
     }
 
     /** Writes pending changes now, before the process may go away. */
@@ -513,6 +576,240 @@ object Pass {
         flush()
         File(vaultDir, before).delete()
     }
+
+    /** Takes a vault file from elsewhere as this phone's vault. */
+    suspend fun adoptFile(bytes: ByteArray) {
+        File(vaultDir, randomHex(16)).writeAtomically(bytes)
+        // A chaff file of its own, or a lone file would say which one is the vault.
+        val chaff = Engine.call(
+            "vault.chaff",
+            args = {
+                put("file_len", bytes.size)
+                put("kdf", kotlinx.serialization.json.buildJsonObject { put("m_kib", kdfMemoryKib()) })
+            },
+        )
+        File(vaultDir, randomHex(16)).writeAtomically(chaff.blobs[0])
+        vaultFiles().forEach { it.setLastModified(FILE_TIME_MS) }
+        if (handle == 0L) mutableState.value = LockState.Locked
+    }
+
+    /**
+     * Shows an account through the same screens as a vault. [writer] keeps what it saves: the
+     * KeePass file itself, or the account's sealed offline copy.
+     */
+    suspend fun adoptAccount(accountId: String, reply: EngineReply, writer: suspend (ByteArray) -> Unit) {
+        val obj = reply.obj
+        handle = obj["handle"]!!.jsonPrimitive.long
+        file = null
+        accountWriter = writer
+        mutableAccount.value = accountId
+        noteSuccess()
+        mutableState.value = LockState.Unlocked(obj["name"]!!.jsonPrimitive.content, accountId, false)
+        refresh()
+    }
+
+    // ---- nested and shared vaults ----
+
+    /** A nested vault's file in this phone's storage. */
+    fun linkedFile(id: String) = File(linkedDir, id)
+
+    suspend fun writeLinked(id: String, bytes: ByteArray) = linkedFile(id).writeAtomically(bytes)
+
+    /**
+     * Shows a nested or shared vault through the same screens. The vault it was opened from
+     * stays open behind it. [writer] takes each save.
+     */
+    suspend fun enterChild(
+        id: String,
+        reply: EngineReply,
+        before: (suspend () -> Unit)? = null,
+        writer: suspend (ByteArray) -> Unit,
+    ) {
+        flush()
+        val obj = reply.obj
+        outer = outer ?: Outer(handle, file, mutableState.value)
+        handle = obj["handle"]!!.jsonPrimitive.long
+        file = linkedFile(id)
+        childWriter = writer
+        childBefore = before
+        blobDir(id).mkdirs()
+        val name = obj["name"]!!.jsonPrimitive.content
+        mutableChild.value = name
+        mutableState.value = LockState.Unlocked(name, id, false)
+        refresh()
+    }
+
+    /** Back to the vault this one was opened from. */
+    suspend fun leaveChild() {
+        val back = outer ?: return
+        flush()
+        Engine.call("vault.lock", handle)
+        outer = null
+        childWriter = null
+        childBefore = null
+        handle = back.handle
+        file = back.file
+        mutableChild.value = null
+        mutableState.value = back.state
+        refresh()
+    }
+
+    // ---- files coming and going ----
+
+    private val bundled get() = listOf("vaults" to vaultDir, "linked" to linkedDir)
+
+    /**
+     * Every vault file and sealed attachment as one file, for a backup. All of it is
+     * ciphertext and none of it needs a key, so this runs while the vault is locked. Which
+     * file is the real vault stays as unclear in the backup as it is in the folder.
+     */
+    suspend fun bundle(): ByteArray {
+        if (handle != 0L) flush()
+        val out = java.io.ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(out).use { zip ->
+            zip.setLevel(0)
+            fun add(name: String, source: File) {
+                val entry = java.util.zip.ZipEntry(name)
+                entry.time = FILE_TIME_MS
+                zip.putNextEntry(entry)
+                source.inputStream().use { it.copyTo(zip) }
+                zip.closeEntry()
+            }
+            bundled.forEach { (prefix, folder) ->
+                folder.listFiles()?.filter { it.isFile && !it.name.startsWith(".") }?.sortedBy { it.name }?.forEach { add("$prefix/${it.name}", it) }
+            }
+            File(context.filesDir, "blobs").listFiles()?.sortedBy { it.name }?.forEach { group ->
+                group.listFiles()?.filter { it.isFile }?.sortedBy { it.name }?.forEach { add("blobs/${group.name}/${it.name}", it) }
+            }
+        }
+        return out.toByteArray()
+    }
+
+    /** Whether [bytes] holds at least one vault file. */
+    fun bundleLooksRight(bytes: ByteArray): Boolean = unbundle(bytes).any { it.first.startsWith("vaults/") }
+
+    /**
+     * The files in a bundle, with hostile names refused: a backup comes from somewhere else,
+     * and an entry named `../../x` must not reach beyond these folders.
+     */
+    private fun unbundle(bytes: ByteArray): List<Pair<String, ByteArray>> {
+        val out = mutableListOf<Pair<String, ByteArray>>()
+        runCatching {
+            java.util.zip.ZipInputStream(bytes.inputStream()).use { zip ->
+                while (true) {
+                    val entry = zip.nextEntry ?: break
+                    val parts = entry.name.split('/')
+                    val fine = parts.none { it.isEmpty() || it == "." || it == ".." || it.startsWith(".") || '\\' in it } &&
+                        when (parts.first()) {
+                            "vaults", "linked" -> parts.size == 2
+                            "blobs" -> parts.size == 3
+                            else -> false
+                        }
+                    if (fine && !entry.isDirectory) out += entry.name to zip.readBytes()
+                }
+            }
+        }
+        return out
+    }
+
+    private fun isVaultFile(bytes: ByteArray) =
+        bytes.size > 4 && bytes[0] == 'W'.code.toByte() && bytes[1] == 'M'.code.toByte() && bytes[2] == 'P'.code.toByte() && bytes[3] == 'V'.code.toByte()
+
+    /** Puts a vault file or a backup in place at the door. The password decides what opens. */
+    suspend fun restore(bytes: ByteArray) {
+        if (isVaultFile(bytes)) {
+            adoptFile(bytes)
+            return
+        }
+        val files = unbundle(bytes)
+        require(files.any { it.first.startsWith("vaults/") }) { "That is not a WM Pass backup." }
+        files.forEach { (name, data) ->
+            val parts = name.split('/')
+            val target = when (parts[0]) {
+                "vaults" -> File(vaultDir, parts[1])
+                "linked" -> File(linkedDir, parts[1])
+                else -> File(blobDir(parts[1]), parts[2])
+            }
+            target.writeAtomically(data)
+        }
+        vaultFiles().forEach { it.setLastModified(FILE_TIME_MS) }
+        if (handle == 0L) mutableState.value = LockState.Locked
+    }
+
+    /**
+     * Merges a vault file or a backup into the open vault, and reports how many of its files
+     * were copies of this vault. Nothing here is lost: a value that loses moves to history.
+     */
+    suspend fun mergeIn(bytes: ByteArray): Int {
+        val files = if (isVaultFile(bytes)) listOf("vaults/x" to bytes) else unbundle(bytes)
+        var merged = 0
+        files.filter { it.first.startsWith("vaults/") }.forEach { (_, data) ->
+            val fine = runCatching { Engine.call("vault.merge", handle, blobs = listOf(data)) }.isSuccess
+            if (fine) merged++
+        }
+        if (merged > 0) {
+            val folder = blobFolder()
+            files.filter { it.first.startsWith("blobs/") }.forEach { (name, data) ->
+                val target = folder?.let { File(it, name.substringAfterLast('/')) }
+                if (target != null && !target.exists()) target.writeAtomically(data)
+            }
+            refresh()
+            flush()
+        }
+        return merged
+    }
+
+    /** Merges one saved copy of the open vault, as a sync brings it in. */
+    suspend fun mergeCopy(bytes: ByteArray): Boolean {
+        val seen = currentFileName?.let { prefs.getLong("seen_$it", 0) } ?: 0
+        val reply = Engine.call("vault.merge", handle, { put("seen_generation", seen) }, blobs = listOf(bytes))
+        if (reply.obj["rollback"]?.jsonPrimitive?.boolean == true) rollbackWarning.value = true
+        refresh()
+        return true
+    }
+
+    /** Merges a copy in during a save, when the lists are about to be refreshed anyway. */
+    suspend fun absorb(bytes: ByteArray) {
+        Engine.call("vault.merge", handle, blobs = listOf(bytes))
+    }
+
+    /** What is in the open vault's folder of sealed attachments. */
+    fun blobNames(): List<String> = blobFolder()?.list()?.filterNot { it.startsWith(".") }.orEmpty()
+
+    fun readBlob(name: String): ByteArray = File(blobFolder(), name).readBytes()
+
+    fun writeBlob(name: String, bytes: ByteArray) {
+        require('/' !in name && !name.startsWith(".")) { "bad name" }
+        File(blobFolder(), name).writeAtomically(bytes)
+    }
+
+    /** Opens with emergency shares and a vault file, sets a new password and keeps the file. */
+    suspend fun recover(file: ByteArray, shares: List<String>, password: ByteArray) {
+        val reply = Engine.call(
+            "emergency.recover",
+            args = { putJsonArray("shares") { shares.forEach { add(it) } } },
+            blobs = listOf(file),
+        )
+        val obj = reply.obj
+        adopt(obj["handle"]!!.jsonPrimitive.long, File(vaultDir, randomHex(16)), obj["name"]!!.jsonPrimitive.content, false)
+        Engine.call("vault.change_password", handle, { put("index", 0) }, secret = password)
+        saveNow()
+        writeChaff(File(vaultDir, randomHex(16)), this.file!!.length())
+        refresh()
+    }
+
+    /** Reloads the lists, after something changed the vault from outside these calls. */
+    suspend fun reload() = refresh()
+
+    /** A failed account sign-in counts against the same throttle as a wrong password. */
+    fun noteWrongAccountPassword(): Long = noteFailure()
+
+    /** A call that waits on a network, with the open vault's handle. */
+    suspend fun net(method: String, online: Boolean, secret: ByteArray? = null, args: JsonObjectBuilder.() -> Unit = {}): EngineReply =
+        Engine.net(method, handle, online, secret, args)
+
+    /** Where attachments live, for a sync that carries them. */
+    fun blobFolder(): File? = file?.let { blobDir(it.name) }
 
     /** Reads an arbitrary view-returning call on the open vault. */
     suspend fun plainCall(

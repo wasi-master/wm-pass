@@ -292,3 +292,116 @@ fn key_file_slot_asks_for_its_factor() {
     let reply = json_of(&s.call("vault.open", Call { args: &args, secret: b"second", blobs: &both, ..Call::default() }).unwrap());
     assert_eq!(reply["outcome"], "opened");
 }
+
+#[test]
+fn a_keepass_file_opens_through_a_mirror_and_saves_back() {
+    let mut s = Service::new(9);
+    let handle = new_vault(&mut s);
+    let _ = login(&mut s, handle);
+    let exported = secret_call(&mut s, "export.file", handle, json!({"format": "kdbx"}), b"kdbx-pass");
+    let file = exported.blobs[0].clone();
+
+    let args = r#"{"name":"Work"}"#;
+    let blobs: [&[u8]; 1] = [&file];
+    let opened = s
+        .call("kdbx.open", Call { args, secret: b"kdbx-pass", blobs: &blobs, now_ms: 2000, ..Call::default() })
+        .unwrap();
+    let mirror = json_of(&opened)["handle"].as_u64().unwrap();
+    let kind = call(&mut s, "remote.kind", mirror, json!({}));
+    assert_eq!(json_of(&kind)["kind"], "kdbx");
+
+    // Edits go through the same calls as any vault.
+    let list = call(&mut s, "entry.list", mirror, json!({"sort": "title"}));
+    let rows = json_of(&list);
+    let id = rows[0]["id"].as_str().unwrap().to_owned();
+    assert_eq!(rows[0]["title"], "Mail");
+    secret_call(&mut s, "entry.set_secret", mirror, json!({"id": id, "field": "password"}), b"changed-here");
+    let made = call(&mut s, "entry.create", mirror, json!({"kind": "login", "title": "New one", "fields": {"username": "u"}}));
+    let new_id = json_of(&made)["id"].as_str().unwrap().to_owned();
+    secret_call(&mut s, "entry.set_secret", mirror, json!({"id": new_id, "field": "password"}), b"brand-new");
+
+    let saved = call(&mut s, "remote.save", mirror, json!({}));
+    let saved_file = saved.blobs[0].clone();
+
+    // A fresh open of what was saved holds both changes.
+    let blobs: [&[u8]; 1] = [&saved_file];
+    let again = s
+        .call("kdbx.open", Call { args, secret: b"kdbx-pass", blobs: &blobs, now_ms: 3000, ..Call::default() })
+        .unwrap();
+    let again = json_of(&again)["handle"].as_u64().unwrap();
+    let list = json_of(&call(&mut s, "entry.list", again, json!({"sort": "title"})));
+    let titles: Vec<&str> = list.as_array().unwrap().iter().map(|r| r["title"].as_str().unwrap()).collect();
+    assert_eq!(titles, ["Mail", "New one"]);
+    let mail = list.as_array().unwrap().iter().find(|r| r["title"] == "Mail").unwrap()["id"].as_str().unwrap().to_owned();
+    let revealed = call(&mut s, "entry.reveal", again, json!({"id": mail, "field": "password"}));
+    assert_eq!(revealed.secret.as_ref().unwrap().as_slice(), b"changed-here");
+
+    // A plain vault has no account behind it, and says so.
+    assert!(s.call("remote.save", Call { handle, ..Call::default() }).is_err());
+}
+
+#[cfg(feature = "net")]
+#[test]
+fn proxynova_cannot_be_asked_about_someone_else() {
+    let mut s = Service::new(9);
+    let handle = new_vault(&mut s);
+    let id = login(&mut s, handle);
+    let (email, secrets, ids) = s.comb_inputs(handle, "ME@example.com").unwrap();
+    assert_eq!(email.as_str(), "me@example.com");
+    assert_eq!(secrets.len(), 1);
+    assert_eq!(ids, [id]);
+    assert!(s.comb_inputs(handle, "stranger@example.com").is_err());
+}
+
+#[test]
+fn a_shared_vault_opens_for_members_and_stops_opening_for_someone_removed() {
+    let mut s = Service::new(9);
+    let owner = new_vault(&mut s);
+    let sibling = new_vault(&mut s);
+    let stranger = new_vault(&mut s);
+
+    let made = call(&mut s, "shared.create", owner, json!({"name": "Family", "my_name": "Owner"}));
+    let file = json_of(&made)["file"].as_str().unwrap().to_owned();
+    let (mut sealed, mut manifest) = (made.blobs[0].clone(), made.blobs[1].clone());
+
+    // The sibling sends a code, the owner adds them, and the invitation comes back.
+    let join = json_of(&call(&mut s, "shared.join_code", sibling, json!({"my_name": "Sibling"})));
+    let code = join["code"].as_str().unwrap();
+    let read = json_of(&call(&mut s, "shared.read_code", owner, json!({"code": code})));
+    assert_eq!(read["name"], "Sibling");
+    assert_eq!(read["fingerprint"], join["fingerprint"]);
+    let args = json!({"file": file, "code": code}).to_string();
+    let blobs: [&[u8]; 1] = [&manifest];
+    let added = s.call("shared.add_member", Call { handle: owner, args: &args, blobs: &blobs, now_ms: 2000, ..Call::default() }).unwrap();
+    let invite = json_of(&added)["invite"].as_str().unwrap().to_owned();
+    manifest = added.blobs[0].clone();
+    let pending = join["file"].as_str().unwrap();
+    let accepted = json_of(&call(&mut s, "shared.accept", sibling, json!({"file": pending, "code": invite})));
+    assert_eq!(accepted["file"], file.as_str());
+
+    let open = |s: &mut Service, handle: u64, manifest: &[u8], sealed: &[u8]| {
+        let args = json!({"file": file}).to_string();
+        let blobs: [&[u8]; 2] = [manifest, sealed];
+        s.call("shared.open", Call { handle, args: &args, blobs: &blobs, now_ms: 3000, ..Call::default() })
+    };
+    let opened = json_of(&open(&mut s, sibling, &manifest, &sealed).unwrap());
+    assert_eq!(opened["name"], "Family");
+    assert!(open(&mut s, stranger, &manifest, &sealed).is_err());
+
+    // Listing shows both, and the owner marked.
+    let args = json!({"file": file}).to_string();
+    let blobs: [&[u8]; 1] = [&manifest];
+    let listed = s.call("shared.members", Call { handle: owner, args: &args, blobs: &blobs, now_ms: 3000, ..Call::default() }).unwrap();
+    let members = json_of(&listed);
+    assert_eq!(members.as_array().unwrap().len(), 2);
+    let removed_key = members.as_array().unwrap().iter().find(|m| m["owner"] == false).unwrap()["key"].as_str().unwrap().to_owned();
+
+    // Removing them moves the vault to a new key. The owner follows and they cannot.
+    let args = json!({"file": file, "key": removed_key}).to_string();
+    let blobs: [&[u8]; 2] = [&manifest, &sealed];
+    let gone = s.call("shared.remove_member", Call { handle: owner, args: &args, blobs: &blobs, now_ms: 4000, ..Call::default() }).unwrap();
+    manifest = gone.blobs[0].clone();
+    sealed = gone.blobs[1].clone();
+    assert_eq!(json_of(&open(&mut s, owner, &manifest, &sealed).unwrap())["name"], "Family");
+    assert!(open(&mut s, sibling, &manifest, &sealed).is_err());
+}
