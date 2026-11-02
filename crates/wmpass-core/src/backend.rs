@@ -38,7 +38,12 @@ impl Backend for Vault {
     }
 
     fn entries(&self, _now_ms: u64) -> Vec<Entry> {
-        self.doc.entries.values().filter(|entry| !entry.is_trashed()).cloned().collect()
+        self.doc
+            .entries
+            .values()
+            .filter(|entry| !entry.is_trashed())
+            .cloned()
+            .collect()
     }
 
     fn upsert(&mut self, entry: Entry, now_ms: u64) -> Result<Id> {
@@ -71,7 +76,16 @@ impl KdbxBackend {
     /// Opens a database.
     pub fn open(data: &[u8], password: Secret, key_file: Option<Vec<u8>>) -> Result<Self> {
         let database = InPlace::open(data, password.expose(), key_file.as_deref())?;
-        Ok(Self { database, password, key_file })
+        Ok(Self {
+            database,
+            password,
+            key_file,
+        })
+    }
+
+    /// Whether the next save moves the file from an older format to KDBX 4.
+    pub fn will_upgrade(&self) -> bool {
+        self.database.will_upgrade()
     }
 
     /// The database, for operations only it has.
@@ -86,7 +100,10 @@ impl Backend for KdbxBackend {
     }
 
     fn entries(&self, now_ms: u64) -> Vec<Entry> {
-        self.database.entries(Hlc { ms: now_ms, ..Hlc::default() })
+        self.database.entries(Hlc {
+            ms: now_ms,
+            ..Hlc::default()
+        })
     }
 
     fn upsert(&mut self, entry: Entry, _now_ms: u64) -> Result<Id> {
@@ -98,7 +115,8 @@ impl Backend for KdbxBackend {
     }
 
     fn save(&mut self) -> Result<Vec<u8>> {
-        self.database.save(self.password.expose(), self.key_file.as_deref())
+        self.database
+            .save(self.password.expose(), self.key_file.as_deref())
     }
 }
 
@@ -110,17 +128,35 @@ mod tests {
     use crate::vault::test_support::fast_vault;
 
     fn exercise(backend: &mut dyn Backend, reopen: impl Fn(&[u8]) -> Box<dyn Backend>) {
-        let at = Hlc { ms: 5000, ..Hlc::default() };
+        let at = Hlc {
+            ms: 5000,
+            ..Hlc::default()
+        };
         let mut entry = login_entry("Mail", "me", "first", at);
-        entry.login_mut().unwrap().site_matchers = Lww::new(vec![SiteMatcher::Url("https://m.example".into())], at);
+        entry.login_mut().unwrap().site_matchers =
+            Lww::new(vec![SiteMatcher::Url("https://m.example".into())], at);
         let id = backend.upsert(entry, 5000).unwrap();
-        let mut stored = backend.entries(6000).into_iter().find(|e| e.id == id).unwrap();
-        stored.set_password("second".into(), Hlc { ms: 7000, ..Hlc::default() });
+        let mut stored = backend
+            .entries(6000)
+            .into_iter()
+            .find(|e| e.id == id)
+            .unwrap();
+        stored.set_password(
+            "second".into(),
+            Hlc {
+                ms: 7000,
+                ..Hlc::default()
+            },
+        );
         assert_eq!(backend.upsert(stored, 7000).unwrap(), id);
 
         let bytes = backend.save().unwrap();
         let again = reopen(&bytes);
-        let back = again.entries(8000).into_iter().find(|e| e.id == id).unwrap();
+        let back = again
+            .entries(8000)
+            .into_iter()
+            .find(|e| e.id == id)
+            .unwrap();
         let login = back.login().unwrap();
         assert_eq!(login.password.v.expose(), "second");
         assert_eq!(login.username.v, "me");
@@ -150,8 +186,12 @@ mod tests {
             version: argon2_for_keepass::Version::Version13,
         };
         let mut bytes = Vec::new();
-        database.save(&mut bytes, keepass::DatabaseKey::new().with_password("pw")).unwrap();
+        database
+            .save(&mut bytes, keepass::DatabaseKey::new().with_password("pw"))
+            .unwrap();
         let mut backend = KdbxBackend::open(&bytes, "pw".into(), None).unwrap();
-        exercise(&mut backend, |saved| Box::new(KdbxBackend::open(saved, "pw".into(), None).unwrap()));
+        exercise(&mut backend, |saved| {
+            Box::new(KdbxBackend::open(saved, "pw".into(), None).unwrap())
+        });
     }
 }

@@ -45,7 +45,10 @@ pub fn kind_fields(kind: &Kind) -> Vec<(&'static str, Secret, bool)> {
         Kind::Database(d) => vec![
             shown("Engine", &d.engine.v),
             shown("Host", &d.host.v),
-            shown("Port", &d.port.v.map_or_else(String::new, |p| p.to_string())),
+            shown(
+                "Port",
+                &d.port.v.map_or_else(String::new, |p| p.to_string()),
+            ),
             shown("Database", &d.name.v),
             shown("User", &d.user.v),
             hidden("Password", &d.password.v),
@@ -59,9 +62,16 @@ pub fn kind_fields(kind: &Kind) -> Vec<(&'static str, Secret, bool)> {
         ],
         Kind::Recovery(r) => vec![hidden("Phrase", &r.phrase.v)],
         Kind::Wifi(w) => vec![shown("SSID", &w.ssid.v), hidden("Password", &w.password.v)],
-        Kind::Otp(o) => o.config.v.iter().map(|c| hidden("otpauth", &c.to_uri())).collect(),
+        Kind::Otp(o) => o
+            .config
+            .v
+            .iter()
+            .map(|c| hidden("otpauth", &c.to_uri()))
+            .collect(),
     };
-    list.into_iter().filter(|(_, value, _)| !value.is_empty()).collect()
+    list.into_iter()
+        .filter(|(_, value, _)| !value.is_empty())
+        .collect()
 }
 
 fn urls(entry: &Entry) -> Vec<String> {
@@ -71,7 +81,9 @@ fn urls(entry: &Entry) -> Vec<String> {
             .v
             .iter()
             .filter_map(|m| match m {
-                SiteMatcher::Url(u) | SiteMatcher::Domain(u) | SiteMatcher::Host(u) => Some(u.clone()),
+                SiteMatcher::Url(u) | SiteMatcher::Domain(u) | SiteMatcher::Host(u) => {
+                    Some(u.clone())
+                }
                 SiteMatcher::AndroidApp { package, .. } => Some(format!("androidapp://{package}")),
                 _ => None,
             })
@@ -96,13 +108,28 @@ fn exportable(vault: &Vault) -> impl Iterator<Item = &Entry> {
 /// WM Pass CSV. Other kinds keep their fields in the `fields` column.
 pub fn to_csv(vault: &Vault) -> Result<Secret> {
     let mut writer = csv::Writer::from_writer(Vec::new());
-    let header = ["wmpass_kind", "folder", "title", "username", "password", "urls", "otp", "notes", "tags", "fields"];
+    let header = [
+        "wmpass_kind",
+        "folder",
+        "title",
+        "username",
+        "password",
+        "urls",
+        "otp",
+        "notes",
+        "tags",
+        "fields",
+    ];
     writer.write_record(header).map_err(|_| Error::Encoding)?;
     for entry in exportable(vault) {
         let (username, password, otp) = entry.login().map_or_else(
             || (String::new(), Secret::default(), Secret::default()),
             |login| {
-                let otp = login.otp.v.as_ref().map_or_else(Secret::default, crate::otp::OtpConfig::to_uri);
+                let otp = login
+                    .otp
+                    .v
+                    .as_ref()
+                    .map_or_else(Secret::default, crate::otp::OtpConfig::to_uri);
                 (login.username.v.clone(), login.password.v.clone(), otp)
             },
         );
@@ -132,7 +159,9 @@ pub fn to_csv(vault: &Vault) -> Result<Secret> {
             .map_err(|_| Error::Encoding)?;
     }
     let bytes = writer.into_inner().map_err(|_| Error::Encoding)?;
-    String::from_utf8(bytes).map(Secret::from).map_err(|_| Error::Encoding)
+    String::from_utf8(bytes)
+        .map(Secret::from)
+        .map_err(|_| Error::Encoding)
 }
 
 /// Bitwarden's unencrypted JSON, which most other managers can also read. Kinds it
@@ -159,7 +188,10 @@ pub fn to_bitwarden_json(vault: &Vault) -> Result<Secret> {
         });
         match &entry.kind {
             Kind::Login(login) => {
-                let uris: Vec<Value> = urls(entry).into_iter().map(|u| json!({"uri": u, "match": null})).collect();
+                let uris: Vec<Value> = urls(entry)
+                    .into_iter()
+                    .map(|u| json!({"uri": u, "match": null}))
+                    .collect();
                 let history: Vec<Value> = entry
                     .history_of("password")
                     .map(|r| json!({"password": r.value.expose()}))
@@ -202,16 +234,25 @@ pub fn to_bitwarden_json(vault: &Vault) -> Result<Secret> {
                 item["type"] = json!(2);
                 item["secureNote"] = json!({"type": 0});
                 for (name, value, hidden) in kind_fields(other) {
-                    fields.push(json!({"name": name, "value": value.expose(), "type": u8::from(hidden)}));
+                    fields.push(
+                        json!({"name": name, "value": value.expose(), "type": u8::from(hidden)}),
+                    );
                 }
             }
         }
         item["fields"] = Value::Array(fields);
         items.push(item);
     }
-    let folders: Vec<Value> = vault.doc.folders.values().map(|f| json!({"id": f.id, "name": f.name.v})).collect();
+    let folders: Vec<Value> = vault
+        .doc
+        .folders
+        .values()
+        .map(|f| json!({"id": f.id, "name": f.name.v}))
+        .collect();
     let root = json!({"encrypted": false, "folders": folders, "items": items});
-    serde_json::to_string_pretty(&root).map(Secret::from).map_err(|_| Error::Encoding)
+    serde_json::to_string_pretty(&root)
+        .map(Secret::from)
+        .map_err(|_| Error::Encoding)
 }
 
 fn escape(text: &str) -> String {
@@ -235,10 +276,17 @@ td:first-child{{width:9em;color:#333}}code{{font:11pt monospace;word-break:break
         name = escape(&vault.doc.name),
     );
     for entry in exportable(vault) {
-        body.push_str(&format!("<h2>{}</h2><table>", escape(&entry.common.title.v)));
+        body.push_str(&format!(
+            "<h2>{}</h2><table>",
+            escape(&entry.common.title.v)
+        ));
         let mut row = |name: &str, value: &str| {
             if !value.is_empty() {
-                body.push_str(&format!("<tr><td>{}</td><td><code>{}</code></td></tr>", escape(name), escape(value)));
+                body.push_str(&format!(
+                    "<tr><td>{}</td><td><code>{}</code></td></tr>",
+                    escape(name),
+                    escape(value)
+                ));
             }
         };
         if let Some(login) = entry.login() {

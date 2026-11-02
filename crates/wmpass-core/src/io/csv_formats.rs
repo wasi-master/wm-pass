@@ -23,7 +23,10 @@ impl Row<'_> {
 }
 
 fn reader(text: &str, has_header: bool) -> csv::Reader<&[u8]> {
-    csv::ReaderBuilder::new().flexible(true).has_headers(has_header).from_reader(text.as_bytes())
+    csv::ReaderBuilder::new()
+        .flexible(true)
+        .has_headers(has_header)
+        .from_reader(text.as_bytes())
 }
 
 fn header_of(text: &str) -> Option<Vec<String>> {
@@ -44,7 +47,10 @@ pub(super) fn detect(text: &str) -> Option<Format> {
         Some(Format::BitwardenCsv)
     } else if has_all(&headers, &["grouping", "extra", "password"]) {
         Some(Format::LastPassCsv)
-    } else if has_all(&headers, &["group", "title", "username", "password", "url", "notes"]) {
+    } else if has_all(
+        &headers,
+        &["group", "title", "username", "password", "url", "notes"],
+    ) {
         Some(Format::KeePassXcCsv)
     } else if has_all(&headers, &["otpauth", "title", "url"]) {
         Some(Format::AppleCsv)
@@ -65,11 +71,18 @@ pub(super) fn detect(text: &str) -> Option<Format> {
 
 pub(super) fn import(format: Format, text: &str, at: Hlc) -> Result<Imported> {
     let headers = header_of(text).ok_or_else(|| Error::Import("no header row".into()))?;
-    let columns: HashMap<String, usize> = headers.into_iter().enumerate().map(|(i, h)| (h, i)).collect();
+    let columns: HashMap<String, usize> = headers
+        .into_iter()
+        .enumerate()
+        .map(|(i, h)| (h, i))
+        .collect();
     let mut out = Imported::default();
     for record in reader(text, true).records() {
         let record = record.map_err(|_| Error::Import("a row could not be read".into()))?;
-        let row = Row { record: &record, columns: &columns };
+        let row = Row {
+            record: &record,
+            columns: &columns,
+        };
         match format {
             Format::BitwardenCsv => bitwarden_row(&row, at, &mut out),
             Format::LastPassCsv => lastpass_row(&row, at, &mut out),
@@ -97,7 +110,13 @@ fn simple_row(format: Format, row: &Row<'_>, skipped: &mut Vec<String>) -> Draft
         Format::FirefoxCsv => {
             let url = row.get("url");
             let title = crate::matching::host_of(&url).unwrap_or_else(|| url.clone());
-            Draft { title, urls: vec![url], username: row.get("username"), password: row.get("password"), ..Draft::default() }
+            Draft {
+                title,
+                urls: vec![url],
+                username: row.get("username"),
+                password: row.get("password"),
+                ..Draft::default()
+            }
         }
         Format::KeePassXcCsv => Draft {
             title: row.get("title"),
@@ -128,7 +147,11 @@ fn simple_row(format: Format, row: &Row<'_>, skipped: &mut Vec<String>) -> Draft
         }
         Format::NordPassCsv => {
             if !row.get("type").is_empty() && row.get("type") != "password" {
-                skipped.push(format!("{}: kept as a login, its NordPass type was {}", row.get("name"), row.get("type")));
+                skipped.push(format!(
+                    "{}: kept as a login, its NordPass type was {}",
+                    row.get("name"),
+                    row.get("type")
+                ));
             }
             Draft {
                 title: row.get("name"),
@@ -166,10 +189,16 @@ fn bitwarden_row(row: &Row<'_>, at: Hlc, out: &mut Imported) {
     let kind = row.get("type");
     if kind == "note" {
         let mut entry = base_entry(&row.get("name"), "", at);
-        entry.kind = Kind::Note(Note { body: Lww::new(Secret::from(row.get("notes")), at) });
+        entry.kind = Kind::Note(Note {
+            body: Lww::new(Secret::from(row.get("notes")), at),
+        });
         entry.common.favourite = Lww::new(row.get("favorite") == "1", at);
         let folder = super::non_empty(row.get("folder"));
-        out.entries.push(super::ImportedEntry { entry, folder, files: Vec::new() });
+        out.entries.push(super::ImportedEntry {
+            entry,
+            folder,
+            files: Vec::new(),
+        });
         return;
     }
     let mut fields = Vec::new();
@@ -199,9 +228,15 @@ fn lastpass_row(row: &Row<'_>, at: Hlc, out: &mut Imported) {
     // LastPass marks secure notes with this placeholder address.
     if url == "http://sn" {
         let mut entry = base_entry(&row.get("name"), "", at);
-        entry.kind = Kind::Note(Note { body: Lww::new(Secret::from(row.get("extra")), at) });
+        entry.kind = Kind::Note(Note {
+            body: Lww::new(Secret::from(row.get("extra")), at),
+        });
         let folder = super::non_empty(row.get("grouping"));
-        out.entries.push(super::ImportedEntry { entry, folder, files: Vec::new() });
+        out.entries.push(super::ImportedEntry {
+            entry,
+            folder,
+            files: Vec::new(),
+        });
         return;
     }
     let draft = Draft {
@@ -225,12 +260,26 @@ fn wmpass_row(row: &Row<'_>, at: Hlc, out: &mut Imported) {
     if kind != "login" {
         let mut entry = base_entry(&row.get("title"), &row.get("notes"), at);
         let mut fields = extra;
-        fields.insert(0, Field { name: "Exported kind".into(), value: kind.as_str().into(), ..Field::default() });
+        fields.insert(
+            0,
+            Field {
+                name: "Exported kind".into(),
+                value: kind.as_str().into(),
+                ..Field::default()
+            },
+        );
         entry.common.custom_fields = Lww::new(fields, at);
         entry.kind = Kind::Note(Note::default());
-        out.skipped.push(format!("{}: {kind} entries come back from CSV as notes; a vault file keeps their type", row.get("title")));
+        out.skipped.push(format!(
+            "{}: {kind} entries come back from CSV as notes; a vault file keeps their type",
+            row.get("title")
+        ));
         let folder = super::non_empty(row.get("folder"));
-        out.entries.push(super::ImportedEntry { entry, folder, files: Vec::new() });
+        out.entries.push(super::ImportedEntry {
+            entry,
+            folder,
+            files: Vec::new(),
+        });
         return;
     }
     let draft = Draft {
@@ -241,7 +290,12 @@ fn wmpass_row(row: &Row<'_>, at: Hlc, out: &mut Imported) {
         notes: row.get("notes"),
         otp: row.get("otp"),
         folder: row.get("folder"),
-        tags: row.get("tags").split(',').filter(|t| !t.is_empty()).map(str::to_owned).collect(),
+        tags: row
+            .get("tags")
+            .split(',')
+            .filter(|t| !t.is_empty())
+            .map(str::to_owned)
+            .collect(),
         ..Draft::default()
     };
     let mut item = draft.into_login(at, &mut out.skipped);
@@ -253,7 +307,12 @@ pub(super) fn mapped(text: &str, map: &ColumnMap, has_header: bool, at: Hlc) -> 
     let mut out = Imported::default();
     for record in reader(text, has_header).records() {
         let record = record.map_err(|_| Error::Import("a row could not be read".into()))?;
-        let cell = |column: Option<usize>| column.and_then(|at| record.get(at)).unwrap_or_default().to_owned();
+        let cell = |column: Option<usize>| {
+            column
+                .and_then(|at| record.get(at))
+                .unwrap_or_default()
+                .to_owned()
+        };
         let draft = Draft {
             title: cell(map.title),
             username: cell(map.username),

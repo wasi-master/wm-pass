@@ -13,9 +13,11 @@ use crate::{Error, Result, Secret};
 const MAX_MEMBER: u64 = 512 * 1024 * 1024;
 
 fn member(data: &[u8], name: &str) -> Result<Option<Vec<u8>>> {
-    let mut archive =
-        zip::ZipArchive::new(Cursor::new(data)).map_err(|_| Error::Import("the archive could not be read".into()))?;
-    let Ok(file) = archive.by_name(name) else { return Ok(None) };
+    let mut archive = zip::ZipArchive::new(Cursor::new(data))
+        .map_err(|_| Error::Import("the archive could not be read".into()))?;
+    let Ok(file) = archive.by_name(name) else {
+        return Ok(None);
+    };
     if file.size() > MAX_MEMBER {
         return Err(Error::Import("a file in the archive is too large".into()));
     }
@@ -28,28 +30,38 @@ fn member(data: &[u8], name: &str) -> Result<Option<Vec<u8>>> {
 
 pub(super) fn detect_zip(data: &[u8]) -> Option<Format> {
     let archive = zip::ZipArchive::new(Cursor::new(data)).ok()?;
-    let names: Vec<String> = archive.file_names().filter_map(|name| name.ok().map(|n| n.into_owned())).collect();
+    let names: Vec<String> = archive
+        .file_names()
+        .filter_map(|name| name.ok().map(|n| n.into_owned()))
+        .collect();
     if names.iter().any(|name| name == "export.data") {
         return Some(Format::OnePux);
     }
-    names.iter().any(|name| name.ends_with("data.json")).then_some(Format::ProtonPass)
+    names
+        .iter()
+        .any(|name| name.ends_with("data.json"))
+        .then_some(Format::ProtonPass)
 }
 
 pub(super) fn import_proton_zip(data: &[u8], at: Hlc) -> Result<Imported> {
-    let archive =
-        zip::ZipArchive::new(Cursor::new(data)).map_err(|_| Error::Import("the archive could not be read".into()))?;
+    let archive = zip::ZipArchive::new(Cursor::new(data))
+        .map_err(|_| Error::Import("the archive could not be read".into()))?;
     let name = archive
         .file_names()
         .filter_map(|name| name.ok().map(|n| n.into_owned()))
         .find(|name| name.ends_with("data.json"))
         .ok_or_else(|| Error::Import("no data.json in the archive".into()))?;
-    let bytes = member(data, &name)?.ok_or_else(|| Error::Import("no data.json in the archive".into()))?;
-    let json = String::from_utf8(bytes).map_err(|_| Error::Import("the file is not text".into()))?;
+    let bytes =
+        member(data, &name)?.ok_or_else(|| Error::Import("no data.json in the archive".into()))?;
+    let json =
+        String::from_utf8(bytes).map_err(|_| Error::Import("the file is not text".into()))?;
     super::json_formats::proton(&json, at)
 }
 
 fn field_value(value: &Value) -> (String, bool) {
-    let Some(map) = value.as_object() else { return (String::new(), false) };
+    let Some(map) = value.as_object() else {
+        return (String::new(), false);
+    };
     for (kind, inner) in map {
         let text = match inner {
             Value::String(s) => s.clone(),
@@ -62,13 +74,17 @@ fn field_value(value: &Value) -> (String, bool) {
 }
 
 pub(super) fn import_1pux(data: &[u8], at: Hlc) -> Result<Imported> {
-    let bytes = member(data, "export.data")?.ok_or_else(|| Error::Import("no export.data in the archive".into()))?;
-    let json = String::from_utf8(bytes).map_err(|_| Error::Import("the file is not text".into()))?;
+    let bytes = member(data, "export.data")?
+        .ok_or_else(|| Error::Import("no export.data in the archive".into()))?;
+    let json =
+        String::from_utf8(bytes).map_err(|_| Error::Import("the file is not text".into()))?;
     let root = parse(&json)?;
     let mut out = Imported::default();
     for account in list(&root, "accounts") {
         for vault in list(account, "vaults") {
-            let vault_name = vault.get("attrs").map_or_else(String::new, |attrs| text(attrs, "name"));
+            let vault_name = vault
+                .get("attrs")
+                .map_or_else(String::new, |attrs| text(attrs, "name"));
             for item in list(vault, "items") {
                 if text(item, "state") == "archived" {
                     continue;
@@ -82,12 +98,20 @@ pub(super) fn import_1pux(data: &[u8], at: Hlc) -> Result<Imported> {
     Ok(out)
 }
 
-fn read_item(item: &Value, overview: &Value, details: &Value, vault: &str, at: Hlc, out: &mut Imported) {
+fn read_item(
+    item: &Value,
+    overview: &Value,
+    details: &Value,
+    vault: &str,
+    at: Hlc,
+    out: &mut Imported,
+) {
     let title = text(overview, "title");
     let notes = text(details, "notesPlain");
     let mut totp = String::new();
     let mut custom = Vec::new();
-    let mut section_values: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut section_values: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
     for section in list(details, "sections") {
         for field in list(section, "fields") {
             let value = field.get("value").cloned().unwrap_or(Value::Null);
@@ -109,7 +133,10 @@ fn read_item(item: &Value, overview: &Value, details: &Value, vault: &str, at: H
                 fields: custom,
                 folder: vault.to_owned(),
                 favourite: item.get("favIndex").and_then(Value::as_i64).unwrap_or(0) > 0,
-                tags: list(overview, "tags").iter().filter_map(|t| t.as_str().map(str::to_owned)).collect(),
+                tags: list(overview, "tags")
+                    .iter()
+                    .filter_map(|t| t.as_str().map(str::to_owned))
+                    .collect(),
                 ..Draft::default()
             };
             draft.urls.push(text(overview, "url"));
@@ -131,16 +158,27 @@ fn read_item(item: &Value, overview: &Value, details: &Value, vault: &str, at: H
             }
             draft.history = list(details, "passwordHistory")
                 .iter()
-                .map(|h| (text(h, "value"), h.get("time").and_then(Value::as_u64).unwrap_or(0) * 1000))
+                .map(|h| {
+                    (
+                        text(h, "value"),
+                        h.get("time").and_then(Value::as_u64).unwrap_or(0) * 1000,
+                    )
+                })
                 .collect();
             let entry = draft.into_login(at, &mut out.skipped);
             out.entries.push(entry);
         }
         "003" => {
             let mut entry = base_entry(&title, "", at);
-            entry.kind = Kind::Note(Note { body: Lww::new(Secret::from(notes), at) });
+            entry.kind = Kind::Note(Note {
+                body: Lww::new(Secret::from(notes), at),
+            });
             entry.common.custom_fields = Lww::new(super::fields(custom), at);
-            out.entries.push(ImportedEntry { entry, folder: non_empty(vault.to_owned()), files: Vec::new() });
+            out.entries.push(ImportedEntry {
+                entry,
+                folder: non_empty(vault.to_owned()),
+                files: Vec::new(),
+            });
         }
         "002" => {
             let cell = |key: &str| section_values.get(key).cloned().unwrap_or_default();
@@ -153,7 +191,11 @@ fn read_item(item: &Value, overview: &Value, details: &Value, vault: &str, at: H
                 pin: Lww::new(Secret::from(cell("pin")), at),
                 ..Card::default()
             });
-            out.entries.push(ImportedEntry { entry, folder: non_empty(vault.to_owned()), files: Vec::new() });
+            out.entries.push(ImportedEntry {
+                entry,
+                folder: non_empty(vault.to_owned()),
+                files: Vec::new(),
+            });
         }
         _ => {
             // Anything else keeps its fields on a note, so no data is dropped.
@@ -161,7 +203,11 @@ fn read_item(item: &Value, overview: &Value, details: &Value, vault: &str, at: H
             entry.kind = Kind::Note(Note::default());
             entry.common.custom_fields = Lww::new(super::fields(custom), at);
             out.skipped.push(format!("{title}: kept as a note with its fields, because this 1Password category has no direct match"));
-            out.entries.push(ImportedEntry { entry, folder: non_empty(vault.to_owned()), files: Vec::new() });
+            out.entries.push(ImportedEntry {
+                entry,
+                folder: non_empty(vault.to_owned()),
+                files: Vec::new(),
+            });
         }
     }
 }

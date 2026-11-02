@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 
 /// One moment. Ordered by time, then counter, then device, so any two values have
 /// a winner and every device picks the same one.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct Hlc {
     /// Milliseconds since the Unix epoch, as far as the writer knew.
     pub ms: u64,
@@ -23,7 +25,13 @@ pub struct Clock {
 impl Clock {
     /// A clock for a device.
     pub fn new(device: u32) -> Self {
-        Self { last: Hlc { ms: 0, counter: 0, device } }
+        Self {
+            last: Hlc {
+                ms: 0,
+                counter: 0,
+                device,
+            },
+        }
     }
 
     /// The next moment on this device.
@@ -63,15 +71,27 @@ mod tests {
     fn observing_moves_past_a_fast_peer() {
         let mut clock = Clock::new(1);
         clock.tick(1000);
-        let peer = Hlc { ms: 9000, counter: 4, device: 2 };
+        let peer = Hlc {
+            ms: 9000,
+            counter: 4,
+            device: 2,
+        };
         clock.observe(peer);
         assert!(clock.tick(1000) > peer);
     }
 
     #[test]
     fn device_breaks_exact_ties() {
-        let a = Hlc { ms: 1, counter: 0, device: 1 };
-        let b = Hlc { ms: 1, counter: 0, device: 2 };
+        let a = Hlc {
+            ms: 1,
+            counter: 0,
+            device: 1,
+        };
+        let b = Hlc {
+            ms: 1,
+            counter: 0,
+            device: 2,
+        };
         assert!(a < b);
     }
 }

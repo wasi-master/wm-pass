@@ -20,13 +20,18 @@ fn algorithm(name: &str) -> OtpAlgorithm {
 fn number(value: &Value, key: &str, fallback: u64) -> u64 {
     value
         .get(key)
-        .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+        .and_then(|v| {
+            v.as_u64()
+                .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+        })
         .unwrap_or(fallback)
 }
 
 fn kind_of(name: &str, period: u64, counter: u64) -> Option<OtpKind> {
     match name.to_ascii_lowercase().as_str() {
-        "totp" => Some(OtpKind::Totp { period: u32::try_from(period).unwrap_or(30) }),
+        "totp" => Some(OtpKind::Totp {
+            period: u32::try_from(period).unwrap_or(30),
+        }),
         "hotp" => Some(OtpKind::Hotp { counter }),
         "steam" => Some(OtpKind::Steam),
         _ => None,
@@ -36,15 +41,26 @@ fn kind_of(name: &str, period: u64, counter: u64) -> Option<OtpKind> {
 pub(super) fn aegis(json: &str, at: Hlc) -> Result<Imported> {
     let root = parse(json)?;
     if root.get("db").is_some_and(Value::is_string) {
-        return Err(Error::Import("this Aegis export is encrypted. Export it again without encryption".into()));
+        return Err(Error::Import(
+            "this Aegis export is encrypted. Export it again without encryption".into(),
+        ));
     }
-    let db = root.get("db").ok_or_else(|| Error::Import("no entries in the file".into()))?;
+    let db = root
+        .get("db")
+        .ok_or_else(|| Error::Import("no entries in the file".into()))?;
     let mut out = Imported::default();
     for entry in list(db, "entries") {
         let info = entry.get("info").cloned().unwrap_or(Value::Null);
         let name = text(entry, "name");
-        let Some(kind) = kind_of(&text(entry, "type"), number(&info, "period", 30), number(&info, "counter", 0)) else {
-            out.skipped.push(format!("{name}: Aegis {} codes are not supported", text(entry, "type")));
+        let Some(kind) = kind_of(
+            &text(entry, "type"),
+            number(&info, "period", 30),
+            number(&info, "counter", 0),
+        ) else {
+            out.skipped.push(format!(
+                "{name}: Aegis {} codes are not supported",
+                text(entry, "type")
+            ));
             continue;
         };
         out.entries.push(otp_entry(
@@ -65,16 +81,27 @@ pub(super) fn aegis(json: &str, at: Hlc) -> Result<Imported> {
 pub(super) fn two_fas(json: &str, at: Hlc) -> Result<Imported> {
     let root = parse(json)?;
     if root.get("servicesEncrypted").is_some_and(|v| v.is_string()) {
-        return Err(Error::Import("this 2FAS export is encrypted. Export it again without a password".into()));
+        return Err(Error::Import(
+            "this 2FAS export is encrypted. Export it again without a password".into(),
+        ));
     }
     let mut out = Imported::default();
     for service in list(&root, "services") {
         let otp = service.get("otp").cloned().unwrap_or(Value::Null);
         let name = text(service, "name");
         let token_type = text(&otp, "tokenType");
-        let token_type = if token_type.is_empty() { "TOTP".to_owned() } else { token_type };
-        let Some(kind) = kind_of(&token_type, number(&otp, "period", 30), number(&otp, "counter", 0)) else {
-            out.skipped.push(format!("{name}: 2FAS {token_type} codes are not supported"));
+        let token_type = if token_type.is_empty() {
+            "TOTP".to_owned()
+        } else {
+            token_type
+        };
+        let Some(kind) = kind_of(
+            &token_type,
+            number(&otp, "period", 30),
+            number(&otp, "counter", 0),
+        ) else {
+            out.skipped
+                .push(format!("{name}: 2FAS {token_type} codes are not supported"));
             continue;
         };
         let issuer = text(&otp, "issuer");
@@ -98,8 +125,15 @@ pub(super) fn and_otp(json: &str, at: Hlc) -> Result<Imported> {
     let mut out = Imported::default();
     for item in root.as_array().map_or(&[][..], Vec::as_slice) {
         let label = text(item, "label");
-        let Some(kind) = kind_of(&text(item, "type"), number(item, "period", 30), number(item, "counter", 0)) else {
-            out.skipped.push(format!("{label}: andOTP {} codes are not supported", text(item, "type")));
+        let Some(kind) = kind_of(
+            &text(item, "type"),
+            number(item, "period", 30),
+            number(item, "counter", 0),
+        ) else {
+            out.skipped.push(format!(
+                "{label}: andOTP {} codes are not supported",
+                text(item, "type")
+            ));
             continue;
         };
         out.entries.push(otp_entry(
@@ -122,10 +156,21 @@ pub(super) fn free_otp_plus(json: &str, at: Hlc) -> Result<Imported> {
     let mut out = Imported::default();
     for token in list(&root, "tokens") {
         // Seeds are stored as signed bytes.
-        let seed: Vec<u8> = list(token, "secret").iter().filter_map(Value::as_i64).map(|b| b as u8).collect();
+        let seed: Vec<u8> = list(token, "secret")
+            .iter()
+            .filter_map(Value::as_i64)
+            .map(|b| b as u8)
+            .collect();
         let label = text(token, "label");
-        let Some(kind) = kind_of(&text(token, "type"), number(token, "period", 30), number(token, "counter", 0)) else {
-            out.skipped.push(format!("{label}: FreeOTP+ {} codes are not supported", text(token, "type")));
+        let Some(kind) = kind_of(
+            &text(token, "type"),
+            number(token, "period", 30),
+            number(token, "counter", 0),
+        ) else {
+            out.skipped.push(format!(
+                "{label}: FreeOTP+ {} codes are not supported",
+                text(token, "type")
+            ));
             continue;
         };
         out.entries.push(otp_entry(
@@ -148,8 +193,15 @@ pub(super) fn raivo(json: &str, at: Hlc) -> Result<Imported> {
     let mut out = Imported::default();
     for item in root.as_array().map_or(&[][..], Vec::as_slice) {
         let account = text(item, "account");
-        let Some(kind) = kind_of(&text(item, "kind"), number(item, "timer", 30), number(item, "counter", 0)) else {
-            out.skipped.push(format!("{account}: Raivo {} codes are not supported", text(item, "kind")));
+        let Some(kind) = kind_of(
+            &text(item, "kind"),
+            number(item, "timer", 30),
+            number(item, "counter", 0),
+        ) else {
+            out.skipped.push(format!(
+                "{account}: Raivo {} codes are not supported",
+                text(item, "kind")
+            ));
             continue;
         };
         out.entries.push(otp_entry(
@@ -179,7 +231,9 @@ pub(super) fn uri_list(text_body: &str, at: Hlc) -> Result<Imported> {
         }
         match OtpConfig::from_uri(line) {
             Ok(config) => out.entries.push(otp_entry(config, at)),
-            Err(_) => out.skipped.push("a line that was not a one-time code link".to_owned()),
+            Err(_) => out
+                .skipped
+                .push("a line that was not a one-time code link".to_owned()),
         }
     }
     Ok(out)
@@ -229,20 +283,35 @@ fn fields(bytes: &[u8]) -> Option<Vec<(u64, Pb<'_>)>> {
 pub fn google_migration(link: &str) -> Result<Vec<OtpConfig>> {
     let bad = || Error::Import("that migration code could not be read".to_string());
     let (_, query) = link.split_once('?').ok_or_else(bad)?;
-    let data = query.split('&').find_map(|pair| pair.strip_prefix("data=")).ok_or_else(bad)?;
+    let data = query
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("data="))
+        .ok_or_else(bad)?;
     let data = percent_decode(&data.replace('+', "%2B")).replace(' ', "+");
-    let payload = base64::engine::general_purpose::STANDARD.decode(data.trim_end_matches('=').to_owned() + &"=".repeat((4 - data.trim_end_matches('=').len() % 4) % 4)).map_err(|_| bad())?;
+    let payload = base64::engine::general_purpose::STANDARD
+        .decode(
+            data.trim_end_matches('=').to_owned()
+                + &"=".repeat((4 - data.trim_end_matches('=').len() % 4) % 4),
+        )
+        .map_err(|_| bad())?;
     let mut out = Vec::new();
     for (number, value) in fields(&payload).ok_or_else(bad)? {
-        let (1, Pb::Bytes(item)) = (number, value) else { continue };
-        let mut config = OtpConfig { digits: 6, ..OtpConfig::default() };
+        let (1, Pb::Bytes(item)) = (number, value) else {
+            continue;
+        };
+        let mut config = OtpConfig {
+            digits: 6,
+            ..OtpConfig::default()
+        };
         let mut counter = 0;
         let mut hotp = false;
         for (field, value) in fields(item).ok_or_else(bad)? {
             match (field, value) {
                 (1, Pb::Bytes(seed)) => config.secret = Secret::from(base32_encode(seed)),
                 (2, Pb::Bytes(name)) => config.account = String::from_utf8_lossy(name).into_owned(),
-                (3, Pb::Bytes(issuer)) => config.issuer = String::from_utf8_lossy(issuer).into_owned(),
+                (3, Pb::Bytes(issuer)) => {
+                    config.issuer = String::from_utf8_lossy(issuer).into_owned()
+                }
                 (4, Pb::Int(algo)) => {
                     config.algorithm = match algo {
                         2 => OtpAlgorithm::Sha256,

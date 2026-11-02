@@ -94,9 +94,14 @@ impl Query {
                 }
             } else {
                 match lower.as_str() {
-                    "weak" | "reused" | "breached" | "old" | "duplicate" | "pinned" | "favourite"
-                    | "favorite" | "hidden" | "trashed" => Some(Term::Flag(lower.replace("favorite", "favourite"))),
-                    _ => lower.strip_prefix('-').filter(|rest| !rest.is_empty()).map(|rest| Term::Not(rest.to_owned())),
+                    "weak" | "reused" | "breached" | "old" | "duplicate" | "pinned"
+                    | "favourite" | "favorite" | "hidden" | "trashed" => {
+                        Some(Term::Flag(lower.replace("favorite", "favourite")))
+                    }
+                    _ => lower
+                        .strip_prefix('-')
+                        .filter(|rest| !rest.is_empty())
+                        .map(|rest| Term::Not(rest.to_owned())),
                 }
             };
             terms.push(term.unwrap_or(Term::Text(lower)));
@@ -106,7 +111,9 @@ impl Query {
 
     /// Whether the query asks for trashed or shelved entries, which are otherwise left out.
     fn wants(&self, flag: &str) -> bool {
-        self.terms.iter().any(|t| matches!(t, Term::Flag(f) if f == flag))
+        self.terms
+            .iter()
+            .any(|t| matches!(t, Term::Flag(f) if f == flag))
     }
 }
 
@@ -233,7 +240,8 @@ fn has(entry: &Entry, what: &str) -> bool {
 }
 
 fn flagged(entry: &Entry, flag: &str, context: &Context<'_>) -> bool {
-    let health = |set: fn(&Flags) -> &HashSet<Id>| context.flags.is_some_and(|f| set(f).contains(&entry.id));
+    let health =
+        |set: fn(&Flags) -> &HashSet<Id>| context.flags.is_some_and(|f| set(f).contains(&entry.id));
     match flag {
         "pinned" => entry.common.pinned.v,
         "favourite" => entry.common.favourite.v,
@@ -266,13 +274,23 @@ fn score(entry: &Entry, query: &Query, context: &Context<'_>) -> Option<u32> {
             Term::Text(text) => {
                 let found = fields
                     .iter()
-                    .filter_map(|(field, weight)| subsequence_score(text, field).map(|s| s * weight))
+                    .filter_map(|(field, weight)| {
+                        subsequence_score(text, field).map(|s| s * weight)
+                    })
                     .max()
-                    .or_else(|| notes.as_ref().filter(|body| body.contains(text.as_str())).map(|_| 1))?;
+                    .or_else(|| {
+                        notes
+                            .as_ref()
+                            .filter(|body| body.contains(text.as_str()))
+                            .map(|_| 1)
+                    })?;
                 total += found;
             }
             Term::Not(text) => {
-                if fields.iter().any(|(field, _)| field.contains(text.as_str())) {
+                if fields
+                    .iter()
+                    .any(|(field, _)| field.contains(text.as_str()))
+                {
                     return None;
                 }
             }
@@ -287,7 +305,10 @@ fn score(entry: &Entry, query: &Query, context: &Context<'_>) -> Option<u32> {
                 }
             }
             Term::Site(site) => {
-                if !entry_domains(entry).iter().any(|domain| domain.contains(site.as_str())) {
+                if !entry_domains(entry)
+                    .iter()
+                    .any(|domain| domain.contains(site.as_str()))
+                {
                     return None;
                 }
             }
@@ -353,7 +374,10 @@ pub fn search<'a>(
         .filter(|entry| want_hidden || !entry.common.hidden.v)
         .filter_map(|entry| score(entry, query, context).map(|s| (entry, s)))
         .collect();
-    found.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.common.title.v.cmp(&b.0.common.title.v)));
+    found.sort_by(|a, b| {
+        b.1.cmp(&a.1)
+            .then_with(|| a.0.common.title.v.cmp(&b.0.common.title.v))
+    });
     found.into_iter().map(|(entry, _)| entry).collect()
 }
 
@@ -368,24 +392,39 @@ mod tests {
     const NOW: u64 = 1_900_000_000_000;
 
     fn entry(id: &str, title: &str, user: &str, site: &str) -> Entry {
-        let at = Hlc { ms: NOW - 40 * DAY_MS, counter: 0, device: 1 };
+        let at = Hlc {
+            ms: NOW - 40 * DAY_MS,
+            counter: 0,
+            device: 1,
+        };
         let mut entry = login_entry(title, user, "SuperSecretValue", at);
         entry.id = id.into();
         entry.created_ms = NOW - 40 * DAY_MS;
-        entry.login_mut().unwrap().site_matchers = Lww::new(vec![SiteMatcher::Url(site.into())], at);
+        entry.login_mut().unwrap().site_matchers =
+            Lww::new(vec![SiteMatcher::Url(site.into())], at);
         entry
     }
 
     fn fixture() -> Vec<Entry> {
-        let at = Hlc { ms: NOW - DAY_MS, counter: 0, device: 1 };
+        let at = Hlc {
+            ms: NOW - DAY_MS,
+            counter: 0,
+            device: 1,
+        };
         let mut hub = entry("hub", "GitHub", "octo", "https://github.com");
         hub.common.tags = Lww::new(vec!["Work".into()], at);
         hub.login_mut().unwrap().otp = Lww::new(Some(OtpConfig::totp("JBSWY3DPEHPK3PXP")), at);
         let lab = entry("lab", "GitLab", "octo", "https://gitlab.com");
         let bank = entry("bank", "City Bank", "me", "https://citybank.example");
-        let mut note = Entry { id: "note".into(), created_ms: NOW - DAY_MS, ..Entry::default() };
+        let mut note = Entry {
+            id: "note".into(),
+            created_ms: NOW - DAY_MS,
+            ..Entry::default()
+        };
         note.common.title = Lww::new("Door code".into(), at);
-        note.kind = Kind::Note(Note { body: Lww::new("the code is 1234".into(), at) });
+        note.kind = Kind::Note(Note {
+            body: Lww::new("the code is 1234".into(), at),
+        });
         let mut gone = entry("gone", "GitGone", "x", "https://gone.example");
         gone.common.deleted_at_ms = Lww::new(Some(NOW), at);
         let mut shelf = entry("shelf", "GitShelf", "x", "https://shelf.example");
@@ -399,8 +438,15 @@ mod tests {
 
     fn ids_with(query: &str, flags: Option<&Flags>) -> Vec<String> {
         let entries = fixture();
-        let context = Context { now_ms: NOW, flags, folder_name: None };
-        search(&entries, &Query::parse(query), &context).iter().map(|e| e.id.clone()).collect()
+        let context = Context {
+            now_ms: NOW,
+            flags,
+            folder_name: None,
+        };
+        search(&entries, &Query::parse(query), &context)
+            .iter()
+            .map(|e| e.id.clone())
+            .collect()
     }
 
     #[test]
@@ -450,7 +496,10 @@ mod tests {
 
     #[test]
     fn health_flags_filter() {
-        let flags = Flags { weak: HashSet::from(["lab".to_owned()]), ..Flags::default() };
+        let flags = Flags {
+            weak: HashSet::from(["lab".to_owned()]),
+            ..Flags::default()
+        };
         assert_eq!(ids_with("weak", Some(&flags)), vec!["lab"]);
         assert!(ids("weak").is_empty());
     }
@@ -459,17 +508,35 @@ mod tests {
     fn custom_field_names_match_but_their_values_do_not() {
         let at = Hlc::default();
         let mut entries = fixture();
-        entries[0].common.custom_fields =
-            Lww::new(vec![Field { name: "Recovery PIN".into(), value: "998877".into(), ..Field::default() }], at);
-        let context = Context { now_ms: NOW, ..Context::default() };
-        assert_eq!(search(&entries, &Query::parse("recovery"), &context).len(), 1);
+        entries[0].common.custom_fields = Lww::new(
+            vec![Field {
+                name: "Recovery PIN".into(),
+                value: "998877".into(),
+                ..Field::default()
+            }],
+            at,
+        );
+        let context = Context {
+            now_ms: NOW,
+            ..Context::default()
+        };
+        assert_eq!(
+            search(&entries, &Query::parse("recovery"), &context).len(),
+            1
+        );
         assert_eq!(search(&entries, &Query::parse("998877"), &context).len(), 0);
     }
 
     #[test]
     fn unreadable_filters_become_plain_text() {
-        assert_eq!(Query::parse("foo:bar").terms, vec![Term::Text("foo:bar".into())]);
-        assert_eq!(Query::parse("modified>soon").terms, vec![Term::Text("modified>soon".into())]);
+        assert_eq!(
+            Query::parse("foo:bar").terms,
+            vec![Term::Text("foo:bar".into())]
+        );
+        assert_eq!(
+            Query::parse("modified>soon").terms,
+            vec![Term::Text("modified>soon".into())]
+        );
         assert_eq!(Query::parse("-").terms, vec![Term::Text("-".into())]);
     }
 }

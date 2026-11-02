@@ -30,21 +30,35 @@ fn root() -> std::path::PathBuf {
 
 fn samples() -> Vec<Sample> {
     let mut out = Vec::new();
-    for line in fs::read_to_string(root().join("domains.tsv")).unwrap().lines() {
+    for line in fs::read_to_string(root().join("domains.tsv"))
+        .unwrap()
+        .lines()
+    {
         let mut columns = line.split('\t');
         let (domain, category) = (columns.next().unwrap(), columns.next().unwrap());
         if let Some(class) = class_of(category) {
             // The name without its public suffix.
             let name = domain.split('.').next().unwrap().to_owned();
-            out.push(Sample { text: name, class, weight: 1 });
+            out.push(Sample {
+                text: name,
+                class,
+                weight: 1,
+            });
         }
     }
-    for line in fs::read_to_string(root().join("keywords.tsv")).unwrap().lines() {
+    for line in fs::read_to_string(root().join("keywords.tsv"))
+        .unwrap()
+        .lines()
+    {
         if line.starts_with('#') || line.is_empty() {
             continue;
         }
         let (text, category) = line.split_once('\t').unwrap();
-        out.push(Sample { text: text.to_owned(), class: class_of(category).unwrap(), weight: KEYWORD_WEIGHT });
+        out.push(Sample {
+            text: text.to_owned(),
+            class: class_of(category).unwrap(),
+            weight: KEYWORD_WEIGHT,
+        });
     }
     out
 }
@@ -68,7 +82,9 @@ fn train<'a>(data: impl Iterator<Item = &'a Sample> + Clone) -> Vec<u8> {
     }
     for class in 0..classes {
         for bucket in 0..BUCKETS {
-            model.push(quantise(-(counts[class * BUCKETS + bucket] / totals[class]).ln()));
+            model.push(quantise(
+                -(counts[class * BUCKETS + bucket] / totals[class]).ln(),
+            ));
         }
     }
     model
@@ -85,7 +101,11 @@ fn main() {
     let mut said = 0u32;
     let mut right = 0u32;
     for fold in 0..5 {
-        let train_set = data.iter().enumerate().filter(|(i, s)| s.weight > 1 || i % 5 != fold).map(|(_, s)| s);
+        let train_set = data
+            .iter()
+            .enumerate()
+            .filter(|(i, s)| s.weight > 1 || i % 5 != fold)
+            .map(|(_, s)| s);
         let model = train(train_set);
         for (index, sample) in data.iter().enumerate() {
             if sample.weight > 1 || index % 5 != fold {

@@ -6,11 +6,15 @@ use std::io::Write;
 use super::*;
 use crate::clock::Hlc;
 use crate::model::{Kind, Lww};
-use crate::otp::{OtpKind, OtpConfig};
+use crate::otp::{OtpConfig, OtpKind};
 use crate::vault::login_entry;
 use crate::vault::test_support::fast_vault;
 
-const AT: Hlc = Hlc { ms: 1000, counter: 0, device: 1 };
+const AT: Hlc = Hlc {
+    ms: 1000,
+    counter: 0,
+    device: 1,
+};
 
 fn run(name: &str, data: &[u8]) -> (Format, Imported) {
     let format = detect(data).unwrap_or_else(|| panic!("{name} not detected"));
@@ -34,7 +38,10 @@ fn chrome() {
     assert_eq!(login.username.v, "octo");
     assert_eq!(login.password.v.expose(), "hunter2");
     assert_eq!(item.entry.common.notes.v.expose(), "my note");
-    assert_eq!(login.site_matchers.v, vec![SiteMatcher::Url("https://github.com/".into())]);
+    assert_eq!(
+        login.site_matchers.v,
+        vec![SiteMatcher::Url("https://github.com/".into())]
+    );
 }
 
 #[test]
@@ -42,7 +49,10 @@ fn firefox_names_entries_after_their_host() {
     let csv = "\"url\",\"username\",\"password\",\"httpRealm\",\"formActionOrigin\",\"guid\",\"timeCreated\",\"timeLastUsed\",\"timePasswordChanged\"\n\"https://www.example.com\",\"me\",\"pw\",,\"https://www.example.com\",\"{x}\",\"1\",\"2\",\"3\"\n";
     let (format, imported) = run("f.csv", csv.as_bytes());
     assert_eq!(format, Format::FirefoxCsv);
-    assert_eq!(only_login(&imported).0.entry.common.title.v, "www.example.com");
+    assert_eq!(
+        only_login(&imported).0.entry.common.title.v,
+        "www.example.com"
+    );
 }
 
 #[test]
@@ -62,9 +72,14 @@ fn lastpass_tells_notes_from_logins() {
     assert_eq!(format, Format::LastPassCsv);
     assert_eq!(imported.entries.len(), 2);
     let login = imported.entries[0].entry.login().unwrap();
-    assert_eq!(login.otp.v.as_ref().unwrap().secret.expose(), "JBSWY3DPEHPK3PXP");
+    assert_eq!(
+        login.otp.v.as_ref().unwrap().secret.expose(),
+        "JBSWY3DPEHPK3PXP"
+    );
     assert!(imported.entries[0].entry.common.favourite.v);
-    let Kind::Note(note) = &imported.entries[1].entry.kind else { panic!("expected a note") };
+    let Kind::Note(note) = &imported.entries[1].entry.kind else {
+        panic!("expected a note")
+    };
     assert_eq!(note.body.v.expose(), "secret text");
 }
 
@@ -75,17 +90,38 @@ fn bitwarden_csv() {
     assert_eq!(format, Format::BitwardenCsv);
     let login = imported.entries[0].entry.login().unwrap();
     assert_eq!(login.site_matchers.v.len(), 2);
-    assert_eq!(imported.entries[0].entry.common.custom_fields.v[0].value.expose(), "1234");
+    assert_eq!(
+        imported.entries[0].entry.common.custom_fields.v[0]
+            .value
+            .expose(),
+        "1234"
+    );
     assert!(matches!(imported.entries[1].entry.kind, Kind::Note(_)));
 }
 
 #[test]
 fn dashlane_apple_nordpass_roboform() {
     let cases: [(&str, Format, &str); 4] = [
-        ("username,username2,username3,title,password,note,url,category,otpSecret\nme,alt,,Mail,pw,n,https://m.example,Work,\n", Format::DashlaneCsv, "pw"),
-        ("Title,URL,Username,Password,Notes,OTPAuth\nMail,https://m.example,me,pw2,,\n", Format::AppleCsv, "pw2"),
-        ("name,url,additional_urls,username,password,note,cardholdername,cardnumber,cvc,pin,expirydate,zipcode,folder,type\nMail,https://m.example,,me,pw3,,,,,,,,Work,password\n", Format::NordPassCsv, "pw3"),
-        ("Name,Url,MatchUrl,Login,Pwd,Note,Folder,RfFieldsV2\nMail,https://m.example,https://m.example/login,me,pw4,,/Work,\n", Format::RoboFormCsv, "pw4"),
+        (
+            "username,username2,username3,title,password,note,url,category,otpSecret\nme,alt,,Mail,pw,n,https://m.example,Work,\n",
+            Format::DashlaneCsv,
+            "pw",
+        ),
+        (
+            "Title,URL,Username,Password,Notes,OTPAuth\nMail,https://m.example,me,pw2,,\n",
+            Format::AppleCsv,
+            "pw2",
+        ),
+        (
+            "name,url,additional_urls,username,password,note,cardholdername,cardnumber,cvc,pin,expirydate,zipcode,folder,type\nMail,https://m.example,,me,pw3,,,,,,,,Work,password\n",
+            Format::NordPassCsv,
+            "pw3",
+        ),
+        (
+            "Name,Url,MatchUrl,Login,Pwd,Note,Folder,RfFieldsV2\nMail,https://m.example,https://m.example/login,me,pw4,,/Work,\n",
+            Format::RoboFormCsv,
+            "pw4",
+        ),
     ];
     for (csv, want, password) in cases {
         let (format, imported) = run("x.csv", csv.as_bytes());
@@ -97,7 +133,12 @@ fn dashlane_apple_nordpass_roboform() {
 #[test]
 fn mapped_csv() {
     let text = "a,b,c\nMail,me,pw\n";
-    let map = ColumnMap { title: Some(0), username: Some(1), password: Some(2), ..ColumnMap::default() };
+    let map = ColumnMap {
+        title: Some(0),
+        username: Some(1),
+        password: Some(2),
+        ..ColumnMap::default()
+    };
     let imported = import_mapped_csv(text, &map, true, AT).unwrap();
     assert_eq!(only_login(&imported).1.password.v.expose(), "pw");
     assert_eq!(preview_csv(text, 1).unwrap(), vec![vec!["a", "b", "c"]]);
@@ -126,12 +167,24 @@ fn bitwarden_json_all_kinds() {
     assert_eq!(login.passkeys.v[0].rp_id, "a.example");
     assert_eq!(login.passkeys.v[0].counter, 3);
     assert_eq!(mail.entry.history[0].value.expose(), "older");
-    assert!(matches!(mail.entry.common.custom_fields.v[0].kind, crate::model::FieldKind::Hidden));
-    let Kind::Note(note) = &imported.entries[1].entry.kind else { panic!() };
+    assert!(matches!(
+        mail.entry.common.custom_fields.v[0].kind,
+        crate::model::FieldKind::Hidden
+    ));
+    let Kind::Note(note) = &imported.entries[1].entry.kind else {
+        panic!()
+    };
     assert_eq!(note.body.v.expose(), "body");
-    let Kind::Card(card) = &imported.entries[2].entry.kind else { panic!() };
-    assert_eq!((card.number.v.expose(), card.expiry.v.as_str()), ("4111", "1/2030"));
-    let Kind::Identity(person) = &imported.entries[3].entry.kind else { panic!() };
+    let Kind::Card(card) = &imported.entries[2].entry.kind else {
+        panic!()
+    };
+    assert_eq!(
+        (card.number.v.expose(), card.expiry.v.as_str()),
+        ("4111", "1/2030")
+    );
+    let Kind::Identity(person) = &imported.entries[3].entry.kind else {
+        panic!()
+    };
     assert_eq!(person.full_name.v, "A B");
     assert_eq!(person.document_numbers.v[0].value.expose(), "P1");
     assert!(matches!(imported.entries[4].entry.kind, Kind::SshKey(_)));
@@ -141,9 +194,19 @@ fn bitwarden_json_all_kinds() {
 fn encrypted_exports_say_what_to_do() {
     let bw = r#"{"encrypted":true,"data":"x"}"#;
     assert_eq!(detect(bw.as_bytes()), Some(Format::BitwardenJson));
-    assert!(import(Format::BitwardenJson, bw.as_bytes(), None, AT).unwrap_err().to_string().contains("unencrypted"));
+    assert!(
+        import(Format::BitwardenJson, bw.as_bytes(), None, AT)
+            .unwrap_err()
+            .to_string()
+            .contains("unencrypted")
+    );
     let aegis = r#"{"version":1,"header":{"slots":[]},"db":"cipher"}"#;
-    assert!(import(Format::Aegis, aegis.as_bytes(), None, AT).unwrap_err().to_string().contains("encrypted"));
+    assert!(
+        import(Format::Aegis, aegis.as_bytes(), None, AT)
+            .unwrap_err()
+            .to_string()
+            .contains("encrypted")
+    );
 }
 
 #[test]
@@ -155,7 +218,10 @@ fn enpass_keeper_proton() {
     let (format, imported) = run("e.json", enpass.as_bytes());
     assert_eq!(format, Format::EnpassJson);
     let (item, login) = only_login(&imported);
-    assert_eq!((login.username.v.as_str(), item.folder.as_deref()), ("me", Some("Work")));
+    assert_eq!(
+        (login.username.v.as_str(), item.folder.as_deref()),
+        ("me", Some("Work"))
+    );
 
     let keeper = r#"{"records":[{"title":"Mail","login":"me","password":"pw","login_url":"https://m.example","notes":"n",
       "custom_fields":{"$oneTimeCode":"otpauth://totp/x?secret=JBSWY3DPEHPK3PXP","Team":"A"},"folders":[{"folder":"Work"}]}]}"#;
@@ -175,14 +241,23 @@ fn enpass_keeper_proton() {
     let (format, imported) = run("p.json", proton.as_bytes());
     assert_eq!(format, Format::ProtonPass);
     assert_eq!(imported.entries.len(), 2);
-    assert_eq!(imported.entries[0].entry.login().unwrap().username.v, "me@x");
-    assert_eq!(imported.skipped.len(), 1, "the alias must be reported, not silently dropped");
+    assert_eq!(
+        imported.entries[0].entry.login().unwrap().username.v,
+        "me@x"
+    );
+    assert_eq!(
+        imported.skipped.len(),
+        1,
+        "the alias must be reported, not silently dropped"
+    );
 }
 
 fn zip_with(name: &str, content: &str) -> Vec<u8> {
     let mut buffer = std::io::Cursor::new(Vec::new());
     let mut writer = zip::ZipWriter::new(&mut buffer);
-    writer.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+    writer
+        .start_file(name, zip::write::SimpleFileOptions::default())
+        .unwrap();
     writer.write_all(content.as_bytes()).unwrap();
     writer.finish().unwrap();
     buffer.into_inner()
@@ -212,7 +287,9 @@ fn one_password_1pux() {
     assert_eq!(login.site_matchers.v.len(), 2);
     assert!(login.otp.v.is_some());
     assert_eq!(mail.entry.history[0].at.ms, 100_000);
-    let Kind::Card(card) = &imported.entries[2].entry.kind else { panic!() };
+    let Kind::Card(card) = &imported.entries[2].entry.kind else {
+        panic!()
+    };
     assert_eq!(card.number.v.expose(), "4111");
     assert_eq!(imported.entries[3].entry.common.custom_fields.v.len(), 1);
     assert_eq!(imported.skipped.len(), 1);
@@ -255,18 +332,32 @@ fn authenticators() {
     assert_eq!(format, Format::Aegis);
     assert_eq!(imported.entries.len(), 2);
     assert_eq!(imported.skipped.len(), 1);
-    let Kind::Otp(first) = &imported.entries[0].entry.kind else { panic!() };
+    let Kind::Otp(first) = &imported.entries[0].entry.kind else {
+        panic!()
+    };
     let config = first.config.v.as_ref().unwrap();
-    assert_eq!((config.digits, config.kind), (8, OtpKind::Totp { period: 60 }));
-    let Kind::Otp(second) = &imported.entries[1].entry.kind else { panic!() };
-    assert_eq!(second.config.v.as_ref().unwrap().kind, OtpKind::Hotp { counter: 5 });
+    assert_eq!(
+        (config.digits, config.kind),
+        (8, OtpKind::Totp { period: 60 })
+    );
+    let Kind::Otp(second) = &imported.entries[1].entry.kind else {
+        panic!()
+    };
+    assert_eq!(
+        second.config.v.as_ref().unwrap().kind,
+        OtpKind::Hotp { counter: 5 }
+    );
 
-    let two_fas = format!(r#"{{"services":[{{"name":"A","secret":"{SEED}","otp":{{"account":"me","digits":6,"period":30,"algorithm":"SHA1","tokenType":"TOTP"}}}}],"schemaVersion":4}}"#);
+    let two_fas = format!(
+        r#"{{"services":[{{"name":"A","secret":"{SEED}","otp":{{"account":"me","digits":6,"period":30,"algorithm":"SHA1","tokenType":"TOTP"}}}}],"schemaVersion":4}}"#
+    );
     let (format, imported) = run("t.2fas", two_fas.as_bytes());
     assert_eq!(format, Format::TwoFas);
     assert_eq!(imported.entries.len(), 1);
 
-    let and = format!(r#"[{{"secret":"{SEED}","issuer":"A","label":"me","digits":6,"type":"TOTP","algorithm":"SHA1","period":30}}]"#);
+    let and = format!(
+        r#"[{{"secret":"{SEED}","issuer":"A","label":"me","digits":6,"type":"TOTP","algorithm":"SHA1","period":30}}]"#
+    );
     let (format, imported) = run("a.json", and.as_bytes());
     assert_eq!(format, Format::AndOtp);
     assert_eq!(imported.entries.len(), 1);
@@ -274,10 +365,19 @@ fn authenticators() {
     let free = r#"{"tokenOrder":["a"],"tokens":[{"algo":"SHA1","counter":0,"digits":6,"issuerExt":"A","label":"me","period":30,"secret":[72,-101,109],"type":"TOTP"}]}"#;
     let (format, imported) = run("f.json", free.as_bytes());
     assert_eq!(format, Format::FreeOtpPlus);
-    let Kind::Otp(token) = &imported.entries[0].entry.kind else { panic!() };
-    assert_eq!(crate::otp::base32_decode(token.config.v.as_ref().unwrap().secret.expose()).unwrap().as_slice(), &[72, 155, 109]);
+    let Kind::Otp(token) = &imported.entries[0].entry.kind else {
+        panic!()
+    };
+    assert_eq!(
+        crate::otp::base32_decode(token.config.v.as_ref().unwrap().secret.expose())
+            .unwrap()
+            .as_slice(),
+        &[72, 155, 109]
+    );
 
-    let raivo = format!(r#"[{{"issuer":"A","account":"me","secret":"{SEED}","algorithm":"SHA1","digits":"6","kind":"TOTP","timer":"30","counter":"0"}}]"#);
+    let raivo = format!(
+        r#"[{{"issuer":"A","account":"me","secret":"{SEED}","algorithm":"SHA1","digits":"6","kind":"TOTP","timer":"30","counter":"0"}}]"#
+    );
     let (format, imported) = run("r.json", raivo.as_bytes());
     assert_eq!(format, Format::Raivo);
     assert_eq!(imported.entries.len(), 1);
@@ -300,20 +400,43 @@ fn google_migration_link() {
     payload.extend_from_slice(&item);
     payload.extend_from_slice(&[0x10, 1, 0x18, 1]); // version, batch
     let encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &payload);
-    let link = format!("otpauth-migration://offline?data={}", crate::otp::percent_encode(&encoded));
+    let link = format!(
+        "otpauth-migration://offline?data={}",
+        crate::otp::percent_encode(&encoded)
+    );
     let found = authenticators::google_migration(&link).unwrap();
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].issuer, "A");
     assert_eq!(found[0].account, "me");
     assert_eq!(found[0].digits, 6);
-    assert_eq!(crate::otp::base32_decode(found[0].secret.expose()).unwrap().as_slice(), b"Hel");
+    assert_eq!(
+        crate::otp::base32_decode(found[0].secret.expose())
+            .unwrap()
+            .as_slice(),
+        b"Hel"
+    );
     assert!(authenticators::google_migration("otpauth-migration://offline?data=!!!").is_err());
 }
 
 #[test]
 fn hostile_inputs_fail_cleanly() {
-    for format in [Format::BitwardenJson, Format::OnePux, Format::SafeInCloudXml, Format::Aegis, Format::ProtonPass, Format::ChromeCsv] {
-        for junk in [&b""[..], b"\xff\xfe\x00", b"PK\x03\x04garbage", b"{", b"<database><card", b"[1,2,3]", b"\"\n\""] {
+    for format in [
+        Format::BitwardenJson,
+        Format::OnePux,
+        Format::SafeInCloudXml,
+        Format::Aegis,
+        Format::ProtonPass,
+        Format::ChromeCsv,
+    ] {
+        for junk in [
+            &b""[..],
+            b"\xff\xfe\x00",
+            b"PK\x03\x04garbage",
+            b"{",
+            b"<database><card",
+            b"[1,2,3]",
+            b"\"\n\"",
+        ] {
             let _ = import(format, junk, None, AT);
         }
     }
@@ -326,7 +449,8 @@ fn apply_folders_dedupes_and_seals_files() {
     let mut vault = fast_vault(1);
     let at = vault.tick(2000);
     let mut existing = login_entry("Mail", "me", "pw", at);
-    existing.login_mut().unwrap().site_matchers = Lww::new(vec![SiteMatcher::Url("https://m.example".into())], at);
+    existing.login_mut().unwrap().site_matchers =
+        Lww::new(vec![SiteMatcher::Url("https://m.example".into())], at);
     vault.add(existing, 2000).unwrap();
 
     let draft = |title: &str, password: &str, folder: &str| Draft {
@@ -342,16 +466,31 @@ fn apply_folders_dedupes_and_seals_files() {
     let mut fresh = draft("Other", "new", "Work").into_login(AT, &mut skipped);
     fresh.files.push(("a.txt".into(), b"hello".to_vec()));
     let also_fresh = draft("Third", "newer", "Work").into_login(AT, &mut skipped);
-    let imported = Imported { entries: vec![duplicate, fresh, also_fresh], skipped };
+    let imported = Imported {
+        entries: vec![duplicate, fresh, also_fresh],
+        skipped,
+    };
 
     let report = apply(&mut vault, imported, 3000).unwrap();
     assert_eq!((report.added, report.duplicates), (2, 1));
-    assert_eq!(vault.doc.folders.len(), 1, "one folder however many entries name it");
+    assert_eq!(
+        vault.doc.folders.len(),
+        1,
+        "one folder however many entries name it"
+    );
     let (blob, sealed) = &report.blobs[0];
-    let holder = vault.doc.entries.values().find(|e| e.common.title.v == "Other").unwrap();
+    let holder = vault
+        .doc
+        .entries
+        .values()
+        .find(|e| e.common.title.v == "Other")
+        .unwrap();
     let record = &holder.common.attachments.v[0];
     assert_eq!(&record.blob, blob);
-    assert_eq!(Vault::open_attachment(record, sealed).unwrap().as_slice(), b"hello");
+    assert_eq!(
+        Vault::open_attachment(record, sealed).unwrap().as_slice(),
+        b"hello"
+    );
 }
 
 fn sample_vault() -> Vault {
@@ -365,7 +504,11 @@ fn sample_vault() -> Vault {
     }
     login.common.tags = Lww::new(vec!["work".into()], at);
     login.common.custom_fields = Lww::new(
-        vec![crate::model::Field { name: "pin".into(), value: "1".into(), kind: crate::model::FieldKind::Hidden }],
+        vec![crate::model::Field {
+            name: "pin".into(),
+            value: "1".into(),
+            kind: crate::model::FieldKind::Hidden,
+        }],
         at,
     );
     vault.add(login, 2000).unwrap();
@@ -387,11 +530,31 @@ fn csv_export_round_trips_logins_and_reports_other_kinds() {
     let (format, imported) = run("e.csv", csv.expose().as_bytes());
     assert_eq!(format, Format::WmPassCsv);
     assert_eq!(imported.entries.len(), 2);
-    let login = imported.entries.iter().find_map(|i| i.entry.login()).unwrap();
-    assert_eq!(login.password.v.expose(), "pa\"ss,w\nord", "quoting must survive");
+    let login = imported
+        .entries
+        .iter()
+        .find_map(|i| i.entry.login())
+        .unwrap();
+    assert_eq!(
+        login.password.v.expose(),
+        "pa\"ss,w\nord",
+        "quoting must survive"
+    );
     assert!(login.otp.v.is_some());
-    let card = imported.entries.iter().find(|i| i.entry.common.title.v == "Visa").unwrap();
-    assert!(card.entry.common.custom_fields.v.iter().any(|f| f.value.expose() == "4111"), "values must not be lost");
+    let card = imported
+        .entries
+        .iter()
+        .find(|i| i.entry.common.title.v == "Visa")
+        .unwrap();
+    assert!(
+        card.entry
+            .common
+            .custom_fields
+            .v
+            .iter()
+            .any(|f| f.value.expose() == "4111"),
+        "values must not be lost"
+    );
     assert_eq!(imported.skipped.len(), 1);
 }
 
@@ -401,10 +564,19 @@ fn bitwarden_export_reads_back() {
     let json = export::to_bitwarden_json(&vault).unwrap();
     let (format, imported) = run("b.json", json.expose().as_bytes());
     assert_eq!(format, Format::BitwardenJson);
-    let login = imported.entries.iter().find_map(|i| i.entry.login()).unwrap();
+    let login = imported
+        .entries
+        .iter()
+        .find_map(|i| i.entry.login())
+        .unwrap();
     assert_eq!(login.password.v.expose(), "pa\"ss,w\nord");
     assert!(login.otp.v.is_some());
-    let Some(Kind::Card(card)) = imported.entries.iter().map(|i| &i.entry.kind).find(|k| matches!(k, Kind::Card(_))) else {
+    let Some(Kind::Card(card)) = imported
+        .entries
+        .iter()
+        .map(|i| &i.entry.kind)
+        .find(|k| matches!(k, Kind::Card(_)))
+    else {
         panic!("the card must stay a card");
     };
     assert_eq!(card.number.v.expose(), "4111");
@@ -429,14 +601,32 @@ fn kdbx_export_import_round_trip() {
     assert!(import(Format::Kdbx, &bytes, None, AT).is_err());
     let imported = import(Format::Kdbx, &bytes, Some("pw"), AT).unwrap();
     assert_eq!(imported.entries.len(), 2);
-    let item = imported.entries.iter().find(|i| i.entry.common.title.v == "Mail <b>").unwrap();
+    let item = imported
+        .entries
+        .iter()
+        .find(|i| i.entry.common.title.v == "Mail <b>")
+        .unwrap();
     let login = item.entry.login().unwrap();
     assert_eq!(login.password.v.expose(), "pa\"ss,w\nord");
-    assert_eq!(login.otp.v.as_ref().unwrap().secret.expose(), "JBSWY3DPEHPK3PXP");
+    assert_eq!(
+        login.otp.v.as_ref().unwrap().secret.expose(),
+        "JBSWY3DPEHPK3PXP"
+    );
     assert_eq!(item.entry.common.tags.v, vec!["work".to_owned()]);
     assert_eq!(item.entry.common.custom_fields.v[0].value.expose(), "1");
-    let visa = imported.entries.iter().find(|i| i.entry.common.title.v == "Visa").unwrap();
-    assert!(visa.entry.common.custom_fields.v.iter().any(|f| f.value.expose() == "4111"));
+    let visa = imported
+        .entries
+        .iter()
+        .find(|i| i.entry.common.title.v == "Visa")
+        .unwrap();
+    assert!(
+        visa.entry
+            .common
+            .custom_fields
+            .v
+            .iter()
+            .any(|f| f.value.expose() == "4111")
+    );
     assert!(kdbx::export(&entries, "").is_err());
 }
 
@@ -444,7 +634,10 @@ fn kdbx_export_import_round_trip() {
 fn kdbx_in_place_keeps_structure_and_history() {
     let mut database = keepass::Database::new();
     database.config.kdf_config = keepass::config::KdfConfig::Argon2id {
-        iterations: 1, memory: 1024 * 1024, parallelism: 1, version: argon2_for_keepass::Version::Version13,
+        iterations: 1,
+        memory: 1024 * 1024,
+        parallelism: 1,
+        version: argon2_for_keepass::Version::Version13,
     };
     {
         let mut root = database.root_mut();
@@ -457,17 +650,25 @@ fn kdbx_in_place_keeps_structure_and_history() {
         entry.set_protected("Custom", "keepme");
     }
     let mut bytes = Vec::new();
-    database.save(&mut bytes, keepass::DatabaseKey::new().with_password("pw")).unwrap();
+    database
+        .save(&mut bytes, keepass::DatabaseKey::new().with_password("pw"))
+        .unwrap();
 
     let mut opened = kdbx::InPlace::open(&bytes, "pw", None).unwrap();
     let listed = opened.list();
     assert_eq!(listed.len(), 1);
-    assert_eq!((listed[0].group.as_str(), listed[0].username.as_str()), ("Team", "me"));
+    assert_eq!(
+        (listed[0].group.as_str(), listed[0].username.as_str()),
+        ("Team", "me")
+    );
     assert_eq!(opened.password(&listed[0].id).unwrap().expose(), "first");
-    opened.set_password(&listed[0].id, &Secret::new("second")).unwrap();
+    opened
+        .set_password(&listed[0].id, &Secret::new("second"))
+        .unwrap();
     let saved = opened.save("pw", None).unwrap();
 
-    let back = keepass::Database::parse(&saved, keepass::DatabaseKey::new().with_password("pw")).unwrap();
+    let back =
+        keepass::Database::parse(&saved, keepass::DatabaseKey::new().with_password("pw")).unwrap();
     let root = back.root();
     let group = root.groups().next().unwrap();
     assert_eq!(group.name, "Team");
@@ -476,5 +677,9 @@ fn kdbx_in_place_keeps_structure_and_history() {
     assert_eq!(entry.get("Custom"), Some("keepme"));
     let history = entry.history.as_ref().unwrap().get_entries();
     assert_eq!(history[0].get_password(), Some("first"));
-    assert!(opened.set_password("no-such-id", &Secret::new("x")).is_err());
+    assert!(
+        opened
+            .set_password("no-such-id", &Secret::new("x"))
+            .is_err()
+    );
 }

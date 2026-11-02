@@ -80,7 +80,11 @@ pub struct KdfParams {
 
 impl Default for KdfParams {
     fn default() -> Self {
-        Self { m_kib: 128 * 1024, t: 3, p: 4 }
+        Self {
+            m_kib: 128 * 1024,
+            t: 3,
+            p: 4,
+        }
     }
 }
 
@@ -90,7 +94,11 @@ impl KdfParams {
         let ok = (KDF_MIN_M_KIB..=KDF_MAX_M_KIB).contains(&self.m_kib)
             && (KDF_MIN_T..=KDF_MAX_T).contains(&self.t)
             && (1..=KDF_MAX_P).contains(&self.p);
-        if ok { Ok(self) } else { Err(Error::KdfOutOfRange) }
+        if ok {
+            Ok(self)
+        } else {
+            Err(Error::KdfOutOfRange)
+        }
     }
 }
 
@@ -101,8 +109,8 @@ pub fn argon2id(password: &[u8], salt: &[u8], params: KdfParams) -> Result<Key> 
 }
 
 fn argon2id_unchecked(password: &[u8], salt: &[u8], params: KdfParams) -> Result<Key> {
-    let settings =
-        Params::new(params.m_kib, params.t, params.p, Some(32)).map_err(|_| Error::KdfOutOfRange)?;
+    let settings = Params::new(params.m_kib, params.t, params.p, Some(32))
+        .map_err(|_| Error::KdfOutOfRange)?;
     let mut out = Zeroizing::new([0u8; 32]);
     Argon2::new(Algorithm::Argon2id, Version::V0x13, settings)
         .hash_password_into(password, salt, &mut out[..])
@@ -114,7 +122,15 @@ fn argon2id_unchecked(password: &[u8], salt: &[u8], params: KdfParams) -> Result
 /// from production code paths.
 #[cfg(test)]
 pub(crate) fn argon2id_for_tests(password: &[u8], salt: &[u8]) -> Result<Key> {
-    argon2id_unchecked(password, salt, KdfParams { m_kib: 8, t: 1, p: 1 })
+    argon2id_unchecked(
+        password,
+        salt,
+        KdfParams {
+            m_kib: 8,
+            t: 1,
+            p: 1,
+        },
+    )
 }
 
 /// Expands `ikm` into a sub-key for one purpose, named by `info`.
@@ -169,7 +185,11 @@ pub fn open(key: &[u8; 32], sealed: &[u8], aad: &[u8]) -> Option<Zeroizing<Vec<u
     }
     let (nonce, body) = sealed.split_at(NONCE_LEN);
     let nonce = xnonce(nonce).ok()?;
-    cipher(key).ok()?.decrypt(&nonce, Payload { msg: body, aad }).ok().map(Zeroizing::new)
+    cipher(key)
+        .ok()?
+        .decrypt(&nonce, Payload { msg: body, aad })
+        .ok()
+        .map(Zeroizing::new)
 }
 
 /// Plaintext bytes per STREAM chunk.
@@ -203,7 +223,13 @@ pub fn stream_seal(
         let count = u32::try_from(index).map_err(|_| Error::TooLong)?;
         let nonce = stream_nonce(prefix, count, last)?;
         let sealed = cipher
-            .encrypt(&nonce, Payload { msg: &plain[start..end], aad })
+            .encrypt(
+                &nonce,
+                Payload {
+                    msg: &plain[start..end],
+                    aad,
+                },
+            )
             .map_err(|_| Error::Crypto)?;
         out.extend_from_slice(&sealed);
     }
@@ -229,7 +255,13 @@ pub fn stream_open(
         let nonce = stream_nonce(prefix, count, last)?;
         let plain = Zeroizing::new(
             cipher
-                .decrypt(&nonce, Payload { msg: &sealed[start..end], aad })
+                .decrypt(
+                    &nonce,
+                    Payload {
+                        msg: &sealed[start..end],
+                        aad,
+                    },
+                )
                 .map_err(|_| Error::Integrity)?,
         );
         out.extend_from_slice(&plain);
@@ -265,9 +297,20 @@ mod tests {
 
     #[test]
     fn kdf_floor_and_ceiling_are_enforced() {
-        let weak = KdfParams { m_kib: 1024, t: 1, p: 1 };
-        assert_eq!(argon2id(b"x", b"saltsaltsaltsalt", weak).err(), Some(Error::KdfOutOfRange));
-        let huge = KdfParams { m_kib: u32::MAX, t: 3, p: 4 };
+        let weak = KdfParams {
+            m_kib: 1024,
+            t: 1,
+            p: 1,
+        };
+        assert_eq!(
+            argon2id(b"x", b"saltsaltsaltsalt", weak).err(),
+            Some(Error::KdfOutOfRange)
+        );
+        let huge = KdfParams {
+            m_kib: u32::MAX,
+            t: 3,
+            p: 4,
+        };
         assert_eq!(huge.check().err(), Some(Error::KdfOutOfRange));
         assert!(KdfParams::default().check().is_ok());
     }
@@ -287,7 +330,10 @@ mod tests {
     #[test]
     fn seal_never_repeats_a_nonce() {
         let key = random_key().unwrap();
-        assert_ne!(seal(&key, b"x", b"").unwrap(), seal(&key, b"x", b"").unwrap());
+        assert_ne!(
+            seal(&key, b"x", b"").unwrap(),
+            seal(&key, b"x", b"").unwrap()
+        );
     }
 
     fn stream_fixture(len: usize) -> (Key, [u8; STREAM_PREFIX_LEN], Vec<u8>, Vec<u8>) {
@@ -311,7 +357,10 @@ mod tests {
     fn stream_detects_truncation_at_a_chunk_boundary() {
         let (key, prefix, _, sealed) = stream_fixture(CHUNK * 3);
         let cut = &sealed[..(CHUNK + TAG_LEN) * 2];
-        assert_eq!(stream_open(&key, &prefix, cut, b"head").err(), Some(Error::Integrity));
+        assert_eq!(
+            stream_open(&key, &prefix, cut, b"head").err(),
+            Some(Error::Integrity)
+        );
     }
 
     #[test]
@@ -322,13 +371,19 @@ mod tests {
         swapped.extend_from_slice(&sealed[step..step * 2]);
         swapped.extend_from_slice(&sealed[..step]);
         swapped.extend_from_slice(&sealed[step * 2..]);
-        assert_eq!(stream_open(&key, &prefix, &swapped, b"head").err(), Some(Error::Integrity));
+        assert_eq!(
+            stream_open(&key, &prefix, &swapped, b"head").err(),
+            Some(Error::Integrity)
+        );
     }
 
     #[test]
     fn stream_binds_its_aad() {
         let (key, prefix, _, sealed) = stream_fixture(100);
-        assert_eq!(stream_open(&key, &prefix, &sealed, b"nope").err(), Some(Error::Integrity));
+        assert_eq!(
+            stream_open(&key, &prefix, &sealed, b"nope").err(),
+            Some(Error::Integrity)
+        );
     }
 
     #[test]
@@ -348,7 +403,10 @@ mod tests {
         for len in [2u64, 3, 9, 100, 1000, 65_536, 1_000_000, 123_456_789] {
             let padded = padme(len);
             assert!(padded >= len);
-            assert!((padded - len) as f64 / len as f64 <= 0.12, "len {len} -> {padded}");
+            assert!(
+                (padded - len) as f64 / len as f64 <= 0.12,
+                "len {len} -> {padded}"
+            );
         }
         assert_eq!(padme(0), 0);
         assert_eq!(padme(1), 1);

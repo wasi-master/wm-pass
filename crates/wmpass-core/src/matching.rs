@@ -39,8 +39,13 @@ pub enum MatchLevel {
 /// The host of a saved value that may lack a scheme.
 pub fn host_of(text: &str) -> Option<String> {
     let trimmed = text.trim();
-    let parsed = Url::parse(trimmed).ok().filter(|url| url.has_host()).or_else(|| Url::parse(&format!("https://{trimmed}")).ok())?;
-    parsed.host_str().map(|host| host.trim_end_matches('.').to_ascii_lowercase())
+    let parsed = Url::parse(trimmed)
+        .ok()
+        .filter(|url| url.has_host())
+        .or_else(|| Url::parse(&format!("https://{trimmed}")).ok())?;
+    parsed
+        .host_str()
+        .map(|host| host.trim_end_matches('.').to_ascii_lowercase())
 }
 
 /// The registrable domain (eTLD+1), or the host itself for IPs and local names.
@@ -53,7 +58,11 @@ pub fn registrable_domain(host: &str) -> String {
 }
 
 fn scheme_downgrade(saved: &str, page: &Url) -> bool {
-    saved.trim_start().to_ascii_lowercase().starts_with("https://") && page.scheme() == "http"
+    saved
+        .trim_start()
+        .to_ascii_lowercase()
+        .starts_with("https://")
+        && page.scheme() == "http"
 }
 
 fn web_level(matcher: &SiteMatcher, page: &Url, url: &str) -> Option<MatchLevel> {
@@ -62,7 +71,11 @@ fn web_level(matcher: &SiteMatcher, page: &Url, url: &str) -> Option<MatchLevel>
         SiteMatcher::Domain(domain) => {
             let saved = registrable_domain(&host_of(domain)?);
             let same = registrable_domain(&page_host) == saved;
-            same.then_some(if page_host == saved { MatchLevel::Exact } else { MatchLevel::Domain })
+            same.then_some(if page_host == saved {
+                MatchLevel::Exact
+            } else {
+                MatchLevel::Domain
+            })
         }
         SiteMatcher::Host(host) => (host_of(host)? == page_host).then_some(MatchLevel::Exact),
         SiteMatcher::Url(saved) => {
@@ -73,23 +86,33 @@ fn web_level(matcher: &SiteMatcher, page: &Url, url: &str) -> Option<MatchLevel>
             if host == page_host {
                 Some(MatchLevel::Exact)
             } else {
-                (registrable_domain(&host) == registrable_domain(&page_host)).then_some(MatchLevel::Domain)
+                (registrable_domain(&host) == registrable_domain(&page_host))
+                    .then_some(MatchLevel::Domain)
             }
         }
-        SiteMatcher::Regex(pattern) => {
-            Regex::new(pattern).ok()?.is_match(url).then_some(MatchLevel::Domain)
-        }
+        SiteMatcher::Regex(pattern) => Regex::new(pattern)
+            .ok()?
+            .is_match(url)
+            .then_some(MatchLevel::Domain),
         SiteMatcher::AndroidApp { .. } | SiteMatcher::Never => None,
     }
 }
 
 fn app_level(matcher: &SiteMatcher, package: &str, cert: &str) -> Option<MatchLevel> {
-    let SiteMatcher::AndroidApp { package: saved, cert_sha256 } = matcher else { return None };
+    let SiteMatcher::AndroidApp {
+        package: saved,
+        cert_sha256,
+    } = matcher
+    else {
+        return None;
+    };
     if saved != package {
         return None;
     }
     match cert_sha256 {
-        Some(digest) => digest.eq_ignore_ascii_case(cert).then_some(MatchLevel::Exact),
+        Some(digest) => digest
+            .eq_ignore_ascii_case(cert)
+            .then_some(MatchLevel::Exact),
         None => Some(MatchLevel::Unverified),
     }
 }
@@ -109,11 +132,18 @@ pub fn match_entry(entry: &Entry, target: Target<'_>) -> Option<MatchLevel> {
             if !matches!(page.scheme(), "http" | "https") {
                 return None;
             }
-            matchers.iter().filter_map(|m| web_level(m, &page, url)).max()
+            matchers
+                .iter()
+                .filter_map(|m| web_level(m, &page, url))
+                .max()
         }
-        Target::App { package, cert_sha256 } => {
-            matchers.iter().filter_map(|m| app_level(m, package, cert_sha256)).max()
-        }
+        Target::App {
+            package,
+            cert_sha256,
+        } => matchers
+            .iter()
+            .filter_map(|m| app_level(m, package, cert_sha256))
+            .max(),
     }
 }
 
@@ -122,9 +152,14 @@ pub fn matches_for<'a>(
     entries: impl IntoIterator<Item = &'a Entry>,
     target: Target<'_>,
 ) -> Vec<(&'a Entry, MatchLevel)> {
-    let mut found: Vec<_> =
-        entries.into_iter().filter_map(|e| match_entry(e, target).map(|level| (e, level))).collect();
-    found.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.common.title.v.cmp(&b.0.common.title.v)));
+    let mut found: Vec<_> = entries
+        .into_iter()
+        .filter_map(|e| match_entry(e, target).map(|level| (e, level)))
+        .collect();
+    found.sort_by(|a, b| {
+        b.1.cmp(&a.1)
+            .then_with(|| a.0.common.title.v.cmp(&b.0.common.title.v))
+    });
     found
 }
 
@@ -149,8 +184,14 @@ mod tests {
     #[test]
     fn domain_matching_uses_the_public_suffix_list() {
         let entry = login(vec![SiteMatcher::Domain("example.co.uk".into())]);
-        assert_eq!(match_entry(&entry, web("https://example.co.uk/x")), Some(MatchLevel::Exact));
-        assert_eq!(match_entry(&entry, web("https://login.example.co.uk/")), Some(MatchLevel::Domain));
+        assert_eq!(
+            match_entry(&entry, web("https://example.co.uk/x")),
+            Some(MatchLevel::Exact)
+        );
+        assert_eq!(
+            match_entry(&entry, web("https://login.example.co.uk/")),
+            Some(MatchLevel::Domain)
+        );
         assert_eq!(match_entry(&entry, web("https://other.co.uk/")), None);
     }
 
@@ -166,28 +207,45 @@ mod tests {
             assert_eq!(match_entry(&entry, web(bad)), None, "{bad}");
         }
         let tenant = login(vec![SiteMatcher::Domain("alice.github.io".into())]);
-        assert_eq!(match_entry(&tenant, web("https://mallory.github.io/")), None);
+        assert_eq!(
+            match_entry(&tenant, web("https://mallory.github.io/")),
+            None
+        );
     }
 
     #[test]
     fn host_matcher_is_strict() {
         let entry = login(vec![SiteMatcher::Host("login.example.com".into())]);
-        assert_eq!(match_entry(&entry, web("https://login.example.com/")), Some(MatchLevel::Exact));
+        assert_eq!(
+            match_entry(&entry, web("https://login.example.com/")),
+            Some(MatchLevel::Exact)
+        );
         assert_eq!(match_entry(&entry, web("https://example.com/")), None);
-        assert_eq!(match_entry(&entry, web("https://a.login.example.com/")), None);
+        assert_eq!(
+            match_entry(&entry, web("https://a.login.example.com/")),
+            None
+        );
     }
 
     #[test]
     fn https_login_is_never_offered_on_http() {
         let entry = login(vec![SiteMatcher::Url("https://example.com/login".into())]);
-        assert_eq!(match_entry(&entry, web("https://example.com/")), Some(MatchLevel::Exact));
+        assert_eq!(
+            match_entry(&entry, web("https://example.com/")),
+            Some(MatchLevel::Exact)
+        );
         assert_eq!(match_entry(&entry, web("http://example.com/")), None);
     }
 
     #[test]
     fn only_web_schemes_fill() {
         let entry = login(vec![SiteMatcher::Domain("example.com".into())]);
-        for bad in ["javascript:alert(1)", "file:///example.com", "data:text/html,example.com", "not a url"] {
+        for bad in [
+            "javascript:alert(1)",
+            "file:///example.com",
+            "data:text/html,example.com",
+            "not a url",
+        ] {
             assert_eq!(match_entry(&entry, web(bad)), None, "{bad}");
         }
     }
@@ -198,18 +256,37 @@ mod tests {
             package: "com.bank".into(),
             cert_sha256: Some("AB:CD".into()),
         }]);
-        let app = |package, cert_sha256| Target::App { package, cert_sha256 };
-        assert_eq!(match_entry(&pinned, app("com.bank", "ab:cd")), Some(MatchLevel::Exact));
-        assert_eq!(match_entry(&pinned, app("com.bank", "FF:FF")), None, "a repackaged app must not match");
+        let app = |package, cert_sha256| Target::App {
+            package,
+            cert_sha256,
+        };
+        assert_eq!(
+            match_entry(&pinned, app("com.bank", "ab:cd")),
+            Some(MatchLevel::Exact)
+        );
+        assert_eq!(
+            match_entry(&pinned, app("com.bank", "FF:FF")),
+            None,
+            "a repackaged app must not match"
+        );
         assert_eq!(match_entry(&pinned, app("com.other", "AB:CD")), None);
-        let unpinned = login(vec![SiteMatcher::AndroidApp { package: "com.bank".into(), cert_sha256: None }]);
-        assert_eq!(match_entry(&unpinned, app("com.bank", "FF")), Some(MatchLevel::Unverified));
+        let unpinned = login(vec![SiteMatcher::AndroidApp {
+            package: "com.bank".into(),
+            cert_sha256: None,
+        }]);
+        assert_eq!(
+            match_entry(&unpinned, app("com.bank", "FF")),
+            Some(MatchLevel::Unverified)
+        );
     }
 
     #[test]
     fn never_trashed_and_shelved_are_left_out() {
         let target = web("https://example.com/");
-        let never = login(vec![SiteMatcher::Domain("example.com".into()), SiteMatcher::Never]);
+        let never = login(vec![
+            SiteMatcher::Domain("example.com".into()),
+            SiteMatcher::Never,
+        ]);
         assert_eq!(match_entry(&never, target), None);
         let mut trashed = login(vec![SiteMatcher::Domain("example.com".into())]);
         trashed.common.deleted_at_ms = Lww::new(Some(1), Hlc::default());
@@ -221,8 +298,13 @@ mod tests {
 
     #[test]
     fn regex_matches_and_a_bad_pattern_matches_nothing() {
-        let good = login(vec![SiteMatcher::Regex(r"^https://[a-z]+\.corp\.example/".into())]);
-        assert_eq!(match_entry(&good, web("https://wiki.corp.example/")), Some(MatchLevel::Domain));
+        let good = login(vec![SiteMatcher::Regex(
+            r"^https://[a-z]+\.corp\.example/".into(),
+        )]);
+        assert_eq!(
+            match_entry(&good, web("https://wiki.corp.example/")),
+            Some(MatchLevel::Domain)
+        );
         let bad = login(vec![SiteMatcher::Regex("(".into())]);
         assert_eq!(match_entry(&bad, web("https://x.example/")), None);
     }
@@ -230,7 +312,10 @@ mod tests {
     #[test]
     fn ip_addresses_match_only_themselves() {
         let entry = login(vec![SiteMatcher::Domain("192.168.1.1".into())]);
-        assert_eq!(match_entry(&entry, web("http://192.168.1.1/")), Some(MatchLevel::Exact));
+        assert_eq!(
+            match_entry(&entry, web("http://192.168.1.1/")),
+            Some(MatchLevel::Exact)
+        );
         assert_eq!(match_entry(&entry, web("http://192.168.1.2/")), None);
     }
 

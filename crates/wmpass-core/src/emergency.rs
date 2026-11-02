@@ -3,8 +3,8 @@
 //! server, so the stated waiting period is advice, not a lock: trustees who hold
 //! enough shares can act at once. The docs and the kit both say this.
 
-use rand::rngs::SysRng;
 use rand::rand_core::UnwrapErr;
+use rand::rngs::SysRng;
 use serde::{Deserialize, Serialize};
 use vsss_rs::Gf256;
 use zeroize::Zeroizing;
@@ -46,7 +46,11 @@ fn encode_share(raw: &[u8], threshold: u8, total: u8) -> String {
     let check = blake3::hash(&body);
     body.extend_from_slice(&check.as_bytes()[..CHECK_LEN]);
     let encoded = base32_encode(&body);
-    let groups: Vec<&str> = encoded.as_bytes().chunks(5).filter_map(|c| std::str::from_utf8(c).ok()).collect();
+    let groups: Vec<&str> = encoded
+        .as_bytes()
+        .chunks(5)
+        .filter_map(|c| std::str::from_utf8(c).ok())
+        .collect();
     format!("{PREFIX}{}", groups.join("-"))
 }
 
@@ -66,9 +70,16 @@ fn decode_share(text: &str) -> Result<(Zeroizing<Vec<u8>>, u8, u8)> {
 
 /// Adds a recovery slot and returns one share per trustee. `threshold` shares open
 /// the vault; fewer reveal nothing about the key.
-pub fn create_shares(vault: &mut Vault, threshold: u8, total: u8, now_ms: u64) -> Result<Vec<TrusteeShare>> {
+pub fn create_shares(
+    vault: &mut Vault,
+    threshold: u8,
+    total: u8,
+    now_ms: u64,
+) -> Result<Vec<TrusteeShare>> {
     if threshold < 2 || threshold > total || total > MAX_SHARES {
-        return Err(Error::Invalid("choose at least two trustees, and no more than 32".into()));
+        return Err(Error::Invalid(
+            "choose at least two trustees, and no more than 32".into(),
+        ));
     }
     let secret = crypto::random_key()?;
     let root = RootKey::from_high_entropy(&secret)?;
@@ -81,7 +92,10 @@ pub fn create_shares(vault: &mut Vault, threshold: u8, total: u8, now_ms: u64) -
         .enumerate()
         .map(|(index, share)| {
             let share = Zeroizing::new(share);
-            TrusteeShare { text: encode_share(&share, threshold, total), number: index as u8 + 1 }
+            TrusteeShare {
+                text: encode_share(&share, threshold, total),
+                number: index as u8 + 1,
+            }
         })
         .collect())
 }
@@ -96,13 +110,20 @@ pub fn recover(file: &[u8], shares: &[&str], device: u32) -> Result<Vault> {
         raw.push(bytes.to_vec());
     }
     if shares.len() < usize::from(threshold) {
-        return Err(Error::Invalid(format!("{threshold} shares are needed, and {} were given", shares.len())));
+        return Err(Error::Invalid(format!(
+            "{threshold} shares are needed, and {} were given",
+            shares.len()
+        )));
     }
-    let mut secret = Gf256::combine_bytes(&raw).map_err(|_| Error::Invalid("those shares do not belong together".into()))?;
+    let mut secret = Gf256::combine_bytes(&raw)
+        .map_err(|_| Error::Invalid("those shares do not belong together".into()))?;
     for share in &mut raw {
         zeroize::Zeroize::zeroize(share);
     }
-    let bytes: [u8; 32] = secret.as_slice().try_into().map_err(|_| Error::Invalid("those shares do not belong together".into()))?;
+    let bytes: [u8; 32] = secret
+        .as_slice()
+        .try_into()
+        .map_err(|_| Error::Invalid("those shares do not belong together".into()))?;
     let bytes = Zeroizing::new(bytes);
     zeroize::Zeroize::zeroize(&mut secret);
     let root = RootKey::from_high_entropy(&bytes)?;
@@ -160,7 +181,9 @@ mod tests {
     fn setup() -> (Vec<u8>, Vec<TrusteeShare>, String) {
         let mut vault = fast_vault(1);
         let at = vault.tick(2000);
-        let id = vault.add(login_entry("Mail", "me", "s3cret", at), 2000).unwrap();
+        let id = vault
+            .add(login_entry("Mail", "me", "s3cret", at), 2000)
+            .unwrap();
         let shares = create_shares(&mut vault, 2, 3, 3000).unwrap();
         (vault.save().unwrap(), shares, id)
     }
@@ -171,7 +194,10 @@ mod tests {
         for pair in [[0, 1], [0, 2], [1, 2]] {
             let texts = [shares[pair[0]].text.as_str(), shares[pair[1]].text.as_str()];
             let vault = recover(&file, &texts, 9).unwrap();
-            assert_eq!(vault.get(&id).unwrap().login().unwrap().password.v.expose(), "s3cret");
+            assert_eq!(
+                vault.get(&id).unwrap().login().unwrap().password.v.expose(),
+                "s3cret"
+            );
         }
         let err = recover(&file, &[shares[0].text.as_str()], 9).unwrap_err();
         assert!(err.to_string().contains("2 shares are needed"), "{err}");
@@ -195,9 +221,16 @@ mod tests {
                 continue;
             }
             let mut typo = original.clone();
-            let flip = if original.as_bytes()[at] == b'A' { "B" } else { "A" };
+            let flip = if original.as_bytes()[at] == b'A' {
+                "B"
+            } else {
+                "A"
+            };
             typo.replace_range(at..=at, flip);
-            assert!(recover(&file, &[&typo, shares[1].text.as_str()], 9).is_err(), "position {at}");
+            assert!(
+                recover(&file, &[&typo, shares[1].text.as_str()], 9).is_err(),
+                "position {at}"
+            );
         }
     }
 
@@ -212,18 +245,44 @@ mod tests {
     fn shares_from_another_set_do_not_open_it() {
         let (file, shares, _) = setup();
         let (_, others, _) = setup();
-        assert!(recover(&file, &[others[0].text.as_str(), others[1].text.as_str()], 9).is_err());
-        assert!(recover(&file, &[shares[0].text.as_str(), others[1].text.as_str()], 9).is_err());
+        assert!(
+            recover(
+                &file,
+                &[others[0].text.as_str(), others[1].text.as_str()],
+                9
+            )
+            .is_err()
+        );
+        assert!(
+            recover(
+                &file,
+                &[shares[0].text.as_str(), others[1].text.as_str()],
+                9
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn rekeying_stops_the_shares() {
         let mut vault = fast_vault(1);
         let shares = create_shares(&mut vault, 2, 2, 3000).unwrap();
-        let config = KdfConfig::new(KdfParams { m_kib: 64 * 1024, t: 3, p: 1 }).unwrap();
+        let config = KdfConfig::new(KdfParams {
+            m_kib: 64 * 1024,
+            t: 3,
+            p: 1,
+        })
+        .unwrap();
         vault.rekey(b"new password", &config, 4000).unwrap();
         let file = vault.save().unwrap();
-        assert!(recover(&file, &[shares[0].text.as_str(), shares[1].text.as_str()], 9).is_err());
+        assert!(
+            recover(
+                &file,
+                &[shares[0].text.as_str(), shares[1].text.as_str()],
+                9
+            )
+            .is_err()
+        );
     }
 
     #[test]

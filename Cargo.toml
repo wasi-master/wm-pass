@@ -8,6 +8,7 @@ edition = "2024"
 license = "MIT"
 repository = "https://github.com/wasi-master/wm-pass"
 rust-version = "1.99"
+publish = false
 
 [workspace.dependencies]
 wmpass-core = { path = "crates/wmpass-core" }

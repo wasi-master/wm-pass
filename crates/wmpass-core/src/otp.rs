@@ -1,10 +1,10 @@
 //! One-time codes: HOTP (RFC 4226), TOTP (RFC 6238), Steam Guard.
 
+use chacha20poly1305::aead::KeyInit;
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha1::Sha1;
 use sha2::{Sha256, Sha512};
-use chacha20poly1305::aead::KeyInit;
 use zeroize::Zeroizing;
 
 use crate::{Error, Result, Secret};
@@ -130,13 +130,21 @@ fn truncate(digest: &[u8]) -> Result<u32> {
 fn decimal_code(value: u32, digits: u32) -> String {
     let digits = digits.clamp(6, 10);
     let modulus = 10u64.pow(digits);
-    format!("{:0width$}", u64::from(value) % modulus, width = digits as usize)
+    format!(
+        "{:0width$}",
+        u64::from(value) % modulus,
+        width = digits as usize
+    )
 }
 
 impl OtpConfig {
     /// Default settings for a seed: SHA-1, six digits, 30 seconds.
     pub fn totp(secret: impl Into<Secret>) -> Self {
-        Self { secret: secret.into(), digits: 6, ..Self::default() }
+        Self {
+            secret: secret.into(),
+            digits: 6,
+            ..Self::default()
+        }
     }
 
     fn counter_at(&self, unix_seconds: u64) -> u64 {
@@ -193,7 +201,12 @@ impl OtpConfig {
     pub fn from_uri(uri: &str) -> Result<Self> {
         let invalid = || Error::Invalid("not a valid one-time code link".to_string());
         if let Some(seed) = uri.strip_prefix("steam://") {
-            return Ok(Self { secret: seed.into(), kind: OtpKind::Steam, digits: 5, ..Self::default() });
+            return Ok(Self {
+                secret: seed.into(),
+                kind: OtpKind::Steam,
+                digits: 5,
+                ..Self::default()
+            });
         }
         let rest = uri.strip_prefix("otpauth://").ok_or_else(invalid)?;
         let (kind, rest) = rest.split_once('/').ok_or_else(invalid)?;
@@ -203,7 +216,11 @@ impl OtpConfig {
             Some((issuer, account)) => (issuer.trim().to_owned(), account.trim().to_owned()),
             None => (String::new(), label.trim().to_owned()),
         };
-        let mut config = Self { account, digits: 6, ..Self::default() };
+        let mut config = Self {
+            account,
+            digits: 6,
+            ..Self::default()
+        };
         let (mut period, mut counter) = (30u32, 0u64);
         for pair in query.split('&') {
             let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
@@ -244,7 +261,11 @@ impl OtpConfig {
         let label = if self.issuer.is_empty() {
             percent_encode(&self.account)
         } else {
-            format!("{}:{}", percent_encode(&self.issuer), percent_encode(&self.account))
+            format!(
+                "{}:{}",
+                percent_encode(&self.issuer),
+                percent_encode(&self.account)
+            )
         };
         let algorithm = match self.algorithm {
             OtpAlgorithm::Sha1 => "SHA1",
@@ -314,12 +335,17 @@ mod tests {
 
     #[test]
     fn hotp_matches_rfc_4226() {
-        let expected = ["755224", "287082", "359152", "969429", "338314", "254676", "287922", "162583", "399871", "520489"];
+        let expected = [
+            "755224", "287082", "359152", "969429", "338314", "254676", "287922", "162583",
+            "399871", "520489",
+        ];
         for (counter, want) in expected.iter().enumerate() {
             let config = OtpConfig {
                 secret: RFC_SECRET.into(),
                 digits: 6,
-                kind: OtpKind::Hotp { counter: counter as u64 },
+                kind: OtpKind::Hotp {
+                    counter: counter as u64,
+                },
                 ..OtpConfig::default()
             };
             assert_eq!(config.code(0).unwrap().expose(), *want, "counter {counter}");
@@ -331,7 +357,8 @@ mod tests {
         // Appendix B. Secrets are the ASCII seed, repeated to each hash's length.
         let sha1 = base32_encode(b"12345678901234567890");
         let sha256 = base32_encode(b"12345678901234567890123456789012");
-        let sha512 = base32_encode(b"1234567890123456789012345678901234567890123456789012345678901234");
+        let sha512 =
+            base32_encode(b"1234567890123456789012345678901234567890123456789012345678901234");
         let cases = [
             (59u64, "94287082", "46119246", "90693936"),
             (1111111109, "07081804", "68084774", "25091201"),
@@ -353,14 +380,23 @@ mod tests {
                     kind: OtpKind::Totp { period: 30 },
                     ..OtpConfig::default()
                 };
-                assert_eq!(config.code(time).unwrap().expose(), want, "{time} {algorithm:?}");
+                assert_eq!(
+                    config.code(time).unwrap().expose(),
+                    want,
+                    "{time} {algorithm:?}"
+                );
             }
         }
     }
 
     #[test]
     fn steam_codes_use_its_alphabet() {
-        let config = OtpConfig { secret: RFC_SECRET.into(), kind: OtpKind::Steam, digits: 5, ..OtpConfig::default() };
+        let config = OtpConfig {
+            secret: RFC_SECRET.into(),
+            kind: OtpKind::Steam,
+            digits: 5,
+            ..OtpConfig::default()
+        };
         let code = config.code(1234567890).unwrap();
         assert_eq!(code.expose().len(), 5);
         assert!(code.expose().bytes().all(|b| STEAM_ALPHABET.contains(&b)));
@@ -381,14 +417,24 @@ mod tests {
 
     #[test]
     fn uri_refuses_rubbish() {
-        for bad in ["https://x", "otpauth://totp/x", "otpauth://totp/x?secret=!!!", "otpauth://nope/x?secret=AAAA"] {
+        for bad in [
+            "https://x",
+            "otpauth://totp/x",
+            "otpauth://totp/x?secret=!!!",
+            "otpauth://nope/x?secret=AAAA",
+        ] {
             assert!(OtpConfig::from_uri(bad).is_err(), "{bad}");
         }
     }
 
     #[test]
     fn hotp_advances_and_totp_counts_down() {
-        let mut hotp = OtpConfig { secret: RFC_SECRET.into(), digits: 6, kind: OtpKind::Hotp { counter: 0 }, ..OtpConfig::default() };
+        let mut hotp = OtpConfig {
+            secret: RFC_SECRET.into(),
+            digits: 6,
+            kind: OtpKind::Hotp { counter: 0 },
+            ..OtpConfig::default()
+        };
         let first = hotp.code(0).unwrap();
         hotp.advance();
         assert_ne!(first, hotp.code(0).unwrap());
@@ -401,7 +447,10 @@ mod tests {
     #[test]
     fn base32_round_trips_and_tolerates_formatting() {
         assert_eq!(base32_encode(b"foobar"), "MZXW6YTBOI");
-        assert_eq!(base32_decode("mzxw 6ytb-oi==").unwrap().as_slice(), b"foobar");
+        assert_eq!(
+            base32_decode("mzxw 6ytb-oi==").unwrap().as_slice(),
+            b"foobar"
+        );
         assert!(base32_decode("0189").is_err());
     }
 

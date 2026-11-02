@@ -7,14 +7,37 @@ use crate::model::{Entry, Kind};
 
 /// The default categories.
 pub const CATEGORIES: [&str; 16] = [
-    "Banking", "Finance", "Crypto", "Developer", "Cloud", "Email", "Social", "Shopping", "Gaming",
-    "Entertainment", "Work", "Education", "Government", "Health", "Travel", "Utilities",
+    "Banking",
+    "Finance",
+    "Crypto",
+    "Developer",
+    "Cloud",
+    "Email",
+    "Social",
+    "Shopping",
+    "Gaming",
+    "Entertainment",
+    "Work",
+    "Education",
+    "Government",
+    "Health",
+    "Travel",
+    "Utilities",
 ];
 
 /// Categories for kinds that need no guess.
 pub const KIND_CATEGORIES: [&str; 11] = [
-    "Payment cards", "Identities", "Notes", "Documents", "SSH keys", "API keys", "Databases",
-    "Licences", "Recovery", "Wi-Fi", "Authenticator",
+    "Payment cards",
+    "Identities",
+    "Notes",
+    "Documents",
+    "SSH keys",
+    "API keys",
+    "Databases",
+    "Licences",
+    "Recovery",
+    "Wi-Fi",
+    "Authenticator",
 ];
 
 static DOMAINS: &str = include_str!("../../../data/domains.tsv");
@@ -61,7 +84,10 @@ fn fnv(bytes: &[u8]) -> u32 {
 pub fn features(text: &str) -> Vec<usize> {
     let lower = text.to_lowercase();
     let mut out = Vec::new();
-    for word in lower.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()) {
+    for word in lower
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+    {
         let framed = format!("^{word}$");
         out.push(fnv(framed.as_bytes()) as usize % BUCKETS);
         let chars: Vec<char> = framed.chars().collect();
@@ -100,13 +126,18 @@ pub fn classify_with(model: &[u8], text: &str) -> Option<(usize, f32)> {
     let damp = (feats.len() as f32).sqrt().max(1.0);
     let top = scores.iter().copied().fold(f32::MIN, f32::max);
     let total: f32 = scores.iter().map(|s| ((s - top) / damp).exp()).sum();
-    let (best, score) = scores.iter().enumerate().max_by(|a, b| a.1.total_cmp(b.1))?;
+    let (best, score) = scores
+        .iter()
+        .enumerate()
+        .max_by(|a, b| a.1.total_cmp(b.1))?;
     Some((best, ((score - top) / damp).exp() / total))
 }
 
 /// The category the bundled list gives a domain.
 pub fn listed_category(domain: &str) -> Option<&'static str> {
-    let line = DOMAINS.lines().find(|line| line.split('\t').next() == Some(domain))?;
+    let line = DOMAINS
+        .lines()
+        .find(|line| line.split('\t').next() == Some(domain))?;
     let category = line.split('\t').nth(1)?;
     CATEGORIES.iter().find(|name| **name == category).copied()
 }
@@ -134,15 +165,28 @@ pub fn suggest(entry: &Entry) -> Option<Suggestion> {
         Kind::Login(_) => None,
     };
     if let Some(category) = by_kind {
-        return Some(Suggestion { category, source: Source::Kind });
+        return Some(Suggestion {
+            category,
+            source: Source::Kind,
+        });
     }
     let domains = entry_domains(entry);
     if let Some(category) = domains.iter().find_map(|domain| listed_category(domain)) {
-        return Some(Suggestion { category, source: Source::DomainList });
+        return Some(Suggestion {
+            category,
+            source: Source::DomainList,
+        });
     }
-    let name = domains.iter().filter_map(|domain| domain.split('.').next()).collect::<Vec<_>>().join(" ");
+    let name = domains
+        .iter()
+        .filter_map(|domain| domain.split('.').next())
+        .collect::<Vec<_>>()
+        .join(" ");
     let text = format!("{} {name}", entry.common.title.v);
-    classify(&text).map(|category| Suggestion { category, source: Source::Classifier })
+    classify(&text).map(|category| Suggestion {
+        category,
+        source: Source::Classifier,
+    })
 }
 
 #[cfg(test)]
@@ -155,28 +199,63 @@ mod tests {
     fn site_entry(title: &str, site: &str) -> Entry {
         let at = Hlc::default();
         let mut entry = login_entry(title, "", "", at);
-        entry.login_mut().unwrap().site_matchers = Lww::new(vec![SiteMatcher::Url(site.into())], at);
+        entry.login_mut().unwrap().site_matchers =
+            Lww::new(vec![SiteMatcher::Url(site.into())], at);
         entry
     }
 
     #[test]
     fn kinds_decide_first() {
-        let entry = Entry { kind: Kind::Card(Card::default()), ..Entry::default() };
-        assert_eq!(suggest(&entry), Some(Suggestion { category: "Payment cards", source: Source::Kind }));
+        let entry = Entry {
+            kind: Kind::Card(Card::default()),
+            ..Entry::default()
+        };
+        assert_eq!(
+            suggest(&entry),
+            Some(Suggestion {
+                category: "Payment cards",
+                source: Source::Kind
+            })
+        );
     }
 
     #[test]
     fn listed_sites_use_the_list() {
         let found = suggest(&site_entry("whatever", "https://github.com/login")).unwrap();
-        assert_eq!(found, Suggestion { category: "Developer", source: Source::DomainList });
-        assert_eq!(suggest(&site_entry("x", "https://www.netflix.com")).unwrap().category, "Entertainment");
+        assert_eq!(
+            found,
+            Suggestion {
+                category: "Developer",
+                source: Source::DomainList
+            }
+        );
+        assert_eq!(
+            suggest(&site_entry("x", "https://www.netflix.com"))
+                .unwrap()
+                .category,
+            "Entertainment"
+        );
     }
 
     #[test]
     fn unknown_names_get_the_classifier() {
-        let bank = suggest(&site_entry("First Community Bank", "https://firstcommunitybank-online.example")).unwrap();
-        assert_eq!(bank, Suggestion { category: "Banking", source: Source::Classifier });
-        let uni = suggest(&site_entry("State University Portal", "https://portal.stateu.example")).unwrap();
+        let bank = suggest(&site_entry(
+            "First Community Bank",
+            "https://firstcommunitybank-online.example",
+        ))
+        .unwrap();
+        assert_eq!(
+            bank,
+            Suggestion {
+                category: "Banking",
+                source: Source::Classifier
+            }
+        );
+        let uni = suggest(&site_entry(
+            "State University Portal",
+            "https://portal.stateu.example",
+        ))
+        .unwrap();
         assert_eq!(uni.category, "Education");
     }
 
