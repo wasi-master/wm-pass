@@ -146,12 +146,14 @@ impl Response {
     }
 }
 
+type Parser<T> = Box<dyn FnOnce(&Response) -> Result<T, NetError> + Send>;
+
 /// A request and how to read its answer.
 pub struct Call<T> {
     /// What to send.
     pub request: Request,
     /// Reads the answer.
-    pub parse: Box<dyn FnOnce(&Response) -> Result<T, NetError> + Send>,
+    pub parse: Parser<T>,
 }
 
 impl<T> std::fmt::Debug for Call<T> {
@@ -228,6 +230,7 @@ impl Default for NativeHttp {
     fn default() -> Self {
         let config = ureq::Agent::config_builder()
             .max_redirects(0)
+            .allow_non_standard_methods(true)
             .http_status_as_error(false)
             .user_agent("WM-Pass")
             .build();

@@ -1,0 +1,30 @@
+[package]
+name = "wmpass-sinks"
+description = "Where encrypted vault files can live: WebDAV, S3, cloud drives, folders, and the sync and backup routines over them."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = []
+native = ["wmpass-net/native"]
+
+[dependencies]
+wmpass-core.workspace = true
+wmpass-net = { path = "../wmpass-net" }
+serde_json.workspace = true
+sha2.workspace = true
+hmac.workspace = true
+quick-xml = "0.42.0"
+base64 = "0.23.1"
+getrandom.workspace = true
+url = "2.5.8"
+
+[dev-dependencies]
+tempfile = "3"
