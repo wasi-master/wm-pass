@@ -1,0 +1,5 @@
+target/
+*.wmvault
+!data/vectors/*.wmvault
+.DS_Store
+local.properties
