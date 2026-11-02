@@ -1,4 +1,7 @@
-# The `.wmvault` format, version 1
+---
+title: "The vault file format"
+description: "Every byte of a .wmvault file, for anyone auditing it or writing another reader."
+---
 
 All integers are little-endian. Key derivation is Argon2id version 0x13. Sub-keys are HKDF-SHA256 with the vault id as salt and the named `info` string. Sealed values are XChaCha20-Poly1305 as `nonce (24) || ciphertext || tag (16)`.
 

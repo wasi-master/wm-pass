@@ -22,6 +22,9 @@ Please report a vulnerability privately, through [GitHub's private reporting](ht
 - **Desktop builds are unsigned.** macOS and Windows warn on first run, and macOS has no biometric unlock, because Secure Enclave keychain items need a signed app. Verify a first download against the minisign signature published with each release.
 - **A KeePass database opened in place** is only as strong as its own settings, and its writer is the `keepass` crate's experimental KDBX 4 writer. Every save is read back and compared, and the previous file is kept.
 
+- **No third-party audit yet.** One is planned for `wmpass-core` before version 1.0.
+- **Hardware keys** have been tested on simulated devices only.
+
 ## Design
 
-The file format is specified in [docs/format.md](docs/format.md). Only RustCrypto and dalek primitives are used, and no new constructions.
+The file format is specified in [docs/src/content/docs/security/format.md](docs/format.md). Only RustCrypto and dalek primitives are used, and no new constructions.

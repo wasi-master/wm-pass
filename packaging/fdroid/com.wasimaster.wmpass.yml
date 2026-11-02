@@ -1,0 +1,32 @@
+Categories:
+  - Security
+License: MIT
+AuthorName: Wasi Master
+SourceCode: https://github.com/wasi-master/wm-pass
+IssueTracker: https://github.com/wasi-master/wm-pass/issues
+
+AutoName: WM Pass
+
+RepoType: git
+Repo: https://github.com/wasi-master/wm-pass.git
+
+Builds:
+  - versionName: 0.1.0
+    versionCode: 1
+    commit: android-v0.1.0
+    subdir: android/app
+    submodules: true
+    gradle:
+      - yes
+    gradleprops:
+      - wmpass.fdroid=true
+    ndk: r27c
+    srclibs:
+      - rustup@stable
+    prebuild: ../../../srclibs/rustup/rustup-init.sh -y --default-toolchain 1.99.1
+    build: cargo install cargo-ndk --locked
+
+AutoUpdateMode: Version android-v%v
+UpdateCheckMode: Tags ^android-v.*$
+CurrentVersion: 0.1.0
+CurrentVersionCode: 1

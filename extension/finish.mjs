@@ -1,14 +1,11 @@
 // Puts the rest beside the built pages, and derives the Firefox folder from the Chrome one.
 import { cpSync, copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 process.chdir(fileURLToPath(new URL('.', import.meta.url)));
 const manifest = JSON.parse(readFileSync('manifest.json', 'utf8'));
 copyFileSync('../ui/src/wasm/wmpass_wasm_bg.wasm', 'dist/chrome/wmpass_wasm_bg.wasm');
-for (const size of [16, 32, 48, 128]) {
-  execFileSync('sips', ['-z', String(size), String(size), '../desktop/src-tauri/icons/128x128@2x.png', '--out', `dist/chrome/icon-${size}.png`], { stdio: 'ignore' });
-}
+for (const size of [16, 32, 48, 128]) copyFileSync(`icons/icon-${size}.png`, `dist/chrome/icon-${size}.png`);
 writeFileSync('dist/chrome/manifest.json', JSON.stringify(manifest, null, 2));
 
 // Firefox has no worker for this and no key field; its background is a page with its own id.

@@ -1,4 +1,7 @@
-# LAN protocol
+---
+title: "The LAN protocol"
+description: "How two devices find, pair with and sync to each other with no server."
+---
 
 Version 1. Devices find each other through mDNS (`_wmpass._tcp.local.`), with a random instance name and no text records. An advert identifies nothing, and whether an address is a paired device is decided by the handshake.
 

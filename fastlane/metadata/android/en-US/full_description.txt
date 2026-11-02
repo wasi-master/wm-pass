@@ -1,0 +1,7 @@
+WM Pass keeps your passwords, one-time codes, cards, notes and SSH keys in an encrypted file on your phone. There is no account to make, and it works with the network off. Every feature that uses a network starts switched off.
+
+It fills logins through Android's autofill service, holds passkeys, and works as your authenticator. Backups are encrypted and go where you choose. Sync happens through a file, directly over your local network, or through a Bitwarden account or a server you run yourself.
+
+It also offers a decoy vault behind a duress password, hidden vaults, emergency access by splitting a key between people you trust, and hardware security keys. Themes, layouts and most other things can be changed in Settings.
+
+Open source under the MIT licence.

@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y libudev-dev libpcsclite-dev
+      - run: cargo test --workspace
+      - run: cargo clippy --workspace --exclude wmpass-desktop --all-targets --all-features -- -D warnings
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libudev-dev libpcsclite-dev libxdo-dev
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci
+      - run: npm run desktop:build
+      - run: cargo clippy -p wmpass-desktop --all-targets -- -D warnings
+      - run: cargo test -p wmpass-desktop -p wmpass-host -p wmpass-bridge
+
+  extension:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: rustup target add wasm32-unknown-unknown
+      - run: cargo install wasm-bindgen-cli --version 0.2.130 --locked
+      - run: npm ci
+      - run: npm run extension:build
+      - run: npm run check
+      - run: npx playwright install --with-deps chromium
+      - run: xvfb-run -a node extension/test/run.mjs
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: true }
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - run: rustup target add aarch64-linux-android x86_64-linux-android armv7-linux-androideabi
+      - run: cargo install cargo-ndk --locked
+      - run: ./gradlew :app:assembleDebug :wear:assembleDebug :app:testDebugUnitTest
+        working-directory: android
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm install && npm run build
+        working-directory: docs

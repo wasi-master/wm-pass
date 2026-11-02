@@ -1,0 +1,1 @@
+A password manager that keeps its vault on your own devices.
