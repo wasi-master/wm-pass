@@ -520,14 +520,12 @@ mod tests {
         let spec = PasswordSpec { length: 64, ..PasswordSpec::default() };
         assert_ne!(password(&spec).unwrap(), password(&spec).unwrap());
         // Each digit of a long PIN should appear roughly equally.
-        let digits = pin(64).unwrap();
         let mut counts = [0u32; 10];
         for _ in 0..500 {
             for b in pin(64).unwrap().expose().bytes() {
                 counts[usize::from(b - b'0')] += 1;
             }
         }
-        let _ = digits;
         let expected = 3200.0;
         for count in counts {
             assert!((f64::from(count) - expected).abs() < expected * 0.12, "{counts:?}");

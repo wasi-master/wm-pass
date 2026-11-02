@@ -280,6 +280,69 @@ impl InPlace {
         Ok(())
     }
 
+    /// Every login as a WM Pass entry, stamped `at`. Ids are the database's own.
+    pub fn entries(&self, at: Hlc) -> Vec<Entry> {
+        let live: std::collections::HashSet<String> = self.list().into_iter().map(|item| item.id).collect();
+        self.database
+            .iter_all_entries()
+            .filter(|item| live.contains(&item.id().uuid().to_string()))
+            .map(|item| {
+                let get = |name: &str| item.get(name).unwrap_or_default().to_owned();
+                let mut entry = base_entry(&get(kp::TITLE), &get(kp::NOTES), at);
+                entry.id = item.id().uuid().to_string();
+                let url = get(kp::URL);
+                let matchers = if url.trim().is_empty() { Vec::new() } else { vec![SiteMatcher::Url(url)] };
+                let otp = item.get(kp::OTP).and_then(|uri| OtpConfig::from_uri(uri).ok());
+                entry.kind = Kind::Login(Login {
+                    site_matchers: Lww::new(matchers, at),
+                    username: Lww::new(get(kp::USERNAME), at),
+                    password: Lww::new(Secret::from(get(kp::PASSWORD)), at),
+                    otp: Lww::new(otp, at),
+                    ..Login::default()
+                });
+                entry.common.tags = Lww::new(item.tags.clone(), at);
+                entry
+            })
+            .collect()
+    }
+
+    /// Writes a login's standard fields, creating it at the top level if it is new,
+    /// and returns its id. Anything else on an existing entry is left alone.
+    pub fn upsert(&mut self, entry: &Entry) -> Result<String> {
+        let login = entry.login().ok_or_else(|| Error::Invalid("a KeePass database holds logins here".into()))?;
+        let url = login.site_matchers.v.iter().find_map(|m| match m {
+            SiteMatcher::Url(u) | SiteMatcher::Domain(u) | SiteMatcher::Host(u) => Some(u.clone()),
+            _ => None,
+        });
+        let existing = self.find_id(&entry.id);
+        let mut root = self.database.root_mut();
+        let id = match existing {
+            Some(id) => id,
+            None => root.add_entry().id(),
+        };
+        let mut target = self.database.entry_mut(id).ok_or(Error::Integrity)?;
+        target.edit_tracking(|tracked| {
+            tracked.set_unprotected(kp::TITLE, entry.common.title.v.as_str());
+            tracked.set_unprotected(kp::USERNAME, login.username.v.as_str());
+            tracked.set_protected(kp::PASSWORD, login.password.v.expose());
+            tracked.set_unprotected(kp::NOTES, entry.common.notes.v.expose());
+            if let Some(url) = &url {
+                tracked.set_unprotected(kp::URL, url.as_str());
+            }
+            if let Some(otp) = &login.otp.v {
+                tracked.set(kp::OTP, Value::protected(otp.to_uri().expose()));
+            }
+        });
+        Ok(id.uuid().to_string())
+    }
+
+    /// Deletes an entry for good. KeePass records this so other copies learn of it.
+    pub fn remove(&mut self, id: &str) -> Result<()> {
+        let found = self.find_id(id).ok_or_else(|| Error::Invalid("no such entry".into()))?;
+        self.database.entry_mut(found).ok_or(Error::Integrity)?.remove();
+        Ok(())
+    }
+
     /// Writes the database back, reads it back and compares it. Save the result
     /// atomically and keep the previous file as a `.bak`.
     pub fn save(&self, password: &str, key_file: Option<&[u8]>) -> Result<Vec<u8>> {

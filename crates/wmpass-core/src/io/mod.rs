@@ -219,9 +219,8 @@ pub(crate) fn parse_otp(text: &str, title: &str, account: &str, skipped: &mut Ve
     None
 }
 
-/// Guesses a file's format from its contents. The name is only a hint for the
-/// cases where contents alone are ambiguous.
-pub fn detect(file_name: &str, data: &[u8]) -> Option<Format> {
+/// Guesses a file's format from its contents.
+pub fn detect(data: &[u8]) -> Option<Format> {
     if data.starts_with(&[0x03, 0xd9, 0xa2, 0x9a]) {
         return Some(Format::Kdbx);
     }
@@ -238,7 +237,6 @@ pub fn detect(file_name: &str, data: &[u8]) -> Option<Format> {
     if text.lines().next()?.trim_start().starts_with("otpauth") {
         return Some(Format::OtpAuthList);
     }
-    let _ = file_name;
     csv_formats::detect(text)
 }
 

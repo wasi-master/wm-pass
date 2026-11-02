@@ -25,7 +25,6 @@ pub(super) fn safeincloud(xml: &str, at: Hlc) -> Result<Imported> {
     let mut card: Option<Draft> = None;
     let mut field: Option<(String, String)> = None;
     let mut body = String::new();
-    let mut in_notes = false;
     let bad = || Error::Import("the XML could not be read".to_string());
     loop {
         match reader.read_event().map_err(|_| bad())? {
@@ -41,10 +40,7 @@ pub(super) fn safeincloud(xml: &str, at: Hlc) -> Result<Imported> {
                     field = Some((attr(&start, "name"), attr(&start, "type")));
                     body.clear();
                 }
-                "notes" => {
-                    in_notes = true;
-                    body.clear();
-                }
+                "notes" => body.clear(),
                 _ => {}
             },
             Event::Text(chunk) => {
@@ -76,7 +72,6 @@ pub(super) fn safeincloud(xml: &str, at: Hlc) -> Result<Imported> {
                     if let Some(draft) = card.as_mut() {
                         draft.notes = std::mem::take(&mut body);
                     }
-                    in_notes = false;
                 }
                 "card" => {
                     if let Some(draft) = card.take() {
@@ -89,7 +84,6 @@ pub(super) fn safeincloud(xml: &str, at: Hlc) -> Result<Imported> {
             Event::Eof => break,
             _ => {}
         }
-        let _ = in_notes;
     }
     Ok(out)
 }

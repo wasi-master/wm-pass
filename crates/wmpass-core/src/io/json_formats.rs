@@ -2,7 +2,7 @@
 
 use serde_json::Value;
 
-use super::{Draft, Format, Imported, ImportedEntry, base_entry, fields, non_empty, parse_otp};
+use super::{Draft, Format, Imported, ImportedEntry, base_entry, fields, non_empty};
 use crate::clock::Hlc;
 use crate::model::{Card, Identity, Kind, Lww, Note, Passkey, SshKey};
 use crate::{Error, Result, Secret};
@@ -312,6 +312,5 @@ pub(super) fn proton(json: &str, at: Hlc) -> Result<Imported> {
             }
         }
     }
-    let _ = parse_otp;
     Ok(out)
 }

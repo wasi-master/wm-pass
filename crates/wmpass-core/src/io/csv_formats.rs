@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use super::{ColumnMap, Draft, Format, Imported, base_entry, parse_otp};
+use super::{ColumnMap, Draft, Format, Imported, base_entry};
 use crate::clock::Hlc;
 use crate::model::{Field, Kind, Lww, Note};
 use crate::{Error, Result, Secret};
@@ -264,7 +264,6 @@ pub(super) fn mapped(text: &str, map: &ColumnMap, has_header: bool, at: Hlc) -> 
             folder: cell(map.folder),
             ..Draft::default()
         };
-        let _ = parse_otp;
         let entry = draft.into_login(at, &mut out.skipped);
         out.entries.push(entry);
     }

@@ -13,7 +13,7 @@ use crate::vault::test_support::fast_vault;
 const AT: Hlc = Hlc { ms: 1000, counter: 0, device: 1 };
 
 fn run(name: &str, data: &[u8]) -> (Format, Imported) {
-    let format = detect(name, data).unwrap_or_else(|| panic!("{name} not detected"));
+    let format = detect(data).unwrap_or_else(|| panic!("{name} not detected"));
     let imported = import(format, data, None, AT).unwrap();
     (format, imported)
 }
@@ -140,7 +140,7 @@ fn bitwarden_json_all_kinds() {
 #[test]
 fn encrypted_exports_say_what_to_do() {
     let bw = r#"{"encrypted":true,"data":"x"}"#;
-    assert_eq!(detect("b.json", bw.as_bytes()), Some(Format::BitwardenJson));
+    assert_eq!(detect(bw.as_bytes()), Some(Format::BitwardenJson));
     assert!(import(Format::BitwardenJson, bw.as_bytes(), None, AT).unwrap_err().to_string().contains("unencrypted"));
     let aegis = r#"{"version":1,"header":{"slots":[]},"db":"cipher"}"#;
     assert!(import(Format::Aegis, aegis.as_bytes(), None, AT).unwrap_err().to_string().contains("encrypted"));
@@ -317,8 +317,8 @@ fn hostile_inputs_fail_cleanly() {
             let _ = import(format, junk, None, AT);
         }
     }
-    assert_eq!(detect("x", b"\xff\xfe\x00"), None);
-    assert_eq!(detect("x", b"hello world"), None);
+    assert_eq!(detect(b"\xff\xfe\x00"), None);
+    assert_eq!(detect(b"hello world"), None);
 }
 
 #[test]
@@ -424,7 +424,7 @@ fn kdbx_export_import_round_trip() {
     let vault = sample_vault();
     let entries: Vec<&crate::model::Entry> = vault.doc.entries.values().collect();
     let bytes = kdbx::export(&entries, "pw").unwrap();
-    assert_eq!(detect("x.kdbx", &bytes), Some(Format::Kdbx));
+    assert_eq!(detect(&bytes), Some(Format::Kdbx));
     assert!(import(Format::Kdbx, &bytes, Some("wrong"), AT).is_err());
     assert!(import(Format::Kdbx, &bytes, None, AT).is_err());
     let imported = import(Format::Kdbx, &bytes, Some("pw"), AT).unwrap();

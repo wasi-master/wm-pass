@@ -674,6 +674,22 @@ mod tests {
     }
 
     #[test]
+    fn a_stale_edit_after_a_delete_brings_back_only_what_it_wrote() {
+        let mut a = fast_vault(1);
+        let at = a.tick(2000);
+        let id = a.add(login_entry("Bank", "me", "secret-before-delete", at), 2000).unwrap();
+        let shared = a.save().unwrap();
+        let mut b = Vault::from_file(&shared, a.key().clone_key(), 2).unwrap();
+        a.purge(&id, 3000);
+        b.edit(&id, 4000, |entry, at| entry.common.title = Lww::new("Renamed".into(), at)).unwrap();
+        let file_b = b.save().unwrap();
+        a.merge_file(&file_b).unwrap();
+        let entry = a.get(&id).unwrap();
+        assert_eq!(entry.common.title.v, "Renamed");
+        assert!(entry.login().unwrap().password.v.is_empty(), "the deleted password must stay deleted");
+    }
+
+    #[test]
     fn slot_change_travels_with_a_merge() {
         let mut a = fast_vault(1);
         let shared = a.save().unwrap();
