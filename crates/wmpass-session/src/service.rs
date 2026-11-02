@@ -1,0 +1,1846 @@
+//! Handles and the call table.
+
+use std::collections::{BTreeMap, HashMap};
+
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
+use serde::Deserialize;
+use serde::de::DeserializeOwned;
+use serde_json::{Value, json};
+use wmpass_core::crypto::KdfParams;
+use wmpass_core::format::{self, FactorKind, FactorOutput, KdfConfig, SlotAction, VaultKey};
+use wmpass_core::generator::{self, Recipe};
+use wmpass_core::matching::{self, MatchLevel, Target};
+use wmpass_core::model::{Entry, Field, Kind, LinkedVault, Lww, Reminders, SiteMatcher};
+use wmpass_core::otp::OtpConfig;
+use wmpass_core::search::{self, Context, Flags, FolderNames, Query};
+use wmpass_core::vault::{Freshness, OpenOutcome, Vault, check_freshness, hex, new_id, open_set, unhex};
+use wmpass_core::{Error, Secret, categorise, emergency, health, io, passkey, recovery, ssh, strength};
+use zeroize::Zeroizing;
+
+use crate::fields;
+use crate::views::{self, FactorView};
+
+/// One request.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Call<'a> {
+    /// The vault it is for. Zero when it needs none.
+    pub handle: u64,
+    /// The arguments, as JSON. Never holds a secret.
+    pub args: &'a str,
+    /// One secret value going in: a password, a field's new value.
+    pub secret: &'a [u8],
+    /// Binary values: vault files, attachments, second factor outputs.
+    pub blobs: &'a [&'a [u8]],
+    /// The time now, in milliseconds. Passed in because a browser extension's wasm has
+    /// no clock of its own.
+    pub now_ms: u64,
+}
+
+/// One answer.
+#[derive(Debug, Default)]
+pub struct Reply {
+    /// The view, as JSON. Never holds a secret.
+    pub json: String,
+    /// The value asked for. The caller wipes it once used.
+    pub secret: Option<Zeroizing<Vec<u8>>>,
+    /// Binary values: only ever ciphertext, or a file the caller asked to export.
+    pub blobs: Vec<Vec<u8>>,
+}
+
+impl Reply {
+    fn view(value: Value) -> Self {
+        Self {
+            json: value.to_string(),
+            ..Self::default()
+        }
+    }
+
+    fn of<T: serde::Serialize>(value: &T) -> Result<Self, SessionError> {
+        Ok(Self {
+            json: serde_json::to_string(value).map_err(|_| Error::Encoding)?,
+            ..Self::default()
+        })
+    }
+
+    fn ok() -> Self {
+        Self::view(json!({}))
+    }
+
+    fn secret(value: &str) -> Self {
+        Self {
+            json: "{}".to_owned(),
+            secret: Some(Zeroizing::new(value.as_bytes().to_vec())),
+            blobs: Vec::new(),
+        }
+    }
+}
+
+/// Why a call failed. The message is safe to show and never holds a secret.
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[error("{message}")]
+pub struct SessionError {
+    /// Stable code a shell can branch on.
+    pub code: &'static str,
+    /// Words to show.
+    pub message: String,
+}
+
+impl From<Error> for SessionError {
+    fn from(error: Error) -> Self {
+        let code = match &error {
+            Error::Random => "random",
+            Error::Malformed => "malformed",
+            Error::UnsupportedVersion(_) => "unsupported_version",
+            Error::KdfOutOfRange => "kdf_out_of_range",
+            Error::Integrity => "integrity",
+            Error::NoFreeSlot => "no_free_slot",
+            Error::TooLong => "too_long",
+            Error::Encoding => "encoding",
+            Error::Crypto => "crypto",
+            Error::Import(_) => "import",
+            Error::Invalid(_) => "invalid",
+        };
+        Self {
+            code,
+            message: error.to_string(),
+        }
+    }
+}
+
+fn invalid(message: impl Into<String>) -> SessionError {
+    SessionError {
+        code: "invalid",
+        message: message.into(),
+    }
+}
+
+fn parse<T: DeserializeOwned>(args: &str) -> Result<T, SessionError> {
+    serde_json::from_str(if args.is_empty() { "{}" } else { args })
+        .map_err(|e| invalid(format!("bad arguments: {e}")))
+}
+
+/// An unlocked vault and what goes with it.
+#[derive(Debug)]
+struct Session {
+    vault: Vault,
+    dirty: bool,
+    shelf_open: bool,
+    health: Option<health::HealthReport>,
+    pending_import: Option<io::Imported>,
+}
+
+impl Session {
+    fn new(vault: Vault) -> Self {
+        Self {
+            vault,
+            dirty: false,
+            shelf_open: false,
+            health: None,
+            pending_import: None,
+        }
+    }
+
+    fn touched(&mut self) {
+        self.dirty = true;
+        self.health = None;
+    }
+
+    fn entry(&self, id: &str) -> Result<&Entry, SessionError> {
+        let entry = self
+            .vault
+            .get(id)
+            .ok_or_else(|| invalid("that entry is gone"))?;
+        self.reachable(entry)?;
+        Ok(entry)
+    }
+
+    /// The shelf is closed to everything until a fresh unlock opens it, including a
+    /// shell that holds an id from earlier.
+    fn reachable(&self, entry: &Entry) -> Result<(), SessionError> {
+        if entry.common.hidden.v && !self.shelf_open {
+            return Err(SessionError {
+                code: "shelf_closed",
+                message: "unlock the hidden shelf first".to_owned(),
+            });
+        }
+        Ok(())
+    }
+
+    fn report(&mut self, now_ms: u64, old_after_days: u32) -> &health::HealthReport {
+        let vault = &self.vault;
+        self.health.get_or_insert_with(|| {
+            health::report(
+                vault,
+                &health::HealthInput {
+                    now_ms,
+                    old_after_days,
+                    breached: BTreeMap::new(),
+                },
+            )
+        })
+    }
+}
+
+#[derive(Debug)]
+struct Names<'a>(&'a Vault);
+
+impl FolderNames for Names<'_> {
+    fn folder_name(&self, id: &str) -> Option<String> {
+        self.0.doc.folders.get(id).map(|f| f.name.v.clone())
+    }
+}
+
+/// Everything unlocked in this process. Dropping it wipes every vault.
+#[derive(Debug, Default)]
+pub struct Service {
+    next: u64,
+    device: u32,
+    sessions: HashMap<u64, Session>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct KdfArg {
+    m_kib: Option<u32>,
+    t: Option<u32>,
+    p: Option<u32>,
+}
+
+impl KdfArg {
+    fn config(&self) -> Result<KdfConfig, SessionError> {
+        let base = KdfParams::default();
+        let params = KdfParams {
+            m_kib: self.m_kib.unwrap_or(base.m_kib),
+            t: self.t.unwrap_or(base.t),
+            p: self.p.unwrap_or(base.p),
+        };
+        Ok(KdfConfig::new(params)?)
+    }
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct Id {
+    id: String,
+}
+
+fn action_of(name: &str) -> Result<SlotAction, SessionError> {
+    match name {
+        "open" | "" => Ok(SlotAction::Open),
+        "wipe" => Ok(SlotAction::WipeLocal),
+        "lock" => Ok(SlotAction::HardLock),
+        _ => Err(invalid("unknown slot action")),
+    }
+}
+
+fn factor_of(view: &FactorView) -> Result<FactorKind, SessionError> {
+    let raw = |text: &str| unhex(text).ok_or_else(|| invalid("bad hex"));
+    Ok(match view {
+        FactorView::KeyFile => FactorKind::KeyFile,
+        FactorView::Fido2 {
+            credential_id,
+            salt,
+        } => FactorKind::Fido2 {
+            credential_id: raw(credential_id)?,
+            salt: raw(salt)?.try_into().map_err(|_| invalid("bad salt"))?,
+        },
+        FactorView::Yubikey { challenge, slot } => FactorKind::YubiKey {
+            challenge: raw(challenge)?
+                .try_into()
+                .map_err(|_| invalid("bad challenge"))?,
+            slot: *slot,
+        },
+    })
+}
+
+/// Splits `blobs` into factor outputs and the rest. `factors` names each leading blob:
+/// `key_file` is a file to hash, anything else is already a device's output.
+fn split_factors<'a>(
+    factors: &[String],
+    blobs: &'a [&'a [u8]],
+) -> Result<(Vec<FactorOutput>, &'a [&'a [u8]]), SessionError> {
+    if factors.len() > blobs.len() {
+        return Err(invalid("a factor is missing its data"));
+    }
+    let (first, rest) = blobs.split_at(factors.len());
+    let outputs = factors
+        .iter()
+        .zip(first)
+        .map(|(kind, blob)| match kind.as_str() {
+            "key_file" => format::key_file_factor(blob),
+            _ => Zeroizing::new(blob.to_vec()),
+        })
+        .collect();
+    Ok((outputs, rest))
+}
+
+fn blob<'a>(call: &Call<'a>, at: usize) -> Result<&'a [u8], SessionError> {
+    call.blobs
+        .get(at)
+        .copied()
+        .ok_or_else(|| invalid("a file is missing"))
+}
+
+fn text(bytes: &[u8]) -> Result<&str, SessionError> {
+    std::str::from_utf8(bytes).map_err(|_| invalid("that value is not valid text"))
+}
+
+fn level_name(level: MatchLevel) -> &'static str {
+    match level {
+        MatchLevel::Unverified => "unverified",
+        MatchLevel::Domain => "domain",
+        MatchLevel::Exact => "exact",
+    }
+}
+
+fn health_flags(report: &health::HealthReport) -> Flags {
+    Flags {
+        weak: report.weak.iter().cloned().collect(),
+        reused: report.reused.iter().flatten().cloned().collect(),
+        breached: report.breached.iter().map(|(id, _)| id.clone()).collect(),
+        old: report.old.iter().cloned().collect(),
+        duplicate: report.duplicates.iter().flatten().cloned().collect(),
+    }
+}
+
+/// Which words in a query need the password checks, which take a moment to run.
+fn wants_health(query: &str) -> bool {
+    query
+        .split_whitespace()
+        .any(|word| ["weak", "reused", "breached", "old", "duplicate"].contains(&word.to_lowercase().as_str()))
+}
+
+fn sort_rows(rows: &mut [views::Summary], sort: &str) {
+    match sort {
+        "title" => rows.sort_by_key(|r| r.title.to_lowercase()),
+        "modified" => rows.sort_by_key(|r| std::cmp::Reverse(r.modified_ms)),
+        _ => {}
+    }
+    rows.sort_by_key(|r| !r.pinned);
+}
+
+impl Service {
+    /// A service for one device. `device` is that device's random number, stored
+    /// by the shell, and it breaks ties in a merge.
+    pub fn new(device: u32) -> Self {
+        Self {
+            next: 1,
+            device,
+            sessions: HashMap::new(),
+        }
+    }
+
+    fn adopt(&mut self, vault: Vault) -> u64 {
+        let handle = self.next;
+        self.next += 1;
+        self.sessions.insert(handle, Session::new(vault));
+        handle
+    }
+
+    fn session(&mut self, handle: u64) -> Result<&mut Session, SessionError> {
+        self.sessions.get_mut(&handle).ok_or(SessionError {
+            code: "locked",
+            message: "this vault is locked".to_owned(),
+        })
+    }
+
+    /// Locks every vault, as a panic trigger or a screen timeout does.
+    pub fn lock_all(&mut self) {
+        self.sessions.clear();
+    }
+
+    /// Handles still open.
+    pub fn open_handles(&self) -> Vec<u64> {
+        self.sessions.keys().copied().collect()
+    }
+
+    fn opened(handle: u64, index: usize, vault: &Vault) -> Value {
+        json!({
+            "outcome": "opened",
+            "handle": handle,
+            "index": index,
+            "name": vault.doc.name,
+            "generation": vault.doc.generation,
+            "read_only": vault.is_read_only(),
+        })
+    }
+
+    /// Runs one call.
+    #[allow(clippy::too_many_lines)]
+    pub fn call(&mut self, method: &str, call: Call<'_>) -> Result<Reply, SessionError> {
+        let now = call.now_ms;
+        match method {
+            // ---- files, keys, slots ----
+            "kinds" => {
+                let kinds: Vec<Value> = fields::KINDS
+                    .iter()
+                    .map(|k| json!({"kind": k, "fields": fields::fields_of(k)}))
+                    .collect();
+                Ok(Reply::view(json!(kinds)))
+            }
+            "vault.create" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    name: String,
+                    kdf: KdfArg,
+                }
+                let a: A = parse(call.args)?;
+                let vault = Vault::create(&a.name, call.secret, &a.kdf.config()?, self.device, now)?;
+                let handle = self.adopt(vault);
+                let session = self.session(handle)?;
+                session.dirty = true;
+                Ok(Reply::view(Self::opened(handle, 0, &session.vault)))
+            }
+            "vault.open" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    factors: Vec<String>,
+                }
+                let a: A = parse(call.args)?;
+                let (factors, files) = split_factors(&a.factors, call.blobs)?;
+                match open_set(files, call.secret, &factors, self.device)? {
+                    OpenOutcome::Opened { index, vault } => {
+                        let handle = self.adopt(*vault);
+                        let session = self.session(handle)?;
+                        Ok(Reply::view(Self::opened(handle, index, &session.vault)))
+                    }
+                    OpenOutcome::Duress { action } => Ok(Reply::view(json!({
+                        "outcome": "duress",
+                        "action": match action {
+                            SlotAction::WipeLocal => "wipe",
+                            SlotAction::HardLock => "lock",
+                            SlotAction::Open => "open",
+                        },
+                    }))),
+                    OpenOutcome::NeedsFactor(kinds) => {
+                        let needed: Vec<FactorView> =
+                            kinds.iter().map(views::factor_view).collect();
+                        Ok(Reply::view(json!({"outcome": "needs_factor", "factors": needed})))
+                    }
+                    OpenOutcome::NoMatch => Ok(Reply::view(json!({"outcome": "no_match"}))),
+                }
+            }
+            "vault.open_key" => {
+                let raw: [u8; 32] = call.secret.try_into().map_err(|_| invalid("bad key"))?;
+                let vault = Vault::from_file(blob(&call, 0)?, VaultKey::from_bytes(raw), self.device)?;
+                let handle = self.adopt(vault);
+                let session = self.session(handle)?;
+                Ok(Reply::view(Self::opened(handle, 0, &session.vault)))
+            }
+            "vault.chaff" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    size: usize,
+                    kdf: KdfArg,
+                }
+                let a: A = parse(call.args)?;
+                let file = format::chaff_file(&a.kdf.config()?, a.size)?;
+                Ok(Reply {
+                    json: "{}".to_owned(),
+                    blobs: vec![file],
+                    ..Reply::default()
+                })
+            }
+            "emergency.recover" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    shares: Vec<String>,
+                }
+                let a: A = parse(call.args)?;
+                let shares: Vec<&str> = a.shares.iter().map(String::as_str).collect();
+                let vault = emergency::recover(blob(&call, 0)?, &shares, self.device)?;
+                let handle = self.adopt(vault);
+                let session = self.session(handle)?;
+                Ok(Reply::view(Self::opened(handle, 0, &session.vault)))
+            }
+            "gen.presets" => Ok(Reply::of(&generator::default_presets())?),
+            "gen.generate" => {
+                let recipe: Recipe = parse(call.args)?;
+                let value = generator::generate(&recipe)?;
+                Ok(Reply {
+                    json: json!({"bits": generator::entropy_bits(&recipe)}).to_string(),
+                    secret: Some(Zeroizing::new(value.expose().as_bytes().to_vec())),
+                    blobs: Vec::new(),
+                })
+            }
+            "gen.for_site" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    domain: String,
+                    length: u32,
+                }
+                let a: A = parse(call.args)?;
+                let rules = generator::rules_for_site(&a.domain);
+                let value = match &rules {
+                    Some(rules) => generator::password_for_rules(rules, a.length.max(8))?,
+                    None => generator::password(&generator::PasswordSpec {
+                        length: a.length.max(8),
+                        ..generator::PasswordSpec::default()
+                    })?,
+                };
+                Ok(Reply {
+                    json: json!({"site_rules": rules.is_some()}).to_string(),
+                    secret: Some(Zeroizing::new(value.expose().as_bytes().to_vec())),
+                    blobs: Vec::new(),
+                })
+            }
+            "strength.assess" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    context: Vec<String>,
+                }
+                let a: A = parse(call.args)?;
+                let context: Vec<&str> = a.context.iter().map(String::as_str).collect();
+                let s = strength::assess(text(call.secret)?, &context);
+                Ok(Reply::view(json!({
+                    "score": s.score,
+                    "crack_slow_hash": s.crack_slow_hash,
+                    "crack_fast_hash": s.crack_fast_hash,
+                    "warning": s.warning,
+                    "suggestions": s.suggestions,
+                })))
+            }
+            "strength.compare" => {
+                let c = strength::compare(text(blob(&call, 0)?)?, text(blob(&call, 1)?)?, &[]);
+                let side = |s: &strength::Strength| {
+                    json!({
+                        "score": s.score,
+                        "crack_slow_hash": s.crack_slow_hash,
+                        "crack_fast_hash": s.crack_fast_hash,
+                        "warning": s.warning,
+                    })
+                };
+                Ok(Reply::view(json!({
+                    "first": side(&c.first),
+                    "second": side(&c.second),
+                    "winner": match c.winner {
+                        strength::Winner::First => "first",
+                        strength::Winner::Second => "second",
+                        strength::Winner::Even => "even",
+                    },
+                    "factor": c.factor,
+                })))
+            }
+            "recovery.check" => {
+                let check = recovery::check_phrase(text(call.secret)?);
+                Ok(Reply::view(json!({"result": format!("{check:?}").split_whitespace().next()})))
+            }
+            "import.detect" => {
+                let format = io::detect(blob(&call, 0)?);
+                Ok(Reply::view(json!({"format": format.map(io::Format::name)})))
+            }
+            "import.csv_preview" => {
+                let rows = io::preview_csv(text(blob(&call, 0)?)?, 6)?;
+                Ok(Reply::view(json!(rows)))
+            }
+            "categories" => Ok(Reply::view(json!({
+                "all": categorise::CATEGORIES,
+                "kinds": categorise::KIND_CATEGORIES,
+            }))),
+            "otp.parse" => {
+                let config = OtpConfig::from_uri(text(call.secret)?)?;
+                Ok(Reply::of(&views::otp_view(&config))?)
+            }
+            _ => self.vault_call(method, call),
+        }
+    }
+
+    #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
+    fn vault_call(&mut self, method: &str, call: Call<'_>) -> Result<Reply, SessionError> {
+        let now = call.now_ms;
+        let device = self.device;
+        if method == "vault.lock" {
+            self.sessions.remove(&call.handle);
+            return Ok(Reply::ok());
+        }
+        if method == "linked.open" {
+            #[derive(Deserialize, Default)]
+            #[serde(default)]
+            struct A {
+                file: String,
+            }
+            let a: A = parse(call.args)?;
+            let session = self.session(call.handle)?;
+            let link = session
+                .vault
+                .doc
+                .linked
+                .iter()
+                .find(|l| l.file == a.file)
+                .ok_or_else(|| invalid("no such linked vault"))?;
+            let raw = Zeroizing::new(unhex(link.key.expose()).ok_or_else(|| invalid("bad key"))?);
+            let key: [u8; 32] = raw.as_slice().try_into().map_err(|_| invalid("bad key"))?;
+            let vault = Vault::from_file(blob(&call, 0)?, VaultKey::from_bytes(key), device)?;
+            let handle = self.adopt(vault);
+            let session = self.session(handle)?;
+            return Ok(Reply::view(Self::opened(handle, 0, &session.vault)));
+        }
+        let session = self.session(call.handle)?;
+        match method {
+            "vault.info" => {
+                let vault = &session.vault;
+                Ok(Reply::view(json!({
+                    "name": vault.doc.name,
+                    "generation": vault.doc.generation,
+                    "read_only": vault.is_read_only(),
+                    "dirty": session.dirty,
+                    "shelf_open": session.shelf_open,
+                    "entries": vault.doc.entries.len(),
+                    "trash_days": vault.doc.prefs.trash_days,
+                    "history_limit": vault.doc.prefs.history_limit,
+                    "kdf": {
+                        "m_kib": vault.kdf_config()?.params.m_kib,
+                        "t": vault.kdf_config()?.params.t,
+                        "p": vault.kdf_config()?.params.p,
+                    },
+                })))
+            }
+            "vault.rename" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    name: String,
+                }
+                let a: A = parse(call.args)?;
+                session.vault.doc.name = a.name;
+                session.dirty = true;
+                Ok(Reply::ok())
+            }
+            "vault.prefs" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    trash_days: Option<u32>,
+                    history_limit: Option<u32>,
+                }
+                let a: A = parse(call.args)?;
+                if let Some(days) = a.trash_days {
+                    session.vault.doc.prefs.trash_days = days;
+                }
+                if let Some(limit) = a.history_limit {
+                    session.vault.doc.prefs.history_limit = limit;
+                }
+                session.dirty = true;
+                Ok(Reply::ok())
+            }
+            "vault.save" => {
+                let file = session.vault.save()?;
+                session.dirty = false;
+                Ok(Reply {
+                    json: json!({
+                        "generation": session.vault.doc.generation,
+                        "blobs": session.vault.referenced_blobs(),
+                    })
+                    .to_string(),
+                    blobs: vec![file],
+                    ..Reply::default()
+                })
+            }
+            "vault.sweep" => {
+                let gone = session.vault.sweep(now);
+                if !gone.is_empty() {
+                    session.touched();
+                }
+                Ok(Reply::view(json!({"delete_blobs": gone})))
+            }
+            "vault.merge" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    seen_generation: u64,
+                }
+                let a: A = parse(call.args)?;
+                let generation = session.vault.merge_file(blob(&call, 0)?)?;
+                session.touched();
+                let rollback = matches!(
+                    check_freshness(a.seen_generation, generation),
+                    Freshness::Rollback { .. }
+                );
+                Ok(Reply::view(json!({"generation": generation, "rollback": rollback})))
+            }
+            "vault.sync_name" => Ok(Reply::view(json!({"name": session.vault.sync_file_name()?}))),
+            "vault.state_hash" => Ok(Reply::view(json!({"hash": hex(&session.vault.state_hash()?)}))),
+            "vault.export_key" => {
+                if !session.vault.verify_password(call.secret, &[])? {
+                    return Err(wrong_password());
+                }
+                Ok(wrapped_key(&session.vault))
+            }
+            // Handing the key to the platform's hardware right after an unlock, so the
+            // password is not asked for twice in a row.
+            "vault.key_for_wrapping" => Ok(wrapped_key(&session.vault)),
+            "vault.verify" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    factors: Vec<String>,
+                }
+                let a: A = parse(call.args)?;
+                let (factors, _) = split_factors(&a.factors, call.blobs)?;
+                let ok = session.vault.verify_password(call.secret, &factors)?;
+                Ok(Reply::view(json!({"ok": ok})))
+            }
+            "vault.change_password" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    index: usize,
+                }
+                let a: A = parse(call.args)?;
+                session.vault.change_password(a.index, call.secret, now)?;
+                session.dirty = true;
+                Ok(Reply::ok())
+            }
+            "vault.rekey" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    kdf: KdfArg,
+                }
+                let a: A = parse(call.args)?;
+                session.vault.rekey(call.secret, &a.kdf.config()?, now)?;
+                session.dirty = true;
+                Ok(Reply::ok())
+            }
+            "slot.list" => {
+                let slots: Vec<Value> = session
+                    .vault
+                    .doc
+                    .slots
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, s)| s.used)
+                    .map(|(index, s)| json!({"index": index, "label": s.label}))
+                    .collect();
+                Ok(Reply::view(json!(slots)))
+            }
+            "slot.add" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    label: String,
+                    action: String,
+                    factor: Option<FactorView>,
+                }
+                let a: A = parse(call.args)?;
+                let action = action_of(&a.action)?;
+                let factor = a.factor.as_ref().map(factor_of).transpose()?;
+                let output = match &factor {
+                    Some(FactorKind::KeyFile) => Some(format::key_file_factor(blob(&call, 0)?)),
+                    Some(_) => Some(Zeroizing::new(blob(&call, 0)?.to_vec())),
+                    None => None,
+                };
+                let pair = factor.as_ref().zip(output.as_ref());
+                let index = session.vault.add_slot(call.secret, &a.label, action, pair, now)?;
+                session.dirty = true;
+                Ok(Reply::view(json!({"index": index})))
+            }
+            "slot.remove" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    index: usize,
+                }
+                let a: A = parse(call.args)?;
+                session.vault.remove_slot(a.index, now)?;
+                session.dirty = true;
+                Ok(Reply::ok())
+            }
+            "emergency.kit" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    threshold: u8,
+                    total: u8,
+                }
+                let a: A = parse(call.args)?;
+                let shares = emergency::create_shares(&mut session.vault, a.threshold, a.total, now)?;
+                session.dirty = true;
+                // Whole share texts in one secret value, one per line: the owner prints
+                // them and they should not sit in a string on the other side.
+                let joined = Zeroizing::new(
+                    shares
+                        .iter()
+                        .map(|s| s.text.as_str())
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                );
+                Ok(Reply::secret(&joined))
+            }
+            "linked.list" => {
+                let links: Vec<Value> = session
+                    .vault
+                    .doc
+                    .linked
+                    .iter()
+                    .map(|l| json!({"file": l.file, "name": l.name}))
+                    .collect();
+                Ok(Reply::view(json!(links)))
+            }
+            "linked.create" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    name: String,
+                    kdf: KdfArg,
+                }
+                let a: A = parse(call.args)?;
+                let config = a.kdf.config()?;
+                let mut child = Vault::create(&a.name, call.secret, &config, device, now)?;
+                let file = new_id()?;
+                let sealed = child.save()?;
+                let at = session.vault.tick(now);
+                let key = Secret::from(hex(&child_key_bytes(&child)));
+                session.vault.doc.linked.push(LinkedVault {
+                    file: file.clone(),
+                    name: a.name,
+                    key,
+                    at,
+                });
+                session.dirty = true;
+                Ok(Reply {
+                    json: json!({"file": file}).to_string(),
+                    blobs: vec![sealed],
+                    ..Reply::default()
+                })
+            }
+            // ---- reading ----
+            "entry.list" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    query: String,
+                    sort: String,
+                }
+                let a: A = parse(call.args)?;
+                let mut flags = None;
+                if wants_health(&a.query) {
+                    flags = Some(health_flags(session.report(now, 365)));
+                }
+                let query = Query::parse(&a.query);
+                let names = Names(&session.vault);
+                let context = Context {
+                    now_ms: now,
+                    flags: flags.as_ref(),
+                    folder_name: Some(&names),
+                };
+                let shelf_open = session.shelf_open;
+                let mut rows: Vec<views::Summary> = search::search(
+                    session.vault.doc.entries.values(),
+                    &query,
+                    &context,
+                )
+                .into_iter()
+                .filter(|e| shelf_open || !e.common.hidden.v)
+                .map(views::summary)
+                .collect();
+                sort_rows(&mut rows, &a.sort);
+                Ok(Reply::of(&rows)?)
+            }
+            "entry.get" => {
+                let a: Id = parse(call.args)?;
+                Ok(Reply::of(&views::detail(session.entry(&a.id)?))?)
+            }
+            "entry.reveal" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    id: String,
+                    field: String,
+                }
+                let a: A = parse(call.args)?;
+                let entry = session.entry(&a.id)?;
+                let mut scratch = entry.clone();
+                let value = if a.field == "notes" {
+                    Some(entry.common.notes.v.clone())
+                } else {
+                    fields::secret_of(&mut scratch, &a.field)
+                }
+                .ok_or_else(|| invalid("no such secret field"))?;
+                Ok(Reply::secret(value.expose()))
+            }
+            "entry.reveal_custom" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    id: String,
+                    index: usize,
+                }
+                let a: A = parse(call.args)?;
+                let field = session
+                    .entry(&a.id)?
+                    .common
+                    .custom_fields
+                    .v
+                    .get(a.index)
+                    .ok_or_else(|| invalid("no such field"))?;
+                Ok(Reply::secret(field.value.expose()))
+            }
+            "entry.reveal_question" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    id: String,
+                    index: usize,
+                }
+                let a: A = parse(call.args)?;
+                let answer = session
+                    .entry(&a.id)?
+                    .login()
+                    .and_then(|l| l.questions.v.get(a.index))
+                    .ok_or_else(|| invalid("no such question"))?;
+                Ok(Reply::secret(answer.value.expose()))
+            }
+            "entry.reveal_history" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    id: String,
+                    index: usize,
+                }
+                let a: A = parse(call.args)?;
+                let revision = session
+                    .entry(&a.id)?
+                    .history
+                    .get(a.index)
+                    .ok_or_else(|| invalid("no such revision"))?;
+                Ok(Reply::secret(revision.value.expose()))
+            }
+            "otp.codes" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    ids: Option<Vec<String>>,
+                }
+                let a: A = parse(call.args)?;
+                let seconds = now / 1000;
+                let mut out = Vec::new();
+                for entry in session.vault.visible() {
+                    if a.ids.as_ref().is_some_and(|ids| !ids.contains(&entry.id)) {
+                        continue;
+                    }
+                    let Some(config) = otp_of(entry) else {
+                        continue;
+                    };
+                    let view = views::otp_view(config);
+                    // A code on screen is meant to be read, and it lasts seconds. HOTP
+                    // has to be asked for, since showing it uses it up.
+                    let code = if view.kind == "hotp" {
+                        None
+                    } else {
+                        Some(config.code(seconds)?.expose().to_owned())
+                    };
+                    out.push(json!({
+                        "id": entry.id,
+                        "title": entry.common.title.v,
+                        "site": health::entry_domains(entry).into_iter().next(),
+                        "icon": entry.common.icon.v,
+                        "otp": view,
+                        "code": code,
+                        "seconds_left": config.seconds_left(seconds),
+                    }));
+                }
+                Ok(Reply::view(json!(out)))
+            }
+            "otp.code" => {
+                let a: Id = parse(call.args)?;
+                let seconds = now / 1000;
+                let entry = session.entry(&a.id)?;
+                let config = otp_of(entry).ok_or_else(|| invalid("no one-time codes here"))?;
+                Ok(Reply {
+                    json: json!({"seconds_left": config.seconds_left(seconds)}).to_string(),
+                    secret: Some(Zeroizing::new(config.code(seconds)?.expose().as_bytes().to_vec())),
+                    blobs: Vec::new(),
+                })
+            }
+            "otp.hotp_next" => {
+                let a: Id = parse(call.args)?;
+                let seconds = now / 1000;
+                let code = {
+                    let entry = session.entry(&a.id)?;
+                    otp_of(entry)
+                        .ok_or_else(|| invalid("no one-time codes here"))?
+                        .code(seconds)?
+                };
+                session.vault.edit(&a.id, now, |entry, at| match &mut entry.kind {
+                    Kind::Login(login) => {
+                        if let Some(mut config) = login.otp.v.clone() {
+                            config.advance();
+                            login.otp = Lww::new(Some(config), at);
+                        }
+                    }
+                    Kind::Otp(otp) => {
+                        if let Some(mut config) = otp.config.v.clone() {
+                            config.advance();
+                            otp.config = Lww::new(Some(config), at);
+                        }
+                    }
+                    _ => {}
+                })?;
+                session.touched();
+                Ok(Reply::secret(code.expose()))
+            }
+            "folder.list" => {
+                let folders: Vec<Value> = session
+                    .vault
+                    .doc
+                    .folders
+                    .values()
+                    .map(|f| json!({"id": f.id, "name": f.name.v, "parent": f.parent.v}))
+                    .collect();
+                Ok(Reply::view(json!(folders)))
+            }
+            "health.report" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    old_after_days: Option<u32>,
+                }
+                let a: A = parse(call.args)?;
+                session.health = None;
+                let report = session.report(now, a.old_after_days.unwrap_or(365));
+                Ok(Reply::view(json!({
+                    "weak": report.weak,
+                    "reused": report.reused,
+                    "old": report.old,
+                    "breached": report.breached,
+                    "missing_two_factor": report.missing_two_factor,
+                    "insecure_url": report.insecure_url,
+                    "duplicates": report.duplicates,
+                    "expiring": report.expiring,
+                    "score": report.score,
+                })))
+            }
+            "categorise.suggest" => {
+                let a: Id = parse(call.args)?;
+                let suggestion = categorise::suggest(session.entry(&a.id)?);
+                Ok(Reply::view(json!({"category": suggestion.map(|s| s.category)})))
+            }
+            "match.web" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    url: String,
+                }
+                let a: A = parse(call.args)?;
+                Ok(match_rows(&session.vault, Target::Web { url: &a.url }))
+            }
+            "match.app" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    package: String,
+                    cert_sha256: String,
+                }
+                let a: A = parse(call.args)?;
+                Ok(match_rows(
+                    &session.vault,
+                    Target::App {
+                        package: &a.package,
+                        cert_sha256: &a.cert_sha256,
+                    },
+                ))
+            }
+            // ---- the hidden shelf ----
+            "shelf.open" => {
+                if !session.vault.verify_password(call.secret, &[])? {
+                    return Err(wrong_password());
+                }
+                session.shelf_open = true;
+                Ok(Reply::ok())
+            }
+            "shelf.open_verified" => {
+                session.shelf_open = true;
+                Ok(Reply::ok())
+            }
+            "shelf.close" => {
+                session.shelf_open = false;
+                Ok(Reply::ok())
+            }
+            // ---- changing entries ----
+            "entry.create" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    kind: String,
+                    title: String,
+                    folder: Option<String>,
+                    fields: BTreeMap<String, Value>,
+                    sites: Vec<SiteMatcher>,
+                    color: Option<String>,
+                }
+                let a: A = parse(call.args)?;
+                let at = session.vault.tick(now);
+                let mut entry = Entry {
+                    kind: fields::new_kind(&a.kind)?,
+                    ..Entry::default()
+                };
+                entry.common.title = Lww::new(a.title, at);
+                entry.common.folder = Lww::new(a.folder, at);
+                entry.common.color = Lww::new(a.color, at);
+                for (key, value) in &a.fields {
+                    fields::set_plain(&mut entry, key, value, at)?;
+                }
+                if let Some(login) = entry.login_mut() {
+                    login.site_matchers = Lww::new(a.sites, at);
+                }
+                let id = session.vault.add(entry, now)?;
+                session.touched();
+                Ok(Reply::view(json!({"id": id})))
+            }
+            "entry.set" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    id: String,
+                    fields: BTreeMap<String, Value>,
+                }
+                let a: A = parse(call.args)?;
+                session.entry(&a.id)?;
+                session.vault.edit(&a.id, now, |entry, at| {
+                    a.fields
+                        .iter()
+                        .try_for_each(|(key, value)| fields::set_plain(entry, key, value, at))
+                })??;
+                session.touched();
+                Ok(Reply::ok())
+            }
+            "entry.set_secret" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    id: String,
+                    field: String,
+                }
+                let a: A = parse(call.args)?;
+                session.entry(&a.id)?;
+                if a.field == "notes" {
+                    let value = Secret::new(text(call.secret)?);
+                    session.vault.edit(&a.id, now, |entry, at| {
+                        if entry.common.notes.v != value {
+                            entry.common.notes = Lww::new(value, at);
+                        }
+                    })?;
+                } else {
+                    session.vault.edit(&a.id, now, |entry, at| {
+                        fields::set_secret(entry, &a.field, call.secret, at)
+                    })??;
+                }
+                session.touched();
+                Ok(Reply::ok())
+            }
+            "entry.common" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    id: String,
+                    title: Option<String>,
+                    icon: Option<Option<String>>,
+                    color: Option<Option<String>>,
+                    pinned: Option<bool>,
+                    favourite: Option<bool>,
+                    folder: Option<Option<String>>,
+                    tags: Option<Vec<String>>,
+                    links: Option<Vec<String>>,
+                    hidden: Option<bool>,
+                    destroy_at_ms: Option<Option<u64>>,
+                    reminders: Option<views::RemindersView>,
+                    sites: Option<Vec<SiteMatcher>>,
+                }
+                let a: A = parse(call.args)?;
+                session.entry(&a.id)?;
+                session.vault.edit(&a.id, now, |entry, at| {
+                    let common = &mut entry.common;
+                    if let Some(v) = a.title {
+                        common.title = Lww::new(v, at);
+                    }
+                    if let Some(v) = a.icon {
+                        common.icon = Lww::new(v, at);
+                    }
+                    if let Some(v) = a.color {
+                        common.color = Lww::new(v, at);
+                    }
+                    if let Some(v) = a.pinned {
+                        common.pinned = Lww::new(v, at);
+                    }
+                    if let Some(v) = a.favourite {
+                        common.favourite = Lww::new(v, at);
+                    }
+                    if let Some(v) = a.folder {
+                        common.folder = Lww::new(v, at);
+                    }
+                    if let Some(v) = a.tags {
+                        common.tags = Lww::new(v, at);
+                    }
+                    if let Some(v) = a.links {
+                        common.links = Lww::new(v, at);
+                    }
+                    if let Some(v) = a.hidden {
+                        common.hidden = Lww::new(v, at);
+                    }
+                    if let Some(v) = a.destroy_at_ms {
+                        common.destroy_at_ms = Lww::new(v, at);
+                    }
+                    if let Some(v) = a.reminders {
+                        common.reminders = Lww::new(
+                            Reminders {
+                                change_every_days: v.change_every_days,
+                                expires_ms: v.expires_ms,
+                                warn_days: v.warn_days,
+                            },
+                            at,
+                        );
+                    }
+                    if let (Some(v), Some(login)) = (a.sites, entry.login_mut()) {
+                        login.site_matchers = Lww::new(v, at);
+                    }
+                })?;
+                session.touched();
+                Ok(Reply::ok())
+            }
+            "entry.custom_set" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    id: String,
+                    index: Option<usize>,
+                    name: String,
+                    kind: String,
+                }
+                let a: A = parse(call.args)?;
+                session.entry(&a.id)?;
+                let value = Secret::new(text(call.secret)?);
+                session.vault.edit(&a.id, now, |entry, at| {
+                    let mut list = entry.common.custom_fields.v.clone();
+                    let field = Field {
+                        name: a.name,
+                        value,
+                        kind: views::field_kind_from(&a.kind),
+                    };
+                    match a.index.and_then(|i| list.get_mut(i)) {
+                        Some(slot) => *slot = field,
+                        None => list.push(field),
+                    }
+                    entry.common.custom_fields = Lww::new(list, at);
+                })?;
+                session.touched();
+                Ok(Reply::ok())
+            }
+            "entry.custom_remove" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    id: String,
+                    index: usize,
+                }
+                let a: A = parse(call.args)?;
+                session.entry(&a.id)?;
+                session.vault.edit(&a.id, now, |entry, at| {
+                    let mut list = entry.common.custom_fields.v.clone();
+                    if a.index < list.len() {
+                        list.remove(a.index);
+                        entry.common.custom_fields = Lww::new(list, at);
+                    }
+                })?;
+                session.touched();
+                Ok(Reply::ok())
+            }
+            "entry.question_set" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    id: String,
+                    index: Option<usize>,
+                    question: String,
+                }
+                let a: A = parse(call.args)?;
+                session.entry(&a.id)?;
+                let value = Secret::new(text(call.secret)?);
+                session.vault.edit(&a.id, now, |entry, at| {
+                    if let Some(login) = entry.login_mut() {
+                        let mut list = login.questions.v.clone();
+                        let field = Field {
+                            name: a.question,
+                            value,
+                            kind: wmpass_core::model::FieldKind::Hidden,
+                        };
+                        match a.index.and_then(|i| list.get_mut(i)) {
+                            Some(slot) => *slot = field,
+                            None => list.push(field),
+                        }
+                        login.questions = Lww::new(list, at);
+                    }
+                })?;
+                session.touched();
+                Ok(Reply::ok())
+            }
+            "entry.otp_set" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    id: String,
+                    clear: bool,
+                    issuer: Option<String>,
+                    account: Option<String>,
+                }
+                let a: A = parse(call.args)?;
+                session.entry(&a.id)?;
+                let config = if a.clear {
+                    None
+                } else {
+                    let raw = text(call.secret)?.trim();
+                    let mut config = if raw.contains("://") {
+                        OtpConfig::from_uri(raw)?
+                    } else {
+                        let seed: String = raw.split_whitespace().collect();
+                        // Checked now so a mistyped seed fails here, not at login time.
+                        wmpass_core::otp::base32_decode(&seed)?;
+                        OtpConfig::totp(seed)
+                    };
+                    if let Some(issuer) = a.issuer {
+                        config.issuer = issuer;
+                    }
+                    if let Some(account) = a.account {
+                        config.account = account;
+                    }
+                    Some(config)
+                };
+                session.vault.edit(&a.id, now, |entry, at| match &mut entry.kind {
+                    Kind::Login(login) => {
+                        login.otp = Lww::new(config, at);
+                        Ok(())
+                    }
+                    Kind::Otp(otp) => {
+                        otp.config = Lww::new(config, at);
+                        Ok(())
+                    }
+                    _ => Err(invalid("this kind has no one-time codes")),
+                })??;
+                session.touched();
+                Ok(Reply::ok())
+            }
+            "entry.trash" => {
+                let a: Id = parse(call.args)?;
+                session.entry(&a.id)?;
+                session.vault.trash(&a.id, now)?;
+                session.touched();
+                Ok(Reply::ok())
+            }
+            "entry.restore" => {
+                let a: Id = parse(call.args)?;
+                session.entry(&a.id)?;
+                session.vault.restore(&a.id, now)?;
+                session.touched();
+                Ok(Reply::ok())
+            }
+            "entry.purge" => {
+                let a: Id = parse(call.args)?;
+                session.entry(&a.id)?;
+                let blobs = session.vault.purge(&a.id, now);
+                session.touched();
+                Ok(Reply::view(json!({"delete_blobs": blobs})))
+            }
+            "entry.duplicate" => {
+                let a: Id = parse(call.args)?;
+                let mut copy = session.entry(&a.id)?.clone();
+                copy.id = String::new();
+                copy.created_ms = 0;
+                copy.history.clear();
+                // A copy's attachments would otherwise share blobs with the original,
+                // and purging either would take the other's file.
+                let at = session.vault.tick(now);
+                copy.common.attachments = Lww::new(Vec::new(), at);
+                let id = session.vault.add(copy, now)?;
+                session.touched();
+                Ok(Reply::view(json!({"id": id})))
+            }
+            "entries.bulk" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    ids: Vec<String>,
+                    op: String,
+                    folder: Option<String>,
+                    color: Option<String>,
+                    tag: String,
+                    flag: bool,
+                }
+                let a: A = parse(call.args)?;
+                let mut delete_blobs = Vec::new();
+                for id in &a.ids {
+                    session.entry(id)?;
+                    match a.op.as_str() {
+                        "trash" => session.vault.trash(id, now)?,
+                        "restore" => session.vault.restore(id, now)?,
+                        "purge" => delete_blobs.extend(session.vault.purge(id, now)),
+                        "folder" => session.vault.edit(id, now, |e, at| {
+                            e.common.folder = Lww::new(a.folder.clone(), at);
+                        })?,
+                        "color" => session.vault.edit(id, now, |e, at| {
+                            e.common.color = Lww::new(a.color.clone(), at);
+                        })?,
+                        "favourite" => session.vault.edit(id, now, |e, at| {
+                            e.common.favourite = Lww::new(a.flag, at);
+                        })?,
+                        "pin" => session.vault.edit(id, now, |e, at| {
+                            e.common.pinned = Lww::new(a.flag, at);
+                        })?,
+                        "hide" => session.vault.edit(id, now, |e, at| {
+                            e.common.hidden = Lww::new(a.flag, at);
+                        })?,
+                        "tag_add" => session.vault.edit(id, now, |e, at| {
+                            let mut tags = e.common.tags.v.clone();
+                            if !tags.contains(&a.tag) {
+                                tags.push(a.tag.clone());
+                                e.common.tags = Lww::new(tags, at);
+                            }
+                        })?,
+                        "tag_remove" => session.vault.edit(id, now, |e, at| {
+                            let mut tags = e.common.tags.v.clone();
+                            tags.retain(|t| *t != a.tag);
+                            e.common.tags = Lww::new(tags, at);
+                        })?,
+                        _ => return Err(invalid("unknown bulk action")),
+                    }
+                }
+                session.touched();
+                Ok(Reply::view(json!({"delete_blobs": delete_blobs})))
+            }
+            "health.merge_duplicates" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    keep: String,
+                    remove: String,
+                }
+                let a: A = parse(call.args)?;
+                session.entry(&a.keep)?;
+                session.entry(&a.remove)?;
+                health::merge_duplicates(&mut session.vault, &a.keep, &a.remove, now)?;
+                session.touched();
+                Ok(Reply::ok())
+            }
+            "folder.add" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    name: String,
+                    parent: Option<String>,
+                }
+                let a: A = parse(call.args)?;
+                let id = session.vault.add_folder(&a.name, a.parent, now)?;
+                session.touched();
+                Ok(Reply::view(json!({"id": id})))
+            }
+            "folder.rename" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    id: String,
+                    name: String,
+                }
+                let a: A = parse(call.args)?;
+                let at = session.vault.tick(now);
+                let folder = session
+                    .vault
+                    .doc
+                    .folders
+                    .get_mut(&a.id)
+                    .ok_or_else(|| invalid("no such folder"))?;
+                folder.name = Lww::new(a.name, at);
+                session.touched();
+                Ok(Reply::ok())
+            }
+            "folder.remove" => {
+                let a: Id = parse(call.args)?;
+                let at = session.vault.tick(now);
+                session.vault.doc.folders.remove(&a.id);
+                session.vault.doc.tombstones.insert(a.id.clone(), at);
+                let inside: Vec<String> = session
+                    .vault
+                    .doc
+                    .entries
+                    .values()
+                    .filter(|e| e.common.folder.v.as_deref() == Some(a.id.as_str()))
+                    .map(|e| e.id.clone())
+                    .collect();
+                for id in inside {
+                    session.vault.edit(&id, now, |e, at| {
+                        e.common.folder = Lww::new(None, at);
+                    })?;
+                }
+                session.touched();
+                Ok(Reply::ok())
+            }
+            // ---- attachments ----
+            "attachment.add" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    id: String,
+                    name: String,
+                    mime: String,
+                }
+                let a: A = parse(call.args)?;
+                session.entry(&a.id)?;
+                let (record, sealed) = Vault::seal_attachment(&a.name, &a.mime, blob(&call, 0)?)?;
+                let name = record.blob.clone();
+                session.vault.edit(&a.id, now, |entry, at| {
+                    let mut list = entry.common.attachments.v.clone();
+                    list.push(record);
+                    entry.common.attachments = Lww::new(list, at);
+                })?;
+                session.touched();
+                Ok(Reply {
+                    json: json!({"blob": name}).to_string(),
+                    blobs: vec![sealed],
+                    ..Reply::default()
+                })
+            }
+            "attachment.open" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    id: String,
+                    blob: String,
+                }
+                let a: A = parse(call.args)?;
+                let record = session
+                    .entry(&a.id)?
+                    .common
+                    .attachments
+                    .v
+                    .iter()
+                    .find(|r| r.blob == a.blob)
+                    .ok_or_else(|| invalid("no such attachment"))?;
+                let plain = Vault::open_attachment(record, blob(&call, 0)?)?;
+                Ok(Reply {
+                    json: "{}".to_owned(),
+                    secret: Some(plain),
+                    blobs: Vec::new(),
+                })
+            }
+            "attachment.remove" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    id: String,
+                    blob: String,
+                }
+                let a: A = parse(call.args)?;
+                session.entry(&a.id)?;
+                session.vault.edit(&a.id, now, |entry, at| {
+                    let mut list = entry.common.attachments.v.clone();
+                    list.retain(|r| r.blob != a.blob);
+                    entry.common.attachments = Lww::new(list, at);
+                })?;
+                session.touched();
+                Ok(Reply::view(json!({"delete_blobs": [a.blob]})))
+            }
+            // ---- import and export ----
+            "import.read" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    format: Option<String>,
+                }
+                let a: A = parse(call.args)?;
+                let data = blob(&call, 0)?;
+                let format = match a.format.as_deref() {
+                    Some(name) => format_by_name(name).ok_or_else(|| invalid("unknown format"))?,
+                    None => io::detect(data)
+                        .ok_or_else(|| invalid("this file's format was not recognised"))?,
+                };
+                let password = (!call.secret.is_empty())
+                    .then(|| text(call.secret))
+                    .transpose()?;
+                let at = session.vault.tick(now);
+                let imported = io::import(format, data, password, at)?;
+                let titles: Vec<&str> = imported
+                    .entries
+                    .iter()
+                    .take(50)
+                    .map(|e| e.entry.common.title.v.as_str())
+                    .collect();
+                let reply = json!({
+                    "format": format.name(),
+                    "count": imported.entries.len(),
+                    "titles": titles,
+                    "skipped": imported.skipped,
+                });
+                session.pending_import = Some(imported);
+                Ok(Reply::view(reply))
+            }
+            "import.apply" => {
+                let imported = session
+                    .pending_import
+                    .take()
+                    .ok_or_else(|| invalid("nothing to import"))?;
+                let report = io::apply(&mut session.vault, imported, now)?;
+                session.touched();
+                let (names, sealed): (Vec<String>, Vec<Vec<u8>>) = report.blobs.into_iter().unzip();
+                Ok(Reply {
+                    json: json!({
+                        "added": report.added,
+                        "duplicates": report.duplicates,
+                        "blob_names": names,
+                    })
+                    .to_string(),
+                    blobs: sealed,
+                    ..Reply::default()
+                })
+            }
+            "import.cancel" => {
+                session.pending_import = None;
+                Ok(Reply::ok())
+            }
+            "export.file" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    format: String,
+                }
+                let a: A = parse(call.args)?;
+                let value = match a.format.as_str() {
+                    "csv" => io::export::to_csv(&session.vault)?,
+                    "bitwarden" => io::export::to_bitwarden_json(&session.vault)?,
+                    "html" => io::export::to_print_html(&session.vault),
+                    "kdbx" => {
+                        let entries: Vec<&Entry> = session.vault.visible().collect();
+                        let file = io::kdbx::export(&entries, text(call.secret)?)?;
+                        return Ok(Reply {
+                            json: "{}".to_owned(),
+                            blobs: vec![file],
+                            ..Reply::default()
+                        });
+                    }
+                    _ => return Err(invalid("unknown export format")),
+                };
+                Ok(Reply::secret(value.expose()))
+            }
+            // ---- passkeys and SSH ----
+            "passkey.create" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    id: Option<String>,
+                    rp_id: String,
+                    rp_name: String,
+                    user_handle: String,
+                    user_name: String,
+                    user_verified: bool,
+                    origin_host: String,
+                }
+                let a: A = parse(call.args)?;
+                if !passkey::rp_id_allowed(&a.origin_host, &a.rp_id) {
+                    return Err(invalid("this site may not use that passkey domain"));
+                }
+                let handle = B64
+                    .decode(&a.user_handle)
+                    .map_err(|_| invalid("bad user handle"))?;
+                let created = passkey::create(
+                    &a.rp_id,
+                    &a.rp_name,
+                    &handle,
+                    &a.user_name,
+                    a.user_verified,
+                    now,
+                )?;
+                let id = match a.id {
+                    Some(id) => {
+                        session.entry(&id)?;
+                        id
+                    }
+                    None => {
+                        let at = session.vault.tick(now);
+                        let mut entry = Entry {
+                            kind: fields::new_kind("login")?,
+                            ..Entry::default()
+                        };
+                        entry.common.title = Lww::new(a.rp_name.clone(), at);
+                        if let Some(login) = entry.login_mut() {
+                            login.username = Lww::new(a.user_name.clone(), at);
+                            login.site_matchers =
+                                Lww::new(vec![SiteMatcher::Domain(a.rp_id.clone())], at);
+                        }
+                        session.vault.add(entry, now)?
+                    }
+                };
+                session.vault.edit(&id, now, |entry, at| {
+                    if let Some(login) = entry.login_mut() {
+                        let mut list = login.passkeys.v.clone();
+                        list.push(created.passkey.clone());
+                        login.passkeys = Lww::new(list, at);
+                    }
+                })?;
+                session.touched();
+                Ok(Reply::view(json!({
+                    "id": id,
+                    "credential_id": B64.encode(&created.credential_id),
+                    "attestation_object": B64.encode(&created.attestation_object),
+                    "authenticator_data": B64.encode(&created.authenticator_data),
+                    "public_key_der": B64.encode(&created.public_key_der),
+                })))
+            }
+            "passkey.list" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    rp_id: String,
+                    origin_host: String,
+                }
+                let a: A = parse(call.args)?;
+                if !passkey::rp_id_allowed(&a.origin_host, &a.rp_id) {
+                    return Err(invalid("this site may not use that passkey domain"));
+                }
+                let mut out = Vec::new();
+                for entry in session.vault.visible() {
+                    let Some(login) = entry.login() else { continue };
+                    for key in login.passkeys.v.iter().filter(|k| k.rp_id == a.rp_id) {
+                        out.push(json!({
+                            "id": entry.id,
+                            "title": entry.common.title.v,
+                            "credential_id": key.credential_id,
+                            "user_name": key.user_name,
+                            "rp_id": key.rp_id,
+                        }));
+                    }
+                }
+                Ok(Reply::view(json!(out)))
+            }
+            "passkey.sign" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    id: String,
+                    credential_id: String,
+                    client_data_hash: String,
+                    user_verified: bool,
+                    origin_host: String,
+                }
+                let a: A = parse(call.args)?;
+                let hash: [u8; 32] = B64
+                    .decode(&a.client_data_hash)
+                    .map_err(|_| invalid("bad hash"))?
+                    .try_into()
+                    .map_err(|_| invalid("bad hash"))?;
+                let key = session
+                    .entry(&a.id)?
+                    .login()
+                    .and_then(|l| l.passkeys.v.iter().find(|k| k.credential_id == a.credential_id))
+                    .ok_or_else(|| invalid("no such passkey"))?
+                    .clone();
+                if !passkey::rp_id_allowed(&a.origin_host, &key.rp_id) {
+                    return Err(invalid("this site may not use that passkey"));
+                }
+                let assertion = passkey::sign(&key, &hash, a.user_verified)?;
+                Ok(Reply::view(json!({
+                    "credential_id": B64.encode(&assertion.credential_id),
+                    "authenticator_data": B64.encode(&assertion.authenticator_data),
+                    "signature": B64.encode(&assertion.signature),
+                    "user_handle": B64.encode(&assertion.user_handle),
+                })))
+            }
+            "ssh.generate" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    id: String,
+                    comment: String,
+                }
+                let a: A = parse(call.args)?;
+                session.entry(&a.id)?;
+                let key = ssh::generate_ed25519(&a.comment)?;
+                session.vault.edit(&a.id, now, |entry, at| {
+                    fields::set_secret(entry, "private_key", key.private_key.expose().as_bytes(), at)?;
+                    fields::set_plain(entry, "public_key", &json!(key.public_key), at)?;
+                    fields::set_plain(entry, "fingerprint", &json!(key.fingerprint), at)
+                })??;
+                session.touched();
+                Ok(Reply::view(json!({
+                    "public_key": key.public_key,
+                    "fingerprint": key.fingerprint,
+                })))
+            }
+            _ => Err(invalid(format!("unknown call {method}"))),
+        }
+    }
+}
+
+fn wrong_password() -> SessionError {
+    SessionError {
+        code: "wrong_password",
+        message: "that password is not right".to_owned(),
+    }
+}
+
+fn wrapped_key(vault: &Vault) -> Reply {
+    Reply {
+        json: "{}".to_owned(),
+        secret: Some(Zeroizing::new(vault.key().expose_for_hardware_wrap().to_vec())),
+        blobs: Vec::new(),
+    }
+}
+
+fn child_key_bytes(child: &Vault) -> Zeroizing<Vec<u8>> {
+    Zeroizing::new(child.key().expose_for_hardware_wrap().to_vec())
+}
+
+fn otp_of(entry: &Entry) -> Option<&OtpConfig> {
+    match &entry.kind {
+        Kind::Login(login) => login.otp.v.as_ref(),
+        Kind::Otp(otp) => otp.config.v.as_ref(),
+        _ => None,
+    }
+}
+
+fn match_rows(vault: &Vault, target: Target<'_>) -> Reply {
+    let rows: Vec<Value> = matching::matches_for(vault.visible(), target)
+        .into_iter()
+        .map(|(entry, level)| {
+            json!({
+                "entry": views::summary(entry),
+                "level": level_name(level),
+            })
+        })
+        .collect();
+    Reply::view(json!(rows))
+}
+
+fn format_by_name(name: &str) -> Option<io::Format> {
+    use io::Format as F;
+    [
+        F::Kdbx,
+        F::BitwardenJson,
+        F::BitwardenCsv,
+        F::OnePux,
+        F::LastPassCsv,
+        F::ChromeCsv,
+        F::FirefoxCsv,
+        F::KeePassXcCsv,
+        F::DashlaneCsv,
+        F::EnpassJson,
+        F::NordPassCsv,
+        F::KeeperJson,
+        F::ProtonPass,
+        F::AppleCsv,
+        F::SafeInCloudXml,
+        F::RoboFormCsv,
+        F::WmPassCsv,
+        F::Aegis,
+        F::TwoFas,
+        F::AndOtp,
+        F::FreeOtpPlus,
+        F::Raivo,
+        F::OtpAuthList,
+    ]
+    .into_iter()
+    .find(|f| f.name() == name)
+}

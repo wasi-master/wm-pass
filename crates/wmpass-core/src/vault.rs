@@ -278,6 +278,18 @@ impl Vault {
         self.read_only
     }
 
+    /// Whether a password opens this vault now, for the actions that ask for it again:
+    /// the hidden shelf, exporting, changing how the vault unlocks.
+    pub fn verify_password(&self, password: &[u8], factors: &[FactorOutput]) -> Result<bool> {
+        let root = self.header.config()?.derive(password)?;
+        Ok(self.header.slot_match(&root, factors, &self.key)? == Some(SlotAction::Open))
+    }
+
+    /// The KDF settings this file uses.
+    pub fn kdf_config(&self) -> Result<KdfConfig> {
+        self.header.config()
+    }
+
     /// The file's key, for hardware wrapping only.
     pub fn key(&self) -> &VaultKey {
         &self.key
@@ -582,7 +594,7 @@ impl Vault {
         // A password already in use would make the first matching slot win, so a
         // duress password equal to the master password would never fire, and the
         // owner would not find out until the moment it mattered.
-        if factor.is_none() && matches!(self.header.unlock(root, &[])?, Unlock::Opened { .. }) {
+        if factor.is_none() && self.header.slot_match(root, &[], &self.key)?.is_some() {
             return Err(Error::Invalid(
                 "that password is already in use on this vault".into(),
             ));
