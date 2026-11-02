@@ -4,6 +4,7 @@
 //! so a reader without a password cannot count unlock methods, see a duress slot,
 //! or tell a vault from a chaff file.
 
+use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
 
 use crate::crypto::{self, CHUNK, KdfParams, Key, NONCE_LEN, STREAM_PREFIX_LEN, TAG_LEN};
@@ -361,6 +362,34 @@ impl Header {
         let action = SlotAction::from_byte(*plain.get(1)?)?;
         let key: [u8; 32] = plain.get(2..34)?.try_into().ok()?;
         Some((VaultKey::from_bytes(key), action))
+    }
+
+    /// What a root key does on this vault, or `None` if no slot takes it. For checks on
+    /// a vault already open: the header's MAC is only written on save, so unlike
+    /// [`Header::unlock`] this does not read it. An unsealed header's slots are still
+    /// bound to the key by their AEAD, and the opened key is compared with `current`.
+    pub fn slot_match(
+        &self,
+        root: &RootKey,
+        factors: &[FactorOutput],
+        current: &VaultKey,
+    ) -> Result<Option<SlotAction>> {
+        let id = self.vault_id().to_vec();
+        let mut keys = vec![root.slot_key(&id, None)?];
+        for factor in factors {
+            keys.push(root.slot_key(&id, Some(factor))?);
+        }
+        let mut found = None;
+        for index in 0..SLOTS {
+            for key in &keys {
+                if let Some((opened, action)) = self.open_slot(index, key)
+                    && bool::from(opened.0[..].ct_eq(&current.0[..]))
+                {
+                    found.get_or_insert(action);
+                }
+            }
+        }
+        Ok(found)
     }
 
     /// Tries a password, with any second-factor outputs the caller already has.
