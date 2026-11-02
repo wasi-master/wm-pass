@@ -25,6 +25,24 @@ serde.workspace = true
 serde_json.workspace = true
 rmp-serde.workspace = true
 thiserror.workspace = true
+zxcvbn = "3.1.1"
+diceware_wordlists = "1.2.3"
+psl = "2.1.246"
+bip39 = "3.0.0"
+csv = "1.4.0"
+quick-xml = "0.42.0"
+vsss-rs = "6.0.1"
+keepass = { version = "0.17.0", features = ["save_kdbx4"] }
+zip = { version = "9.2.2", default-features = false, features = ["deflate"] }
+url = "2.5.8"
+regex = "1.13.1"
+rand = { version = "0.10", default-features = false, features = ["sys_rng"] }
+ssh-key = { version = "0.6.7", features = ["ed25519", "getrandom", "encryption"] }
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+base64 = "0.23.1"
+
+# The Argon2 crate `keepass` itself uses, needed to name its KDF settings.
+argon2_for_keepass = { package = "rust-argon2", version = "3" }
 
 [dev-dependencies]
 proptest = "1"
