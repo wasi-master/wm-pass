@@ -123,7 +123,7 @@ fun ThemesScreen() {
     var acting by remember { mutableStateOf<ThemeFile?>(null) }
     var deleting by remember { mutableStateOf<ThemeFile?>(null) }
     val dark = colors.dark
-    WmScreen("Theme", onBack = { shell.nav.popBackStack() }) {
+    WmScreen("Theme", route = "settings/themes", onBack = { shell.nav.popBackStack() }) {
         Column(Modifier.padding(horizontal = 16.dp)) {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
                 GroupCard {

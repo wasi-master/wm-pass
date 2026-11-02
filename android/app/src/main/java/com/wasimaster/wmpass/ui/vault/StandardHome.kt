@@ -63,11 +63,12 @@ fun StandardHome() {
                         actions = { BulkActions() },
                         colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
                     )
-                    shell.tab == "vault" -> VaultSearchBar()
+                    shell.tab == "vault" && !prefs.searchAtBottom.value -> VaultSearchBar(Modifier.statusBarsPadding())
+                    shell.tab == "vault" -> androidx.compose.foundation.layout.Spacer(Modifier.statusBarsPadding())
                     else -> TopAppBar(
                         title = { Text(AllTabs.firstOrNull { it.id == shell.tab }?.label.orEmpty()) },
                         actions = {
-                            IconButton(onClick = { shell.lockNow() }) { Icon(PassIcons.Lock, "Lock") }
+                            if (prefs.showLock.value) IconButton(onClick = { shell.lockNow() }) { Icon(PassIcons.Lock, "Lock") }
                             IconButton(onClick = { shell.nav.navigate("settings") }) { Icon(PassIcons.Settings, "Settings") }
                         },
                         colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.ground),
@@ -75,6 +76,8 @@ fun StandardHome() {
                 }
             },
             bottomBar = {
+                androidx.compose.foundation.layout.Column {
+                if (shell.tab == "vault" && prefs.searchAtBottom.value && !shell.selecting) VaultSearchBar()
                 if (tabs.size > 1 && !shell.selecting) {
                     NavigationBar {
                         tabs.forEach { tab ->
@@ -85,18 +88,25 @@ fun StandardHome() {
                                     if (!selected) shell.haptics.tick()
                                     shell.tab = tab.id
                                 },
-                                icon = { Icon(if (selected) tab.filled else tab.icon, null) },
-                                label = { Text(tab.label, maxLines = 1) },
+                                icon = { Icon(if (selected) tab.filled else tab.icon, tab.label) },
+                                label = if (prefs.navLabels.value == "none") null else ({ Text(tab.label, maxLines = 1) }),
+                                alwaysShowLabel = prefs.navLabels.value == "all",
                             )
                         }
                     }
                 }
+                }
             },
             floatingActionButton = {
-                if (!shell.selecting && (shell.tab == "vault" || shell.tab == "codes")) {
+                if (prefs.showFab.value && !shell.selecting && (shell.tab == "vault" || shell.tab == "codes")) {
                     FloatingActionButton(onClick = {
                         shell.haptics.click()
-                        if (shell.tab == "codes") shell.nav.navigate("new/otp") else shell.adding = true
+                        val direct = prefs.fabAction.value.takeIf { it in KindOrder }
+                        when {
+                            shell.tab == "codes" -> shell.nav.navigate("new/otp")
+                            direct != null -> shell.nav.navigate("new/$direct")
+                            else -> shell.adding = true
+                        }
                     }) { Icon(PassIcons.Add, "Add") }
                 }
             },
@@ -124,13 +134,12 @@ fun StandardHome() {
 
 /** The search bar as Material draws it, doubling as the vault page's title. */
 @Composable
-private fun VaultSearchBar() {
+private fun VaultSearchBar(modifier: Modifier = Modifier) {
     val shell = LocalShell.current
     val colors = palette
     Surface(
-        Modifier
+        modifier
             .fillMaxWidth()
-            .statusBarsPadding()
             .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)
             .height(56.dp)
             .clip(CircleShape)
@@ -142,7 +151,7 @@ private fun VaultSearchBar() {
             Icon(PassIcons.Search, null, tint = colors.textMid)
             Spacer(Modifier.width(12.dp))
             Text("Search vault", color = colors.textMid, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f), maxLines = 1)
-            IconButton(onClick = { shell.lockNow() }) { Icon(PassIcons.Lock, "Lock", tint = colors.textMid) }
+            if (shell.prefs.showLock.value) IconButton(onClick = { shell.lockNow() }) { Icon(PassIcons.Lock, "Lock", tint = colors.textMid) }
             IconButton(onClick = { shell.nav.navigate("settings") }) { Icon(PassIcons.Settings, "Settings", tint = colors.textMid) }
         }
     }

@@ -1,5 +1,7 @@
 package com.wasimaster.wmpass.ui.vault
 
+import com.wasimaster.wmpass.app.Prefs
+
 import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -149,8 +151,11 @@ fun EntryScreen(id: String) {
     // Nothing stays on show by accident: 45 seconds after the last reveal, all of it goes back.
     LaunchedEffect(revealed.size) {
         if (revealed.isNotEmpty()) {
-            delay(45_000)
-            revealed.clear()
+            val seconds = shell.prefs.revealSeconds.value
+            if (seconds > 0) {
+                delay(seconds * 1000L)
+                revealed.clear()
+            }
         }
     }
     val scroll = rememberScrollState()
@@ -343,15 +348,20 @@ private fun QuickActions(entry: Detail) {
     val username = entry.fields.firstOrNull { it.key == "username" || it.key == "user" }?.text.orEmpty()
     val url = entry.sites.firstNotNullOfOrNull { siteLine(it)?.openable }
     if (palette.flat) {
+        val prefs = shell.prefs
+        if (!prefs.entryActions.value) {
+            Spacer(Modifier.height(12.dp))
+            return
+        }
         // As in Contacts: every action says what it does, and the likeliest one is filled.
         Row(Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (entry.hasPassword) {
                 LabelledAction(PassIcons.ContentCopy, "Copy password", filled = true, confirms = true, Modifier.weight(1f)) { shell.copyPassword(entry.id) }
             }
-            if (username.isNotEmpty()) {
+            if (username.isNotEmpty() && prefs.entryActionUsername.value) {
                 LabelledAction(PassIcons.Person, "Copy username", filled = !entry.hasPassword, confirms = true, Modifier.weight(1f)) { shell.copyPlain("Username", username) }
             }
-            if (url != null) {
+            if (url != null && prefs.entryActionOpen.value) {
                 LabelledAction(PassIcons.OpenInNew, "Open site", filled = false, confirms = false, Modifier.weight(1f)) { shell.openUrl(url) }
             }
         }
@@ -786,12 +796,12 @@ private fun OtpCard(entry: Detail) {
                     Text("Counter-based", color = colors.textMid, style = MaterialTheme.typography.bodyLarge)
                 }
                 val next = row?.nextCode
-                AnimatedVisibility(next != null) {
+                AnimatedVisibility(next != null && shell.prefs.codeNext.value) {
                     Text("Next  ${grouped(next.orEmpty())}", color = colors.textMid, style = PassType.secretSmall)
                 }
             }
             if (otp.period != null) {
-                LifeRing(otp.period!!, size = 34.dp, stroke = 3.5.dp)
+                if (shell.prefs.codeRing.value) LifeRing(otp.period!!, size = 34.dp, stroke = 3.5.dp)
             } else {
                 QuietButton("New code", height = 42.dp, tint = colors.primary) {
                     shell.launch {
@@ -859,8 +869,10 @@ private fun TextRow(label: String, value: String, copyAs: String) {
             .fillMaxWidth()
             .inkSurface(ink, colors.primary)
             .tapAt { at ->
-                ink.splash(at)
-                shell.copyPlain(copyAs, value)
+                if (shell.prefs.tapCopies.value) {
+                    ink.splash(at)
+                    shell.copyPlain(copyAs, value)
+                }
             }
             .padding(start = if (colors.flat) 16.dp else 18.dp, end = if (colors.flat) 4.dp else 18.dp, top = if (colors.flat) 12.dp else 13.dp, bottom = if (colors.flat) 12.dp else 13.dp),
     ) {
@@ -893,14 +905,17 @@ private fun SecretRow(
     val colors = palette
     val scope = rememberCoroutineScope()
     val ink = remember { InkState(scope) }
+    val appContext = androidx.compose.ui.platform.LocalContext.current
     Column(
         Modifier
             .fillMaxWidth()
             .animateContentSize(Springs.glide())
             .inkSurface(ink, colors.primary)
             .tapAt { at ->
-                ink.splash(at)
-                onCopy()
+                if (Prefs.of(appContext).tapCopies.value) {
+                    ink.splash(at)
+                    onCopy()
+                }
             }
             .padding(start = if (colors.flat) 16.dp else 18.dp, end = if (colors.flat) 4.dp else 10.dp, top = 12.dp, bottom = 12.dp),
     ) {

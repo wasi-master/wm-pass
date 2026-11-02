@@ -261,7 +261,7 @@ fun BackupScreen() {
             }
         }
     }
-    WmScreen("Backups", onBack = { shell.nav.popBackStack() }) {
+    WmScreen("Backups", route = "settings/backup", onBack = { shell.nav.popBackStack() }) {
         Column(Modifier.padding(horizontal = 16.dp)) {
             Text(
                 "A backup is the encrypted file itself, so it can sit anywhere and only your password opens it. It includes every vault on this phone, without showing how many there are.",

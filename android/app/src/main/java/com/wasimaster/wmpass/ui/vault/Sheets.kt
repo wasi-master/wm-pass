@@ -355,7 +355,7 @@ fun IconSheet(current: String?, onDismiss: () -> Unit, onPick: (String?) -> Unit
             }
         }
         Spacer(Modifier.height(18.dp))
-        SheetField(typed, "Search brands")
+        SheetField(typed, "Search ${brands.size} brands")
         Spacer(Modifier.height(12.dp))
         val query = typed.text.toString().trim().lowercase()
         FlowRow(
@@ -363,7 +363,7 @@ fun IconSheet(current: String?, onDismiss: () -> Unit, onPick: (String?) -> Unit
             verticalArrangement = Arrangement.spacedBy(10.dp),
             maxItemsInEachRow = 6,
         ) {
-            brands.filter { query.isEmpty() || query in it.name.lowercase() }.take(48).forEach { brand ->
+            brands.filter { brand -> query.isEmpty() || query in brand.name.lowercase() || brand.otherNames.any { query in it.lowercase() } }.take(48).forEach { brand ->
                 com.wasimaster.wmpass.ui.parts.SiteTile(
                     brand.name,
                     null,

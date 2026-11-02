@@ -69,7 +69,7 @@ fun CodesTab() {
         }
     }
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val list = rows
+    val list = rows?.let { all -> if (shell.prefs.codeSort.value == "name") all.sortedBy { it.otp.issuer.ifEmpty { it.title }.lowercase() } else all }
     LazyColumn(
         state = rememberLazyListState(),
         modifier = Modifier.fillMaxSize(),
@@ -120,6 +120,16 @@ private fun CodeCard(row: OtpRow, modifier: Modifier = Modifier) {
     val ink = remember { InkState(scope) }
     var hotp by remember { mutableStateOf<String?>(null) }
     val code = row.code ?: hotp
+    val prefs = shell.prefs
+    // Hidden codes show for a short while after a tap, then go again.
+    var shownAt by remember { mutableStateOf(0L) }
+    val hidden = prefs.codeHidden.value && shownAt == 0L
+    LaunchedEffect(shownAt) {
+        if (shownAt != 0L) {
+            delay(15_000)
+            shownAt = 0L
+        }
+    }
     Row(
         modifier
             .fillMaxWidth()
@@ -128,6 +138,7 @@ private fun CodeCard(row: OtpRow, modifier: Modifier = Modifier) {
             .tapAt(onLongPress = { shell.open(row.id) }) { at ->
                 if (code != null) {
                     ink.splash(at)
+                    shownAt = System.currentTimeMillis()
                     shell.copySecret("Code") { Pass.code(row.id) }
                 }
             }
@@ -150,7 +161,9 @@ private fun CodeCard(row: OtpRow, modifier: Modifier = Modifier) {
                 Text(account, color = colors.textMid, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Spacer(Modifier.height(4.dp))
-            if (code != null) {
+            if (code != null && hidden) {
+                Text("••• •••", color = colors.textLow, style = PassType.code)
+            } else if (code != null) {
                 RollingCode(code)
             } else {
                 QuietButton("Show the next code", height = 40.dp, tint = colors.primary) {
@@ -160,11 +173,11 @@ private fun CodeCard(row: OtpRow, modifier: Modifier = Modifier) {
                     }
                 }
             }
-            AnimatedVisibility(row.nextCode != null) {
+            AnimatedVisibility(row.nextCode != null && prefs.codeNext.value && !hidden) {
                 Text("Next  ${grouped(row.nextCode.orEmpty())}", color = colors.textMid, style = PassType.secretSmall)
             }
         }
-        if (row.otp.period != null) {
+        if (row.otp.period != null && prefs.codeRing.value) {
             Spacer(Modifier.width(12.dp))
             LifeRing(row.otp.period!!, size = if (colors.flat) 26.dp else 34.dp, stroke = if (colors.flat) 3.dp else 3.5.dp)
         }

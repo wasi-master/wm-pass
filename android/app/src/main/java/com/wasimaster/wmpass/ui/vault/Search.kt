@@ -453,12 +453,18 @@ fun AddLayer() {
     val colors = palette
     if (colors.flat) {
         if (shell.adding) {
+            var showAll by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+            val chosen = shell.prefs.addKinds.filter { it in KindOrder }
+            val others = KindOrder.filter { it !in chosen }
             PassSheet({ shell.adding = false }, "Add") {
-                KindOrder.forEach { kind ->
+                (if (showAll) chosen + others else chosen).forEach { kind ->
                     SheetRow(kindIcon(kind), kindName(kind)) {
                         shell.adding = false
                         shell.nav.navigate("new/$kind")
                     }
+                }
+                if (others.isNotEmpty() && !showAll) {
+                    SheetRow(PassIcons.ExpandMore, "More types") { showAll = true }
                 }
             }
         }
@@ -488,7 +494,7 @@ fun AddLayer() {
                 .padding(14.dp),
         ) {
             Text("Add to the vault", color = colors.text, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 8.dp, top = 4.dp, bottom = 12.dp))
-            KindOrder.chunked(4).forEachIndexed { rowIndex, row ->
+            (shell.prefs.addKinds.filter { it in KindOrder }.ifEmpty { KindOrder }).chunked(4).forEachIndexed { rowIndex, row ->
                 Row(Modifier.fillMaxWidth()) {
                     row.forEachIndexed { index, kind ->
                         val source = remember { MutableInteractionSource() }

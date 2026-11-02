@@ -129,7 +129,7 @@ fun SyncScreen() {
     var fileSyncing by remember { mutableStateOf(false) }
     var addingPlace by remember { mutableStateOf(false) }
     var fileMessage by remember { mutableStateOf<String?>(null) }
-    WmScreen("Sync and accounts", onBack = { shell.nav.popBackStack() }) {
+    WmScreen("Sync and accounts", route = "settings/sync", onBack = { shell.nav.popBackStack() }) {
         Column(Modifier.padding(horizontal = 16.dp)) {
             account?.let { id ->
                 val current = accounts.firstOrNull { it.id == id }
@@ -579,7 +579,7 @@ fun ReceiveScreen() {
             offer = reply.obj["text"]!!.jsonPrimitive.content
         }.onFailure { problem = it.message }
     }
-    WmScreen("Receive an item", onBack = { shell.nav.popBackStack() }) {
+    WmScreen("Receive an item", route = "settings/receive", onBack = { shell.nav.popBackStack() }) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Spacer(Modifier.height(10.dp))
             offer?.let { QrCode(it, Modifier.padding(horizontal = 12.dp)) }

@@ -98,6 +98,17 @@ fun NavGraphBuilder.settingsGraph() {
     composable("settings/receive") { ReceiveScreen() }
     composable("settings/shortcuts") { ShortcutsScreen() }
     composable("settings/themes") { ThemesScreen() }
+    composable("settings/icons") { IconsScreen() }
+    composable("settings/list") { ListSettingsScreen() }
+    composable("settings/navigation") { NavigationSettingsScreen() }
+    composable("settings/add") { AddMenuScreen() }
+    composable("settings/editor") { EditorSettingsScreen() }
+    composable("settings/entry") { EntrySettingsScreen() }
+    composable("settings/codes") { CodesSettingsScreen() }
+    composable("settings/generator") { GeneratorSettingsScreen() }
+    composable("settings/health") { HealthSettingsScreen() }
+    composable("settings/file") { SettingsFileScreen() }
+    composable("settings/search") { SettingsSearchScreen() }
     composable("settings/theme_edit/{id}") { entry -> ThemeEditor(entry.arguments?.getString("id").orEmpty()) }
     composable("scan") { com.wasimaster.wmpass.ui.vault.ScanScreen() }
 }
@@ -112,7 +123,13 @@ private fun back(): () -> Unit {
 fun SettingsRoot() {
     val shell = LocalShell.current
     val nav = shell.nav
-    WmScreen("Settings", onBack = back()) {
+    WmScreen(
+        "Settings",
+        onBack = back(),
+        actions = {
+            androidx.compose.material3.IconButton(onClick = { nav.navigate("settings/search") }) { Icon(PassIcons.Search, "Search settings") }
+        },
+    ) {
         SettingsGroup("Protection") {
             item {
                 NavRow("Security", "Auto-lock, biometrics, duress and emergency access", route = "settings/security", icon = PassIcons.Shield) { nav.navigate("settings/security") }
@@ -160,9 +177,44 @@ fun SettingsRoot() {
                 NavRow("Compare two passwords", route = "settings/compare", icon = PassIcons.Balance) { nav.navigate("settings/compare") }
             }
         }
+        SettingsGroup("Customise") {
+            item {
+                NavRow("Appearance", "Style, theme, dark mode and motion", route = "settings/look", icon = PassIcons.Palette) { nav.navigate("settings/look") }
+            }
+            item {
+                NavRow("Icons", "App icons, site icons and these ones", route = "settings/icons", icon = PassIcons.Image) { nav.navigate("settings/icons") }
+            }
+            item {
+                NavRow("Vault list", "Layout, sorting, rows and gestures", route = "settings/list", icon = PassIcons.ViewAgenda) { nav.navigate("settings/list") }
+            }
+            item {
+                NavRow("Navigation", "Pages, labels and buttons", route = "settings/navigation", icon = PassIcons.Dashboard) { nav.navigate("settings/navigation") }
+            }
+            item {
+                NavRow("Add menu", "Which types are offered, and in what order", route = "settings/add", icon = PassIcons.Add) { nav.navigate("settings/add") }
+            }
+            item {
+                NavRow("Editor", "What starts open or folded", route = "settings/editor", icon = PassIcons.Edit) { nav.navigate("settings/editor") }
+            }
+            item {
+                NavRow("Item page", "Buttons, fields and history", route = "settings/entry", icon = PassIcons.Description) { nav.navigate("settings/entry") }
+            }
+            item {
+                NavRow("Codes", "Size, grouping and privacy", route = "settings/codes", icon = PassIcons.Pin) { nav.navigate("settings/codes") }
+            }
+            item {
+                NavRow("Generator", "What a new password looks like", route = "settings/generator", icon = PassIcons.Casino) { nav.navigate("settings/generator") }
+            }
+            item {
+                NavRow("Health checks", "Which problems are listed", route = "settings/health", icon = PassIcons.EcgHeart) { nav.navigate("settings/health") }
+            }
+            item {
+                NavRow("Keyboard shortcuts", "For a keyboard plugged in or paired", route = "settings/shortcuts", icon = PassIcons.Keyboard) { nav.navigate("settings/shortcuts") }
+            }
+        }
         SettingsGroup("This app") {
             item {
-                NavRow("Appearance", "Style, theme, layout and navigation", route = "settings/look", icon = PassIcons.Palette) { nav.navigate("settings/look") }
+                NavRow("Settings file", "Export, import or reset", route = "settings/file", icon = PassIcons.ImportExport) { nav.navigate("settings/file") }
             }
             item {
                 NavRow("About", route = "settings/about", icon = PassIcons.Info) { nav.navigate("settings/about") }
@@ -217,7 +269,7 @@ private fun SecurityScreen() {
             sheet = "keyfile"
         }
     }
-    WmScreen("Security", onBack = back()) {
+    WmScreen("Security", route = "settings/security", onBack = back()) {
         SettingsGroup("Locking") {
             item {
                 ChoiceSetting(
@@ -282,6 +334,9 @@ private fun SecurityScreen() {
                     icon = PassIcons.ContentPaste,
                 ) { prefs.updateClipboard(it) }
             }
+            item {
+                ToggleSetting("Lock when the screen goes off", null, prefs.lockScreenOff.value, icon = PassIcons.ScreenLockPortrait) { prefs.lockScreenOff.set(it) }
+            }
         }
         SettingsGroup("Master password") {
             item {
@@ -319,6 +374,12 @@ private fun SecurityScreen() {
             }
         }
         SettingsGroup("Autofill and panic") {
+            item {
+                ToggleSetting("Inline suggestions", "Show saved logins in the keyboard's suggestion row.", prefs.autofillInline.value, icon = PassIcons.Keyboard) { prefs.autofillInline.set(it) }
+            }
+            item {
+                ToggleSetting("Offer to save passwords", "Ask after you sign in with a new or changed password.", prefs.autofillSave.value, icon = PassIcons.Key) { prefs.autofillSave.set(it) }
+            }
             item {
                 NavRow("Autofill service", "Set WM Pass as this device's autofill service", icon = PassIcons.TextFields) {
                     runCatching {
@@ -587,7 +648,7 @@ internal fun LookScreen() {
     val shell = LocalShell.current
     val prefs = shell.prefs
     val colors = palette
-    WmScreen("Appearance", onBack = back()) {
+    WmScreen("Appearance", route = "settings/look", onBack = back()) {
         SettingsGroup("Interface") {
             item {
                 ChoiceSetting(
@@ -608,9 +669,6 @@ internal fun LookScreen() {
                     selected = prefs.look,
                     icon = PassIcons.Contrast,
                 ) { prefs.updateLook(it) }
-            }
-            item {
-                ToggleSetting("Coloured site icons", "Show known sites in their own colour.", prefs.colouredIcons, icon = PassIcons.Image) { prefs.updateColouredIcons(it) }
             }
             if (prefs.uiStyle == "glass") item {
                 FlowRow(
@@ -634,69 +692,12 @@ internal fun LookScreen() {
                 }
             }
         }
-        SettingsGroup("List") {
+        SettingsGroup("Motion and touch") {
             item {
-                ChoiceSetting(
-                    "Layout",
-                    options = listOf("list" to "List", "compact" to "Compact", "grid" to "Grid"),
-                    selected = prefs.layout,
-                    icon = PassIcons.ViewAgenda,
-                ) { prefs.updateLayout(it) }
+                ToggleSetting("Animations", "Turn off for shorter transitions.", prefs.richMotion.value, icon = PassIcons.Animation) { prefs.updateRichMotion(it) }
             }
             item {
-                ChoiceSetting(
-                    "Grouping",
-                    options = listOf("smart" to "By site", "folder" to "By folder"),
-                    selected = prefs.grouping,
-                    icon = PassIcons.Sort,
-                ) { prefs.updateGrouping(it) }
-            }
-        }
-        SettingsGroup("Keyboard") {
-            item {
-                NavRow("Keyboard shortcuts", "For a keyboard plugged in or paired", icon = PassIcons.Keyboard) { shell.nav.navigate("settings/shortcuts") }
-            }
-        }
-        SettingsGroup("Layout and motion") {
-            item {
-                ToggleSetting("Left-handed", "Move search and add to the other side. Applies to Glass.", prefs.leftHanded, icon = PassIcons.TouchApp) { prefs.updateLeftHanded(it) }
-            }
-            item {
-                ToggleSetting("Animations", "Turn off for shorter transitions.", prefs.richMotion, icon = PassIcons.Animation) { prefs.updateRichMotion(it) }
-            }
-        }
-        SettingsGroup("Navigation bar") {
-            val names = AllTabs.associate { it.id to it.label }
-            item {
-                ReorderableColumn(
-                    items = prefs.tabs,
-                    label = { names[it] ?: it },
-                    onReorder = { prefs.updateTabs(it) },
-                    onDelete = { tab -> if (tab != "vault") prefs.updateTabs(prefs.tabs - tab) },
-                )
-            }
-            AllTabs.filter { it.id !in prefs.tabs }.forEach { tab ->
-                item {
-                    NavRow("Add ${tab.label}", icon = tab.icon) { prefs.updateTabs(prefs.tabs + tab.id) }
-                }
-            }
-        }
-        SettingsGroup("Above the list") {
-            val all = listOf("favourites" to "Favourites", "recent" to "Recently changed", "health" to "Health", "codes" to "Codes")
-            val names = all.toMap()
-            item {
-                ReorderableColumn(
-                    items = prefs.widgets,
-                    label = { names[it] ?: it },
-                    onReorder = { prefs.updateWidgets(it) },
-                    onDelete = { prefs.updateWidgets(prefs.widgets - it) },
-                    keepLast = false,
-                )
-            }
-            all.filter { it.first !in prefs.widgets }.forEach { (id, name) ->
-                item {
-                    NavRow("Add $name", icon = PassIcons.Dashboard) { prefs.updateWidgets(prefs.widgets + id) }
-                }
+                ToggleSetting("Vibration", "A small tap when something happens.", prefs.haptics.value, icon = PassIcons.Vibration) { prefs.haptics.set(it) }
             }
         }
     }
@@ -732,11 +733,23 @@ private fun TrashScreen() {
         items = runCatching { Pass.trashed() }.getOrDefault(emptyList())
         days = runCatching { Pass.info().trashDays }.getOrDefault(30)
     }
-    WmScreen("Trash", onBack = back()) {
+    WmScreen("Trash", route = "settings/trash", onBack = back()) {
+        SettingsGroup {
+            item {
+                ChoiceSetting(
+                    "Keep deleted items for",
+                    options = (listOf(7, 30, 90, 365) + days).distinct().sorted().map { it to "$it days" },
+                    selected = days,
+                    icon = PassIcons.Timer,
+                ) { value ->
+                    days = value
+                    shell.launch { Pass.change("vault.prefs") { put("trash_days", value) } }
+                }
+            }
+        }
         if (items.isEmpty()) {
             Text("Nothing in the trash.", color = colors.textMid, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(24.dp))
         } else {
-            Text("Items here are deleted for good after $days days.", color = colors.textMid, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
             SettingsGroup {
                 items.forEach { entry ->
                     item {
@@ -773,7 +786,7 @@ private fun ShelfScreen() {
         open = runCatching { Pass.info().shelfOpen }.getOrDefault(false)
         if (open) items = runCatching { Pass.search("hidden") }.getOrDefault(emptyList())
     }
-    WmScreen("Hidden shelf", onBack = back()) {
+    WmScreen("Hidden shelf", route = "settings/shelf", onBack = back()) {
         if (!open) {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                 Text(
@@ -836,7 +849,7 @@ private fun FoldersScreen() {
     val entries by Pass.entries.collectAsStateWithLifecycle()
     var editing by remember { mutableStateOf<String?>(null) }
     var adding by remember { mutableStateOf(false) }
-    WmScreen("Folders", onBack = back()) {
+    WmScreen("Folders", route = "settings/folders", onBack = back()) {
         SettingsGroup {
             folders.forEach { folder ->
                 val count = entries.count { it.folder == folder.id }
@@ -935,7 +948,7 @@ private fun ImportScreen() {
             }
         }
     }
-    WmScreen("Import", onBack = back()) {
+    WmScreen("Import", route = "settings/import", onBack = back()) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val shown = preview
             when {
@@ -1020,7 +1033,7 @@ private fun ExportScreen() {
             }
         }
     }
-    WmScreen("Export", onBack = back()) {
+    WmScreen("Export", route = "settings/export", onBack = back()) {
         SettingsGroup("Stays encrypted") {
             item {
                 NavRow("WM Pass vault", "The vault file itself, sealed. Opens with your password.", icon = PassIcons.Encrypted) {
@@ -1090,7 +1103,7 @@ private fun CompareScreen() {
             b.fill(0)
         }
     }
-    WmScreen("Compare two passwords", onBack = back()) {
+    WmScreen("Compare two passwords", route = "settings/compare", onBack = back()) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             PasswordPill(first, "First password")
             result?.let { Side(it.first, it.winner == "first") }
@@ -1124,7 +1137,7 @@ private fun Side(view: com.wasimaster.wmpass.core.StrengthView, winner: Boolean)
 @Composable
 private fun AboutScreen() {
     val colors = palette
-    WmScreen("About", onBack = back()) {
+    WmScreen("About", route = "settings/about", onBack = back()) {
         Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("WM Pass ${com.wasimaster.wmpass.BuildConfig.VERSION_NAME}", color = colors.text, style = MaterialTheme.typography.titleLarge)
             Text("Part of the WM Suite. Free and open source under the MIT licence. It sends nothing anywhere unless you turn on a feature that has to.", color = colors.textMid, style = MaterialTheme.typography.bodyLarge)

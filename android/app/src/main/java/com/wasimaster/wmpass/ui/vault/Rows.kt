@@ -123,6 +123,8 @@ fun SwipeRow(
     enabled: Boolean = true,
     onCopy: (() -> Unit)? = null,
     onTrash: (() -> Unit)? = null,
+    rightIcon: ImageVector = PassIcons.ContentCopy,
+    leftIcon: ImageVector = PassIcons.Delete,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val colors = palette
@@ -136,7 +138,7 @@ fun SwipeRow(
         val value = offset.value
         if (value != 0f) {
             val copying = value > 0
-            val tint = if (copying) colors.primary else colors.danger
+            val tint = if ((if (copying) rightIcon else leftIcon) == PassIcons.Delete) colors.danger else colors.primary
             val lit by animateFloatAsState(if (armed) 1f else 0.45f, Springs.snap(), label = "armed")
             Box(
                 Modifier
@@ -146,8 +148,8 @@ fun SwipeRow(
             ) {
                 val pop by animateFloatAsState(if (armed) 1.25f else 1f, Springs.lively(), label = "pop")
                 Icon(
-                    if (copying) PassIcons.ContentCopy else PassIcons.Delete,
-                    if (copying) "Copy password" else "Move to trash",
+                    if (copying) rightIcon else leftIcon,
+                    null,
                     tint = tint,
                     modifier = Modifier
                         .padding(horizontal = 28.dp)
@@ -173,10 +175,13 @@ fun SwipeRow(
                                     val forward = offset.value > 0
                                     armed = false
                                     scope.launch {
-                                        if (fired && !forward) {
+                                        if (fired && !forward && leftIcon == PassIcons.Delete) {
                                             offset.animateTo(-size.width.toFloat(), Springs.glide())
                                             onTrash?.invoke()
                                             offset.snapTo(0f)
+                                        } else if (fired && !forward) {
+                                            onTrash?.invoke()
+                                            offset.animateTo(0f, Springs.lively())
                                         } else {
                                             if (fired) onCopy?.invoke()
                                             offset.animateTo(0f, Springs.lively())
@@ -214,6 +219,12 @@ fun SwipeRow(
     }
 }
 
+private fun swipeIcon(action: String): ImageVector = when (action) {
+    "trash" -> PassIcons.Delete
+    "favourite" -> PassIcons.Star
+    else -> PassIcons.ContentCopy
+}
+
 /** An entry's row. Tap opens it, the copy button copies the password, holding selects. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -232,12 +243,17 @@ fun EntryRow(
     val shell = LocalShell.current
     val source = remember { MutableInteractionSource() }
     val tileSize = if (compact) 36.dp else if (colors.flat) 40.dp else 46.dp
+    val prefs = shell.prefs
+    val right = prefs.swipeRight.value
+    val left = prefs.swipeLeft.value
     SwipeRow(
         modifier,
         shape,
         enabled = !selecting,
-        onCopy = if (entry.hasPassword) ({ shell.copyPassword(entry.id) }) else null,
-        onTrash = { shell.trash(entry.id, entry.title) },
+        onCopy = if (shell.canDo(right, entry)) ({ shell.perform(right, entry) }) else null,
+        onTrash = if (shell.canDo(left, entry)) ({ shell.perform(left, entry) }) else null,
+        rightIcon = swipeIcon(right),
+        leftIcon = swipeIcon(left),
     ) {
         Row(
             Modifier
@@ -252,8 +268,10 @@ fun EntryRow(
                 ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            FlipTile(entry, selected, tileSize)
-            Spacer(Modifier.width(14.dp))
+            if (prefs.rowIcons.value || selected) {
+                FlipTile(entry, selected, tileSize)
+                Spacer(Modifier.width(14.dp))
+            }
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -264,9 +282,9 @@ fun EntryRow(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false).sharedEntry("title-${entry.id}"),
                     )
-                    Badges(entry)
+                    if (prefs.rowBadges.value) Badges(entry)
                 }
-                if (!compact && entry.subtitle.isNotEmpty()) {
+                if (!compact && prefs.rowSubtitle.value && entry.subtitle.isNotEmpty()) {
                     Text(
                         entry.subtitle,
                         color = colors.textMid,
@@ -276,9 +294,16 @@ fun EntryRow(
                     )
                 }
             }
-            if (showCopy && entry.hasPassword && !selecting) {
-                Spacer(Modifier.width(8.dp))
-                RowIconButton(PassIcons.ContentCopy, "Copy password for ${entry.title}") { shell.copyPassword(entry.id) }
+            val button = prefs.rowButton.value
+            if (showCopy && !selecting) {
+                if (prefs.tapAction.value != "open") {
+                    // A tap copies, so this is now the way to the entry's page.
+                    Spacer(Modifier.width(8.dp))
+                    RowIconButton(PassIcons.ChevronRight, "Open ${entry.title}") { shell.open(entry.id) }
+                } else if (shell.canDo(button, entry)) {
+                    Spacer(Modifier.width(8.dp))
+                    RowIconButton(PassIcons.ContentCopy, "Copy for ${entry.title}") { shell.perform(button, entry) }
+                }
             }
         }
     }

@@ -99,7 +99,22 @@ private sealed interface Item {
 }
 
 /** Pinned first, then the rest by name, with several logins on one site folded together. */
-private fun arrange(entries: List<Summary>, grouping: String, open: Set<String>, flat: Boolean): List<Item> {
+private fun arrange(
+    unsorted: List<Summary>,
+    grouping: String,
+    open: Set<String>,
+    flat: Boolean,
+    sort: String,
+    pinnedFirst: Boolean,
+    headings: Boolean,
+    foldSites: Boolean,
+): List<Item> {
+    val entries = when (sort) {
+        "changed" -> unsorted.sortedByDescending { it.modifiedMs }
+        "kind" -> unsorted.sortedWith(compareBy({ com.wasimaster.wmpass.ui.parts.kindName(it.kind) }, { it.title.lowercase() }))
+        "site" -> unsorted.sortedWith(compareBy({ it.site.orEmpty().ifEmpty { "~" } }, { it.title.lowercase() }))
+        else -> unsorted
+    }
     fun card(run: List<Any>, into: MutableList<Item>) {
         run.forEachIndexed { index, value ->
             val first = index == 0
@@ -115,21 +130,21 @@ private fun arrange(entries: List<Summary>, grouping: String, open: Set<String>,
         }
     }
     val out = mutableListOf<Item>()
-    val (pinned, rest) = entries.partition { it.pinned }
+    val (pinned, rest) = if (pinnedFirst) entries.partition { it.pinned } else emptyList<Summary>() to entries
     if (pinned.isNotEmpty()) {
-        out += Item.Heading("Pinned")
+        if (headings) out += Item.Heading("Pinned")
         card(pinned, out)
     }
     if (rest.isEmpty()) return out
     if (grouping == "folder") {
         val names = Pass.folders.value.associate { it.id to it.name }
         rest.groupBy { it.folder?.let(names::get) ?: "No folder" }.toSortedMap().forEach { (name, group) ->
-            out += Item.Heading(name)
+            if (headings) out += Item.Heading(name)
             card(group, out)
         }
         return out
     }
-    val bySite = rest.filter { it.kind == "login" && it.site != null }.groupBy { it.site!! }
+    val bySite = if (foldSites) rest.filter { it.kind == "login" && it.site != null }.groupBy { it.site!! } else emptyMap()
     val row = mutableListOf<Any>()
     val done = mutableSetOf<String>()
     for (entry in rest) {
@@ -145,7 +160,7 @@ private fun arrange(entries: List<Summary>, grouping: String, open: Set<String>,
             row += entry
         }
     }
-    if (pinned.isNotEmpty()) out += if (flat) Item.Heading("All items") else Item.Gap
+    if (pinned.isNotEmpty()) out += if (flat && headings) Item.Heading("All items") else Item.Gap
     card(row, out)
     return out
 }
@@ -167,7 +182,9 @@ fun VaultTab() {
             else -> entries.filter { it.kind == filter }
         }
     }
-    val items = remember(shown, prefs.grouping, openSites.toList(), colors.flat) { arrange(shown, prefs.grouping, openSites.toSet(), colors.flat) }
+    val items = remember(shown, prefs.grouping, openSites.toList(), colors.flat, prefs.sort.value, prefs.pinnedOnTop.value, prefs.listHeadings.value, prefs.groupSites.value) {
+        arrange(shown, prefs.grouping, openSites.toSet(), colors.flat, prefs.sort.value, prefs.pinnedOnTop.value, prefs.listHeadings.value, prefs.groupSites.value)
+    }
     val listState = rememberLazyListState()
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val scrolled by remember {
@@ -218,8 +235,10 @@ fun VaultTab() {
             item("widgets") {
                 Dashboard(entries)
             }
-            item("filters") {
-                Filters(entries, filter) { filter = it }
+            if (prefs.filterChips.value) {
+                item("filters") {
+                    Filters(entries, filter) { filter = it }
+                }
             }
             if (entries.isEmpty()) {
                 item("empty") { EmptyVault() }
@@ -258,7 +277,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.itemsIndexedStable(
                             shell.selecting,
                             selected,
                             onClick = {
-                                if (shell.selecting) shell.toggleSelected(item.entry.id) else shell.open(item.entry.id)
+                                if (shell.selecting) shell.toggleSelected(item.entry.id) else shell.tapped(item.entry)
                             },
                             onLongClick = { shell.toggleSelected(item.entry.id) },
                         )
@@ -293,7 +312,7 @@ private fun EntryGrid(entries: List<Summary>, arrived: Boolean) {
                         entry.id in shell.selection,
                         shell.selecting,
                         Modifier.weight(1f).arrive(rowIndex * 2 + index, !arrived),
-                        onClick = { if (shell.selecting) shell.toggleSelected(entry.id) else shell.open(entry.id) },
+                        onClick = { if (shell.selecting) shell.toggleSelected(entry.id) else shell.tapped(entry) },
                         onLongClick = { shell.toggleSelected(entry.id) },
                     )
                 }

@@ -61,6 +61,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -170,6 +171,17 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
     var favourite by remember { mutableStateOf(false) }
     var tags by remember { mutableStateOf(emptyList<String>()) }
     var ready by remember { mutableStateOf(false) }
+    LaunchedEffect(ready) {
+        if (ready && entryId == null && shell.prefs.editorGenerate.value) {
+            val field = fields.firstOrNull { it.spec.input == "password" }
+            if (field != null && field.text.text.isEmpty()) {
+                val made = GenState.fromPrefs(shell.prefs)
+                made.roll()
+                field.text.setTextAndPlaceCursorAtEnd(made.value)
+                field.loaded = true
+            }
+        }
+    }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var sheet by remember { mutableStateOf<String?>(null) }
@@ -424,11 +436,8 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                 }
                 }
                 if (ready) {
-                    if (fields.isNotEmpty()) {
-                        Spacer(Modifier.height(if (colors.flat) 4.dp else 18.dp))
-                        GroupCard {
-                            fields.forEachIndexed { index, field ->
-                                if (index > 0) Hairline()
+                    val mainKeys = MainFields[kind].takeIf { shell.prefs.editorFoldDetails.value }
+                    val fieldEditor: @Composable (EditField) -> Unit = { field ->
                                 FieldEditor(
                                     entryId,
                                     field,
@@ -449,12 +458,30 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                                         null
                                     },
                                 ) { generating = field }
+                    }
+                    val mainRows = fields.filter { mainKeys == null || it.spec.key in mainKeys }
+                    val detailRows = fields.filter { mainKeys != null && it.spec.key !in mainKeys }
+                    if (mainRows.isNotEmpty()) {
+                        Spacer(Modifier.height(if (colors.flat) 4.dp else 18.dp))
+                        GroupCard {
+                            mainRows.forEachIndexed { index, field ->
+                                if (index > 0) Hairline()
+                                fieldEditor(field)
+                            }
+                        }
+                    }
+                    if (colors.flat) Spacer(Modifier.height(8.dp))
+                    if (detailRows.isNotEmpty()) {
+                        EditorFold("details", "More details", detailRows.joinToString(", ") { it.spec.label }, detailRows.any { it.hasContent }) {
+                            detailRows.forEachIndexed { index, field ->
+                                if (index > 0) Hairline()
+                                fieldEditor(field)
                             }
                         }
                     }
                     if (kind == "login") {
-                        if (colors.flat) Spacer(Modifier.height(8.dp)) else Eyebrow("Websites")
-                        GroupCard {
+                        val firstWebsite = sites.firstOrNull()?.first?.text?.toString().orEmpty()
+                        EditorFold("sites", "Websites", firstWebsite.ifEmpty { null }, firstWebsite.isNotEmpty() || sites.size > 1) {
                             sites.forEachIndexed { index, (state, _) ->
                                 if (index > 0) Hairline()
                                 if (colors.flat) {
@@ -496,9 +523,8 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                         }
                     }
                     if (kind == "login" || kind == "otp") {
-                        if (colors.flat) Spacer(Modifier.height(8.dp)) else Eyebrow("One-time code")
-                        GroupCard {
-                            AnimatedVisibility(otpOpen) {
+                        EditorFold("otp", "One-time code", if (detail?.otp != null) "Saved" else null, kind == "otp" || otpOpen) {
+                            Box {
                                 if (colors.flat) {
                                     androidx.compose.material3.OutlinedTextField(
                                         state = otpSeed,
@@ -544,13 +570,12 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                                     }
                                 }
                             }
-                            if (!otpOpen) AddLine("Add a one-time code") { otpOpen = true }
                         }
                     }
                     if (kind != "note") {
-                        if (colors.flat) Spacer(Modifier.height(8.dp)) else Eyebrow("Notes")
-                        GroupCard {
-                            if (notesLoaded && colors.flat) {
+                        EditorFold("notes", "Notes", if (detail?.hasNotes == true) "Saved" else null, detail?.hasNotes == true || notes.text.isNotEmpty()) {
+                            if ((notesLoaded || detail?.hasNotes != true) && colors.flat) {
+                                if (!notesLoaded) notesLoaded = true
                                 androidx.compose.material3.OutlinedTextField(
                                     state = notes,
                                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
@@ -584,8 +609,8 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                             }
                         }
                     }
-                    if (colors.flat) Spacer(Modifier.height(8.dp)) else Eyebrow("More fields")
-                    GroupCard {
+                    val customCount = customs.count { !it.remove }
+                    EditorFold("custom", "More fields", if (customCount == 0) null else "$customCount", customCount > 0) {
                         customs.forEachIndexed { index, custom ->
                             if (!custom.remove) {
                                 if (index > 0) Hairline()
@@ -598,8 +623,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                         AddLine("Add a hidden field", PassIcons.VisibilityOff) { customs.add(EditCustom(null, true)) }
                     }
                     if (kind == "login") {
-                        Eyebrow("Security questions")
-                        GroupCard {
+                        EditorFold("questions", "Security questions", if (questions.isEmpty()) null else "${questions.size}", questions.isNotEmpty()) {
                             questions.forEachIndexed { index, q ->
                                 if (index > 0) Hairline()
                                 Column(Modifier.padding(horizontal = 18.dp, vertical = 12.dp)) {
@@ -612,8 +636,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                             AddLine("Add a question") { questions.add(EditQuestion(null, "")) }
                         }
                     }
-                    Eyebrow("Organise")
-                    GroupCard {
+                    EditorFold("organise", "Organise", "Folder, tags, icon, colour and favourite", false) {
                         val folders by Pass.folders.collectAsStateWithLifecycle()
                         OptionLine(PassIcons.Folder, "Folder", folders.firstOrNull { it.id == folder }?.name ?: "None") { sheet = "folder" }
                         Hairline(inset = 58.dp)
@@ -708,6 +731,71 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
     if (askDiscard) {
         ConfirmSheet("Discard changes?", "Your edits to this item will be lost.", "Discard", onDismiss = { askDiscard = false }) {
             shell.nav.popBackStack()
+        }
+    }
+}
+
+/** Each kind's everyday fields. The rest wait under "More details". */
+private val MainFields = mapOf(
+    "card" to setOf("holder", "number", "expiry", "cvv"),
+    "identity" to setOf("full_name", "email", "phone"),
+    "ssh" to setOf("private_key", "public_key"),
+    "api" to setOf("provider", "key"),
+    "database" to setOf("engine", "host", "port", "name", "user", "password"),
+    "licence" to setOf("product", "key"),
+    "recovery" to setOf("form", "phrase"),
+    "wifi" to setOf("ssid", "password"),
+)
+
+private val EditField.hasContent: Boolean
+    get() = !loaded || text.text.isNotEmpty() || flag || millis != null
+
+/**
+ * A part of the form that stays out of the way until it is wanted. It starts open if it holds
+ * something, or if the owner keeps it open. Otherwise its line says what is inside.
+ */
+@Composable
+private fun EditorFold(key: String, title: String, summary: String?, hasContent: Boolean, content: @Composable () -> Unit) {
+    val colors = palette
+    val shell = LocalShell.current
+    val prefs = shell.prefs
+    var open by androidx.compose.runtime.saveable.rememberSaveable(key) { mutableStateOf(hasContent || key in prefs.editorOpen) }
+    val turn by androidx.compose.animation.core.animateFloatAsState(if (open) 180f else 0f, Springs.glide(), label = "fold")
+    if (!colors.flat) Spacer(Modifier.height(10.dp))
+    GroupCard {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable {
+                    shell.haptics.tick()
+                    open = !open
+                    if (prefs.editorRemember.value && !hasContent) prefs.setEditorOpen(key, open)
+                }
+                .padding(start = 16.dp, end = 12.dp, top = 14.dp, bottom = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(title, color = colors.text, style = MaterialTheme.typography.bodyLarge)
+                if (!open && summary != null) {
+                    Text(summary, color = colors.textMid, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                }
+            }
+            Icon(
+                PassIcons.ExpandMore,
+                if (open) "Fold $title" else "Open $title",
+                tint = colors.textMid,
+                modifier = Modifier.graphicsLayer { rotationZ = turn },
+            )
+        }
+        AnimatedVisibility(
+            open,
+            enter = androidx.compose.animation.expandVertically(Springs.glide()) + androidx.compose.animation.fadeIn(),
+            exit = androidx.compose.animation.shrinkVertically(Springs.glide()) + androidx.compose.animation.fadeOut(),
+        ) {
+            Column {
+                content()
+                Spacer(Modifier.height(4.dp))
+            }
         }
     }
 }
@@ -1092,7 +1180,8 @@ private fun CustomEditor(entryId: String?, custom: EditCustom) {
 /** The generator, opened from the field it is for. */
 @Composable
 private fun GeneratorSheet(onDismiss: () -> Unit, onUse: (String) -> Unit) {
-    val state = remember { GenState() }
+    val shellPrefs = LocalShell.current.prefs
+    val state = remember { GenState.fromPrefs(shellPrefs) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { state.roll() }
     PassSheet(onDismiss, "Generate password") {

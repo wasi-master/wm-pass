@@ -160,7 +160,7 @@ class Shots {
                 configure(it)
             }
         }
-        CompositionLocalProvider(LocalShell provides shell) { content() }
+        CompositionLocalProvider(LocalShell provides shell) { com.wasimaster.wmpass.ui.settings.ProvideSettingsKit(prefs) { content() } }
     }
 
     @Test
@@ -304,5 +304,52 @@ class Shots {
     fun arcFlagsAreSpacedOut() {
         val spaced = com.wasimaster.wmpass.ui.parts.spaceArcFlags("M1 2a1 1 0 00-1 2.5.5.5 0 01.5.5l3 4")
         org.junit.Assert.assertEquals("M1 2a1 1 0 0 0 -1 2.5 .5 .5 0 0 1 .5 .5 l3 4", spaced)
+    }
+
+    @Test
+    fun iconsPage() {
+        seed()
+        shot("settings-icons") { WithShell { com.wasimaster.wmpass.ui.settings.IconsScreen() } }
+    }
+
+    @Test
+    fun listPage() {
+        seed()
+        shot("settings-list") { WithShell { com.wasimaster.wmpass.ui.settings.ListSettingsScreen() } }
+    }
+
+    @Test
+    fun uniformIcons() {
+        seed()
+        prefs.siteIconStyle.set("uniform")
+        try {
+            shot("vault-uniform") { WithShell { HomeScreen() } }
+        } finally {
+            prefs.siteIconStyle.reset()
+        }
+    }
+
+    @Test
+    fun settingsAreSharedWithoutProtectionSettings() {
+        val text = prefs.exportText()
+        org.junit.Assert.assertFalse(text.contains("screen_protection"))
+        org.junit.Assert.assertFalse(text.contains("lock_after"))
+        org.junit.Assert.assertTrue(text.contains("icon_style"))
+        val changed = prefs.importText("""{"format":"wmpass-settings","icon_style":"nonsense","layout":"grid","screen_protection":false}""")
+        org.junit.Assert.assertEquals(1, changed)
+        org.junit.Assert.assertEquals("grid", prefs.layout)
+        org.junit.Assert.assertTrue(prefs.screenProtection)
+        prefs.updateLayout("list")
+    }
+
+    @Test
+    fun addListFollowsSettings() {
+        seed()
+        prefs.updateAddKinds(listOf("login", "note", "card"))
+        try {
+            shot("add-short") { WithShell(configure = { it.adding = true }) { HomeScreen() } }
+        } finally {
+            prefs.updateAddKinds(Prefs.DEFAULT_ADD)
+        }
     }
 }

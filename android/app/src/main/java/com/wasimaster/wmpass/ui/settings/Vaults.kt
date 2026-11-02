@@ -138,7 +138,7 @@ fun VaultsScreen() {
             opening = null
         }
     }
-    WmScreen("Nested and shared vaults", onBack = { shell.nav.popBackStack() }) {
+    WmScreen("Nested and shared vaults", route = "settings/vaults", onBack = { shell.nav.popBackStack() }) {
         Column(Modifier.padding(horizontal = 16.dp)) {
             child?.let { name ->
                 Eyebrow("You are inside")

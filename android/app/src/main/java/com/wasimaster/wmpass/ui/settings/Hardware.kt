@@ -65,7 +65,7 @@ fun HardwareScreen() {
     val label = rememberTextFieldState()
     val password = rememberTextFieldState()
     var problem by remember { mutableStateOf<String?>(null) }
-    WmScreen("Hardware key", onBack = { shell.nav.popBackStack() }) {
+    WmScreen("Hardware key", route = "settings/hardware", onBack = { shell.nav.popBackStack() }) {
         AnimatedContent(step, label = "step", transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(140)) }) { current ->
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 when (current) {

@@ -107,6 +107,17 @@ private const val BUFFER = 64
  */
 @Stable
 class GenState {
+    companion object {
+        /** A generator set up the way the owner chose in settings. */
+        fun fromPrefs(prefs: com.wasimaster.wmpass.app.Prefs) = GenState().apply {
+            mode = prefs.genMode.value
+            length = prefs.genLength.value.coerceIn(8, BUFFER)
+            words = prefs.genWords.value
+            symbols = prefs.genSymbols.value
+            noAmbiguous = prefs.genNoAmbiguous.value
+        }
+    }
+
     var mode by mutableStateOf("password")
     var length by mutableIntStateOf(20)
     var lower by mutableStateOf(true)
@@ -583,7 +594,8 @@ fun RollButton(onRoll: () -> Unit, modifier: Modifier = Modifier) {
 fun GeneratorTab() {
     val colors = palette
     val shell = LocalShell.current
-    val state = remember { GenState() }
+    val prefs = LocalShell.current.prefs
+    val state = remember { GenState.fromPrefs(prefs) }
     val scope = rememberCoroutineScope()
     var presets by remember { mutableStateOf<List<PresetView>>(emptyList()) }
     LaunchedEffect(Unit) {

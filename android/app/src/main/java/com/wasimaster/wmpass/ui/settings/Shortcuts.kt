@@ -77,7 +77,7 @@ fun ShortcutsScreen() {
     val prefs = shell.prefs
     var editing by remember { mutableStateOf<String?>(null) }
     var resetting by remember { mutableStateOf(false) }
-    WmScreen("Keyboard shortcuts", onBack = { shell.nav.popBackStack() }) {
+    WmScreen("Keyboard shortcuts", route = "settings/shortcuts", onBack = { shell.nav.popBackStack() }) {
         Column(Modifier.padding(horizontal = 16.dp)) {
             Text(
                 "These work with a keyboard plugged in or paired. Tap one to change it.",

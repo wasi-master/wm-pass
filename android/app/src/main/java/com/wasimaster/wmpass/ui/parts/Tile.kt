@@ -50,36 +50,57 @@ fun oklch(l: Float, c: Float, hueDegrees: Float): Color {
     )
 }
 
+/** How entries' icons are drawn. See Settings, Icons. */
+@androidx.compose.runtime.Immutable
+data class SiteIconLook(val style: String = "brand", val shape: String = "circle")
+
+val LocalSiteIcons = androidx.compose.runtime.staticCompositionLocalOf { SiteIconLook() }
+
 /**
- * The standard look's icon: a flat circle, as in Contacts. A known brand keeps its colour, a
- * label its hue, and everything else sits on the theme's own tone rather than a random one.
+ * The standard look's icon. By default a flat circle, as in Contacts, where a known brand keeps
+ * its colour. A label's hue always wins, because someone chose it for that one entry.
  */
 @Composable
-private fun FlatTile(face: TileFace, label: String?, modifier: Modifier, size: Dp) {
+private fun FlatTile(face: TileFace, name: String, label: String?, modifier: Modifier, size: Dp) {
     val scheme = androidx.compose.material3.MaterialTheme.colorScheme
-    val coloured = com.wasimaster.wmpass.ui.theme.LocalColouredIcons.current
+    val colors = palette
+    val look = LocalSiteIcons.current
     val hue = label?.toFloatOrNull()
     // The two ends sit either side of the brand's own colour, so their middle is close to it.
-    val brandFill = mix(face.from, face.to, 0.5f)
-    val showsBrand = face.brand && coloured && com.wasimaster.wmpass.ui.theme.contrast(brandFill, palette.ground) >= 1.3f
+    val brandColour = mix(face.from, face.to, 0.5f)
+    val bare = look.shape == "none"
+    val glyph = if (look.style == "letters" && face.brand) null else face.glyph
+    val letter = face.letter ?: name.firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString().orEmpty()
+    val brandShown = face.brand && hue == null && look.style != "uniform" && look.style != "letters"
+    val neutral = scheme.surfaceContainerHighest
     val fill = when {
+        bare -> Color.Transparent
         hue != null -> oklch(0.58f, 0.11f, hue)
-        showsBrand -> brandFill
+        brandShown && look.style == "brand" && com.wasimaster.wmpass.ui.theme.contrast(brandColour, colors.ground) >= 1.3f -> brandColour
+        brandShown && look.style == "tinted" -> neutral
         else -> scheme.secondaryContainer
     }
     val ink = when {
-        hue != null -> Color.White
-        showsBrand -> face.glyphTint
+        hue != null -> if (bare) oklch(0.62f, 0.14f, hue) else Color.White
+        brandShown && !bare && fill == brandColour -> face.glyphTint
+        brandShown && com.wasimaster.wmpass.ui.theme.contrast(brandColour, if (bare) colors.ground else neutral) >= 2.2f -> brandColour
+        bare -> scheme.onSurfaceVariant
+        fill == neutral -> scheme.onSurface
         else -> scheme.onSecondaryContainer
     }
-    Box(modifier.size(size).clip(androidx.compose.foundation.shape.CircleShape).background(fill), contentAlignment = Alignment.Center) {
-        if (face.glyph != null) {
-            Icon(face.glyph, null, tint = ink, modifier = Modifier.size(size * 0.52f))
+    val shape = when (look.shape) {
+        "rounded" -> androidx.compose.foundation.shape.RoundedCornerShape(size * 0.28f)
+        "square" -> androidx.compose.foundation.shape.RoundedCornerShape(size * 0.12f)
+        else -> androidx.compose.foundation.shape.CircleShape
+    }
+    Box(modifier.size(size).clip(shape).background(fill), contentAlignment = Alignment.Center) {
+        if (glyph != null) {
+            Icon(glyph, null, tint = ink, modifier = Modifier.size(size * if (bare) 0.72f else 0.52f))
         } else {
             Text(
-                face.letter.orEmpty(),
+                letter,
                 color = ink,
-                style = TextStyle(fontSize = (size.value * 0.42f).sp, fontWeight = FontWeight.Medium),
+                style = TextStyle(fontSize = (size.value * if (bare) 0.56f else 0.42f).sp, fontWeight = FontWeight.Medium),
             )
         }
     }
@@ -128,7 +149,7 @@ class TileFace(val from: Color, val to: Color, val glyph: ImageVector?, val lett
 @Composable
 fun rememberFace(title: String, site: String?, kind: String, label: String? = null, icon: String? = null): TileFace {
     val context = LocalContext.current
-    return remember(title, site, kind, label, icon) {
+    return remember(title, site, kind, label, icon, PassIcons.style) {
         val chosenBrand = icon?.removePrefix("brand:")?.takeIf { icon.startsWith("brand:") }?.let { Brands.bySlug(context, it) }
         val chosenGlyph = icon?.removePrefix("glyph:")?.takeIf { icon.startsWith("glyph:") }?.let { GlyphChoices[it] }
         val brand = chosenBrand ?: if (chosenGlyph == null) Brands.find(context, site, title) else null
@@ -152,8 +173,8 @@ fun rememberFace(title: String, site: String?, kind: String, label: String? = nu
 }
 
 /** Glyphs a person can give an entry instead of its automatic face. */
-val GlyphChoices: Map<String, ImageVector> by lazy {
-    mapOf(
+val GlyphChoices: Map<String, ImageVector>
+    get() = mapOf(
         "key" to PassIcons.Key,
         "shield" to PassIcons.ShieldFilled,
         "lock" to PassIcons.LockFilled,
@@ -179,7 +200,6 @@ val GlyphChoices: Map<String, ImageVector> by lazy {
         "home" to PassIcons.HomeStorage,
         "hub" to PassIcons.Hub,
     )
-}
 
 fun kindIcon(kind: String): ImageVector = when (kind) {
     "login" -> PassIcons.Key
@@ -231,7 +251,7 @@ fun SiteTile(
     val colors = palette
     val face = rememberFace(title, site, kind, label, icon)
     if (colors.flat) {
-        FlatTile(face, label, modifier, size)
+        FlatTile(face, title, label, modifier, size)
         return
     }
     val shape = remember(size) { SquircleShape(size * 0.30f) }

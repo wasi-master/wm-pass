@@ -113,7 +113,12 @@ fun SecretText(value: String?, modifier: Modifier = Modifier, style: TextStyle =
         }
         shown = target
     }
-    Text(colouredSecret(shown, colors), modifier, style = style, maxLines = maxLines)
+    val prefs = com.wasimaster.wmpass.app.Prefs.of(androidx.compose.ui.platform.LocalContext.current)
+    if (prefs.colourSecrets.value) {
+        Text(colouredSecret(shown, colors), modifier, style = style, maxLines = maxLines)
+    } else {
+        Text(shown, modifier, color = colors.text, style = style, maxLines = maxLines)
+    }
 }
 
 /**
@@ -123,10 +128,17 @@ fun SecretText(value: String?, modifier: Modifier = Modifier, style: TextStyle =
 @Composable
 fun RollingCode(code: String, modifier: Modifier = Modifier, style: TextStyle = PassType.code, color: Color = palette.text) {
     val reduce = LocalReduceMotion.current
-    val group = if (code.length % 3 == 0) 3 else code.length / 2
+    val prefs = com.wasimaster.wmpass.app.Prefs.of(androidx.compose.ui.platform.LocalContext.current)
+    val group = if (!prefs.codeGroups.value) 0 else if (code.length % 3 == 0) 3 else code.length / 2
+    val scale = when (prefs.codeSize.value) {
+        "small" -> 0.8f
+        "large" -> 1.25f
+        else -> 1f
+    }
+    val sized = style.copy(fontSize = style.fontSize * scale)
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         code.forEachIndexed { index, digit ->
-            if (index > 0 && group > 0 && index % group == 0) Spacer(Modifier.width(style.fontSize.value.dp * 0.32f))
+            if (index > 0 && group > 0 && index % group == 0) Spacer(Modifier.width(sized.fontSize.value.dp * 0.32f))
             AnimatedContent(
                 targetState = digit,
                 modifier = Modifier.clipToBounds(),
@@ -140,7 +152,7 @@ fun RollingCode(code: String, modifier: Modifier = Modifier, style: TextStyle = 
                         )
                 },
                 label = "digit",
-            ) { shown -> Text(shown.toString(), style = style, color = color) }
+            ) { shown -> Text(shown.toString(), style = sized, color = color) }
         }
     }
 }

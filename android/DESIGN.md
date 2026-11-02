@@ -14,7 +14,7 @@ Each of these is something people now read as generated. Check every new screen 
 - Centred hero with a tagline and two buttons.
 - A strip of big numbers with small labels. Health shows one score because it has one score.
 - Every section in an identical rounded card with the same shadow, and cards inside cards.
-- An icon in a tinted square on every row.
+- An icon in a tinted square on every row. Settings is the exception: its tiles are coloured page by page, as in WM Keyboard, so a colour comes to mean a place. They can be changed under Icons.
 - Sparkle icons, emoji used as icons, and status dots that mean nothing.
 - ALL-CAPS eyebrow labels above headings, numbered template chrome (01, 02, 03), and arrows on buttons.
 - Fade-up on every section and lift on every card.
@@ -26,6 +26,10 @@ Swapping one default for another is its own tell. A cream page with a serif head
 
 **Platform structure.** Top app bar, navigation bar, floating action button, list rows, outlined fields, dialogs, bottom sheets. Someone who has used any Android app already knows where everything is.
 
+**Material Symbols.** The app's own glyphs are plain Material Symbols by default. Rounded, Sharp and a lighter style are one setting away.
+
+**Everything can be changed.** A choice the design makes is only the default. If two people could reasonably want different things, it belongs under Settings, Customise, and the settings search has to find it. Settings that weaken protection stay out of settings files, so a file from someone else cannot switch them off.
+
 **System type.** The phone's own font, with Material's scale and slightly tighter tracking. A theme may choose another family.
 
 **Depth from surfaces.** Solid colours at a few tonal levels. Rows sit directly on the page with no card, and sections are separated by space and a heading.
@@ -36,7 +40,7 @@ Swapping one default for another is its own tell. A cream page with a serif head
 
 - The shield mark, in its own emerald, on the unlock screen and nowhere else.
 - Secrets in a monospaced face with a slashed zero, with digits and symbols in their own colours. People read passwords aloud and type them on televisions.
-- Real site marks in circles, like photos in Contacts. A brand keeps its colour and everything else takes the theme's tone.
+- Real site marks from Simple Icons in circles, like photos in Contacts. A brand keeps its colour and everything else takes the theme's tone. They can also all share one background, or be letters.
 - A code's ring is the code's real lifetime.
 
 ## Motion
@@ -55,6 +59,7 @@ Motion answers something the person did, or shows something that is really happe
 | Wrong password | The shield shakes once and turns red, the field goes into its error state |
 | Health loading | The bar fills to the score once the check has an answer |
 | Holding a row | Its icon flips to a tick |
+| A section of the editor | Opens in place, its arrow turning with it |
 
 Nothing loops while idle, nothing staggers in, and "Animations" under Appearance shortens all of it.
 

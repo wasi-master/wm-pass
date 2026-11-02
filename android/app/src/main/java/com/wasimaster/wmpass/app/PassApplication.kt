@@ -8,6 +8,7 @@ class PassApplication : Application() {
         super.onCreate()
         Pass.init(this)
         AutoLock.install(this)
+        Thread { com.wasimaster.wmpass.ui.parts.Brands.warm(this) }.start()
         com.wasimaster.wmpass.system.Accounts.load(this)
         com.wasimaster.wmpass.system.Destinations.load(this)
         com.wasimaster.wmkeyboard.core.settings.sink.AutoBackupNaming.appFiles = com.wasimaster.wmpass.system.Backups::isOurs
