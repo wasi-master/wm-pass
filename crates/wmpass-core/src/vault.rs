@@ -1,5 +1,8 @@
 //! An unlocked vault: the document, its key and the rules for changing it.
 
+use std::collections::BTreeMap;
+
+use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 use crate::clock::{Clock, Hlc};
@@ -7,7 +10,7 @@ use crate::crypto;
 use crate::format::{
     self, FactorKind, FactorOutput, Header, KdfConfig, RootKey, SLOTS, SlotAction, Unlock, VaultKey,
 };
-use crate::model::{Attachment, Entry, Folder, Id, Kind, Lww, SlotInfo, VaultDoc};
+use crate::model::{Attachment, Entry, Folder, Id, Kind, LinkedVault, Lww, SlotInfo, VaultDoc};
 use crate::{Error, Result, Secret};
 
 /// The newest document layout this build understands.
@@ -64,6 +67,54 @@ pub fn check_freshness(seen: u64, file: u64) -> Freshness {
     } else {
         Freshness::Fresh
     }
+}
+
+/// Fingerprints of a vault's mergeable contents.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Digests {
+    /// Entries by id.
+    pub entries: BTreeMap<Id, [u8; 16]>,
+    /// Folders by id.
+    pub folders: BTreeMap<Id, [u8; 16]>,
+    /// Deleted ids.
+    pub tombstones: BTreeMap<Id, Hlc>,
+    /// Linked files.
+    pub linked: BTreeMap<String, Hlc>,
+    /// When slots last changed.
+    pub slots_at: Hlc,
+    /// Save counter.
+    pub generation: u64,
+    /// Layout version.
+    pub minor: u32,
+}
+
+/// What one device sends another after comparing [`Digests`].
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Delta {
+    /// Entries the peer lacks or holds differently.
+    pub entries: Vec<Entry>,
+    /// Folders likewise.
+    pub folders: Vec<Folder>,
+    /// Deletes the peer has not seen.
+    pub tombstones: BTreeMap<Id, Hlc>,
+    /// Linked files likewise.
+    pub linked: Vec<LinkedVault>,
+    /// Sender's save counter.
+    pub generation: u64,
+    /// Sender's layout version.
+    pub minor: u32,
+    /// The whole sealed file, when slot records changed.
+    pub file: Option<Vec<u8>>,
+}
+
+fn fingerprint<T: Serialize>(value: &T) -> Result<[u8; 16]> {
+    let bytes = Zeroizing::new(rmp_serde::to_vec_named(value).map_err(|_| Error::Encoding)?);
+    let hash = blake3::hash(&bytes);
+    let mut out = [0u8; 16];
+    out.copy_from_slice(&hash.as_bytes()[..16]);
+    Ok(out)
 }
 
 /// An unlocked vault.
@@ -372,6 +423,120 @@ impl Vault {
             self.read_only = true;
         }
         Ok(generation)
+    }
+
+    /// A key for one purpose, derived from the vault key. The vault key itself never leaves.
+    pub fn purpose_key(&self, purpose: &str) -> Result<crypto::Key> {
+        crypto::hkdf(&self.key.0[..], self.header.vault_id(), purpose)
+    }
+
+    /// Fingerprints of everything that merges, so a sync can send only what differs.
+    pub fn digests(&self) -> Result<Digests> {
+        let mut digests = Digests {
+            tombstones: self.doc.tombstones.clone(),
+            linked: self.doc.linked.iter().map(|l| (l.file.clone(), l.at)).collect(),
+            slots_at: self.doc.slots_at,
+            generation: self.doc.generation,
+            minor: self.doc.minor,
+            ..Digests::default()
+        };
+        for (id, entry) in &self.doc.entries {
+            digests.entries.insert(id.clone(), fingerprint(entry)?);
+        }
+        for (id, folder) in &self.doc.folders {
+            digests.folders.insert(id.clone(), fingerprint(folder)?);
+        }
+        Ok(digests)
+    }
+
+    /// What a peer with those fingerprints lacks. Slot records only exist whole, so when
+    /// this device's are newer the delta also carries a sealed copy of the file.
+    pub fn delta_for(&mut self, theirs: &Digests) -> Result<Delta> {
+        let mine = self.digests()?;
+        let changed = |map: &BTreeMap<Id, [u8; 16]>, id: &Id, digest: &[u8; 16]| map.get(id) != Some(digest);
+        let entries = mine
+            .entries
+            .iter()
+            .filter(|(id, digest)| changed(&theirs.entries, id, digest))
+            .filter_map(|(id, _)| self.doc.entries.get(id).cloned())
+            .collect();
+        let folders = mine
+            .folders
+            .iter()
+            .filter(|(id, digest)| changed(&theirs.folders, id, digest))
+            .filter_map(|(id, _)| self.doc.folders.get(id).cloned())
+            .collect();
+        let tombstones = mine
+            .tombstones
+            .iter()
+            .filter(|(id, at)| theirs.tombstones.get(*id).is_none_or(|known| known < *at))
+            .map(|(id, at)| (id.clone(), *at))
+            .collect();
+        let linked = self
+            .doc
+            .linked
+            .iter()
+            .filter(|link| theirs.linked.get(&link.file).is_none_or(|known| *known < link.at))
+            .cloned()
+            .collect();
+        let file = if mine.slots_at > theirs.slots_at {
+            Some(self.save()?)
+        } else {
+            None
+        };
+        Ok(Delta {
+            entries,
+            folders,
+            tombstones,
+            linked,
+            generation: mine.generation,
+            minor: mine.minor,
+            file,
+        })
+    }
+
+    /// Merges a peer's delta in, with the same rules as merging a whole file.
+    pub fn apply_delta(&mut self, delta: Delta) -> Result<()> {
+        if let Some(file) = &delta.file {
+            self.merge_file(file)?;
+        }
+        let partial = VaultDoc {
+            minor: delta.minor,
+            generation: delta.generation,
+            entries: delta.entries.into_iter().map(|e| (e.id.clone(), e)).collect(),
+            folders: delta.folders.into_iter().map(|f| (f.id.clone(), f)).collect(),
+            tombstones: delta.tombstones,
+            linked: delta.linked,
+            ..VaultDoc::default()
+        };
+        observe_doc(&mut self.clock, &partial);
+        self.doc.merge_from(&partial);
+        if self.doc.minor > DOC_MINOR {
+            self.read_only = true;
+        }
+        Ok(())
+    }
+
+    /// One value for everything that merges. Two devices that hold the same value have
+    /// converged.
+    pub fn state_hash(&self) -> Result<[u8; 16]> {
+        let mut digests = self.digests()?;
+        digests.generation = 0;
+        digests.minor = 0;
+        fingerprint(&digests)
+    }
+
+    /// Attachment blobs the entries refer to.
+    pub fn referenced_blobs(&self) -> Vec<String> {
+        let mut names: Vec<String> = self
+            .doc
+            .entries
+            .values()
+            .flat_map(|entry| blob_names(&entry.common.attachments.v))
+            .collect();
+        names.sort();
+        names.dedup();
+        names
     }
 
     fn free_slot(&self) -> Result<usize> {
