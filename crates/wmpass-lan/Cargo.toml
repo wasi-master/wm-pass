@@ -1,0 +1,24 @@
+[package]
+name = "wmpass-lan"
+description = "Encrypted device-to-device sync on a local network: pairing, delta sync and one-time sharing."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+wmpass-core.workspace = true
+snow = "0.10"
+mdns-sd = "0.21"
+x25519-dalek.workspace = true
+serde.workspace = true
+rmp-serde.workspace = true
+zeroize.workspace = true
+thiserror.workspace = true
+base64 = "0.23.1"
+getrandom.workspace = true

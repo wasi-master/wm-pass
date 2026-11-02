@@ -1,0 +1,53 @@
+# LAN protocol
+
+Version 1. Devices find each other through mDNS (`_wmpass._tcp.local.`), with a random instance name and no text records. An advert identifies nothing, and whether an address is a paired device is decided by the handshake.
+
+## Session
+
+Every connection runs `Noise_XX_25519_ChaChaPoly_SHA256` with prologue `wmpass/lan/v1`. Frames are a big-endian `u16` length followed by the Noise message. An application message is one frame holding its `u32` total length, then frames of up to 65,519 plaintext bytes. Messages above 256 MiB are refused. Values are MessagePack with named fields.
+
+The responder's static key travels encrypted only to the initiator's ephemeral key, so a device that connects and starts a handshake can learn a device's public key. It is a stable identifier on that network and grants nothing.
+
+## Pairing
+
+**By QR code.** The code holds a 256-bit secret, an address and an expiry two minutes ahead. The handshake becomes `Noise_XXpsk3` with that secret, so it cannot complete without having read the code.
+
+**By comparing digits.** A six-digit secret cannot go into a handshake, because whoever answers the handshake could try all million values offline. So the handshake runs without one and the digits come afterwards, by numeric comparison:
+
+1. The initiator sends `C = HMAC(Na, "wmpass/lan/commit/v1" || h)`, where `h` is the Noise transcript hash.
+2. The responder sends `Nb`.
+3. The initiator sends `Na`. The responder checks it against `C`.
+4. Both show `HMAC(Na || Nb, "wmpass/lan/code/v1" || h)`, reduced to six digits.
+5. A person compares the screens and accepts on both.
+
+An attacker in the middle holds two sessions with different `h`. It must fix `Na'` towards the responder before it can see `Na`, which stays hidden behind `C`, so it cannot search for values that make the two screens agree. Each attempt has one chance in a million, and a failed one is visible to both people.
+
+Pairing stores the other device's public key. Later connections are refused unless the key from the handshake is in that list.
+
+## Sync
+
+Being paired does not grant vault access. Each side first proves it holds the vault key, with `HMAC(K, role || h)` where `K = HKDF(vault key, vault id, "wmpass/lan/vault-proof/v1")`. The initiator proves first, and the responder answers only after checking. After a rekey, old devices fail this until unlocked with the new key.
+
+Then, taking turns so that two large transfers cannot deadlock:
+
+| Step | Sender | Message |
+|---|---|---|
+| 1 | Both | Protocol version |
+| 2 | Initiator | Digests |
+| 3 | Responder | Digests, then delta |
+| 4 | Initiator | Delta |
+| 5 | Both | Blob names wanted |
+| 6 | Initiator, then responder | Blobs asked for |
+| 7 | Both | State hash |
+
+A digest is BLAKE3 over an entry's MessagePack, truncated to 128 bits. A delta holds whole entries that differ, and merging applies the same field-by-field rules as file sync. If slot records changed, the delta also holds the sealed file, since only that can carry them.
+
+A blob is sent only if the vault refers to it, and accepted only if this end asked for it, so a peer cannot read or write other files by naming them. Blobs are already encrypted under their own keys.
+
+## One-time sharing
+
+**By QR, both ways.** The receiver shows `wmpass-offer:1:<public key>:<expiry>`, holding a throwaway X25519 key. The sender scans it and shows `wmpass-share:1:<ephemeral public key || sealed entry>`, sealed with XChaCha20-Poly1305 under `HKDF(X25519, sender || receiver, "wmpass/share/v1")`. A photograph of either code cannot open the entry. The receiver discards its key on opening.
+
+**By invitation**, for entries too large for a QR code. The sender shows `wmpass-invite:1:<secret>:<expiry>:<address>` and serves one `XXpsk3` connection. A photograph of this one could be used by whoever connects first. The real receiver then sees a failure.
+
+What is shared has no history, attachments, folder, tags or links, and takes a new id.
