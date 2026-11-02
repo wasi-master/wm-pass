@@ -691,6 +691,24 @@ pub struct LinkedVault {
     pub key: Secret,
     /// Written at.
     pub at: Hlc,
+    /// Set when the other file is a vault shared with other people.
+    pub shared: Option<SharedLink>,
+}
+
+/// This person's place in a shared vault. Their keys are kept here, in their own vault.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SharedLink {
+    /// The owner's signing key from the invitation, as hex. Empty until an invitation arrives.
+    pub owner_key: String,
+    /// The shared file's id as last seen, as hex.
+    pub vault_id: String,
+    /// The highest manifest version seen, so an older one can be refused.
+    pub min_version: u64,
+    /// This person's keys for this vault, as hex: wrapping key, then signing key.
+    pub member: Secret,
+    /// Whether this person owns it, and so can change who is on it.
+    pub owner: bool,
 }
 
 /// A saved generator setting.

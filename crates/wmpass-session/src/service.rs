@@ -11,8 +11,9 @@ use wmpass_core::crypto::KdfParams;
 use wmpass_core::format::{self, FactorKind, FactorOutput, KdfConfig, SlotAction, VaultKey};
 use wmpass_core::generator::{self, Recipe};
 use wmpass_core::matching::{self, MatchLevel, Target};
-use wmpass_core::model::{Entry, Field, Kind, LinkedVault, Lww, Reminders, SiteMatcher};
+use wmpass_core::model::{Entry, Field, Kind, LinkedVault, Lww, Reminders, SharedLink, SiteMatcher};
 use wmpass_core::otp::OtpConfig;
+use wmpass_core::sharing::{self, Manifest, MemberKeys, MemberPublic};
 use wmpass_core::search::{self, Context, Flags, FolderNames, Query};
 use wmpass_core::vault::{Freshness, OpenOutcome, Vault, check_freshness, hex, new_id, open_set, unhex};
 use wmpass_core::{Error, Secret, categorise, emergency, health, io, passkey, recovery, ssh, strength};
@@ -49,7 +50,7 @@ pub struct Reply {
 }
 
 impl Reply {
-    fn view(value: Value) -> Self {
+    pub(crate) fn view(value: Value) -> Self {
         Self {
             json: value.to_string(),
             ..Self::default()
@@ -128,6 +129,8 @@ struct Session {
     shelf_open: bool,
     health: Option<health::HealthReport>,
     pending_import: Option<io::Imported>,
+    remote: Option<crate::remote::Remote>,
+    unreadable: usize,
 }
 
 impl Session {
@@ -138,6 +141,8 @@ impl Session {
             shelf_open: false,
             health: None,
             pending_import: None,
+            remote: None,
+            unreadable: 0,
         }
     }
 
@@ -225,6 +230,48 @@ struct Id {
     id: String,
 }
 
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct SharedArgs {
+    file: String,
+    name: String,
+    my_name: String,
+    code: String,
+    key: String,
+}
+
+const MEMBER_PREFIX: &str = "wmpass-member:";
+const INVITE_PREFIX: &str = "wmpass-invite:";
+
+fn key32(text: &str) -> Result<[u8; 32], SessionError> {
+    let raw = Zeroizing::new(unhex(text).ok_or_else(|| invalid("bad key"))?);
+    raw.as_slice().try_into().map_err(|_| invalid("bad key"))
+}
+
+fn member_secret(keys: &MemberKeys) -> Secret {
+    let (wrapping, signing) = keys.to_bytes();
+    let mut raw = Zeroizing::new(Vec::with_capacity(64));
+    raw.extend_from_slice(&wrapping);
+    raw.extend_from_slice(&signing);
+    Secret::from(hex(&raw))
+}
+
+fn member_keys(link: &SharedLink) -> Result<MemberKeys, SessionError> {
+    let raw = Zeroizing::new(unhex(link.member.expose()).ok_or_else(|| invalid("bad key"))?);
+    if raw.len() != 64 {
+        return Err(invalid("bad key"));
+    }
+    let wrapping: [u8; 32] = raw[..32].try_into().map_err(|_| invalid("bad key"))?;
+    let signing: [u8; 32] = raw[32..].try_into().map_err(|_| invalid("bad key"))?;
+    Ok(MemberKeys::from_bytes(wrapping, signing))
+}
+
+fn member_from_code(code: &str) -> Result<MemberPublic, SessionError> {
+    let text = code.trim().strip_prefix(MEMBER_PREFIX).ok_or_else(|| invalid("that is not a member code"))?;
+    let raw = B64.decode(text).map_err(|_| invalid("that is not a member code"))?;
+    serde_json::from_slice(&raw).map_err(|_| invalid("that is not a member code"))
+}
+
 fn action_of(name: &str) -> Result<SlotAction, SessionError> {
     match name {
         "open" | "" => Ok(SlotAction::Open),
@@ -234,7 +281,8 @@ fn action_of(name: &str) -> Result<SlotAction, SessionError> {
     }
 }
 
-fn factor_of(view: &FactorView) -> Result<FactorKind, SessionError> {
+/// A factor as the core wants it, from the view a shell holds.
+pub fn factor_of(view: &FactorView) -> Result<FactorKind, SessionError> {
     let raw = |text: &str| unhex(text).ok_or_else(|| invalid("bad hex"));
     Ok(match view {
         FactorView::KeyFile => FactorKind::KeyFile,
@@ -343,6 +391,103 @@ impl Service {
             code: "locked",
             message: "this vault is locked".to_owned(),
         })
+    }
+
+    /// Lends a call on the network the open vault for one step.
+    pub fn with_vault<T>(&mut self, handle: u64, run: impl FnOnce(&mut Vault) -> T) -> Result<T, SessionError> {
+        Ok(run(&mut self.session(handle)?.vault))
+    }
+
+    /// Marks a vault changed after [`Self::with_vault`].
+    pub fn touch(&mut self, handle: u64) -> Result<(), SessionError> {
+        self.session(handle)?.touched();
+        Ok(())
+    }
+
+    /// An account's entries get a vault of their own in memory, which is never saved.
+    fn mirror(&mut self, name: &str, mut remote: crate::remote::Remote, now: u64) -> Result<u64, SessionError> {
+        let throwaway: [u8; 32] = wmpass_core::crypto::random_array()?;
+        let config = KdfArg::default().config()?;
+        let mut vault = Vault::create(name, &throwaway, &config, self.device, now)?;
+        remote.refresh(&mut vault, now);
+        let handle = self.adopt(vault);
+        self.session(handle)?.remote = Some(remote);
+        Ok(handle)
+    }
+
+    /// The address a Proxynova check may ask about, and the passwords to compare. Refuses an
+    /// address that is not in this vault, so the check cannot look up someone else.
+    #[cfg(feature = "net")]
+    pub fn comb_inputs(
+        &mut self,
+        handle: u64,
+        email: &str,
+    ) -> Result<(wmpass_net::breach::VaultEmail, Vec<Secret>, Vec<String>), SessionError> {
+        let session = self.session(handle)?;
+        let wanted = email.trim().to_lowercase();
+        let known = wmpass_net::breach::vault_emails(session.vault.visible());
+        let address = known
+            .into_iter()
+            .find(|e| e.as_str() == wanted)
+            .ok_or_else(|| invalid("that address is not in this vault"))?;
+        let mut secrets = Vec::new();
+        let mut ids = Vec::new();
+        for entry in session.vault.visible() {
+            if let Some(login) = entry.login()
+                && login.username.v.trim().eq_ignore_ascii_case(&wanted)
+                && !login.password.v.expose().is_empty()
+            {
+                secrets.push(login.password.v.clone());
+                ids.push(entry.id.clone());
+            }
+        }
+        Ok((address, secrets, ids))
+    }
+
+    /// Shows a Bitwarden account through a mirror.
+    #[cfg(feature = "net")]
+    pub fn adopt_bitwarden(
+        &mut self,
+        name: &str,
+        account: Box<wmpass_bw::account::Account>,
+        unreadable: usize,
+        now: u64,
+    ) -> Result<Reply, SessionError> {
+        let remote = crate::remote::Remote::new(crate::remote::Account::Bitwarden(account));
+        let handle = self.mirror(name, remote, now)?;
+        let session = self.session(handle)?;
+        session.unreadable = unreadable;
+        Ok(Reply::view(Self::opened(handle, 0, &session.vault)))
+    }
+
+    /// Passes changes on to a Bitwarden account and takes it out for a trip to the server.
+    #[cfg(feature = "net")]
+    pub fn take_bitwarden(&mut self, handle: u64, now: u64) -> Result<Box<wmpass_bw::account::Account>, SessionError> {
+        let session = self.session(handle)?;
+        let vault = &mut session.vault;
+        let Some(remote) = session.remote.as_mut() else {
+            return Err(invalid("this vault has no account behind it"));
+        };
+        remote.collect(vault, now)?;
+        let Some(crate::remote::Remote { account: crate::remote::Account::Bitwarden(account), .. }) = session.remote.take() else {
+            return Err(invalid("this is not a Bitwarden account"));
+        };
+        Ok(account)
+    }
+
+    /// Puts an account back after a trip to the server and shows what it brought.
+    #[cfg(feature = "net")]
+    pub fn return_bitwarden(&mut self, handle: u64, account: Box<wmpass_bw::account::Account>, now: u64) -> Result<(), SessionError> {
+        let session = self.session(handle)?;
+        let mut remote = crate::remote::Remote::new(crate::remote::Account::Bitwarden(account));
+        remote.refresh(&mut session.vault, now);
+        session.unreadable = match &remote.account {
+            crate::remote::Account::Bitwarden(account) => account.unreadable(),
+            crate::remote::Account::Kdbx(_) => 0,
+        };
+        session.remote = Some(remote);
+        session.touched();
+        Ok(())
     }
 
     /// Locks every vault, as a panic trigger or a screen timeout does.
@@ -462,6 +607,21 @@ impl Service {
                     ..Reply::default()
                 })
             }
+            "kdbx.open" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    name: String,
+                }
+                let a: A = parse(call.args)?;
+                let password = Secret::new(text(call.secret)?);
+                let key_file = blob(&call, 1).ok().map(<[u8]>::to_vec);
+                let backend = wmpass_core::backend::KdbxBackend::open(blob(&call, 0)?, password, key_file)?;
+                let remote = crate::remote::Remote::new(crate::remote::Account::Kdbx(Box::new(backend)));
+                let handle = self.mirror(&a.name, remote, now)?;
+                let session = self.session(handle)?;
+                Ok(Reply::view(Self::opened(handle, 0, &session.vault)))
+            }
             "emergency.recover" => {
                 #[derive(Deserialize, Default)]
                 #[serde(default)]
@@ -474,6 +634,21 @@ impl Service {
                 let handle = self.adopt(vault);
                 let session = self.session(handle)?;
                 Ok(Reply::view(Self::opened(handle, 0, &session.vault)))
+            }
+            // A new key for the editor to fill in, before the item exists.
+            "ssh.new" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    comment: String,
+                }
+                let a: A = parse(call.args)?;
+                let key = ssh::generate_ed25519(&a.comment)?;
+                Ok(Reply {
+                    json: json!({"public_key": key.public_key, "fingerprint": key.fingerprint}).to_string(),
+                    secret: Some(Zeroizing::new(key.private_key.expose().as_bytes().to_vec())),
+                    blobs: Vec::new(),
+                })
             }
             "gen.presets" => Ok(Reply::of(&generator::default_presets())?),
             "gen.generate" => {
@@ -576,6 +751,38 @@ impl Service {
         if method == "vault.lock" {
             self.sessions.remove(&call.handle);
             return Ok(Reply::ok());
+        }
+        if method == "shared.open" {
+            let a: SharedArgs = parse(call.args)?;
+            let session = self.session(call.handle)?;
+            let at = session.vault.tick(now);
+            let link = session
+                .vault
+                .doc
+                .linked
+                .iter_mut()
+                .find(|l| l.file == a.file)
+                .ok_or_else(|| invalid("no such shared vault"))?;
+            let shared = link.shared.as_mut().ok_or_else(|| invalid("that vault is not shared"))?;
+            if shared.owner_key.is_empty() {
+                return Err(invalid("the invitation has not arrived yet"));
+            }
+            let keys = member_keys(shared)?;
+            let owner = key32(&shared.owner_key)?;
+            let manifest = Manifest::from_bytes(blob(&call, 0)?)?;
+            let (key, vault_id, version) = manifest.open_latest(&keys, &owner, shared.min_version)?;
+            let raw = hex(key.expose_for_hardware_wrap());
+            if version != shared.min_version {
+                shared.min_version = version;
+                shared.vault_id = hex(&vault_id);
+                link.key = Secret::from(raw);
+                link.at = at;
+                session.dirty = true;
+            }
+            let vault = Vault::from_file(blob(&call, 1)?, key, device)?;
+            let handle = self.adopt(vault);
+            let session = self.session(handle)?;
+            return Ok(Reply::view(Self::opened(handle, 0, &session.vault)));
         }
         if method == "linked.open" {
             #[derive(Deserialize, Default)]
@@ -682,6 +889,26 @@ impl Service {
                 );
                 Ok(Reply::view(json!({"generation": generation, "rollback": rollback})))
             }
+            "remote.save" => {
+                let vault = &mut session.vault;
+                let Some(remote) = session.remote.as_mut() else {
+                    return Err(invalid("this vault has no account behind it"));
+                };
+                remote.collect(vault, now)?;
+                let bytes = remote.save()?;
+                let unreadable = session.unreadable;
+                Ok(Reply {
+                    json: json!({"unreadable": unreadable}).to_string(),
+                    blobs: vec![bytes],
+                    ..Reply::default()
+                })
+            }
+            "remote.kind" => Ok(Reply::view(json!({"kind": match session.remote.as_ref().map(|r| &r.account) {
+                None => "vault",
+                Some(crate::remote::Account::Kdbx(_)) => "kdbx",
+                #[cfg(feature = "net")]
+                Some(crate::remote::Account::Bitwarden(_)) => "bitwarden",
+            }}))),
             "vault.chaff_name" => Ok(Reply::view(json!({"name": session.vault.chaff_file_name()?}))),
             "vault.sync_name" => Ok(Reply::view(json!({"name": session.vault.sync_file_name()?}))),
             "vault.state_hash" => Ok(Reply::view(json!({"hash": hex(&session.vault.state_hash()?)}))),
@@ -798,7 +1025,15 @@ impl Service {
                     .doc
                     .linked
                     .iter()
-                    .map(|l| json!({"file": l.file, "name": l.name}))
+                    .map(|l| {
+                        json!({
+                            "file": l.file,
+                            "name": l.name,
+                            "shared": l.shared.is_some(),
+                            "owner": l.shared.as_ref().is_some_and(|s| s.owner),
+                            "pending": l.shared.as_ref().is_some_and(|s| s.owner_key.is_empty()),
+                        })
+                    })
                     .collect();
                 Ok(Reply::view(json!(links)))
             }
@@ -821,6 +1056,7 @@ impl Service {
                     name: a.name,
                     key,
                     at,
+                    shared: None,
                 });
                 session.dirty = true;
                 Ok(Reply {
@@ -828,6 +1064,134 @@ impl Service {
                     blobs: vec![sealed],
                     ..Reply::default()
                 })
+            }
+            "linked.forget" => {
+                let a: SharedArgs = parse(call.args)?;
+                session.vault.doc.linked.retain(|l| l.file != a.file);
+                session.dirty = true;
+                Ok(Reply::ok())
+            }
+            // ---- vaults shared with other people ----
+            "shared.create" => {
+                let a: SharedArgs = parse(call.args)?;
+                let config = KdfConfig::new(KdfParams::default())?;
+                let mut child = Vault::create_shared(&a.name, &config, device, now)?;
+                let keys = MemberKeys::generate()?;
+                let vault_id = child.vault_id().to_vec();
+                let manifest = Manifest::create(&keys, &a.my_name, &vault_id, child.key())?;
+                let file = new_id()?;
+                let sealed = child.save()?;
+                let at = session.vault.tick(now);
+                let owner_key = hex(&keys.public("").ed25519);
+                session.vault.doc.linked.push(LinkedVault {
+                    file: file.clone(),
+                    name: a.name.clone(),
+                    key: Secret::from(hex(&child_key_bytes(&child))),
+                    at,
+                    shared: Some(SharedLink {
+                        owner_key: owner_key.clone(),
+                        vault_id: hex(&vault_id),
+                        min_version: 1,
+                        member: member_secret(&keys),
+                        owner: true,
+                    }),
+                });
+                session.dirty = true;
+                Ok(Reply {
+                    json: json!({"file": file}).to_string(),
+                    blobs: vec![sealed, manifest.to_bytes()?],
+                    ..Reply::default()
+                })
+            }
+            // A joining person makes their keys first and passes the public half to the owner.
+            "shared.join_code" => {
+                let a: SharedArgs = parse(call.args)?;
+                let keys = MemberKeys::generate()?;
+                let public = keys.public(&a.my_name);
+                let file = new_id()?;
+                let at = session.vault.tick(now);
+                session.vault.doc.linked.push(LinkedVault {
+                    file: file.clone(),
+                    name: "Waiting for an invitation".to_owned(),
+                    key: Secret::default(),
+                    at,
+                    shared: Some(SharedLink { member: member_secret(&keys), ..SharedLink::default() }),
+                });
+                session.dirty = true;
+                let code = format!("{MEMBER_PREFIX}{}", B64.encode(serde_json::to_vec(&public).map_err(|_| invalid("bad keys"))?));
+                Ok(Reply::view(json!({"file": file, "code": code, "fingerprint": sharing::fingerprint(&public)})))
+            }
+            // Shows the owner whose keys a code holds, to compare before adding them.
+            "shared.read_code" => {
+                let a: SharedArgs = parse(call.args)?;
+                let public = member_from_code(&a.code)?;
+                Ok(Reply::view(json!({"name": public.name, "fingerprint": sharing::fingerprint(&public)})))
+            }
+            "shared.add_member" => {
+                let a: SharedArgs = parse(call.args)?;
+                let link = session.vault.doc.linked.iter().find(|l| l.file == a.file).ok_or_else(|| invalid("no such shared vault"))?;
+                let shared = link.shared.as_ref().filter(|s| s.owner).ok_or_else(|| invalid("only the owner can invite people"))?;
+                let keys = member_keys(shared)?;
+                let vault_id = unhex(&shared.vault_id).ok_or_else(|| invalid("bad id"))?;
+                let key = VaultKey::from_bytes(key32(link.key.expose())?);
+                let public = member_from_code(&a.code)?;
+                let manifest = Manifest::from_bytes(blob(&call, 0)?)?.add_member(&keys, &vault_id, &key, public)?;
+                let invite = json!({"file": link.file, "name": link.name, "owner_key": shared.owner_key});
+                let invite = format!("{INVITE_PREFIX}{}", B64.encode(invite.to_string()));
+                Ok(Reply { json: json!({"invite": invite}).to_string(), blobs: vec![manifest.to_bytes()?], ..Reply::default() })
+            }
+            "shared.accept" => {
+                let a: SharedArgs = parse(call.args)?;
+                let text = a.code.trim().strip_prefix(INVITE_PREFIX).ok_or_else(|| invalid("that is not an invitation"))?;
+                let raw = B64.decode(text).map_err(|_| invalid("that is not an invitation"))?;
+                let invite: Value = serde_json::from_slice(&raw).map_err(|_| invalid("that is not an invitation"))?;
+                let at = session.vault.tick(now);
+                let links = &mut session.vault.doc.linked;
+                let link = links.iter_mut().find(|l| l.file == a.file).ok_or_else(|| invalid("no invitation was asked for"))?;
+                let shared = link.shared.as_mut().ok_or_else(|| invalid("no invitation was asked for"))?;
+                let text_of = |key: &str| invite[key].as_str().map(str::to_owned).ok_or_else(|| invalid("that is not an invitation"));
+                shared.owner_key = text_of("owner_key")?;
+                key32(&shared.owner_key)?;
+                link.file = text_of("file")?;
+                link.name = text_of("name")?;
+                link.at = at;
+                let file = link.file.clone();
+                session.dirty = true;
+                Ok(Reply::view(json!({"file": file})))
+            }
+            "shared.members" => {
+                let a: SharedArgs = parse(call.args)?;
+                let link = session.vault.doc.linked.iter().find(|l| l.file == a.file).ok_or_else(|| invalid("no such shared vault"))?;
+                let shared = link.shared.as_ref().ok_or_else(|| invalid("that vault is not shared"))?;
+                let vault_id = unhex(&shared.vault_id).ok_or_else(|| invalid("bad id"))?;
+                let members = Manifest::from_bytes(blob(&call, 0)?)?.members(&key32(&shared.owner_key)?, &vault_id)?;
+                let rows: Vec<Value> = members
+                    .iter()
+                    .map(|m| json!({"name": m.name, "key": hex(&m.ed25519), "fingerprint": sharing::fingerprint(m), "owner": hex(&m.ed25519) == shared.owner_key}))
+                    .collect();
+                Ok(Reply::view(json!(rows)))
+            }
+            // Removing someone moves the vault to a new key, so what they hold stops opening
+            // anything written after this. Copies they already have stay readable.
+            "shared.remove_member" => {
+                let a: SharedArgs = parse(call.args)?;
+                let at = session.vault.tick(now);
+                let link = session.vault.doc.linked.iter_mut().find(|l| l.file == a.file).ok_or_else(|| invalid("no such shared vault"))?;
+                let shared = link.shared.as_mut().filter(|s| s.owner).ok_or_else(|| invalid("only the owner can remove people"))?;
+                let keys = member_keys(shared)?;
+                let old_id = unhex(&shared.vault_id).ok_or_else(|| invalid("bad id"))?;
+                let manifest = Manifest::from_bytes(blob(&call, 0)?)?;
+                let mut child = Vault::from_file(blob(&call, 1)?, VaultKey::from_bytes(key32(link.key.expose())?), device)?;
+                child.rekey_shared(&KdfConfig::new(KdfParams::default())?, now)?;
+                let new_id = child.vault_id().to_vec();
+                let next = manifest.remove_member(&keys, &old_id, &new_id, child.key(), &key32(&a.key)?)?;
+                shared.vault_id = hex(&new_id);
+                shared.min_version += 1;
+                link.key = Secret::from(hex(&child_key_bytes(&child)));
+                link.at = at;
+                let sealed = child.save()?;
+                session.dirty = true;
+                Ok(Reply { json: "{}".to_owned(), blobs: vec![next.to_bytes()?, sealed], ..Reply::default() })
             }
             // ---- reading ----
             "entry.list" => {
@@ -1807,6 +2171,12 @@ impl Service {
             _ => Err(invalid(format!("unknown call {method}"))),
         }
     }
+}
+
+/// Decodes what a shell passes as text.
+#[cfg(feature = "net")]
+pub(crate) fn base64_decode(text: &str) -> Result<Vec<u8>, SessionError> {
+    B64.decode(text).map_err(|_| invalid("bad data"))
 }
 
 fn wrong_password() -> SessionError {

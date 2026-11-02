@@ -14,11 +14,13 @@ workspace = true
 [features]
 default = []
 # Network features, for shells with a blocking HTTP client. The extension has none.
-net = ["dep:wmpass-net", "wmpass-net/native"]
+net = ["dep:wmpass-net", "wmpass-net/native", "dep:wmpass-bw", "dep:wmpass-lan"]
 
 [dependencies]
 wmpass-core.workspace = true
 wmpass-net = { path = "../wmpass-net", optional = true }
+wmpass-bw = { path = "../wmpass-bw", optional = true }
+wmpass-lan = { path = "../wmpass-lan", optional = true }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

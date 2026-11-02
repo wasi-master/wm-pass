@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="shortcut_search">Search</string>
+    <string name="shortcut_add">Add a login</string>
+    <string name="shortcut_codes">Codes</string>
+    <string name="shortcut_generate">Generate</string>
+    <string name="tile_lock">Lock WM Pass</string>
+    <string name="tile_panic">Panic lock</string>
+    <string name="widget_description">Search, add, codes and lock, without showing anything from your vault.</string>
+</resources>

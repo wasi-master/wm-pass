@@ -12,7 +12,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import android.view.inputmethod.EditorInfo
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.InterceptPlatformTextInput
+import androidx.compose.ui.platform.PlatformTextInputMethodRequest
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.ClipOp
@@ -104,10 +108,31 @@ fun AppRoot(prefs: Prefs) {
                         scaleY = s
                     },
             ) {
-                VaultShell(prefs)
+                NoLearningInput { VaultShell(prefs) }
             }
         }
     }
+}
+
+/**
+ * Tells every keyboard not to learn from what is typed in here: names, notes and searches
+ * included, not only the password fields, which a keyboard already leaves alone.
+ */
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+fun NoLearningInput(content: @Composable () -> Unit) {
+    InterceptPlatformTextInput(
+        interceptor = { request, next ->
+            next.startInputMethod(
+                PlatformTextInputMethodRequest { outAttributes ->
+                    val connection = request.createInputConnection(outAttributes)
+                    outAttributes.imeOptions = outAttributes.imeOptions or EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+                    connection
+                },
+            )
+        },
+        content = content,
+    )
 }
 
 /** Where the door draws its shield's centre, so the opening starts exactly from it. */

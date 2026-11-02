@@ -13,8 +13,11 @@
 //! Secrets going the other way arrive in [`Call::secret`] for the same reason.
 
 pub mod fields;
+#[cfg(feature = "net")]
+pub mod net;
+mod remote;
 mod service;
 mod views;
 
-pub use service::{Call, Reply, Service, SessionError};
+pub use service::{Call, Reply, Service, SessionError, factor_of};
 pub use views::*;

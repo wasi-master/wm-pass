@@ -15,9 +15,3 @@ fun ToolsTab() {
     }
 }
 
-/** QR scanning is added with the camera step. */
-@Composable
-fun ScanScreen() {
-    val shell = LocalShell.current
-    WmScreen("Scan", onBack = { shell.nav.popBackStack() }) { }
-}

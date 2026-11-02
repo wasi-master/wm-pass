@@ -70,6 +70,15 @@ import com.wasimaster.wmpass.ui.theme.palette
 import kotlin.math.roundToInt
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+
+/**
+ * What the last breach check found. Kept in memory only: a list on disk of which passwords
+ * have leaked would be a gift to anyone who took the phone.
+ */
+object BreachCounts {
+    val counts = kotlinx.coroutines.flow.MutableStateFlow<Map<String, Long>>(emptyMap())
+}
 
 private data class Issue(
     val key: String,
@@ -117,7 +126,8 @@ fun HealthTab() {
     val revision by Pass.revision.collectAsStateWithLifecycle()
     val entries by Pass.entries.collectAsStateWithLifecycle()
     var health by remember { mutableStateOf<HealthView?>(null) }
-    LaunchedEffect(revision) { health = runCatching { Pass.health() }.getOrNull() }
+    val breachCounts by BreachCounts.counts.collectAsStateWithLifecycle()
+    LaunchedEffect(revision, breachCounts) { health = runCatching { Pass.health(breachCounts) }.getOrNull() }
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val h = health
     val issues = remember(h) { h?.let { issuesOf(it).filter { issue -> issue.ids.isNotEmpty() } }.orEmpty() }
@@ -172,7 +182,7 @@ fun HealthTab() {
             }
             issues.forEachIndexed { index, issue ->
                 item(issue.key) {
-                    IssueCard(issue, entries, Modifier.arrive(index))
+                    IssueCard(issue, entries, Modifier.arrive(index), if (issue.key == "duplicates") health?.duplicates.orEmpty() else emptyList())
                 }
             }
             item("tools") {
@@ -241,10 +251,11 @@ private fun ScoreRing(score: Int?) {
 }
 
 @Composable
-private fun IssueCard(issue: Issue, entries: List<Summary>, modifier: Modifier = Modifier) {
+private fun IssueCard(issue: Issue, entries: List<Summary>, modifier: Modifier = Modifier, groups: List<List<String>> = emptyList()) {
     val colors = palette
     val shell = LocalShell.current
     var open by remember { mutableStateOf(false) }
+    var merging by remember { mutableStateOf<List<String>?>(null) }
     val turn by animateFloatAsState(if (open) 180f else 0f, Springs.glide(), label = "chevron")
     val tint = if (issue.serious) colors.danger else colors.warn
     Column(
@@ -296,6 +307,42 @@ private fun IssueCard(issue: Issue, entries: List<Summary>, modifier: Modifier =
                             }
                         }
                         Icon(PassIcons.ChevronRight, null, tint = colors.textLow, modifier = Modifier.size(20.dp))
+                    }
+                }
+                groups.forEach { group ->
+                    val first = entries.firstOrNull { it.id == group.first() } ?: return@forEach
+                    Hairline()
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { merging = group }
+                            .padding(horizontal = 18.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(PassIcons.Layers, null, tint = colors.primary, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text("Merge ${group.size} copies of ${first.title}", color = colors.primary, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+    }
+    merging?.let { group ->
+        PassSheet({ merging = null }, "Which one stays?") {
+            Text("The others fold into it. Their passwords move to its history and their extra fields come along, so nothing is lost.", color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(10.dp))
+            group.forEach { id ->
+                val entry = entries.firstOrNull { it.id == id } ?: return@forEach
+                SheetRow(PassIcons.Key, entry.title, entry.subtitle.ifEmpty { null }) {
+                    merging = null
+                    shell.launch {
+                        group.filter { it != id }.forEach { other ->
+                            Pass.change("health.merge_duplicates") {
+                                put("keep", id)
+                                put("remove", other)
+                            }
+                        }
+                        shell.haptics.confirm()
                     }
                 }
             }

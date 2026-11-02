@@ -45,6 +45,43 @@ class Prefs(context: Context) {
     var networkAllowed by mutableStateOf(store.getBoolean("network_allowed", false))
         private set
 
+    /** Key chords for a physical keyboard, by what they do. */
+    var shortcuts by mutableStateOf(DEFAULT_SHORTCUTS + readShortcuts())
+        private set
+
+    private fun readShortcuts(): Map<String, String?> =
+        store.getString("shortcuts", null).orEmpty().split('\n').filter { '=' in it }.associate {
+            val (key, value) = it.split('=', limit = 2)
+            key to value.takeIf { chord -> chord.isNotEmpty() }
+        }
+
+    fun updateShortcut(action: String, chord: String?) {
+        // One chord does one thing, so taking it away from anything else that had it.
+        val freed = shortcuts.mapValues { (_, value) -> if (value == chord) null else value }
+        shortcuts = freed + (action to chord)
+        edit { putString("shortcuts", shortcuts.entries.joinToString("\n") { "${it.key}=${it.value.orEmpty()}" }) }
+    }
+
+    fun resetShortcuts() {
+        shortcuts = DEFAULT_SHORTCUTS
+        edit { remove("shortcuts") }
+    }
+
+    /** What a panic signal does: "lock", or "wipe" if it comes from the app named below. */
+    var panicAction by mutableStateOf(store.getString("panic_action", "lock") ?: "lock")
+        private set
+    var panicTrustedApp by mutableStateOf(store.getString("panic_app", null))
+        private set
+
+    fun updatePanic(action: String, app: String?) {
+        panicAction = action
+        panicTrustedApp = app
+        edit {
+            putString("panic_action", action)
+            putString("panic_app", app)
+        }
+    }
+
     fun updateLook(value: Look) { look = value; edit { putString("look", value.name) } }
     fun updateAccent(value: Accent) { accent = value; edit { putString("accent", value.name) } }
     fun updateLockAfter(value: Int) { lockAfter = value; edit { putInt("lock_after", value) } }
@@ -61,6 +98,15 @@ class Prefs(context: Context) {
     companion object {
         val DEFAULT_TABS = listOf("vault", "codes", "generator", "health")
         val DEFAULT_WIDGETS = listOf("health", "codes", "favourites")
+        val DEFAULT_SHORTCUTS: Map<String, String?> = mapOf(
+            "search" to "Ctrl+F",
+            "add" to "Ctrl+N",
+            "lock" to "Ctrl+L",
+            "generator" to "Ctrl+G",
+            "codes" to "Ctrl+O",
+            "health" to "Ctrl+H",
+            "settings" to "Ctrl+Comma",
+        )
 
         @Volatile
         private var instance: Prefs? = null

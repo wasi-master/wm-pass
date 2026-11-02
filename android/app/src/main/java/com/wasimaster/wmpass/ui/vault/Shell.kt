@@ -3,6 +3,7 @@ package com.wasimaster.wmpass.ui.vault
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
@@ -19,10 +20,15 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
@@ -33,13 +39,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.wasimaster.wmpass.app.Inbox
+import com.wasimaster.wmpass.app.Incoming
 import com.wasimaster.wmpass.app.Prefs
 import com.wasimaster.wmpass.core.Pass
 import com.wasimaster.wmpass.core.SecretBytes
@@ -52,7 +64,10 @@ import com.wasimaster.wmpass.ui.theme.Haptics
 import com.wasimaster.wmpass.ui.theme.palette
 import com.wasimaster.wmpass.ui.theme.rememberHaptics
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 /** A change that can still be taken back. */
@@ -80,6 +95,10 @@ class Shell(
 
     /** A password just generated, waiting for the editor it was meant for. */
     var pendingPassword: String? = null
+
+    /** An otpauth link or note waiting for the editor it was meant for. */
+    var pendingOtp: String? = null
+    var pendingNote: String? = null
 
     /** Who gets the next QR code scanned. */
     var scanTarget: ((String) -> Unit)? = null
@@ -141,6 +160,64 @@ class Shell(
     }
 }
 
+/** Acts on whatever arrived from outside: a shortcut, something shared, a code's link. */
+@Composable
+private fun ReceiveIncoming() {
+    val shell = LocalShell.current
+    val context = LocalContext.current
+    val incoming by Inbox.pending.collectAsStateWithLifecycle()
+    LaunchedEffect(incoming) {
+        val what = incoming ?: return@LaunchedEffect
+        Inbox.pending.value = null
+        when (what) {
+            is Incoming.Route -> when (what.name) {
+                "search" -> shell.searching = true
+                "add" -> shell.adding = true
+                else -> shell.tab = what.name
+            }
+            is Incoming.OtpLink -> {
+                shell.pendingOtp = what.uri
+                shell.nav.navigate("new/otp")
+            }
+            is Incoming.SharedText -> {
+                val text = what.text.trim()
+                when {
+                    text.startsWith("otpauth://") -> {
+                        shell.pendingOtp = text
+                        shell.nav.navigate("new/otp")
+                    }
+                    text.startsWith("http://") || text.startsWith("https://") -> {
+                        // A link: show what is saved for it, and search offers to add it if nothing is.
+                        val host = runCatching { Uri.parse(text).host }.getOrNull().orEmpty().removePrefix("www.")
+                        shell.searchField.setTextAndPlaceCursorAtEnd(host)
+                        shell.searching = true
+                    }
+                    else -> {
+                        shell.pendingNote = text
+                        shell.nav.navigate("new/note")
+                    }
+                }
+            }
+            is Incoming.SharedFile -> {
+                val resolver = context.contentResolver
+                val name = resolver.query(what.uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                    if (it.moveToFirst()) it.getString(0) else null
+                } ?: "Shared file"
+                val bytes = withContext(Dispatchers.IO) { resolver.openInputStream(what.uri)?.use { it.readBytes() } }
+                if (bytes != null) {
+                    val id = Pass.change("entry.create") {
+                        put("kind", "document")
+                        put("title", name)
+                    }.obj["id"]!!.jsonPrimitive.content
+                    Pass.addAttachment(id, name, what.mime, bytes)
+                    bytes.fill(0)
+                    shell.open(id)
+                }
+            }
+        }
+    }
+}
+
 val LocalShell = compositionLocalOf<Shell> { error("no shell") }
 
 @OptIn(ExperimentalSharedTransitionApi::class)
@@ -159,7 +236,25 @@ fun VaultShell(prefs: Prefs) {
     val shell = remember(nav) { Shell(nav, prefs, scope, context, haptics) }
     val backdrop = rememberBackdrop()
     CompositionLocalProvider(LocalShell provides shell, LocalBackdrop provides backdrop) {
-        Box(Modifier.fillMaxSize().background(colors.ground)) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(colors.ground)
+                .onPreviewKeyEvent { event ->
+                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    val chord = com.wasimaster.wmpass.ui.settings.chordOf(event) ?: return@onPreviewKeyEvent false
+                    val action = prefs.shortcuts.entries.firstOrNull { it.value == chord }?.key ?: return@onPreviewKeyEvent false
+                    when (action) {
+                        "search" -> shell.searching = true
+                        "add" -> shell.adding = true
+                        "lock" -> shell.lockNow()
+                        "settings" -> nav.navigate("settings")
+                        else -> shell.tab = action
+                    }
+                    true
+                },
+        ) {
+            ReceiveIncoming()
             SharedTransitionLayout(Modifier.fillMaxSize().backdropSource(backdrop)) {
                 CompositionLocalProvider(LocalShared provides this) {
                     NavHost(
@@ -211,6 +306,7 @@ fun VaultShell(prefs: Prefs) {
             }
             // Above every page: the capsule that counts a copied secret down.
             CopyCapsule(Modifier.align(Alignment.TopCenter).statusBarsPadding())
+            ChildPill(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 96.dp))
         }
     }
 }

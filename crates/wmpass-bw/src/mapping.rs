@@ -405,7 +405,7 @@ pub fn cipher_from_entry(entry: &Entry, server: Option<&Value>, key: &SymKey) ->
         ..Meta::default()
     };
     let mut notes = common.notes.v.expose().to_owned();
-    let mut set_kind = |fields: &mut Vec<Value>, name: &str| push_field(fields, KIND_FIELD, name, true, key);
+    let set_kind = |fields: &mut Vec<Value>, name: &str| push_field(fields, KIND_FIELD, name, true, key);
     let bw_type = match &entry.kind {
         Kind::Login(login) => {
             meta.alias = login.alias.v.clone();

@@ -472,6 +472,21 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
             else -> "Off"
         }
         if (entry.tags.isEmpty()) {
+            var guess by remember(entry.id) { mutableStateOf<String?>(null) }
+            LaunchedEffect(entry.id) {
+                guess = runCatching { Pass.plainCall("categorise.suggest") { put("id", entry.id) }.obj["category"]?.jsonPrimitive?.contentOrNull }.getOrNull()
+            }
+            guess?.let { category ->
+                ActionLine(PassIcons.AutoAwesome, "Tag it $category", tint = colors.primary) {
+                    shell.launch {
+                        Pass.change("entry.common") {
+                            put("id", entry.id)
+                            putJsonArray("tags") { add(category) }
+                        }
+                    }
+                }
+                Hairline(inset = 58.dp)
+            }
             ActionLine(PassIcons.Sell, "Add a tag") { sheet = "tags" }
             Hairline(inset = 58.dp)
         }
@@ -515,6 +530,8 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
                 }
             }
         }
+        Hairline(inset = 58.dp)
+        ActionLine(PassIcons.QrCodeScanner, "Send to a device") { sheet = "send" }
         if (!entry.trashed) {
             Hairline(inset = 58.dp)
             ActionLine(PassIcons.Delete, "Move to trash", tint = colors.danger) {
@@ -559,6 +576,7 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
         }
         "reminders" -> RemindersSheet(entry) { sheet = null }
         "destruct" -> DestructSheet(entry) { sheet = null }
+        "send" -> SendSheet(entry) { sheet = null }
     }
 }
 
@@ -992,5 +1010,57 @@ private fun DestructSheet(entry: Detail, onDismiss: () -> Unit) {
         SheetRow(PassIcons.Timer, "Tomorrow") { set(24 * hour) }
         SheetRow(PassIcons.Timer, "In a week") { set(7 * 24 * hour) }
         SheetRow(PassIcons.Timer, "In a month") { set(30 * 24 * hour) }
+    }
+}
+
+/**
+ * Hands one item to a device in the same room, by QR codes alone. The other side shows a code
+ * with a one-use key in it, this side seals the item to that key and shows the result.
+ */
+@Composable
+private fun SendSheet(entry: Detail, onDismiss: () -> Unit) {
+    val colors = palette
+    val shell = LocalShell.current
+    var sealed by remember { mutableStateOf<String?>(null) }
+    var problem by remember { mutableStateOf<String?>(null) }
+    PassSheet(onDismiss, "Send to a device") {
+        val shown = sealed
+        if (shown != null) {
+            com.wasimaster.wmpass.ui.parts.QrCode(shown, Modifier.padding(horizontal = 30.dp))
+            Spacer(Modifier.height(14.dp))
+            Text("Scan this with the other device. It can be opened only there, once.", color = colors.textMid, style = MaterialTheme.typography.bodyMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        } else {
+            Text(
+                "On the other device, choose Sync and accounts, then Receive an item. It shows a code for you to scan. Nothing travels over a network.",
+                color = colors.textMid,
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            problem?.let {
+                Spacer(Modifier.height(10.dp))
+                Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium)
+            }
+            Spacer(Modifier.height(16.dp))
+            PrimaryButton("Scan its code", Modifier.fillMaxWidth(), icon = PassIcons.QrCodeScanner) {
+                shell.scanTarget = { text ->
+                    shell.launch {
+                        try {
+                            val made = Pass.net("share.seal", online = false) {
+                                put("id", entry.id)
+                                put("text", text)
+                            }.obj["text"]!!.jsonPrimitive.content
+                            if (com.wasimaster.wmpass.ui.parts.qrFits(made)) {
+                                sealed = made
+                                shell.haptics.confirm()
+                            } else {
+                                problem = "This item is too large for a code. Remove its long notes or use sync."
+                            }
+                        } catch (failure: com.wasimaster.wmpass.core.NativeFailure) {
+                            problem = failure.message
+                        }
+                    }
+                }
+                shell.nav.navigate("scan")
+            }
+        }
     }
 }

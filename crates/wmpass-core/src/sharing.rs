@@ -204,6 +204,15 @@ impl Manifest {
         Ok((unwrap(me, &member.wrapped, vault_id)?, body.version))
     }
 
+    /// Opens as a member, following the owner to a new vault id if someone has been removed
+    /// since. The id comes from a manifest the pinned owner key signed, so a sync location
+    /// cannot redirect anyone. Returns the key, the id now in force, and the version.
+    pub fn open_latest(&self, me: &MemberKeys, owner_key: &[u8; 32], min_version: u64) -> Result<(VaultKey, Vec<u8>, u64)> {
+        let peek: Body = rmp_serde::from_slice(&self.body).map_err(|_| Error::Encoding)?;
+        let (key, version) = self.open(me, owner_key, &peek.vault_id, min_version)?;
+        Ok((key, peek.vault_id, version))
+    }
+
     /// Who is on it, after checking the signature.
     pub fn members(&self, owner_key: &[u8; 32], vault_id: &[u8]) -> Result<Vec<MemberPublic>> {
         Ok(self.verified(owner_key, vault_id, 0)?.members.into_iter().map(|m| m.public).collect())
