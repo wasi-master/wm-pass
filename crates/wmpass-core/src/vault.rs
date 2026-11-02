@@ -411,6 +411,14 @@ impl Vault {
         Ok(id)
     }
 
+    /// The file name of this vault's decoy, which keeps pace with the vault's size. Derived
+    /// from the key so that the vault can recognise its own decoy without anything on disk
+    /// saying which file that is: a hidden vault's file must never be mistaken for it.
+    pub fn chaff_file_name(&self) -> Result<String> {
+        let name = crypto::hkdf(&self.key.0[..], self.header.vault_id(), "wmpass/chaff-name/v1")?;
+        Ok(name.iter().take(16).map(|b| format!("{b:02x}")).collect())
+    }
+
     /// The name this device's sync file goes under. It is derived from the vault key,
     /// so a sync location sees random names that reveal neither the vault nor the device.
     pub fn sync_file_name(&self) -> Result<String> {

@@ -37,6 +37,16 @@ missing_debug_implementations = "warn"
 all = { level = "deny", priority = -1 }
 unwrap_used = "warn"
 
+# This disk is shared with big Gradle builds: no per-crate incremental state, and line
+# tables rather than full debug info cut the target directory by about two thirds.
+[profile.dev]
+debug = "line-tables-only"
+incremental = false
+
+[profile.test]
+debug = "line-tables-only"
+incremental = false
+
 [profile.release]
 lto = true
 codegen-units = 1

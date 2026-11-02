@@ -574,6 +574,20 @@ pub fn chaff_file(config: &KdfConfig, plausible_plain_len: usize) -> Result<Vec<
     Ok(out)
 }
 
+/// Random bytes in the shape of a vault file of exactly `file_len` bytes, for a decoy that has
+/// to stay the same size as a vault that has grown.
+pub fn chaff_like(config: &KdfConfig, file_len: usize) -> Result<Vec<u8>> {
+    let header = Header::new(config)?;
+    let mut out = header.bytes;
+    let at = out.len();
+    if file_len <= at {
+        return Err(Error::Invalid("too short for a vault file".into()));
+    }
+    out.resize(file_len, 0);
+    crypto::fill_random(&mut out[at..])?;
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -797,6 +811,17 @@ mod tests {
         assert_eq!(real.len(), chaff.len());
         assert_eq!(real[..OFF_ID], chaff[..OFF_ID]);
         assert!(matches!(open_with(&chaff, b"pw", &[]), Unlock::NoMatch));
+    }
+
+    #[test]
+    fn chaff_can_match_a_vault_that_has_grown() {
+        let config = config();
+        let (header, key) = vault(&config, b"pw");
+        let real = seal_file(&header, &key, &vec![7u8; 300_000]).unwrap();
+        let chaff = chaff_like(&config, real.len()).unwrap();
+        assert_eq!(real.len(), chaff.len());
+        assert!(matches!(open_with(&chaff, b"pw", &[]), Unlock::NoMatch));
+        assert!(chaff_like(&config, 4).is_err());
     }
 
     #[test]

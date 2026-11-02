@@ -3,3 +3,8 @@ target/
 !data/vectors/*.wmvault
 .DS_Store
 local.properties
+android/.gradle/
+android/build/
+android/*/build/
+android/local.properties
+android/.kotlin/
