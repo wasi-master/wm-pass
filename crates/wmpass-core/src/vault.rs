@@ -640,6 +640,24 @@ impl Vault {
         Ok(())
     }
 
+    /// A vault meant for sharing. No password opens it: each member's key comes from a
+    /// [`crate::sharing::Manifest`], and the root key here is thrown away at once.
+    pub fn create_shared(name: &str, config: &KdfConfig, device: u32, now_ms: u64) -> Result<Self> {
+        let root = RootKey::from_high_entropy(&crypto::random_array::<32>()?)?;
+        Self::create_with_root(name, &root, config, device, now_ms)
+    }
+
+    /// Moves a shared vault to a new key and id, for after someone leaves.
+    pub fn rekey_shared(&mut self, config: &KdfConfig, now_ms: u64) -> Result<()> {
+        let root = RootKey::from_high_entropy(&crypto::random_array::<32>()?)?;
+        self.rekey_with_root(&root, config, now_ms)
+    }
+
+    /// This file's random id.
+    pub fn vault_id(&self) -> &[u8] {
+        self.header.vault_id()
+    }
+
     /// Encrypts an attachment. Store the bytes under the returned record's `blob` name.
     pub fn seal_attachment(name: &str, mime: &str, plain: &[u8]) -> Result<(Attachment, Vec<u8>)> {
         let key = crypto::random_key()?;
