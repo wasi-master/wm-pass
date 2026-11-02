@@ -1,24 +1,45 @@
 # WM Pass
 
-A password manager from the WM Suite, with security as its first requirement. Everything works offline, and every network feature starts switched off. MIT licensed.
+A password manager from the WM Suite that keeps its vault on your own devices. There is no account to make, it works with the network off, and every network feature starts switched off. MIT licensed.
 
-This repository is being built in phases, and the Rust core comes first. See [SECURITY.md](SECURITY.md) for the threat model and [docs/format.md](docs/format.md) for the vault format.
+It runs on Android, macOS, Windows, Linux, Chrome, Firefox and Wear OS, over one Rust core. Read [the docs](https://wmpass.pages.dev), or start with [the threat model](docs/src/content/docs/security/threat-model.md) and [the file format](docs/src/content/docs/security/format.md). To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
-| Crate | What it holds |
+## What is where
+
+| Path | What it holds |
 |---|---|
-| `wmpass-core` | Vault format, key slots, data model, merge, generator, health, search, import and export. No platform code and no network |
-| `wmpass-cli` | The `wmpass` command |
+| `crates/wmpass-core` | Vault format, key slots, model, merge, generator, health, search, import and export. No platform code and no network |
+| `crates/wmpass-session` | The session every shell talks to, over one frame format |
+| `crates/wmpass-net`, `-sinks`, `-lan`, `-bw`, `-hwkey` | Network features, backup places, local network sync, Bitwarden client, hardware keys |
+| `crates/wmpass-bridge`, `-host` | The sealed conversation between extension and desktop app, and the relay between them |
+| `crates/wmpass-server` | A server you can run yourself |
+| `crates/wmpass-cli`, `-jni`, `-wasm`, `-ffi` | The command line, and the bindings for Android, browsers and other shells |
+| `android/` | The Android app, Wear OS app and the watch link |
+| `ui/` | Svelte screens shared by desktop and extension |
+| `desktop/`, `extension/` | Those two shells |
+| `docs/` | The documentation site |
+| `packaging/` | Release notes and recipes for each channel |
+
+## Building
+
+```bash
+git submodule update --init
+```
 
 ```bash
 cargo test --workspace
 ```
 
 ```bash
-cargo run -p wmpass-cli -- create my.wmvault
+npm ci && npm run extension:build
 ```
 
 ```bash
-cargo run -p wmpass-cli -- add my.wmvault GitHub --username octo --url https://github.com
+cargo tauri build
 ```
+
+The last one runs from `desktop/src-tauri`. The Android app builds from `android/` with `./gradlew assembleDebug`, and needs the NDK and `cargo-ndk`. Pass `-Pwmpass.fdroid=true` to leave out Google's Wearable API, or `-Pwmpass.offline=true` to drop the internet permission.
+
+The browser tests run with `node extension/test/run.mjs` after building the extension.
 
 Data sources and their licences are listed in [data/README.md](data/README.md).

@@ -124,3 +124,7 @@ A password manager is opened a dozen times a day for about five seconds at a tim
 ### Keeping it honest
 
 Blur and shaders degrade gracefully: the aurora needs Android 13 and blur needs 12, and below that the same layout stands on gradients and solid glass. Lists never run an infinite animation. The aurora stops when it is off screen, when the screen is scrolled away from it, and when the system says to save power.
+
+## Desktop and extension
+
+The ban list above applies to them too. They share the screens in `ui/`, which follow this document's rules rather than its Compose code: three panes on a wide window, native menus and title bar on each OS, and the shield only at the door. The Glass style is Android only.

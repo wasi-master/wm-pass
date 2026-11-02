@@ -1,0 +1,28 @@
+name: Extension release
+
+on:
+  push:
+    tags: ['extension-v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: rustup target add wasm32-unknown-unknown
+      - run: cargo install wasm-bindgen-cli --version 0.2.130 --locked
+      - run: npm ci
+      - run: npm run extension:build
+      - run: |
+          (cd extension/dist/chrome && zip -qr ../../../wm-pass-chrome.zip .)
+          (cd extension/dist/firefox && zip -qr ../../../wm-pass-firefox.zip .)
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" wm-pass-chrome.zip wm-pass-firefox.zip --draft --title "WM Pass extension $TAG"
