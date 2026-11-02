@@ -24,7 +24,10 @@ deny = [
 
 [advisories]
 yanked = "deny"
-ignore = []
+ignore = [
+    # rsa, in wmpass-bw only. See .cargo/audit.toml for why this does not reach WM Pass.
+    "RUSTSEC-2023-0071",
+]
 
 [sources]
 unknown-registry = "deny"
