@@ -382,6 +382,24 @@ private fun SecurityScreen() {
                 ToggleSetting("Offer to save passwords", "Ask after you sign in with a new or changed password.", prefs.autofillSave.value, icon = PassIcons.Key) { prefs.autofillSave.set(it) }
             }
             item {
+                ToggleSetting(
+                    "Let WM Keyboard fill",
+                    "Its WM Pass tool can list your logins and type them while the vault is open. A password it types passes through the keyboard.",
+                    prefs.keyboardAccess.value,
+                    icon = PassIcons.Keyboard,
+                ) { prefs.keyboardAccess.set(it) }
+            }
+            if (com.wasimaster.wmpass.BuildConfig.WATCH) {
+                item {
+                    ToggleSetting(
+                        "Show on my watch",
+                        "While the vault is open here, your paired watch can show one-time codes and favourites. The watch keeps nothing.",
+                        prefs.wearAccess.value,
+                        icon = PassIcons.Key,
+                    ) { prefs.wearAccess.set(it) }
+                }
+            }
+            item {
                 NavRow("Autofill service", "Set WM Pass as this device's autofill service", icon = PassIcons.TextFields) {
                     runCatching {
                         context.startActivity(

@@ -4,6 +4,9 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+val wearLink = providers.gradleProperty("wmpass.offline").orNull != "true" &&
+    providers.gradleProperty("wmpass.fdroid").orNull != "true"
+
 android {
     namespace = "com.wasimaster.wmpass"
     compileSdk {
@@ -15,6 +18,7 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
+        buildConfigField("boolean", "WATCH", wearLink.toString())
         buildConfigField("boolean", "OFFLINE", (providers.gradleProperty("wmpass.offline").orNull == "true").toString())
     }
     compileOptions {
@@ -62,6 +66,8 @@ kotlin {
 
 dependencies {
     implementation(project(":core"))
+    // The watch link brings in Google's Wearable API, which the F-Droid and offline builds leave out.
+    if (wearLink) implementation(project(":wearlink"))
     implementation("com.wasimaster.wmsuite:theme")
     implementation("com.wasimaster.wmsuite:ui-core")
     implementation("com.wasimaster.wmsuite:settings-ui")
