@@ -1437,6 +1437,35 @@ impl Service {
                 let a: A = parse(call.args)?;
                 Ok(match_rows(&session.vault, Target::Web { url: &a.url }))
             }
+            // Only for an entry that really matches the page, so a request cannot name any login
+            // and carry its password off to some other site.
+            "match.fill" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    id: String,
+                    url: String,
+                }
+                let a: A = parse(call.args)?;
+                let seconds = now / 1000;
+                let entry = session.entry(&a.id)?;
+                if matching::match_entry(entry, Target::Web { url: &a.url }).is_none() {
+                    return Err(invalid("that entry does not belong to this page"));
+                }
+                let Kind::Login(login) = &entry.kind else {
+                    return Err(invalid("that entry is not a login"));
+                };
+                let code = match otp_of(entry) {
+                    Some(config) => Some(config.code(seconds)?),
+                    None => None,
+                };
+                let filled = Zeroizing::new(serde_json::to_vec(&json!({
+                    "username": login.username.v,
+                    "password": login.password.v.expose(),
+                    "code": code.as_ref().map(|c| c.expose().to_owned()),
+                })).map_err(|_| invalid("that entry cannot be filled"))?);
+                Ok(Reply { json: String::new(), secret: Some(filled), blobs: Vec::new() })
+            }
             "match.app" => {
                 #[derive(Deserialize, Default)]
                 #[serde(default)]
@@ -2222,7 +2251,6 @@ impl Service {
 }
 
 /// Decodes what a shell passes as text.
-#[cfg(feature = "net")]
 fn base64_encode(bytes: &[u8]) -> String {
     B64.encode(bytes)
 }

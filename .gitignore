@@ -13,3 +13,4 @@ ui/src/wasm/
 ui/public/
 desktop/dist/
 extension/dist/
+desktop/src-tauri/binaries/

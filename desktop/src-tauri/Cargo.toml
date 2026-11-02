@@ -21,6 +21,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 wmpass-core.workspace = true
+wmpass-bridge = { path = "../../crates/wmpass-bridge" }
 wmpass-session = { path = "../../crates/wmpass-session", features = ["net"] }
 wmpass-sinks = { path = "../../crates/wmpass-sinks", features = ["native"] }
 wmpass-net = { path = "../../crates/wmpass-net", features = ["native"] }

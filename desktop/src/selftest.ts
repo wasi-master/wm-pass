@@ -151,6 +151,11 @@ export async function run() {
     const again = (await pass.unlock(password.slice())).kind;
     return { open_before: before !== 0, closed_after: after === 0, page_followed: page === 'locked', reopened: again };
   });
+  await step('bridge', async () => {
+    const desktop = host().desktop!;
+    await desktop.bridgeSetEnabled(true, true);
+    return { fingerprint: (await desktop.bridgeFingerprint()).length, state: (await desktop.bridgeState()).running };
+  });
   await step('autostart readable', async () => host().desktop!.autostart());
   await step('version', async () => host().desktop!.version());
   await step('settings file keeps protection out', async () => {

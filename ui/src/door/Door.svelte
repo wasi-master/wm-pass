@@ -35,6 +35,24 @@
 
   const remaining = $derived(Math.max(0, retryAt - now));
 
+  // Offered only where the user turned it on, for a vault they enrolled.
+  let quick = $state(false);
+  $effect(() => {
+    if (!creating) void pass.quickFiles().then((files) => (quick = files.length > 0));
+  });
+
+  async function unlockQuick() {
+    busy = true;
+    message = null;
+    try {
+      if (!(await pass.unlockQuick())) quick = false;
+    } catch (failure: any) {
+      message = failure.message;
+      quick = false;
+    }
+    busy = false;
+  }
+
   $effect(() => {
     if (retryAt <= Date.now()) return;
     const timer = setInterval(() => (now = Date.now()), 250);
@@ -277,6 +295,9 @@
         onenter={() => submit()}
       />
       {#if message}<p class="danger-text small">{message}</p>{/if}
+      {#if quick}
+        <Btn label="Unlock from the system keyring" wide onclick={unlockQuick} disabled={busy} />
+      {/if}
       <Btn label={busy ? 'Unlocking…' : 'Unlock'} variant="primary" wide type="submit" disabled={!password || remaining > 0 || busy} />
       {#if source?.kind === 'kdbx'}
         <Btn

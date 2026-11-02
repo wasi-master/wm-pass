@@ -120,9 +120,8 @@ export interface DesktopHost {
   removeBrowserHost(): Promise<void>;
   bridgeFingerprint(): Promise<string>;
   bridgeState(): Promise<{ running: boolean; paired: { id: string; name: string }[]; pending: string | null }>;
-  bridgeSetEnabled(on: boolean): Promise<void>;
+  bridgeSetEnabled(on: boolean, askSites: boolean): Promise<void>;
   bridgeForget(id: string): Promise<void>;
-  bridgeAnswer(accepted: boolean): Promise<void>;
   sshState(): Promise<{ running: boolean; socket: string | null; last: string | null }>;
   sshSetEnabled(on: boolean, confirm: boolean): Promise<void>;
   autoType(id: string): Promise<void>;
