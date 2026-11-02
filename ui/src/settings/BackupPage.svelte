@@ -1,0 +1,139 @@
+<script lang="ts">
+  import Btn from '../parts/Btn.svelte';
+  import Dialog from '../parts/Dialog.svelte';
+  import Group from '../parts/Group.svelte';
+  import IconBtn from '../parts/IconBtn.svelte';
+  import Row from '../parts/Row.svelte';
+  import { overlays } from '../parts/floating.svelte';
+  import { pass } from '../engine/pass.svelte';
+  import { host, type PlaceFile } from '../engine/host';
+  import Choice from './Choice.svelte';
+  import PlaceDialog from './PlaceDialog.svelte';
+  import { placeProblem, places, type Place } from './places.svelte';
+
+  let adding = $state(false);
+  let editing = $state<Place | null>(null);
+  let acting = $state<Place | null>(null);
+  let restoring = $state<Place | null>(null);
+  let copies = $state<PlaceFile[] | null>(null);
+  let copiesProblem = $state<string | null>(null);
+  let busy = $state<string | null>(null);
+  let message = $state<string | null>(null);
+
+  function whenShort(ms: number) {
+    return new Date(ms).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  }
+
+  function subOf(place: Place) {
+    const last = places.runs[place.id];
+    if (last?.problem) return last.problem;
+    if (last) return `Last copy ${whenShort(last.at_ms)}`;
+    return place.kind === 'folder' ? place.path : place.kind === 'webdav' ? place.url : place.bucket;
+  }
+
+  async function backUp(place: Place) {
+    busy = place.id;
+    const problem = await places.backupTo(place);
+    busy = null;
+    overlays.toast(problem ?? `Copied to ${place.label}.`);
+  }
+
+  async function saveFile() {
+    await host().saveFile('Save a backup', 'wm-pass.wmbackup', await pass.bundle());
+    message = 'The backup is saved. It opens with your vault’s password.';
+  }
+
+  function mergedText(merged: number) {
+    return merged > 0 ? 'Merged into this vault. Anything newer here was kept, and older values moved to history.' : 'That file is under another key, so it holds some other vault.';
+  }
+
+  async function mergeFile() {
+    const file = await host().pickFile('Choose a backup or vault file');
+    if (file) message = mergedText(await pass.mergeIn(file.bytes));
+  }
+
+  async function openCopies(place: Place) {
+    acting = null;
+    restoring = place;
+    copies = null;
+    copiesProblem = null;
+    try {
+      copies = await places.copies(place);
+    } catch (failure) {
+      copiesProblem = placeProblem(failure);
+    }
+  }
+
+  async function bringBack(file: PlaceFile) {
+    try {
+      const bytes = await places.read(restoring!, file);
+      message = mergedText(await pass.mergeIn(bytes));
+      restoring = null;
+    } catch (failure) {
+      copiesProblem = placeProblem(failure);
+    }
+  }
+
+  async function stopUsing(place: Place) {
+    acting = null;
+    const yes = await overlays.ask({ title: `Stop using ${place.label}?`, body: 'WM Pass forgets this place and its login. Copies already there stay where they are.', action: 'Stop using it', danger: true });
+    if (yes) await places.remove(place.id);
+  }
+</script>
+
+<p class="dim" style="padding-bottom:14px">A backup is the encrypted file itself, so it can sit anywhere and only your password opens it. It includes every vault on this computer, without showing how many there are.</p>
+
+{#if places.available}
+  <Group title="Where they go">
+    {#each places.list as place (place.id)}
+      <Row title={place.label} sub={subOf(place)} icon={place.kind === 'folder' ? 'folder' : place.kind === 'webdav' ? 'language' : 'database'} onclick={() => (acting = place)}>
+        <IconBtn icon="backup" label="Back up to {place.label} now" disabled={busy === place.id} onclick={(event) => { event.stopPropagation(); void backUp(place); }} />
+      </Row>
+    {/each}
+    <Row title="Add a place" icon="add" chevron onclick={() => (adding = true)} />
+  </Group>
+  <Group title="Schedule">
+    <Choice title="How often" sub={places.everyDays > 0 ? 'Runs while the vault is locked, since it only moves ciphertext. The newest copy is read back and checked before any older one is removed. The app has to be running.' : null} icon="schedule" value={places.everyDays} options={[[0, 'By hand'], [1, 'Every day'], [7, 'Every week']] as [number, string][]} onchange={(d) => places.setSchedule(d)} />
+    <Choice title="How many to keep" icon="layers" value={places.keep} options={[[3, '3'], [7, '7'], [14, '14'], [30, '30']] as [number, string][]} onchange={(n) => places.setKeep(n)} />
+  </Group>
+{/if}
+
+<Group title="By hand">
+  <div class="set-body gap wrap">
+    <Btn label="Save a file" icon="upload" onclick={saveFile} />
+    <Btn label="Merge a file" icon="download" onclick={mergeFile} />
+  </div>
+</Group>
+{#if message}<p class="dim">{message}</p>{/if}
+
+{#if adding}
+  <PlaceDialog onclose={() => (adding = false)} onsaved={(place) => void backUp(place)} />
+{/if}
+{#if editing}
+  <PlaceDialog existing={editing} onclose={() => (editing = null)} />
+{/if}
+{#if acting}
+  {@const place = acting}
+  <Dialog title={place.label} onclose={() => (acting = null)}>
+    <div style="border:1px solid var(--hair);border-radius:var(--r-m);overflow:hidden">
+      <Row title="Bring back a copy" sub="Merge an older copy into this vault" icon="history" chevron onclick={() => openCopies(place)} />
+      <Row title="Change the details" icon="edit" chevron onclick={() => { editing = place; acting = null; }} />
+      <Row title="Stop using it" icon="delete" danger chevron onclick={() => stopUsing(place)} />
+    </div>
+  </Dialog>
+{/if}
+{#if restoring}
+  <Dialog title="Copies at {restoring.label}" onclose={() => (restoring = null)}>
+    {#if copiesProblem}<p class="danger-text">{copiesProblem}</p>{/if}
+    {#if copies === null && !copiesProblem}<p class="dim">Looking…</p>{/if}
+    {#if copies?.length === 0}<p class="dim">There are no copies here yet.</p>{/if}
+    {#if copies?.length}
+      <div style="border:1px solid var(--hair);border-radius:var(--r-m);overflow:hidden">
+        {#each copies.slice(0, 30) as file}
+          <Row title={file.modified_ms > 0 ? whenShort(file.modified_ms) : file.name} icon="history" onclick={() => bringBack(file)} />
+        {/each}
+      </div>
+    {/if}
+    {#snippet foot()}<Btn label="Close" onclick={() => (restoring = null)} />{/snippet}
+  </Dialog>
+{/if}

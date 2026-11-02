@@ -376,11 +376,13 @@ fun GeneratedStrength(state: GenState, modifier: Modifier = Modifier) {
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
-            Text(
-                "${state.bits.roundToInt()} bits",
-                color = colors.textLow,
-                style = MaterialTheme.typography.labelMedium.merge(PassType.numeric),
-            )
+            if (com.wasimaster.wmpass.app.Prefs.of(androidx.compose.ui.platform.LocalContext.current).genShowBits.value) {
+                Text(
+                    "${state.bits.roundToInt()} bits",
+                    color = colors.textLow,
+                    style = MaterialTheme.typography.labelMedium.merge(PassType.numeric),
+                )
+            }
         }
     }
 }

@@ -1,0 +1,93 @@
+<script lang="ts">
+  import Btn from '../parts/Btn.svelte';
+  import Group from '../parts/Group.svelte';
+  import IconBtn from '../parts/IconBtn.svelte';
+  import Row from '../parts/Row.svelte';
+  import Switch from '../parts/Switch.svelte';
+  import { overlays } from '../parts/floating.svelte';
+  import { pass } from '../engine/pass.svelte';
+  import { host } from '../engine/host';
+  import { ui } from '../vault/ui.svelte';
+  import { accounts, type AccountRef } from './accounts.svelte';
+  import AddAccount from './AddAccount.svelte';
+  import LanSection from './LanSection.svelte';
+  import PlaceDialog from './PlaceDialog.svelte';
+  import { places } from './places.svelte';
+
+  let refreshing = $state(false);
+  let addingAccount = $state(false);
+  let addingPlace = $state(false);
+  let fileSyncing = $state(false);
+  let fileMessage = $state<string | null>(null);
+
+  const current = $derived(accounts.list.find((a) => a.id === pass.account));
+
+  async function syncAccount() {
+    refreshing = true;
+    await accounts.syncNow();
+    refreshing = false;
+  }
+
+  async function syncFiles() {
+    fileSyncing = true;
+    await places.syncNow();
+    fileMessage = places.syncProblem ?? 'Up to date.';
+    fileSyncing = false;
+  }
+
+  async function remove(item: AccountRef) {
+    const yes = await overlays.ask({ title: `Remove ${item.label}?`, body: 'WM Pass forgets this account on this computer, with its offline copy. Nothing on the server or in the file changes.', action: 'Remove', danger: true });
+    if (yes) await accounts.remove(item.id);
+  }
+</script>
+
+{#if pass.account && current?.kind !== 'kdbx'}
+  <Group title="This account">
+    <Row
+      title={current?.label ?? 'Server'}
+      sub={accounts.syncProblem ?? 'Changes go up after each edit. If the server cannot be reached they wait here.'}
+      icon="sync"
+    >
+      <IconBtn icon="sync" label="Sync now" disabled={refreshing} onclick={syncAccount} />
+    </Row>
+  </Group>
+{/if}
+
+{#if host().lan}<LanSection />{/if}
+
+{#if places.available}
+  <Group title="Through a folder or server">
+    <div class="set-body"><p class="dim">Each device leaves its own encrypted copy there and merges the others. Pick any place you set up for backups.</p></div>
+    {#each places.list as place (place.id)}
+      <Row title={place.label} icon={place.kind === 'folder' ? 'folder' : 'cloud_sync'}>
+        <Switch checked={place.sync} label="Sync through {place.label}" onchange={(on) => places.put({ ...place, sync: on })} />
+      </Row>
+    {/each}
+    <Row title="Add a place" icon="add" chevron onclick={() => (addingPlace = true)} />
+    {#if places.list.some((p) => p.sync)}
+      <div class="set-body stack">
+        <div><Btn label={fileSyncing ? 'Syncing…' : 'Sync now'} icon="sync" disabled={fileSyncing} onclick={syncFiles} /></div>
+        {#if fileMessage}<p class="dim">{fileMessage}</p>{/if}
+      </div>
+    {/if}
+  </Group>
+{/if}
+
+<Group title="Accounts held elsewhere">
+  <div class="set-body"><p class="dim">Open a KeePass file where it is, or sign in to Bitwarden, Vaultwarden or a WM Pass server. They appear on the door beside this vault.</p></div>
+  {#each accounts.list as item (item.id)}
+    <Row title={item.label} sub={item.kind === 'kdbx' ? 'KeePass file' : item.server || 'bitwarden.com'} icon={item.kind === 'kdbx' ? 'key' : 'sync'} onclick={() => remove(item)} />
+  {/each}
+  <Row title="Add an account" icon="add" chevron onclick={() => (addingAccount = true)} />
+</Group>
+
+<Group title="Vaults inside this one">
+  <Row title="Nested and shared vaults" sub="Separate spaces, and vaults you share with family" icon="family_restroom" chevron onclick={() => ui.go('settings/vaults')} />
+</Group>
+
+<Group title="Hand over one item">
+  <Row title="Receive an item" sub="Show a code to the other device" icon="qr_code_scanner" chevron onclick={() => ui.go('settings/receive')} />
+</Group>
+
+{#if addingAccount}<AddAccount onclose={() => (addingAccount = false)} />{/if}
+{#if addingPlace}<PlaceDialog onclose={() => (addingPlace = false)} />{/if}

@@ -524,6 +524,12 @@ impl Service {
         let now = call.now_ms;
         match method {
             // ---- files, keys, slots ----
+            "qr.encode" => {
+                let code = qrcode::QrCode::new(call.secret).map_err(|_| invalid("too long for a QR code"))?;
+                let size = code.width();
+                let rows: String = code.to_colors().iter().map(|c| if *c == qrcode::Color::Dark { '1' } else { '0' }).collect();
+                Ok(Reply::view(json!({"size": size, "rows": rows})))
+            }
             "kinds" => {
                 let kinds: Vec<Value> = fields::KINDS
                     .iter()
