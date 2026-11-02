@@ -219,6 +219,11 @@ fn connect(address: &str) -> Result<TcpStream, SessionError> {
 
 /// One call. `service` is locked only for the moments vault state is needed.
 #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
+/// Whether a call belongs here rather than on the service itself.
+pub fn is_net_method(method: &str) -> bool {
+    method == "remote.sync" || ["breach.", "alias.", "usernames.", "inbox.", "lan.", "share.", "bitwarden."].iter().any(|prefix| method.starts_with(prefix))
+}
+
 pub fn call(
     service: &Mutex<Option<Service>>,
     method: &str,

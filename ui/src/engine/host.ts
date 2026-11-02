@@ -30,6 +30,7 @@ export interface Host {
   lockAll(): Promise<void>;
   /** Files in the app's folder, by path relative to it. Everything here is ciphertext. */
   listFiles(folder: string): Promise<{ name: string; size: number }[]>;
+  /** Subfolders are listed too, with a size of zero. */
   readFile(path: string): Promise<Uint8Array>;
   writeFile(path: string, bytes: Uint8Array): Promise<void>;
   removeFile(path: string): Promise<void>;
@@ -51,7 +52,7 @@ export interface Host {
   /** Listens for app menu commands, tray items and shortcuts. */
   onCommand?(run: (command: string) => void): void;
   /** Tells the shell what is happening, for its menus and tray. */
-  stateChanged?(state: { unlocked: boolean; name: string }): void;
+  stateChanged?(state: { unlocked: boolean; name: string; handle?: number }): void;
   /** Keeps other programs from capturing the window. */
   setScreenProtection?(on: boolean): Promise<void>;
   /** Small things kept sealed by the system's keychain: logins for places, the network identity. */
@@ -106,6 +107,9 @@ export interface LanHost {
 
 /** What only the desktop app can do. */
 export interface DesktopHost {
+  /** The lock timer runs in the app, where a suspended page cannot stop it. */
+  activity(): Promise<void>;
+  setLockRule(afterSeconds: number, onSleep: boolean): Promise<void>;
   quickAvailable(): Promise<boolean>;
   quickEnrolled(file: string): Promise<boolean>;
   quickEnroll(handle: number, file: string): Promise<void>;
@@ -121,11 +125,15 @@ export interface DesktopHost {
   bridgeAnswer(accepted: boolean): Promise<void>;
   sshState(): Promise<{ running: boolean; socket: string | null; last: string | null }>;
   sshSetEnabled(on: boolean, confirm: boolean): Promise<void>;
-  autoType(text: string, secret: boolean): Promise<void>;
+  autoType(id: string): Promise<void>;
   autostart(): Promise<boolean>;
   setAutostart(on: boolean): Promise<void>;
   setGlobalShortcut(chord: string): Promise<boolean>;
   setCloseToTray(on: boolean): Promise<void>;
+  setShortcuts(shortcuts: Record<string, string>): Promise<void>;
+  showMain(): Promise<void>;
+  hidePalette(): Promise<void>;
+  currentHandle(): Promise<number>;
   checkUpdate(): Promise<{ version: string; notes: string } | null>;
   installUpdate(): Promise<void>;
   version(): Promise<string>;

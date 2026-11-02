@@ -64,6 +64,12 @@ function stamp() {
   return `${d.getUTCFullYear()}${two(d.getUTCMonth() + 1)}${two(d.getUTCDate())}-${two(d.getUTCHours())}${two(d.getUTCMinutes())}${two(d.getUTCSeconds())}`;
 }
 
+/** When a copy was made, from its name. */
+function stampOf(name: string) {
+  const m = /(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})/.exec(name);
+  return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : 0;
+}
+
 /** Words for a failure at a place. The shell has already said what kind it was. */
 export function placeProblem(failure: any): string {
   return failure?.message || 'The connection failed. WM Pass will try again.';
@@ -203,7 +209,10 @@ class Places {
   async copies(place: Place): Promise<PlaceFile[]> {
     this.guard(place);
     const all = await host().places!.list(place);
-    return all.filter((f) => f.name.startsWith(PREFIX) && f.name.endsWith(EXTENSION)).sort((a, b) => (a.name > b.name ? -1 : 1));
+    return all
+      .filter((f) => f.name.startsWith(PREFIX) && f.name.endsWith(EXTENSION))
+      .sort((a, b) => (a.name > b.name ? -1 : 1))
+      .map((f) => ({ ...f, modified_ms: f.modified_ms || stampOf(f.name) }));
   }
 
   read(place: Place, file: PlaceFile) {

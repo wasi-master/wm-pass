@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
-members = ["crates/*"]
+members = ["crates/*", "desktop/src-tauri"]
+# Everyday builds leave the desktop shell out: it takes minutes and needs a page build first.
+default-members = ["crates/*"]
 
 [workspace.package]
 version = "0.1.0"

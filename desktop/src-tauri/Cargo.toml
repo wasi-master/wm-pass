@@ -1,0 +1,46 @@
+[package]
+name = "wmpass-desktop"
+description = "WM Pass for the desktop: a thin shell over the session, with the tray, menus and the system's own dialogs."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "wm-pass"
+path = "src/main.rs"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+unwrap_used = "warn"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+wmpass-core.workspace = true
+wmpass-session = { path = "../../crates/wmpass-session", features = ["net"] }
+wmpass-sinks = { path = "../../crates/wmpass-sinks", features = ["native"] }
+wmpass-net = { path = "../../crates/wmpass-net", features = ["native"] }
+wmpass-hwkey = { path = "../../crates/wmpass-hwkey", features = ["desktop"] }
+serde.workspace = true
+serde_json.workspace = true
+zeroize.workspace = true
+blake3.workspace = true
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-updater = "2"
+arboard = { version = "3.7", default-features = false, features = ["wayland-data-control"] }
+rfd = { version = "0.17", default-features = false, features = ["xdg-portal", "pollster"] }
+sysinfo = { version = "0.37", default-features = false, features = ["system"] }
+keyring = "4.2"
+enigo = { version = "0.6", default-features = false, features = ["x11rb", "wayland"] }
+interprocess = "2.4"
+base64 = "0.23.1"
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["process"] }

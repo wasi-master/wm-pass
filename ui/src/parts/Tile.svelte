@@ -30,8 +30,7 @@
 
   const face: Face = $derived.by(() => {
     void brands.ready;
-    void prefs.v.theme_id;
-    void prefs.v.look;
+    void prefs.themeApplied;
     return faceOf(title, site, kind, label, icon, forcedStyle ?? prefs.v.site_icon_style, forcedShape ?? prefs.v.site_icon_shape, {
       ground: token('--bg'),
       neutral: token('--s3'),

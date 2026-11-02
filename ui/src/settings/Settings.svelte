@@ -148,8 +148,17 @@
 {/snippet}
 
 {#if !ui.narrow || !pageId}
-  <div class="list-pane" style={ui.narrow ? 'flex:1' : 'width:240px;background:var(--s1)'} data-tauri-drag-region>
-    <div class="list-head" style={ui.narrow ? '' : 'padding-top:12px'}>
+  <div class="list-pane" style={ui.narrow ? 'flex:1' : 'width:250px;background:var(--s1)'}>
+    {#if !ui.narrow}
+      <div class="top" style="flex:none" data-tauri-drag-region></div>
+      <div style="padding:0 8px 4px">
+        <button type="button" class="side-item" onclick={() => ui.go(prefs.v.last_tab || 'all')}>
+          <span class="ico"><Icon name="arrow_back" size={18} /></span>
+          <span class="grow ell">Back to the vault</span>
+        </button>
+      </div>
+    {/if}
+    <div class="list-head" style="padding-top:4px">
       <Field bind:value={query} placeholder="Search settings" />
     </div>
     <div class="list-body scroll">
