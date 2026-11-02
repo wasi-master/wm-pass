@@ -124,6 +124,7 @@ object AutofillBuilder {
     @SuppressLint("RestrictedApi")
     private fun inline(context: Context, request: FillRequest, index: Int, title: String, subtitle: String): InlinePresentation? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
+        if (!com.wasimaster.wmpass.app.Prefs.of(context).autofillInline.value) return null
         val inlineRequest = request.inlineSuggestionsRequest ?: return null
         if (index >= inlineRequest.maxSuggestionCount) return null
         val specs: List<InlinePresentationSpec> = inlineRequest.inlinePresentationSpecs
@@ -207,7 +208,7 @@ object AutofillBuilder {
                 arrayOf(form.password),
             )
             form.username?.let { save.setOptionalIds(arrayOf(it)) }
-            builder.setSaveInfo(save.build())
+            if (com.wasimaster.wmpass.app.Prefs.of(context).autofillSave.value) builder.setSaveInfo(save.build())
         }
         return builder.build()
     }

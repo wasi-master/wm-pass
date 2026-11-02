@@ -83,7 +83,9 @@ class Shell(
     val haptics: Haptics,
 ) {
     var undo by mutableStateOf<UndoOffer?>(null)
-    var tab by mutableStateOf(prefs.tabs.firstOrNull() ?: "vault")
+    var tab by mutableStateOf(
+        prefs.lastTab.value.takeIf { prefs.startTab.value == "last" && it in prefs.tabs } ?: prefs.tabs.firstOrNull() ?: "vault",
+    )
     var searching by mutableStateOf(false)
     var adding by mutableStateOf(false)
 
@@ -131,6 +133,48 @@ class Shell(
     }
 
     fun copyPassword(id: String) = copySecret("Password") { Pass.reveal(id, "password") }
+
+    private fun copyUsername(id: String) {
+        scope.launch {
+            val name = Pass.detail(id).fields.firstOrNull { it.key == "username" || it.key == "user" }?.text.orEmpty()
+            if (name.isNotEmpty()) copyPlain("Username", name)
+        }
+    }
+
+    /** Whether a chosen row action means anything for this entry. */
+    fun canDo(action: String, entry: com.wasimaster.wmpass.core.Summary): Boolean = when (action) {
+        "password" -> entry.hasPassword
+        "username" -> entry.kind == "login" || entry.kind == "database"
+        "code" -> entry.hasOtp
+        "none" -> false
+        else -> true
+    }
+
+    /** Does what a tap, swipe or row button has been set to do. */
+    fun perform(action: String, entry: com.wasimaster.wmpass.core.Summary) {
+        when (action) {
+            "password" -> copyPassword(entry.id)
+            "username" -> copyUsername(entry.id)
+            "code" -> copySecret("Code") { Pass.code(entry.id) }
+            "trash" -> trash(entry.id, entry.title)
+            "favourite" -> {
+                haptics.click()
+                scope.launch {
+                    Pass.change("entry.common") {
+                        put("id", entry.id)
+                        put("favourite", !entry.favourite)
+                    }
+                }
+            }
+            "open" -> open(entry.id)
+        }
+    }
+
+    /** A tap on a row. Something that cannot be copied still opens. */
+    fun tapped(entry: com.wasimaster.wmpass.core.Summary) {
+        val action = prefs.tapAction.value
+        if (action != "open" && canDo(action, entry)) perform(action, entry) else open(entry.id)
+    }
 
     fun copyPlain(label: String, text: String) {
         haptics.confirm()
@@ -258,6 +302,7 @@ fun VaultShell(prefs: Prefs) {
             ReceiveIncoming()
             SharedTransitionLayout(Modifier.fillMaxSize().backdropSource(backdrop)) {
                 CompositionLocalProvider(LocalShared provides this) {
+                    com.wasimaster.wmpass.ui.settings.ProvideSettingsKit(prefs) {
                     NavHost(
                         nav,
                         startDestination = "home",
@@ -320,6 +365,7 @@ fun VaultShell(prefs: Prefs) {
                             )
                         }
                         settingsGraph()
+                    }
                     }
                 }
             }

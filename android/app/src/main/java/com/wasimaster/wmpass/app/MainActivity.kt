@@ -42,8 +42,8 @@ class MainActivity : SecureActivity() {
                     window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
                 }
             }
-            PassTheme(prefs.look, prefs.accent, prefs.themeId, prefs.uiStyle, prefs.customThemes, prefs.colouredIcons) {
-                CompositionLocalProvider(LocalReduceMotion provides (systemAnimationsOff() || !prefs.richMotion)) {
+            PassTheme(prefs.look, prefs.accent, prefs.themeId, prefs.uiStyle, prefs.customThemes) {
+                CompositionLocalProvider(LocalReduceMotion provides (systemAnimationsOff() || !prefs.richMotion.value)) {
                     AppRoot(prefs)
                 }
             }

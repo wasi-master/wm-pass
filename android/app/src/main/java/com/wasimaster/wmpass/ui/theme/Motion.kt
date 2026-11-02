@@ -83,8 +83,10 @@ fun Modifier.arrive(index: Int, enabled: Boolean = true, rise: Dp = 18.dp): Modi
 @Stable
 class Haptics(private val view: View, context: Context) {
     private val vibrator: Vibrator? = context.getSystemService(Vibrator::class.java)
+    private val prefs = com.wasimaster.wmpass.app.Prefs.of(context)
 
     private fun composed(primitive: Int, scale: Float, fallback: Int) {
+        if (!prefs.haptics.value) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
             vibrator?.areAllPrimitivesSupported(primitive) == true
         ) {
@@ -102,6 +104,7 @@ class Haptics(private val view: View, context: Context) {
 
     /** It worked. */
     fun confirm() {
+        if (!prefs.haptics.value) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
             vibrator?.areAllPrimitivesSupported(primitiveClick(), primitiveThud()) == true
         ) {
@@ -118,6 +121,7 @@ class Haptics(private val view: View, context: Context) {
 
     /** It did not. */
     fun reject() {
+        if (!prefs.haptics.value) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
             vibrator?.areAllPrimitivesSupported(primitiveClick()) == true
         ) {

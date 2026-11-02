@@ -394,7 +394,6 @@ fun PassTheme(
     themeId: String = BuiltInThemes.DEFAULT,
     style: String = "standard",
     custom: List<ThemeFile> = emptyList(),
-    colouredIcons: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     val systemDark = isSystemInDarkTheme()
@@ -431,17 +430,16 @@ fun PassTheme(
     }
     val type = remember(flat, theme) { if (flat) typeFor(theme?.font ?: "system") else WmTypography }
     val shapes = remember(flat, theme) { if (flat) shapesFor(theme?.corners ?: 12) else WmShapes }
+    val prefs = com.wasimaster.wmpass.app.Prefs.of(context)
     CompositionLocalProvider(
         LocalPalette provides resolved.first,
-        LocalColouredIcons provides colouredIcons,
-        com.wasimaster.wmsuite.settings.LocalWmPlainGroups provides flat,
+        com.wasimaster.wmpass.ui.parts.LocalSiteIcons provides com.wasimaster.wmpass.ui.parts.SiteIconLook(prefs.siteIconStyle.value, prefs.siteIconShape.value),
+        com.wasimaster.wmsuite.settings.LocalWmPlainGroups provides (flat && !prefs.settingsCards.value),
+        com.wasimaster.wmsuite.settings.LocalWmBareTiles provides (prefs.settingsIcons.value == "bare"),
     ) {
         MaterialTheme(colorScheme = resolved.second, typography = type, shapes = shapes, content = content)
     }
 }
-
-/** Whether known brands show in their own colour on an entry's icon. */
-val LocalColouredIcons = staticCompositionLocalOf { true }
 
 val palette: Palette
     @Composable get() = LocalPalette.current

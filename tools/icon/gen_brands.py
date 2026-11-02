@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
-"""Builds data/brands/brands.tsv from a local copy of the Simple Icons npm package (CC0).
+"""Builds data/brands from a local copy of the Simple Icons npm package (CC0).
 
-Usage: gen_brands.py <unpacked package dir>
-Each line is: slug, name, brand colour, comma-separated domains, SVG path on a 24 by 24 grid.
+Usage: gen_brands.py <unpacked package dir> [older package dirs...]
+
+Simple Icons takes a logo out when its owner asks, and the sites people most often save are the
+ones this has happened to. Those files were released under CC0, so the well-known sites below can
+come from an older package. Nothing else does.
+
+brands.tsv holds what is needed to recognise a site: slug, name, colour, domains, other names.
+brand-paths/<first letter>.tsv holds the drawings, so an app with thousands of marks only reads
+the handful it shows. Well-known sites come first, because the icon picker lists in file order.
+Icons that Simple Icons lists under a licence other than CC0 are left out.
 The logos remain the marks of their owners; they are shown only to name the site.
 """
-import json, pathlib, re, sys
+import json, pathlib, re, shutil, sys, unicodedata
 
 # slug, extra domains. The first domain of each row is the one people sign in on.
 SITES = """
@@ -170,30 +178,104 @@ lastpass lastpass.com
 dashlane dashlane.com
 """.strip().splitlines()
 
+def load(package):
+    file = next(p for p in (package / "data/simple-icons.json", package / "_data/simple-icons.json") if p.exists())
+    data = json.loads(file.read_text())
+    return data["icons"] if isinstance(data, dict) else data
+
+
 root = pathlib.Path(sys.argv[1])
-data = json.loads((root / "_data/simple-icons.json").read_text())
-icons = data["icons"] if isinstance(data, dict) else data
+older = [pathlib.Path(p) for p in sys.argv[2:]]
+icons = load(root)
+
+# Places that host logos or code. A logo's source here says nothing about the brand's own site.
+NOT_THE_SITE = re.compile(
+    r"github|gitlab|wikipedia|wikimedia|twitter|\bx\.com|figma|dribbble|behance|brandfetch|seeklogo|worldvector|"
+    r"logo|svg|fontawesome|iconify|icons8|cdn|googleusercontent|gstatic|cloudfront|amazonaws|medium\.com|"
+    r"youtube|linkedin|facebook|instagram|npmjs|pypi|imgur|notion\.site|webflow|readthedocs"
+)
+PREFIX = re.compile(r"^(www|about|brand|brands|press|media|assets|static|design|developers?|docs|help|support|corporate|company|newsroom|home|en|blog)\.")
 
 
 def slug_of(icon):
     if icon.get("slug"):
         return icon["slug"]
-    title = icon["title"].lower().replace("+", "plus").replace(".", "dot").replace("&", "and")
+    title = icon["title"].lower().replace("+", "plus").replace(".", "dot").replace("&", "and").replace("đ", "d").replace("ħ", "h").replace("ı", "i").replace("ĸ", "k").replace("ŀ", "l").replace("ł", "l").replace("ß", "ss").replace("ŧ", "t")
+    title = unicodedata.normalize("NFD", title)
     return re.sub(r"[^a-z0-9]", "", title)
 
 
-by_slug = {slug_of(i): i for i in icons}
-out, missing = [], []
+def own_domain(icon, slug):
+    """The brand's own site, if its logo's source plainly is one."""
+    match = re.match(r"https?://([^/]+)", icon.get("source", ""))
+    if not match:
+        return None
+    host = match.group(1).lower()
+    while PREFIX.match(host):
+        host = PREFIX.sub("", host, count=1)
+    if NOT_THE_SITE.search(host) or "." not in host:
+        return None
+    label = re.sub(r"[^a-z0-9]", "", host.split(".")[-2])
+    if len(label) < 3 or not (label in slug or slug in label):
+        return None
+    return host
+
+
+def other_names(icon):
+    aliases = icon.get("aliases") or {}
+    names = list(aliases.get("aka", [])) + list(aliases.get("old", []))
+    names += [d["title"] for d in aliases.get("dup", [])]
+    names += list((aliases.get("loc") or {}).values())
+    return [n for n in names if "," not in n and "\t" not in n]
+
+
+curated = {}
 for row in SITES:
     slug, domains = row.split()
-    svg = root / "icons" / f"{slug}.svg"
-    icon = by_slug.get(slug)
-    if icon is None or not svg.exists():
+    curated[slug] = domains
+
+by_slug = {}
+dropped = []
+for icon in icons:
+    licence = (icon.get("license") or {}).get("type")
+    if licence and licence != "CC0-1.0":
+        dropped.append(icon["title"])
+        continue
+    by_slug[slug_of(icon)] = icon
+
+home = {slug: root for slug in by_slug}
+for package in older:
+    for icon in load(package):
+        slug = slug_of(icon)
+        if slug in curated and slug not in by_slug and (package / "icons" / f"{slug}.svg").exists():
+            by_slug[slug] = icon
+            home[slug] = package
+
+order = [s for s in curated if s in by_slug] + sorted(s for s in by_slug if s not in curated)
+index, chunks, missing = [], {}, []
+for slug in order:
+    icon = by_slug[slug]
+    svg = home[slug] / "icons" / f"{slug}.svg"
+    if not svg.exists():
         missing.append(slug)
         continue
-    path = re.search(r'\sd="([^"]+)"', svg.read_text()).group(1)
-    out.append("\t".join([slug, icon["title"], icon["hex"], domains, path]))
-target = pathlib.Path("data/brands/brands.tsv")
-target.parent.mkdir(parents=True, exist_ok=True)
-target.write_text("\n".join(out) + "\n")
-print(len(out), "brands,", target.stat().st_size // 1024, "KB; missing:", " ".join(missing))
+    found = re.search(r'\sd="([^"]+)"', svg.read_text())
+    if not found:
+        missing.append(slug)
+        continue
+    domains = curated.get(slug) or own_domain(icon, slug) or ""
+    index.append("\t".join([slug, icon["title"], icon["hex"], domains, ",".join(other_names(icon))]))
+    chunks.setdefault(slug[0], []).append(f"{slug}\t{found.group(1)}")
+
+target = pathlib.Path("data/brands")
+shutil.rmtree(target / "brand-paths", ignore_errors=True)
+(target / "brand-paths").mkdir(parents=True)
+(target / "brands.tsv").write_text("\n".join(index) + "\n")
+for letter, rows in chunks.items():
+    (target / "brand-paths" / f"{letter}.tsv").write_text("\n".join(rows) + "\n")
+total = sum((target / "brand-paths" / f"{c}.tsv").stat().st_size for c in chunks)
+mapped = sum(1 for line in index if line.split("\t")[3])
+print(len(index), "brands,", mapped, "with a domain;", (target / "brands.tsv").stat().st_size // 1024, "KB index,", total // 1024, "KB drawings")
+print("left out for their licence:", len(dropped), "; no drawing:", missing)
+print("from older packages:", sorted(s for s, p in home.items() if p != root))
+print("curated names not found:", [s for s in curated if s not in by_slug])

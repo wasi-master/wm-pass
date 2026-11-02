@@ -131,7 +131,8 @@ fun HealthTab() {
     LaunchedEffect(revision, breachCounts) { health = runCatching { Pass.health(breachCounts) }.getOrNull() }
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val h = health
-    val issues = remember(h) { h?.let { issuesOf(it).filter { issue -> issue.ids.isNotEmpty() } }.orEmpty() }
+    val hiddenChecks = shell.prefs.healthHidden
+    val issues = remember(h, hiddenChecks) { h?.let { issuesOf(it).filter { issue -> issue.ids.isNotEmpty() && issue.key !in hiddenChecks } }.orEmpty() }
     Box(Modifier.fillMaxSize()) {
         Aurora(Modifier.fillMaxWidth().height(460.dp), strength = if (colors.dark) 0.5f else 0.7f)
         Box(
@@ -150,7 +151,7 @@ fun HealthTab() {
             ),
             verticalArrangement = Arrangement.spacedBy(if (colors.flat) 0.dp else 10.dp),
         ) {
-            if (colors.flat) {
+            if (colors.flat && shell.prefs.healthScore.value) {
                 item("score") {
                     Column(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
                         Row(verticalAlignment = Alignment.Bottom) {
@@ -173,7 +174,7 @@ fun HealthTab() {
                         )
                     }
                 }
-            } else {
+            } else if (!colors.flat) {
                 item("title") {
                     Text(
                         "Health",

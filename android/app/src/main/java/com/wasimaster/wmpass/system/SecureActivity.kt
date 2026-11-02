@@ -33,8 +33,8 @@ abstract class SecureActivity : FragmentActivity() {
     protected fun gated(content: @Composable () -> Unit) {
         val prefs = Prefs.of(this)
         setContent {
-            PassTheme(prefs.look, prefs.accent, prefs.themeId, prefs.uiStyle, prefs.customThemes, prefs.colouredIcons) {
-                CompositionLocalProvider(LocalReduceMotion provides (systemAnimationsOff() || !prefs.richMotion)) {
+            PassTheme(prefs.look, prefs.accent, prefs.themeId, prefs.uiStyle, prefs.customThemes) {
+                CompositionLocalProvider(LocalReduceMotion provides (systemAnimationsOff() || !prefs.richMotion.value)) {
                     val state by Pass.state.collectAsStateWithLifecycle()
                     if (state is LockState.Unlocked) content() else DoorScreen(state, prefs)
                 }

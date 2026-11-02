@@ -61,19 +61,21 @@ import com.wasimaster.wmpass.ui.theme.pressScale
 /** A place in the dock. */
 data class Tab(val id: String, val label: String, val icon: ImageVector, val filled: ImageVector)
 
-val AllTabs = listOf(
-    Tab("vault", "Vault", PassIcons.Shield, PassIcons.ShieldFilled),
-    Tab("codes", "Codes", PassIcons.Pin, PassIcons.PinFilled),
-    Tab("generator", "Generator", PassIcons.Casino, PassIcons.CasinoFilled),
-    Tab("health", "Health", PassIcons.EcgHeart, PassIcons.EcgHeartFilled),
-    Tab("tools", "Tools", PassIcons.Widgets, PassIcons.WidgetsFilled),
-)
+val AllTabs: List<Tab>
+    get() = listOf(
+        Tab("vault", "Vault", PassIcons.Shield, PassIcons.ShieldFilled),
+        Tab("codes", "Codes", PassIcons.Pin, PassIcons.PinFilled),
+        Tab("generator", "Generator", PassIcons.Casino, PassIcons.CasinoFilled),
+        Tab("health", "Health", PassIcons.EcgHeart, PassIcons.EcgHeartFilled),
+        Tab("tools", "Tools", PassIcons.Widgets, PassIcons.WidgetsFilled),
+    )
 
 @Composable
 fun HomeScreen() {
     val shell = LocalShell.current
     val prefs = shell.prefs
     val colors = palette
+    androidx.compose.runtime.LaunchedEffect(shell.tab) { prefs.lastTab.set(shell.tab) }
     if (colors.flat) {
         StandardHome()
         return

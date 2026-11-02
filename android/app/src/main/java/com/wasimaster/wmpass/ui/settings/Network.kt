@@ -96,7 +96,14 @@ fun NetGate(what: String, content: @Composable () -> Unit) {
 @Composable
 private fun Page(title: String, content: @Composable () -> Unit) {
     val shell = LocalShell.current
-    WmScreen(title, onBack = { shell.nav.popBackStack() }) { content() }
+    val route = when (title) {
+        "Breaches" -> "settings/breaches"
+        "Email aliases" -> "settings/aliases"
+        "Disposable inbox" -> "settings/inbox"
+        "Username checker" -> "settings/usernames"
+        else -> null
+    }
+    WmScreen(title, route = route, onBack = { shell.nav.popBackStack() }) { content() }
 }
 
 // ---- breaches ----

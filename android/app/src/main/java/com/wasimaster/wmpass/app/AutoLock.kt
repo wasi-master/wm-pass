@@ -44,7 +44,7 @@ object AutoLock {
         app.registerReceiver(
             object : BroadcastReceiver() {
                 override fun onReceive(context: Context, intent: Intent) {
-                    if (prefs.lockAfter >= 0) scope.launch { Pass.lock() }
+                    if (prefs.lockAfter >= 0 && prefs.lockScreenOff.value) scope.launch { Pass.lock() }
                 }
             },
             IntentFilter(Intent.ACTION_SCREEN_OFF),

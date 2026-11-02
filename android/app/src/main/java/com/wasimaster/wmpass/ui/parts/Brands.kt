@@ -67,11 +67,14 @@ internal fun spaceArcFlags(path: String): String {
     return out.toString()
 }
 
-/** A site's mark and colour, from `data/brands`. Bundled, so showing one asks nobody anything. */
-class Brand(val slug: String, val name: String, val color: Color, private val path: String) {
+/**
+ * A site's mark and colour, from `data/brands`. Bundled, so showing one asks nobody anything.
+ * The drawing is read only when something first shows it.
+ */
+class Brand(val slug: String, val name: String, val color: Color, val otherNames: List<String>, private val context: Context) {
     val glyph: ImageVector by lazy {
         ImageVector.Builder(slug, 24.dp, 24.dp, 24f, 24f)
-            .addPath(pathData = addPathNodes(spaceArcFlags(path)), fill = SolidColor(Color.White))
+            .addPath(pathData = addPathNodes(spaceArcFlags(Brands.drawing(context, slug))), fill = SolidColor(Color.White))
             .build()
     }
 }
@@ -82,6 +85,11 @@ object Brands {
     private val byName = HashMap<String, Brand>()
     private val bySlug = LinkedHashMap<String, Brand>()
 
+    /** The last few files of drawings. Most vaults use a small part of the set. */
+    private val chunks = object : LinkedHashMap<Char, Map<String, String>>(8, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Char, Map<String, String>>?) = size > 6
+    }
+
     private fun load(context: Context) {
         if (loaded) return
         synchronized(this) {
@@ -90,18 +98,34 @@ object Brands {
                 context.assets.open("brands.tsv").bufferedReader().useLines { lines ->
                     lines.forEach { line ->
                         val parts = line.split('\t')
-                        if (parts.size == 5) {
-                            val hex = parts[2].toLong(16)
-                            val brand = Brand(parts[0], parts[1], Color(0xFF000000 or hex), parts[4])
+                        if (parts.size >= 4) {
+                            val others = parts.getOrNull(4).orEmpty().split(',').filter { it.isNotEmpty() }
+                            val brand = Brand(parts[0], parts[1], Color(0xFF000000 or parts[2].toLong(16)), others, context.applicationContext)
                             bySlug[brand.slug] = brand
-                            byName[normal(brand.name)] = brand
-                            parts[3].split(',').forEach { byDomain[it] = brand }
+                            // The well-known sites come first in the file and keep their claim on a name.
+                            byName.putIfAbsent(normal(brand.name), brand)
+                            byName.putIfAbsent(brand.slug, brand)
+                            others.forEach { byName.putIfAbsent(normal(it), brand) }
+                            parts[3].split(',').filter { it.isNotEmpty() }.forEach { byDomain.putIfAbsent(it, brand) }
                         }
                     }
                 }
             }
             loaded = true
         }
+    }
+
+    /** Reads the list ahead of need, off the main thread. */
+    fun warm(context: Context) = load(context)
+
+    internal fun drawing(context: Context, slug: String): String = synchronized(chunks) {
+        val letter = slug.first()
+        val chunk = chunks.getOrPut(letter) {
+            context.assets.open("brand-paths/$letter.tsv").bufferedReader().useLines { lines ->
+                lines.associate { line -> line.substringBefore('\t') to line.substringAfter('\t') }
+            }
+        }
+        chunk[slug].orEmpty()
     }
 
     private fun normal(text: String) = text.lowercase().filter { it.isLetterOrDigit() }
@@ -116,14 +140,21 @@ object Brands {
         return bySlug[slug]
     }
 
-    /** By the site if there is one, then by the name: an authenticator often has only a name. */
+    /**
+     * By the site if there is one, then by the name: an authenticator often has only a name.
+     * Failing both, a site's own name often is the brand, as with amazon.co.uk or spotify.se.
+     */
     fun find(context: Context, site: String?, title: String): Brand? {
         load(context)
-        var host = site?.lowercase()?.removePrefix("www.")
+        val whole = site?.lowercase()?.removePrefix("www.")
+        var host = whole
         while (!host.isNullOrEmpty() && '.' in host) {
             byDomain[host]?.let { return it }
             host = host.substringAfter('.')
         }
-        return byName[normal(title)]
+        byName[normal(title)]?.let { return it }
+        val labels = whole?.split('.')?.dropLast(1).orEmpty()
+        val label = labels.lastOrNull { it.length > 3 } ?: labels.lastOrNull().takeIf { labels.size == 1 }
+        return label?.let { byName[normal(it)] }
     }
 }
