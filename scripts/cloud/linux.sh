@@ -74,9 +74,12 @@ selftest() {
     sleep 2
     import -window root "$WMPASS_DATA_DIR/screen.png" 2>/dev/null
     wait $app'
+  # The app's sockets (SSH agent, browser bridge) go beside the data, not in the user's
+  # runtime folder, where a real WM Pass would have its own.
+  mkdir -m 700 "$dir.run"
   # Root cannot start WebKitGTK's sandbox; this run loads only the app's own pages.
   WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 LIBGL_ALWAYS_SOFTWARE=1 \
-    WMPASS_DATA_DIR="$dir" \
+    WMPASS_DATA_DIR="$dir" WMPASS_RUN_DIR="$dir.run" \
     with_keyring "$dir.keyring" timeout 240 xvfb-run -a -s "-screen 0 1280x800x24" bash -c "$inner" \
     >"$logs/selftest-run.log" 2>&1
   if [ -f "$dir/settings/selftest.json" ]; then
