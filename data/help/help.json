@@ -3935,6 +3935,15 @@
        "s": "For a vault you already have, the door offers "
       },
       {
+       "t": "link",
+       "id": "action.join_device",
+       "s": "Get it from another device"
+      },
+      {
+       "t": "text",
+       "s": ", "
+      },
+      {
        "t": "strong",
        "s": "Restore from a file"
       },
@@ -10208,6 +10217,236 @@
    "docs": "/security/lan/",
    "words": "pair qr code six digits",
    "plain": "Introduces another device to this one, once, so the two can sync over this network."
+  },
+  {
+   "id": "action.join_device",
+   "kind": "action",
+   "title": "Get it from another device",
+   "what": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Brings the vault you already have onto a new device, straight from a phone or computer that has it, over this network."
+      }
+     ]
+    }
+   ],
+   "how": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "On the new device, choose "
+      },
+      {
+       "t": "strong",
+       "s": "I already have a vault"
+      },
+      {
+       "t": "text",
+       "s": ", then "
+      },
+      {
+       "t": "strong",
+       "s": "Get it from another device"
+      },
+      {
+       "t": "text",
+       "s": ". It shows a QR code, and waits."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "On the device with the vault, open Settings, Sync and accounts, and choose "
+      },
+      {
+       "t": "link",
+       "id": "action.lan_join",
+       "s": "Add a new device"
+      },
+      {
+       "t": "text",
+       "s": ". Scan the code, or find the new device on the network and compare six digits on both screens."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "The vault comes over with its attachments, and the new device asks for the master password. The two devices are paired, so they can sync on this network from then on."
+      }
+     ]
+    }
+   ],
+   "caveats": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Both devices need to be on the same network, and the device with the vault needs to be unlocked."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "What comes over is the encrypted file. Without the master password it opens nowhere."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "This is for a device with no vault yet. Two vaults made separately stay separate: pairing does not merge them."
+      }
+     ]
+    }
+   ],
+   "related": [
+    "action.lan_join",
+    "group.sync.lan",
+    "screen.door"
+   ],
+   "docs": "/security/lan/",
+   "words": "new device setup join transfer move copy vault phone computer existing",
+   "plain": "Brings the vault you already have onto a new device, straight from a phone or computer that has it, over this network."
+  },
+  {
+   "id": "action.lan_join",
+   "kind": "action",
+   "title": "Add a new device",
+   "page": "sync",
+   "what": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Sends this vault to a phone or computer that has none yet, and pairs the two for syncing."
+      }
+     ]
+    }
+   ],
+   "how": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "First, on the new device, choose "
+      },
+      {
+       "t": "strong",
+       "s": "I already have a vault"
+      },
+      {
+       "t": "text",
+       "s": ", then "
+      },
+      {
+       "t": "link",
+       "id": "action.join_device",
+       "s": "Get it from another device"
+      },
+      {
+       "t": "text",
+       "s": ". It shows a code and waits."
+      }
+     ]
+    },
+    {
+     "t": "ul",
+     "items": [
+      [
+       {
+        "t": "strong",
+        "s": "Scan its code"
+       },
+       {
+        "t": "text",
+        "s": " reads the QR code on the new device's screen, from a computer, a phone or the terminal app."
+       }
+      ],
+      [
+       {
+        "t": "strong",
+        "s": "Find it on this network"
+       },
+       {
+        "t": "text",
+        "s": " looks for it, then both screens show six digits. If they match, tap "
+       },
+       {
+        "t": "strong",
+        "s": "They match"
+       },
+       {
+        "t": "text",
+        "s": " on both."
+       }
+      ]
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "The new device then asks for this vault's master password."
+      }
+     ]
+    }
+   ],
+   "caveats": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "It sends the vault you opened at the door, not an account or a nested vault."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "If the six digits differ, choose "
+      },
+      {
+       "t": "strong",
+       "s": "They differ"
+      },
+      {
+       "t": "text",
+       "s": ", and nothing is sent."
+      }
+     ]
+    }
+   ],
+   "related": [
+    "action.join_device",
+    "action.lan_pair",
+    "group.sync.lan"
+   ],
+   "docs": "/security/lan/",
+   "words": "new device add send vault transfer phone computer",
+   "plain": "Sends this vault to a phone or computer that has none yet, and pairs the two for syncing."
   },
   {
    "id": "action.lan_wait",

@@ -2,7 +2,7 @@
 // places, sealed by the system's keychain. Everything else about a sync is in the Rust side.
 
 import { host } from '../engine/host';
-import { pass } from '../engine/pass.svelte';
+import { consumeText, pass } from '../engine/pass.svelte';
 
 export interface LanPeer {
   key: string;
@@ -95,6 +95,47 @@ class Lan {
     return { peers: this.peers, blob_dir: folder ? await host().lan!.blobDir(folder) : '' };
   }
 
+  // ---- a new device ----
+
+  /**
+   * Starts waiting as a device with no vault, and gives the code to show. `address` is where this
+   * device can be reached; without one, only the digits work.
+   */
+  async joinListen(address: string | null) {
+    const reply = await pass.engine('lan.join_listen', { address: address ?? '' }, {});
+    return consumeText(reply.secret);
+  }
+
+  /** Takes the next connection: the vault itself, or six digits to compare first. */
+  async joinWait(blobDir: string): Promise<JoinReply> {
+    return this.withIdentity(async (identity) => joinReply(await pass.engine('lan.join_wait', { name: await this.name(), blob_dir: blobDir }, { secret: identity })));
+  }
+
+  async joinFinish(accepted: boolean, blobDir: string): Promise<JoinReply> {
+    return joinReply(await pass.engine('lan.join_finish', { accepted, blob_dir: blobDir }, {}));
+  }
+
+  // ---- sending this vault to a new device ----
+
+  async joinFind(): Promise<string[]> {
+    return (await pass.engine('lan.join_find', { ms: 4000 }, {})).json;
+  }
+
+  async joinScan(text: string): Promise<LanPeer> {
+    return this.withIdentity(async (identity) => {
+      const reply = await pass.engine('lan.join_scan', { text, name: await this.name(), ...(await this.args()) }, { handle: pass.handle, secret: identity });
+      return reply.json.peer;
+    });
+  }
+
+  async joinConnect(address: string): Promise<{ code: string; peer: LanPeer }> {
+    return this.withIdentity(async (identity) => (await pass.engine('lan.join_connect', { address, name: await this.name() }, { secret: identity })).json);
+  }
+
+  async joinSend(accepted: boolean): Promise<LanPeer> {
+    return (await pass.engine('lan.join_send', { accepted, ...(await this.args()) }, { handle: pass.handle })).json.peer;
+  }
+
   /** Finds a paired device and syncs. The key exchange decides who it really is. */
   async sync() {
     const found = await this.browse();
@@ -130,6 +171,12 @@ class Lan {
       }
     });
   }
+}
+
+export type JoinReply = { done: true; peer: LanPeer; file: Uint8Array } | { done?: false; code: string; peer: LanPeer };
+
+function joinReply(reply: { json: any; blobs: Uint8Array[] }): JoinReply {
+  return reply.json.done ? { done: true, peer: reply.json.peer, file: reply.blobs[0] } : { code: reply.json.code, peer: reply.json.peer };
 }
 
 export const lan = new Lan();

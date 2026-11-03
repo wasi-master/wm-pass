@@ -13,6 +13,7 @@
 
 pub mod channel;
 pub mod discovery;
+pub mod join;
 pub mod pair;
 pub mod share;
 pub mod sync;

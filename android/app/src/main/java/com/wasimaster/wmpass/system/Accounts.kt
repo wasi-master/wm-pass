@@ -18,6 +18,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -214,6 +215,74 @@ object Lan {
         }
         Pass.blobFolder()?.let { put("blob_dir", it.absolutePath) }
     }
+
+    // ---- a new device ----
+
+    /** Starts waiting as a phone with no vault, and gives the code to show. */
+    suspend fun joinListen(address: String?): String =
+        Engine.net("lan.join_listen", online = false) { put("address", address.orEmpty()) }.secret!!.consumeText()
+
+    /** Takes the next connection: the vault itself, or six digits to compare first. */
+    suspend fun joinWait(context: Context, name: String, blobs: File): com.wasimaster.wmpass.core.EngineReply {
+        val identity = identity(context)
+        try {
+            return Engine.net("lan.join_wait", online = false, secret = identity) {
+                put("name", name)
+                put("blob_dir", blobs.absolutePath)
+            }
+        } finally {
+            identity.fill(0)
+        }
+    }
+
+    suspend fun joinFinish(accepted: Boolean, blobs: File): com.wasimaster.wmpass.core.EngineReply =
+        Engine.net("lan.join_finish", online = false) {
+            put("accepted", accepted)
+            put("blob_dir", blobs.absolutePath)
+        }
+
+    // ---- sending this vault to a new device ----
+
+    suspend fun joinFind(): List<String> =
+        Engine.net("lan.join_find", online = false) { put("ms", 4000) }.json.jsonArray.map { it.jsonPrimitive.content }
+
+    suspend fun joinScan(context: Context, text: String, name: String): LanPeer {
+        Pass.flush()
+        val identity = identity(context)
+        try {
+            val reply = Pass.net("lan.join_scan", online = false, secret = identity) {
+                put("text", text)
+                put("name", name)
+                peerArgs(context)
+            }
+            return peerOf(reply.obj["peer"]!!.jsonObject).also { addPeer(context, it) }
+        } finally {
+            identity.fill(0)
+        }
+    }
+
+    suspend fun joinConnect(context: Context, address: String, name: String): com.wasimaster.wmpass.core.EngineReply {
+        val identity = identity(context)
+        try {
+            return Engine.net("lan.join_connect", online = false, secret = identity) {
+                put("address", address)
+                put("name", name)
+            }
+        } finally {
+            identity.fill(0)
+        }
+    }
+
+    suspend fun joinSend(context: Context, accepted: Boolean): LanPeer {
+        Pass.flush()
+        val reply = Pass.net("lan.join_send", online = false) {
+            put("accepted", accepted)
+            peerArgs(context)
+        }
+        return peerOf(reply.obj["peer"]!!.jsonObject).also { addPeer(context, it) }
+    }
+
+    fun peerOf(obj: kotlinx.serialization.json.JsonObject) = LanPeer(obj["key"]!!.jsonPrimitive.content, obj["name"]!!.jsonPrimitive.content)
 
     suspend fun browse(): List<String> =
         Engine.net("lan.browse", online = false) { put("ms", 4000) }.json.jsonArray.map { it.jsonPrimitive.content }

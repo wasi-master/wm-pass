@@ -23,6 +23,24 @@ Downloads for macOS, Linux and Windows are on the [releases page](https://github
 cargo install --path crates/wmpass-cli
 ```
 
+## Getting your vault from another device
+
+If your vault is on a phone or another computer, there is no need to copy the file by hand. Run `wmpass join` with where to keep it:
+
+```bash
+wmpass join ~/vaults/personal.wmvault
+```
+
+It draws a QR code in the terminal and waits for two minutes. On the phone, open Settings, Sync and accounts, choose **Add a new device**, and scan it. A computer finds this one on the network instead and both show six digits; type `y` if they match. The vault arrives encrypted, and you open it with its master password. In the full-screen app, `Ctrl+G` at the unlock screen does the same.
+
+Going the other way, `wmpass add-device` sends a vault to a new device that is waiting to join:
+
+```bash
+wmpass add-device ~/vaults/personal.wmvault
+```
+
+It finds the device on the network and compares six digits, since a terminal cannot scan a code. Pass `--code` with the text under the new device's QR code to skip the comparison. From the full-screen app, it is **Add a new device** in the `:` palette. Both devices need to be on the same network.
+
 ## Finding your way
 
 The four tabs along the top are Items, Codes, Generator and Health. Press `1` to `4` to switch, or click them. In Items, the sidebar lists kinds, folders, tags and the trash, the middle shows what matches, and the right side shows the item you picked.

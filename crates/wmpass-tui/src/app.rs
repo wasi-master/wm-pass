@@ -101,6 +101,7 @@ pub enum Command {
     Theme,
     Icons,
     SyncSettings,
+    AddDevice,
     LockAfter,
     Items,
     Codes,
@@ -116,7 +117,7 @@ pub enum Command {
 const SYNCED: [&str; 3] = ["tui_theme", "tui_icons", "reveal_seconds"];
 
 /// Every palette command, with its words and key.
-pub const COMMANDS: [(Command, &str, &str); 28] = [
+pub const COMMANDS: [(Command, &str, &str); 29] = [
     (Command::New, "New item", "n"),
     (Command::Edit, "Edit item", "e"),
     (Command::CopyPassword, "Copy password", "c"),
@@ -137,6 +138,7 @@ pub const COMMANDS: [(Command, &str, &str); 28] = [
     (Command::Theme, "Next theme", "ctrl+t"),
     (Command::Icons, "Nerd Font icons on or off", ""),
     (Command::SyncSettings, "Sync settings with the vault on or off", ""),
+    (Command::AddDevice, "Add a new device: send this vault to it", ""),
     (Command::LockAfter, "Lock after…", ""),
     (Command::Items, "Go to Items", "1"),
     (Command::Codes, "Go to Codes", "2"),
@@ -201,6 +203,15 @@ pub struct App {
     quit: bool,
     /// Work to do once the next frame shows that it is happening.
     deferred: Option<Ask>,
+    /// Work that runs as plain lines, outside the full screen.
+    outside: Option<Outside>,
+}
+
+/// What the app steps out of full screen to do.
+#[derive(Debug)]
+enum Outside {
+    Join(PathBuf),
+    Send(PathBuf),
 }
 
 impl App {
@@ -226,6 +237,7 @@ impl App {
             last_input: Instant::now(),
             quit: false,
             deferred: None,
+            outside: None,
         }
     }
 
@@ -242,6 +254,7 @@ impl App {
             last_input: Instant::now(),
             quit: false,
             deferred: None,
+            outside: None,
         }
     }
 
@@ -271,6 +284,11 @@ impl App {
             }
             if let Some(ask) = self.deferred.take() {
                 self.finish_door(ask);
+                dirty = true;
+                continue;
+            }
+            if let Some(job) = self.outside.take() {
+                self.step_outside(terminal, job)?;
                 dirty = true;
                 continue;
             }
@@ -346,6 +364,43 @@ impl App {
         }
         // The countdowns in the status bar move every second.
         changed || self.clip.seconds_left().is_some() || matches!(self.screen, Screen::Vault(_))
+    }
+
+    /// Leaves full screen for a job that talks in plain lines, then comes back.
+    fn step_outside(&mut self, terminal: &mut DefaultTerminal, job: Outside) -> std::io::Result<()> {
+        use ratatui::crossterm::event::{DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture};
+        use ratatui::crossterm::execute;
+        let _ = execute!(std::io::stdout(), DisableMouseCapture, DisableBracketedPaste);
+        ratatui::restore();
+        let result = match &job {
+            Outside::Join(path) => crate::join::receive(path),
+            Outside::Send(path) => crate::join::send(path, None),
+        };
+        if let Err(problem) = &result {
+            println!("\n{problem}");
+        }
+        print!("\nPress Enter to go back. ");
+        let _ = std::io::Write::flush(&mut std::io::stdout());
+        let mut line = String::new();
+        let _ = std::io::stdin().read_line(&mut line);
+        *terminal = ratatui::init();
+        let _ = execute!(std::io::stdout(), EnableMouseCapture, EnableBracketedPaste);
+        terminal.clear()?;
+        self.last_input = Instant::now();
+        match (job, result) {
+            (Outside::Join(path), Ok(())) => {
+                if let Screen::Door(door) = &mut self.screen {
+                    if door.mode == door::Mode::Create {
+                        door.toggle_mode();
+                    }
+                    door.path.set(&path.to_string_lossy());
+                    door.notice = Some("Your vault is here. Unlock it with its master password".into());
+                }
+            }
+            (Outside::Send(_), Ok(())) => self.say(Level::Good, "Sent. Unlock it on the other device with the master password"),
+            (_, Err(_)) => {}
+        }
+        Ok(())
     }
 
     // ---- settings that follow the vault ----
@@ -461,6 +516,11 @@ impl App {
                 match door.key(key, &self.prefs.recent) {
                     Ask::Quit => self.quit = true,
                     Ask::Nothing => {}
+                    Ask::Join => {
+                        let typed = door.path.text().trim().to_owned();
+                        let path = if typed.is_empty() || store::expand(&typed).exists() { door::default_new_path() } else { store::expand(&typed) };
+                        self.outside = Some(Outside::Join(path));
+                    }
                     ask => {
                         door.busy = Some(if ask == Ask::Create { "Making your vault…" } else { "Unlocking…" });
                         door.error = None;
@@ -901,6 +961,11 @@ impl App {
             Command::Health => self.switch_tab(Tab::Health),
             Command::Help => self.overlay = Some(Overlay::Help),
             Command::Lock => self.lock("Locked"),
+            Command::AddDevice => {
+                if let Screen::Vault(ui) = &self.screen {
+                    self.outside = Some(Outside::Send(ui.engine.path().to_owned()));
+                }
+            }
             Command::Quit => self.quit = true,
         }
     }

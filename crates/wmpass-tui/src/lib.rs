@@ -14,6 +14,7 @@ mod engine;
 mod generator;
 mod glyphs;
 mod input;
+pub mod join;
 mod store;
 mod theme;
 mod vault;

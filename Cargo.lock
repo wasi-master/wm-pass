@@ -10040,11 +10040,13 @@ dependencies = [
  "base64 0.23.1",
  "blake3",
  "getrandom 0.4.3",
+ "qrcode",
  "ratatui",
  "serde",
  "serde_json",
  "tempfile",
  "wmpass-core",
+ "wmpass-lan",
  "wmpass-session",
  "zeroize",
 ]

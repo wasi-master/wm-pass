@@ -21,6 +21,12 @@
   let pasted = $state('');
   let codeText = $state('');
   let codePeer = $state('');
+  /** Set while the digits on show are for sending this vault, not for pairing. */
+  let sendingVault = $state(false);
+  let joining = $state(false);
+  let pasteFor = $state<'pair' | 'join'>('pair');
+  /** Only the vault in this folder goes to a new device: not an account, not a vault inside it. */
+  const canSend = $derived(!!pass.file && pass.account === null && pass.child === null);
 
   $effect(() => {
     void lan.load();
@@ -84,6 +90,7 @@
 
   async function usePasted() {
     pasting = false;
+    if (pasteFor === 'join') return sendByCode(pasted.trim());
     try {
       const reply = await lan.withIdentity(async (identity) => (await pass.engine('lan.pair_scan', { text: pasted.trim(), name: await lan.name() }, { secret: identity })).json);
       await lan.addPeer({ key: reply.peer.key, name: reply.peer.name });
@@ -123,7 +130,53 @@
     }
   }
 
+  const sent = (name: string) => `Sent to ${name}. Unlock it there with this vault’s master password. The two are paired, so Sync now keeps them together.`;
+
+  async function findNewDevice() {
+    joining = false;
+    message = null;
+    try {
+      mode = 'code_wait';
+      const found = await lan.joinFind();
+      if (!found[0]) throw new Error('No new device is waiting on this network. On it, choose I already have a vault, then Get it from another device.');
+      const reply = await lan.joinConnect(found[0]);
+      codeText = reply.code;
+      codePeer = reply.peer.name;
+      sendingVault = true;
+      mode = 'code_compare';
+    } catch (failure) {
+      failed(failure);
+    }
+  }
+
+  async function sendByCode(text: string) {
+    message = null;
+    try {
+      await pass.flush();
+      const peer = await lan.joinScan(text);
+      await lan.addPeer({ key: peer.key, name: peer.name });
+      message = sent(peer.name);
+      pasted = '';
+    } catch (failure) {
+      failed(failure);
+    }
+  }
+
   async function finish(accepted: boolean) {
+    if (sendingVault) {
+      sendingVault = false;
+      try {
+        await pass.flush();
+        const peer = await lan.joinSend(accepted);
+        await lan.addPeer({ key: peer.key, name: peer.name });
+        message = sent(peer.name);
+      } catch (failure) {
+        failed(failure);
+      }
+      mode = 'idle';
+      void lan.stop();
+      return;
+    }
     try {
       const peer = (await pass.engine('lan.code_finish', { accepted }, {})).json;
       if (accepted) {
@@ -182,6 +235,9 @@
     {#each lan.peers as peer (peer.key)}
       <Row title={peer.name} icon="devices" onclick={() => forget(peer)} />
     {/each}
+    {#if canSend}
+      <Row title="Add a new device" help="action.lan_join" sub="Send this vault to a phone or computer that has none yet" icon="devices" chevron onclick={() => (joining = true)} />
+    {/if}
     <Row title="Pair a device" help="action.lan_pair" sub="A phone and this computer, or two computers" icon="add" chevron onclick={() => (adding = true)} />
   {/if}
 </Group>
@@ -190,9 +246,21 @@
   <Dialog title="Pair a device" onclose={() => (adding = false)}>
     <div style="border:1px solid var(--hair);border-radius:var(--r-m);overflow:hidden">
       <Row title="Show a code" sub="The other device scans it" icon="qr_code_2" chevron onclick={showCode} />
-      <Row title="Paste a code" sub="The other device shows it, and you copy its text" icon="content_paste" chevron onclick={() => { adding = false; pasting = true; }} />
+      <Row title="Paste a code" sub="The other device shows it, and you copy its text" icon="content_paste" chevron onclick={() => { adding = false; pasteFor = 'pair'; pasting = true; }} />
       <Row title="Compare six digits" sub="This side waits" icon="pin" chevron onclick={compareWait} />
       <Row title="Compare six digits, finding the other" sub="The other device is already waiting" icon="pin" chevron onclick={compareConnect} />
+    </div>
+  </Dialog>
+{/if}
+{#if joining}
+  <Dialog title="Add a new device" onclose={() => (joining = false)}>
+    <div class="stack">
+      <p class="dim">On the new device, choose <strong>I already have a vault</strong>, then <strong>Get it from another device</strong>. It shows a code and waits.</p>
+      <div style="border:1px solid var(--hair);border-radius:var(--r-m);overflow:hidden">
+        <Row title="Find it on this network" sub="Then compare six digits on both screens" icon="pin" chevron onclick={findNewDevice} />
+        <Row title="Paste its code" sub="The text under the QR code on the new device" icon="content_paste" chevron onclick={() => { joining = false; pasteFor = 'join'; pasting = true; }} />
+      </div>
+      <p class="dim small">The vault goes over encrypted and opens there only with its master password.</p>
     </div>
   </Dialog>
 {/if}
@@ -201,7 +269,7 @@
     <Field bind:value={pasted} multiline rows={4} mono placeholder="The other device’s pairing code" autofocus />
     {#snippet foot()}
       <Btn label="Cancel" onclick={() => (pasting = false)} />
-      <Btn label="Pair" variant="primary" disabled={!pasted.trim()} onclick={usePasted} />
+      <Btn label={pasteFor === 'join' ? 'Send the vault' : 'Pair'} variant="primary" disabled={!pasted.trim()} onclick={usePasted} />
     {/snippet}
   </Dialog>
 {/if}
