@@ -928,7 +928,10 @@ fun NameSheet(title: String, initial: String, onDismiss: () -> Unit, onDone: (St
 
 // ---- import and export ----
 
-private val ImportFormats = "1Password, Apple Passwords, Bitwarden, Chrome, Dashlane, Enpass, Firefox, KeePass and KeePassXC, Keeper, LastPass, NordPass, Proton Pass, RoboForm and SafeInCloud. Authenticators: Aegis, 2FAS, andOTP, Ente, FreeOTP+, Raivo, and Google's export QR code."
+private val ImportFormats = "1Password, Apple Passwords, Bitwarden, Chrome, Dashlane, Enpass, Firefox, KeePass and KeePassXC, Keeper, LastPass, NordPass, Proton Pass, RoboForm and SafeInCloud. Authenticators: Aegis, 2FAS, andOTP, Ente, FreeOTP+ and Raivo files, and Google Authenticator's export codes, scanned or from a screenshot."
+
+/** Each app's export steps, on the website. */
+private const val ExportGuide = "https://wmpass.pages.dev/guides/import-export/#exporting-from-your-old-app"
 
 @Composable
 private fun ImportScreen() {
@@ -956,9 +959,36 @@ private fun ImportScreen() {
             secret.fill(0)
         }
     }
+    // Google Authenticator's export links, scanned or read from pictures. A long list comes as
+    // several codes, and one import takes them all.
+    var codes by remember { mutableStateOf(emptyList<String>()) }
+    suspend fun takeCodes(found: List<String>) {
+        val links = found.filter { it.startsWith("otpauth") }
+        if (links.isEmpty()) {
+            error = if (found.isEmpty()) "No QR code was found in that picture." else "That code is not an export from an authenticator app."
+            return
+        }
+        codes = (codes + links).distinct()
+        bytes?.fill(0)
+        bytes = codes.joinToString("\n").toByteArray()
+        preview = null
+        result = null
+        read()
+    }
+    fun scanCode() {
+        error = null
+        shell.scanTarget = { text -> shell.launch { takeCodes(listOf(text)) } }
+    }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             shell.launch {
+                error = null
+                // A screenshot or photo of an export code, rather than an export file.
+                if (context.contentResolver.getType(uri)?.startsWith("image/") == true) {
+                    takeCodes(com.wasimaster.wmpass.ui.vault.qrCodesIn(context, uri))
+                    return@launch
+                }
+                codes = emptyList()
                 bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                 preview = null
                 result = null
@@ -966,6 +996,7 @@ private fun ImportScreen() {
             }
         }
     }
+    val browser = androidx.compose.ui.platform.LocalUriHandler.current
     WmScreen("Import", route = "settings/import", onBack = back()) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val shown = preview
@@ -993,11 +1024,22 @@ private fun ImportScreen() {
                             result = "Added $added. Skipped $dupes already here."
                             bytes?.fill(0)
                             bytes = null
+                            codes = emptyList()
                         }
+                    }
+                    if (codes.isNotEmpty()) {
+                        Text(
+                            "${codes.size} ${if (codes.size == 1) "code" else "codes"} read. Google splits a long list across several codes, so scan each one before importing.",
+                            color = colors.textMid,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        error?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
+                        QuietButton("Scan the next code", Modifier.fillMaxWidth(), PassIcons.QrCodeScanner, colors.primary) { scanCode() }
                     }
                     QuietButton("Choose another file", Modifier.fillMaxWidth()) {
                         shell.launch { Pass.plainCall("import.cancel") }
                         preview = null
+                        codes = emptyList()
                         pick.launch(arrayOf("*/*"))
                     }
                 }
@@ -1012,7 +1054,11 @@ private fun ImportScreen() {
                     Text(ImportFormats, color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
                     error?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
                     PrimaryButton("Choose a file", Modifier.fillMaxWidth(), icon = PassIcons.FileOpen) { pick.launch(arrayOf("*/*")) }
+                    QuietButton("Scan Google Authenticator's code", Modifier.fillMaxWidth(), PassIcons.QrCodeScanner, colors.primary) { scanCode() }
                     Text("Delete the exported file afterwards. It holds your passwords in plain text.", color = colors.textLow, style = MaterialTheme.typography.bodySmall)
+                    QuietButton("How to export from your old app", Modifier.fillMaxWidth(), PassIcons.OpenInNew) {
+                        runCatching { browser.openUri(ExportGuide) }
+                    }
                 }
             }
         }
