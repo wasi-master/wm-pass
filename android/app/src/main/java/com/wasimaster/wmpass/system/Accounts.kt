@@ -159,6 +159,14 @@ object Accounts {
     fun newId(): String = java.util.UUID.randomUUID().toString().take(12)
 }
 
+/** Where an account lives, as a person would name it. */
+fun accountHost(ref: AccountRef): String = when {
+    ref.kind == "kdbx" -> "KeePass file"
+    ref.server.isNotEmpty() -> runCatching { android.net.Uri.parse(ref.server).host }.getOrNull() ?: ref.server
+    ref.region == "eu" -> "bitwarden.eu"
+    else -> "bitwarden.com"
+}
+
 /** Whether anything may use the network right now. */
 object NetAccess {
     fun allowed(context: Context): Boolean =

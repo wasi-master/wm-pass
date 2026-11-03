@@ -36,6 +36,10 @@ Add one under Settings, Sync and accounts. An account opens in place of your vau
 
 The first sign-in from a device Bitwarden has not seen before is held back until you confirm it, unless the account has two-step login. Bitwarden emails a code, and the unlock screen asks for it beside your password. Two-step login asks for its code in the same place.
 
+An account made on bitwarden.eu is unknown to bitwarden.com, and Bitwarden answers that the same way as a wrong password. When the password is refused, the unlock screen names the email and the server it tried, and the account's row under Sync and accounts shows them too. If the server is wrong, add the account again with **Bitwarden EU** chosen.
+
+Accounts made years ago may still keep their key in Bitwarden's oldest format. WM Pass opens those as Bitwarden's own apps do. If Bitwarden accepts the password but the key still does not open, the unlock screen says so instead of calling the password wrong.
+
 ## Sharing
 
 Share a vault with family through a shared file or a server organisation. Everyone holding it can read and write it. Someone you remove keeps any copy they already have, so change those passwords. To send one login once, use a one-time QR code between two devices.
