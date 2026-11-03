@@ -59,6 +59,7 @@ import com.wasimaster.wmpass.ui.fx.rememberBackdrop
 import com.wasimaster.wmpass.ui.fx.rim
 import com.wasimaster.wmpass.ui.icons.PassIcons
 import com.wasimaster.wmpass.ui.theme.Springs
+import com.wasimaster.wmpass.ui.theme.onBrand
 import com.wasimaster.wmpass.ui.theme.palette
 import com.wasimaster.wmpass.ui.theme.pressScale
 
@@ -208,7 +209,7 @@ private fun ActionStack() {
                 },
             contentAlignment = Alignment.Center,
         ) {
-            Icon(PassIcons.Search, "Search", tint = Color.White, modifier = Modifier.size(28.dp))
+            Icon(PassIcons.Search, "Search", tint = colors.onBrand, modifier = Modifier.size(28.dp))
         }
     }
 }

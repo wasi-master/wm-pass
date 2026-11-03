@@ -51,6 +51,7 @@ import com.wasimaster.wmpass.ui.fx.glass
 import com.wasimaster.wmpass.ui.fx.rim
 import com.wasimaster.wmpass.ui.theme.PassType
 import com.wasimaster.wmpass.ui.theme.Shapes
+import com.wasimaster.wmpass.ui.theme.onBrand
 import com.wasimaster.wmpass.ui.theme.palette
 import com.wasimaster.wmpass.ui.theme.pressScale
 import com.wasimaster.wmpass.ui.theme.rememberHaptics
@@ -105,10 +106,10 @@ fun PrimaryButton(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) {
-            Icon(icon, null, tint = Color.White, modifier = Modifier.size(20.dp))
+            Icon(icon, null, tint = colors.onBrand, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(10.dp))
         }
-        Text(text, color = Color.White, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+        Text(text, color = colors.onBrand, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
     }
 }
 
