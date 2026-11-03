@@ -27,6 +27,17 @@ pub struct S3Config {
     pub prefix: String,
     /// Access key id.
     pub access_key: String,
+    /// Addresses the bucket as a subdomain (`bucket.endpoint/key`), as AWS prefers, rather
+    /// than as a path (`endpoint/bucket/key`), which MinIO, Garage and an IP address need.
+    pub virtual_host: bool,
+}
+
+impl S3Config {
+    /// The endpoint, with AWS's own derived from the region when none was typed.
+    fn endpoint(&self) -> String {
+        let typed = self.endpoint.trim();
+        if typed.is_empty() { format!("https://s3.{}.amazonaws.com", self.region.trim()) } else { typed.to_owned() }
+    }
 }
 
 /// An S3 bucket.
@@ -172,14 +183,19 @@ impl<H: AsyncHttp> S3<H> {
     }
 
     fn signed(&self, method: &'static str, key: &str, query: &str, body: Option<Vec<u8>>) -> Result<Request> {
-        let base = Url::parse(&self.config.endpoint).map_err(|_| Fault::NotConfigured)?;
+        let base = Url::parse(&self.config.endpoint()).map_err(|_| Fault::NotConfigured)?;
         let host = match (base.host_str(), base.port()) {
             (Some(host), Some(port)) => format!("{host}:{port}"),
             (Some(host), None) => host.to_owned(),
             _ => return Err(Fault::NotConfigured),
         };
-        let path = format!("/{}/{}", aws_encode(&self.config.bucket, false), aws_encode(key, true));
-        let path = if key.is_empty() { format!("/{}", aws_encode(&self.config.bucket, false)) } else { path };
+        let (host, path) = if self.config.virtual_host {
+            (format!("{}.{host}", self.config.bucket), format!("/{}", aws_encode(key, true)))
+        } else if key.is_empty() {
+            (host, format!("/{}", aws_encode(&self.config.bucket, false)))
+        } else {
+            (host, format!("/{}/{}", aws_encode(&self.config.bucket, false), aws_encode(key, true)))
+        };
         let payload = body.as_deref().unwrap_or(&[]);
         let payload_hash = sha256_hex(payload);
         let date = amz_date(self.now_ms);
@@ -273,6 +289,29 @@ impl<H: AsyncHttp> Sink for S3<H> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_bucket_is_a_path_or_a_subdomain_and_aws_needs_no_endpoint() {
+        use crate::http::{Blocking, Client, block_on};
+        use wmpass_net::NetPolicy;
+        use wmpass_net::http::fake::FakeHttp;
+        let http = FakeHttp::new().answer("https://", 200, "");
+        let config = |virtual_host, endpoint: &str| S3Config {
+            endpoint: endpoint.into(),
+            region: "eu-west-1".into(),
+            bucket: "b".into(),
+            access_key: "k".into(),
+            virtual_host,
+            ..S3Config::default()
+        };
+        let put = |config| {
+            block_on(S3::new(Client::new(Blocking(&http), NetPolicy::Any), config, "s".into(), 0).write("f", b"x")).unwrap();
+            http.last().unwrap().url
+        };
+        assert_eq!(put(config(false, "https://minio.example:9000")), "https://minio.example:9000/b/f");
+        assert_eq!(put(config(true, "https://r2.example")), "https://b.r2.example/f");
+        assert_eq!(put(config(true, "")), "https://b.s3.eu-west-1.amazonaws.com/f");
+    }
 
     #[test]
     fn signature_matches_awss_published_example() {
