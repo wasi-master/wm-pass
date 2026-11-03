@@ -208,7 +208,7 @@ fun EntryScreen(id: String) {
                     modifier = Modifier.sharedEntry("title-$id", inSearch),
                 )
                 val under = entry.subtitle.ifEmpty { kindName(entry.kind) }
-                Text(under, color = colors.textMid, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(under, color = colors.textMid, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.sharedEntry("subtitle-$id", inSearch))
                 if (entry.trashed) {
                     TrashedActions(entry)
                 } else {
@@ -287,7 +287,7 @@ private fun StandardEntry(id: String, entry: Detail?, revealed: MutableMap<Strin
                     Spacer(Modifier.width(16.dp))
                     Column(Modifier.weight(1f)) {
                         Text(entry.title.ifEmpty { "Untitled" }, color = colors.text, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.sharedEntry("title-$id", inSearch))
-                        Text(entry.subtitle.ifEmpty { kindName(entry.kind) }, color = colors.textMid, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(entry.subtitle.ifEmpty { kindName(entry.kind) }, color = colors.textMid, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.sharedEntry("subtitle-$id", inSearch))
                     }
                 }
                 if (entry.trashed) TrashedActions(entry) else QuickActions(entry)
