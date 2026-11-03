@@ -36,11 +36,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -96,6 +98,12 @@ private sealed interface Item {
     data class Stack(val site: String, val entries: List<Summary>, val first: Boolean, val last: Boolean) : Item {
         override val key = "s:$site"
     }
+}
+
+private fun filtered(entries: List<Summary>, filter: String): List<Summary> = when (filter) {
+    "all" -> entries
+    "favourite" -> entries.filter { it.favourite }
+    else -> entries.filter { it.kind == filter }
 }
 
 /** Pinned first, then the rest by name, with several logins on one site folded together. */
@@ -175,17 +183,43 @@ fun VaultTab() {
     val state by Pass.state.collectAsStateWithLifecycle()
     var filter by rememberSaveable { mutableStateOf("all") }
     val openSites = remember { mutableStateListOf<String>() }
-    val shown = remember(entries, filter) {
-        when (filter) {
-            "all" -> entries
-            "favourite" -> entries.filter { it.favourite }
-            else -> entries.filter { it.kind == filter }
-        }
-    }
+    val shown = remember(entries, filter) { filtered(entries, filter) }
+    fun arranged(list: List<Summary>) =
+        arrange(list, prefs.grouping, openSites.toSet(), colors.flat, prefs.sort.value, prefs.pinnedOnTop.value, prefs.listHeadings.value, prefs.groupSites.value)
     val items = remember(shown, prefs.grouping, openSites.toList(), colors.flat, prefs.sort.value, prefs.pinnedOnTop.value, prefs.listHeadings.value, prefs.groupSites.value) {
-        arrange(shown, prefs.grouping, openSites.toSet(), colors.flat, prefs.sort.value, prefs.pinnedOnTop.value, prefs.listHeadings.value, prefs.groupSites.value)
+        arranged(shown)
     }
     val listState = rememberLazyListState()
+    // Space at the foot of the list that stands in for rows a filter just took away. Scrolled to
+    // the end, a shorter list would otherwise snap the header and chips down over the row still
+    // fading out; held, the rows below slide up into its place as they do at the top. It gives
+    // the space back only as far as the list reaches past the screen, so nothing ever jumps.
+    var hold by remember { mutableIntStateOf(0) }
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.layoutInfo }.collect { info ->
+            if (hold == 0) return@collect
+            val end = info.visibleItemsInfo.lastOrNull()?.takeIf { it.key == "hold" }
+            val past = if (end == null) hold else end.offset + end.size + info.afterContentPadding - info.viewportEndOffset
+            if (past > 0) hold = (hold - past).coerceAtLeast(0)
+        }
+    }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    fun pick(next: String) {
+        if (next == filter) return
+        val gone = if (prefs.layout == "grid") {
+            // The grid is one item of rows; only the rows it loses count.
+            val rows = { list: List<Summary> -> (list.size + 1) / 2 }
+            val lost = rows(shown) - rows(filtered(entries, next))
+            val visible = listState.layoutInfo.visibleItemsInfo.any { it.key == "grid" }
+            if (visible && lost > 0) with(density) { (146.dp * lost).roundToPx() } else 0
+        } else {
+            val kept = arranged(filtered(entries, next)).mapTo(HashSet()) { it.key }
+            val old = items.mapTo(HashSet()) { it.key }
+            listState.layoutInfo.visibleItemsInfo.filter { it.key in old && it.key !in kept }.sumOf { it.size }
+        }
+        hold += gone
+        filter = next
+    }
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val scrolled by remember {
         derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 500 }
@@ -240,7 +274,7 @@ fun VaultTab() {
             }
             if (prefs.filterChips.value) {
                 item("filters") {
-                    Filters(entries, filter) { filter = it }
+                    Filters(entries, filter) { pick(it) }
                 }
             }
             if (entries.isEmpty()) {
@@ -252,6 +286,9 @@ fun VaultTab() {
                 }
             } else {
                 itemsIndexedStable(items, arrived, openSites, prefs.layout == "compact")
+            }
+            item("hold") {
+                Spacer(Modifier.height(with(density) { hold.toDp() }))
             }
         }
     }
