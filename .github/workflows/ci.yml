@@ -16,6 +16,18 @@ jobs:
       - run: cargo clippy --workspace --exclude wmpass-desktop --all-targets --all-features -- -D warnings
       - uses: EmbarkStudios/cargo-deny-action@v2
 
+  terminal:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p wmpass-tui -p wmpass-cli
+      - run: cargo clippy -p wmpass-tui -p wmpass-cli --all-targets -- -D warnings
+
   desktop:
     strategy:
       fail-fast: false

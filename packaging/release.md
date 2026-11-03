@@ -33,3 +33,9 @@ would have to be reinstalled by hand. Keep a backup somewhere other than this co
 `wm-pass-host` is what the browser starts for the extension. `scripts/build-host.mjs` builds it during
 the Tauri build, and Tauri puts it beside the app. A release build stops with an error if only the empty
 stand-in from `build.rs` is there.
+
+## The terminal app
+
+A tag named `cli-v<version>` runs `.github/workflows/cli-release.yml`, which builds `wmpass` for macOS
+(Apple silicon and Intel), Windows and Linux (x86_64 and arm64) and attaches one archive per platform to
+a draft release, with `SHA256SUMS` over them. The binary carries no signature, like the desktop builds.

@@ -15,8 +15,15 @@ workspace = true
 name = "wmpass"
 path = "src/main.rs"
 
+[features]
+default = ["tui"]
+# The full-screen app, run as `wmpass` with no subcommand or `wmpass tui`. A build for
+# scripts only can leave it out with --no-default-features.
+tui = ["dep:wmpass-tui"]
+
 [dependencies]
 wmpass-core.workspace = true
+wmpass-tui = { path = "../wmpass-tui", optional = true }
 clap = { version = "4", features = ["derive"] }
 rpassword = "7"
 serde_json.workspace = true

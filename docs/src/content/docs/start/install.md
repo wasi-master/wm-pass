@@ -27,6 +27,10 @@ Desktop builds carry no Apple or Windows signature, so macOS and Windows warn th
 
 On macOS, open the app with right-click, then Open. On Windows, choose More info, then Run anyway.
 
+## Terminal
+
+`wmpass`, the terminal app and command line, has its own downloads for macOS, Linux and Windows on the releases page, under tags that start with `cli-v`, with a `SHA256SUMS` file beside them. See [Terminal](/apps/terminal/).
+
 ## Browser
 
 Load the extension from its release zip, or from the store once it is listed. See [Browser extension](/apps/extension/).
