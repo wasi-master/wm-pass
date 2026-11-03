@@ -12,6 +12,9 @@ import com.wasimaster.wmpass.core.LockState
 import com.wasimaster.wmpass.core.Pass
 import com.wasimaster.wmpass.core.Summary
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -21,6 +24,9 @@ import org.json.JSONObject
  * process, so every call first proves who is calling by its signing certificate. A package name
  * alone proves nothing, and a manifest permission would lock out Android 11 and below, where
  * `knownSigner` does not exist.
+ *
+ * The one write is an API key: a key field in the keyboard's settings can keep what it holds as an
+ * API key item here, when the person presses Save in WM Pass beside it.
  */
 class KeyboardProvider : ContentProvider() {
     override fun onCreate() = true
@@ -39,6 +45,8 @@ class KeyboardProvider : ContentProvider() {
                 "logins" -> status("open").apply { putString("rows", logins(arg.orEmpty())) }
                 "value" -> status("open").apply { value(arg.orEmpty(), extras?.getString("field").orEmpty())?.let { putString("value", it) } }
                 "code" -> status("open").apply { code(arg.orEmpty(), this) }
+                "api_keys" -> status("open").apply { putString("rows", apiKeys(arg.orEmpty())) }
+                "save_api_key" -> status("open").apply { saveApiKey(extras, this) }
                 else -> throw IllegalArgumentException("Unknown call.")
             }
         }
@@ -82,7 +90,69 @@ class KeyboardProvider : ContentProvider() {
         "username" -> Pass.entries.value.firstOrNull { it.id == id && it.kind == "login" }?.subtitle
         "password" -> Pass.reveal(id, "password").consume { String(it) }
         "code" -> Pass.code(id).consume { String(it) }
+        API_KEY, API_SECRET -> if (Pass.entries.value.any { it.id == id && it.kind == "api" }) {
+            runCatching { Pass.reveal(id, field).consume { String(it) } }.getOrNull()?.takeIf { it.isNotEmpty() }
+        } else {
+            null
+        }
         else -> null
+    }
+
+    /**
+     * The vault's API key items for a key field in the keyboard's settings. The ones whose title or
+     * provider names [service] come first and say so; the rest follow by title.
+     */
+    private fun apiKeys(service: String): String {
+        val wanted = service.trim().lowercase()
+        fun names(entry: Summary): Boolean {
+            if (wanted.isEmpty()) return false
+            val provider = entry.subtitle.trim().lowercase()
+            return wanted in entry.title.lowercase() || (provider.isNotEmpty() && (wanted in provider || provider in wanted))
+        }
+        val keys = Pass.entries.value.filter { it.kind == "api" && !it.trashed && !it.hidden }.sortedBy { it.title.lowercase() }
+        val (named, rest) = keys.partition(::names)
+        val rows = JSONArray()
+        (named + rest).take(MOST_ROWS).forEachIndexed { index, entry ->
+            rows.put(
+                JSONObject()
+                    .put("id", entry.id)
+                    .put("title", entry.title)
+                    .put("provider", entry.subtitle)
+                    .put("matches", index < named.size),
+            )
+        }
+        return rows.toString()
+    }
+
+    /**
+     * Keeps a key from the keyboard's settings as one field of an API key item. An item already
+     * called the same takes the new value, so saving again, or saving a service's key and then its
+     * secret, leaves one item rather than two. The value it held before stays in the item's history.
+     */
+    private suspend fun saveApiKey(extras: Bundle?, out: Bundle) {
+        val title = extras?.getString("title")?.trim().orEmpty()
+        val field = extras?.getString("field")?.takeIf { it == API_KEY || it == API_SECRET }
+        val value = extras?.getString("value")?.trim().orEmpty()
+        if (title.isEmpty() || value.isEmpty() || field == null) return
+        val existing = Pass.entries.value.firstOrNull { it.kind == "api" && !it.trashed && it.title == title }
+        val id = existing?.id ?: Pass.change("entry.create") {
+            put("kind", "api")
+            put("title", title)
+            extras?.getString("provider")?.trim()?.takeIf { it.isNotEmpty() }?.let { provider ->
+                put("fields", buildJsonObject { put("provider", provider) })
+            }
+        }.obj["id"]!!.jsonPrimitive.content
+        val bytes = value.toByteArray()
+        try {
+            Pass.change("entry.set_secret", secret = bytes) {
+                put("id", id)
+                put("field", field)
+            }
+        } finally {
+            bytes.fill(0)
+        }
+        Pass.flush()
+        out.putString("saved", if (existing == null) "created" else "updated")
     }
 
     /** The code for the app in front, for the chip on the keyboard's strip. Never for a guess. */
@@ -103,6 +173,8 @@ class KeyboardProvider : ContentProvider() {
 
     internal companion object {
         private const val MOST_ROWS = 200
+        private const val API_KEY = "key"
+        private const val API_SECRET = "secret"
         val KEYBOARD_PACKAGES = setOf("com.wasimaster.wmkeyboard", "com.wasimaster.wmkeyboard.debug", "com.wasimaster.wmkeyboard.fast")
 
         /** WM Keyboard's signers, from its published assetlinks.json. */
