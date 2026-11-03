@@ -2,10 +2,7 @@ package com.wasimaster.wmpass.ui.vault
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -115,15 +112,17 @@ fun StandardHome() {
             AnimatedContent(
                 targetState = shell.tab,
                 modifier = Modifier.fillMaxSize().padding(inner),
-                transitionSpec = { fadeIn(tween(160, 40)) togetherWith fadeOut(tween(80)) },
+                transitionSpec = { tabSlide(prefs.tabs.indexOf(targetState) > prefs.tabs.indexOf(initialState)) },
                 label = "tab",
             ) { tab ->
-                when (tab) {
-                    "vault" -> VaultTab()
-                    "codes" -> CodesTab()
-                    "generator" -> GeneratorTab()
-                    "health" -> HealthTab()
-                    else -> ToolsTab()
+                Box(Modifier.fillMaxSize().background(colors.ground)) {
+                    when (tab) {
+                        "vault" -> VaultTab()
+                        "codes" -> CodesTab()
+                        "generator" -> GeneratorTab()
+                        "health" -> HealthTab()
+                        else -> ToolsTab()
+                    }
                 }
             }
         }

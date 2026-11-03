@@ -33,7 +33,7 @@
   }
 
   async function reset() {
-    const yes = await overlays.ask({ title: 'Reset all customisation?', body: 'Look, icons, layout and clicks go back to how they started.', action: 'Reset' });
+    const yes = await overlays.ask({ title: 'Reset all customization?', body: 'Look, icons, layout and clicks go back to how they started.', action: 'Reset' });
     if (yes) {
       prefs.resetCustomisations();
       result = 'Everything is back to how it started.';
@@ -47,7 +47,7 @@
   <Row title="Save to a file" icon="download" chevron onclick={() => host().saveFile('Save settings', 'wm-pass-settings.json', bytesOf(prefs.exportText()))} />
   <Row title="Copy as text" icon="content_copy" chevron onclick={() => copyPlainLine('Settings', prefs.exportText())} />
   <Row title="Import" icon="upload" chevron onclick={() => (importing = true)} />
-  <Row title="Reset all customisation" sub="Keeps your own themes and protection settings" icon="refresh" chevron onclick={reset} />
+  <Row title="Reset all customization" sub="Keeps your own themes and protection settings" icon="refresh" chevron onclick={reset} />
 </Group>
 
 {#if importing}

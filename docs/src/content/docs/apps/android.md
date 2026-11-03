@@ -7,7 +7,29 @@ The Android app is the fullest version of WM Pass.
 
 ## Autofill
 
-Set WM Pass as your autofill service in Settings. It matches apps by package name and signing certificate, not by name alone, and matches browsers by web address only for browsers it knows. A login never fills without your tap, and a WebView inside another app asks first and names what it is filling.
+Set WM Pass as your autofill service in Settings, or tap **Turn on** on the card the vault list shows until you do. It matches apps by package name and signing certificate, not by name alone, and matches browsers by web address only for browsers it knows. A login never fills without your tap, and a WebView inside another app asks first and names what it is filling.
+
+A login can name the apps it is for as well as its websites. In the editor, open **Websites and apps** and tap **Add an app** to pick from the apps on your phone. WM Pass saves the app's package name and signing certificate, so a different app wearing the same name does not match.
+
+## Adding and editing items
+
+A new item starts with the fields its kind needs. Everything else waits behind **Add more**: a one-time code, notes, text or secret fields, security questions, an app, a file, a link to another item, and a reminder to change the password. Files and links chosen before the first save are kept with the item when you save it. A code can take a username and password too, and becomes a login that keeps its code.
+
+Some fields offer common values as you type, such as a database's engine or an API key's provider.
+
+For Wi-Fi, tap **Fill in from a QR code** and scan the code Android's Wi-Fi settings show when you share a network, or share that code's text to WM Pass. Typing a password on an open network switches its security to WPA.
+
+## Tags
+
+Tags show as chips on the item's page. The cross on a chip takes the tag off that item. Holding a chip renames the tag, gives it an icon or deletes it, on every item that has it. Below them, WM Pass suggests tags from the site, such as Banking or Social, and for a code also Authenticator.
+
+A new item saved without tags gets the one its site suggests. Turn this off under Settings, Editor, **Tag new items**.
+
+Tag names and their icons are stored inside the encrypted vault.
+
+## Icons
+
+The icon picker shows what Automatic would draw, then every symbol and every brand in one grid that fills the screen's width. Search narrows both. Hold an icon to see its name and where it comes from: symbols are Material Symbols (Apache License 2.0), and brand marks come from Simple Icons (CC0) and belong to their owners.
 
 ## Passkeys
 

@@ -3,6 +3,11 @@ package com.wasimaster.wmpass.ui
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,6 +26,7 @@ import androidx.compose.ui.platform.PlatformTextInputMethodRequest
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.ClipOp
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
@@ -50,8 +56,23 @@ fun AppRoot(prefs: Prefs) {
     val colors = palette
     val state by Pass.state.collectAsStateWithLifecycle()
     if (colors.flat) {
-        // The standard look opens the way any app moves between screens.
-        androidx.compose.animation.Crossfade(state is LockState.Unlocked, Modifier.fillMaxSize().background(colors.ground), tween(180), label = "door") { open ->
+        // The standard look opens the way a screen comes forward: the vault grows into place as
+        // the door falls back, and locking runs it the other way.
+        androidx.compose.animation.AnimatedContent(
+            state is LockState.Unlocked,
+            Modifier.fillMaxSize().background(colors.ground),
+            transitionSpec = {
+                val emphasized = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
+                if (targetState) {
+                    (fadeIn(tween(260, 90)) + scaleIn(tween(460, easing = emphasized), initialScale = 0.9f)) togetherWith
+                        (fadeOut(tween(160)) + scaleOut(tween(300), targetScale = 1.05f))
+                } else {
+                    (fadeIn(tween(260, 90)) + scaleIn(tween(460, easing = emphasized), initialScale = 1.05f)) togetherWith
+                        (fadeOut(tween(160)) + scaleOut(tween(300), targetScale = 0.9f))
+                }
+            },
+            label = "door",
+        ) { open ->
             if (open) NoLearningInput { VaultShell(prefs) } else DoorScreen(state, prefs)
         }
         return
@@ -65,7 +86,7 @@ fun AppRoot(prefs: Prefs) {
     LaunchedEffect(unlocked) {
         if (unlocked) {
             vaultShown = true
-            if (reduce) open.snapTo(1f) else open.animateTo(1f, tween(760, easing = OpenEase))
+            if (reduce) open.snapTo(1f) else open.animateTo(1f, tween(920, easing = OpenEase))
         } else {
             if (vaultShown) haptics.latch()
             if (reduce) open.snapTo(0f) else open.animateTo(0f, tween(520, easing = OpenEase))
@@ -81,8 +102,8 @@ fun AppRoot(prefs: Prefs) {
                     .graphicsLayer {
                         // The door drifts back as the vault comes through it.
                         val p = open.value
-                        scaleX = 1f - 0.06f * p
-                        scaleY = 1f - 0.06f * p
+                        scaleX = 1f - 0.1f * p
+                        scaleY = 1f - 0.1f * p
                         alpha = 1f - p * p
                     },
             ) {
@@ -100,19 +121,23 @@ fun AppRoot(prefs: Prefs) {
                         // Wide enough that the shield's narrow tip still clears the far corner.
                         val reach = hypot(size.width, size.height) * 3.2f
                         val start = 96f * density
-                        val width = start + (reach - start) * p * p
+                        // Cubed, so the shield is seen widening before it fills the screen.
+                        val width = start + (reach - start) * p * p * p
                         val mask = ShieldGeometry.maskPath(centre, width)
+                        val rim = Stroke(width = 3f * density)
                         onDrawWithContent {
                             if (p >= 1f) {
                                 drawContent()
                             } else {
                                 clipPath(mask, ClipOp.Intersect) { this@onDrawWithContent.drawContent() }
+                                // A lit edge on the opening, fading as it passes the screen's edges.
+                                drawPath(mask, colors.primary.copy(alpha = 0.85f * (1f - p)), style = rim)
                             }
                         }
                     }
                     .graphicsLayer {
                         val p = open.value
-                        val s = 1.06f - 0.06f * p
+                        val s = 1.12f - 0.12f * p
                         scaleX = s
                         scaleY = s
                     },

@@ -235,6 +235,9 @@ fun VaultTab() {
             item("widgets") {
                 Dashboard(entries)
             }
+            if (entries.isNotEmpty()) {
+                item("autofill") { AutofillNudge() }
+            }
             if (prefs.filterChips.value) {
                 item("filters") {
                     Filters(entries, filter) { filter = it }
@@ -365,7 +368,7 @@ private fun Dashboard(entries: List<Summary>) {
         }
         for (widget in prefs.widgets) {
             when (widget) {
-                "favourites" -> TileShelf("Favourites", entries.filter { it.favourite })
+                "favourites" -> TileShelf("Favorites", entries.filter { it.favourite })
                 "recent" -> TileShelf("Recently changed", entries.sortedByDescending { it.modifiedMs }.take(10))
             }
         }
@@ -403,7 +406,7 @@ private fun FlatDashboard(entries: List<Summary>) {
                     com.wasimaster.wmpass.ui.parts.NavRow(if (count == 1) "1 code" else "$count codes", "Authenticator", icon = PassIcons.Pin) { shell.tab = "codes" }
                 }
             }
-            "favourites" -> TileShelf("Favourites", entries.filter { it.favourite })
+            "favourites" -> TileShelf("Favorites", entries.filter { it.favourite })
             "recent" -> TileShelf("Recently changed", entries.sortedByDescending { it.modifiedMs }.take(10))
         }
     }
@@ -550,7 +553,7 @@ private fun Filters(entries: List<Summary>, selected: String, onSelect: (String)
         ) {
             item { Pill("All", selected == "all") { onSelect("all") } }
             if (entries.any { it.favourite }) {
-                item { Pill("Favourites", selected == "favourite") { onSelect("favourite") } }
+                item { Pill("Favorites", selected == "favourite") { onSelect("favourite") } }
             }
             items(kinds, key = { it.first }) { (kind, _) ->
                 Pill(kindName(kind), selected == kind) { onSelect(kind) }
@@ -594,7 +597,7 @@ private fun Filters(entries: List<Summary>, selected: String, onSelect: (String)
         ) {
             item { Pill("All", selected == "all") { onSelect("all") } }
             if (entries.any { it.favourite }) {
-                item { Pill("Favourites", selected == "favourite", icon = PassIcons.StarFilled) { onSelect("favourite") } }
+                item { Pill("Favorites", selected == "favourite", icon = PassIcons.StarFilled) { onSelect("favourite") } }
             }
             items(kinds, key = { it.first }) { (kind, count) ->
                 Pill("${kindName(kind)}  $count", selected == kind, icon = kindIcon(kind)) { onSelect(kind) }
@@ -636,6 +639,77 @@ private fun EmptyVault() {
         }
         StartCard(PassIcons.QrCodeScanner, "Add a two-factor code", "Scan the QR code a site shows you") {
             shell.nav.navigate("new/otp")
+        }
+    }
+}
+
+/**
+ * Asks once, until answered, to be the phone's autofill service: without it the vault only fills
+ * by copy and paste. It goes as soon as WM Pass is chosen, or for good on "Not now".
+ */
+@Composable
+private fun AutofillNudge() {
+    val colors = palette
+    val shell = LocalShell.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val manager = remember { context.getSystemService(android.view.autofill.AutofillManager::class.java) }
+    var chosen by remember { mutableStateOf(true) }
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        chosen = manager == null || !manager.isAutofillSupported || manager.hasEnabledAutofillServices()
+        onPauseOrDispose { }
+    }
+    androidx.compose.animation.AnimatedVisibility(!chosen && shell.prefs.autofillNudge.value) {
+        val turnOn = {
+            runCatching {
+                context.startActivity(
+                    android.content.Intent(android.provider.Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
+                        .setData(android.net.Uri.parse("package:${context.packageName}")),
+                )
+            }
+            Unit
+        }
+        val title = "Fill passwords in other apps"
+        val body = "Make WM Pass your autofill service and it offers your logins in apps and browsers, with nothing to copy."
+        if (colors.flat) {
+            androidx.compose.material3.OutlinedCard(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 16.dp, bottom = 4.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(PassIcons.TextFields, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text(title, style = MaterialTheme.typography.titleMedium)
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(body, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(end = 8.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        androidx.compose.material3.TextButton(onClick = { shell.prefs.autofillNudge.set(false) }) { Text("Not now") }
+                        androidx.compose.material3.TextButton(onClick = turnOn) { Text("Turn on") }
+                    }
+                }
+            }
+        } else {
+            Column(
+                Modifier
+                    .padding(vertical = 8.dp)
+                    .fillMaxWidth()
+                    .clip(Shapes.cardSmall)
+                    .background(colors.surface1)
+                    .rim(Shapes.cardSmall, colors)
+                    .padding(16.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    com.wasimaster.wmpass.ui.parts.GlyphTile(PassIcons.TextFields, colors.primary, size = 44.dp)
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(title, color = colors.text, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold))
+                        Text(body, color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    com.wasimaster.wmpass.ui.parts.QuietButton("Not now", Modifier.weight(1f), height = 44.dp) { shell.prefs.autofillNudge.set(false) }
+                    com.wasimaster.wmpass.ui.parts.PrimaryButton("Turn on", Modifier.weight(1f), onClick = turnOn)
+                }
+            }
         }
     }
 }

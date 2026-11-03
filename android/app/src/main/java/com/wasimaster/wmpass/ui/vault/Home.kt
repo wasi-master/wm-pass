@@ -3,7 +3,6 @@ package com.wasimaster.wmpass.ui.vault
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -96,22 +95,17 @@ fun HomeScreen() {
         AnimatedContent(
             targetState = shell.tab,
             modifier = Modifier.fillMaxSize(),
-            transitionSpec = {
-                val forward = order.indexOf(targetState) > order.indexOf(initialState)
-                val shift = if (forward) 1 else -1
-                ContentTransform(
-                    fadeIn(tween(210, 60)) + androidx.compose.animation.slideInHorizontally(tween(300)) { shift * it / 14 },
-                    fadeOut(tween(110)) + androidx.compose.animation.slideOutHorizontally(tween(300)) { -shift * it / 22 },
-                )
-            },
+            transitionSpec = { tabSlide(order.indexOf(targetState) > order.indexOf(initialState)) },
             label = "tab",
         ) { tab ->
-            when (tab) {
-                "vault" -> VaultTab()
-                "codes" -> CodesTab()
-                "generator" -> GeneratorTab()
-                "health" -> HealthTab()
-                else -> ToolsTab()
+            Box(Modifier.fillMaxSize().background(colors.ground)) {
+                when (tab) {
+                    "vault" -> VaultTab()
+                    "codes" -> CodesTab()
+                    "generator" -> GeneratorTab()
+                    "health" -> HealthTab()
+                    else -> ToolsTab()
+                }
             }
         }
         }

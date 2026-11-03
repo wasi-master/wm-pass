@@ -27,7 +27,11 @@ class WatchRequests : WearableListenerService() {
     }
 
     private suspend fun answer(path: String, request: ByteArray): JSONObject {
-        val allowed = getSharedPreferences("prefs", Context.MODE_PRIVATE).getBoolean("wear_access", false)
+        val prefs = getSharedPreferences("prefs", Context.MODE_PRIVATE)
+        // A watch asking is a paired watch with WM Pass on it, so sharing starts on, as the setting
+        // promises. Turned off in the app, it stays off.
+        if (!prefs.contains("wear_access")) prefs.edit().putBoolean("wear_access", true).apply()
+        val allowed = prefs.getBoolean("wear_access", false)
         if (!allowed) return JSONObject().put("state", "off")
         if (Pass.state.value !is LockState.Unlocked) return JSONObject().put("state", "locked")
         val out = JSONObject().put("state", "open")

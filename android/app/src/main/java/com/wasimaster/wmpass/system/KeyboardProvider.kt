@@ -28,7 +28,9 @@ class KeyboardProvider : ContentProvider() {
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle {
         val context = context ?: return Bundle()
         if (!callerIsKeyboard()) throw SecurityException("Only WM Keyboard may ask.")
-        if (!Prefs(context).keyboardAccess.value) return status("off")
+        val prefs = Prefs(context)
+        prefs.switchOnFirstTime(prefs.keyboardAccess)
+        if (!prefs.keyboardAccess.value) return status("off")
         if (Pass.state.value == LockState.NoVault) return status("none")
         if (Pass.state.value !is LockState.Unlocked) return status("locked")
         return runBlocking {
@@ -99,8 +101,8 @@ class KeyboardProvider : ContentProvider() {
     override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?) = 0
     override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?) = 0
 
-    private companion object {
-        const val MOST_ROWS = 200
+    internal companion object {
+        private const val MOST_ROWS = 200
         val KEYBOARD_PACKAGES = setOf("com.wasimaster.wmkeyboard", "com.wasimaster.wmkeyboard.debug", "com.wasimaster.wmkeyboard.fast")
 
         /** WM Keyboard's signers, from its published assetlinks.json. */
@@ -112,5 +114,14 @@ class KeyboardProvider : ContentProvider() {
             "3a97c7f20270addb101763ffd7e1c6e3eeab9f4cb24c7f7fcddca807f0f63f09",
             "1ac715ba5bfe36bcac1ee31a514c492211c750888ff5207118203626622aa904",
         )
+
+        /** Whether the real WM Keyboard is on this phone: one of its packages, signed by one of its keys. */
+        fun installed(context: android.content.Context): Boolean {
+            val own = Trust.certOf(context, context.packageName)
+            return KEYBOARD_PACKAGES.any { name ->
+                val cert = Trust.certOf(context, name) ?: return@any false
+                cert in KEYBOARD_CERTS || cert == own
+            }
+        }
     }
 }

@@ -57,7 +57,7 @@
     const mine = prefs.customThemes.some((t) => t.id === theme.id);
     const choice = await overlays.popup(
       [
-        { id: 'edit', label: mine ? 'Edit…' : 'Customise a copy…' },
+        { id: 'edit', label: mine ? 'Edit…' : 'Customize a copy…' },
         { id: 'share', label: 'Share…' },
         ...(mine ? [{ separator: true }, { id: 'delete', label: 'Delete', danger: true }] : []),
       ],

@@ -1,11 +1,11 @@
 ---
 title: Wear OS
-description: See one-time codes and favourites on your watch while your phone's vault is open.
+description: See one-time codes and favorites on your watch while your phone's vault is open.
 ---
 
-The Wear OS app shows one-time codes and favourite logins. Turn on **Show on my watch** under Settings, Security on your phone first.
+The Wear OS app shows one-time codes and favorite logins. **Show on my watch**, under Settings, Security on your phone, turns on the first time a paired watch with WM Pass asks. Turn it off there and it stays off.
 
-The watch keeps nothing. It asks your phone each time, and gets an answer only while the vault on the phone is open. If the phone is locked or out of reach, the watch says so. Tapping a favourite shows its password for 20 seconds.
+The watch keeps nothing. It asks your phone each time, and gets an answer only while the vault on the phone is open. If the phone is locked or out of reach, the watch says so. Tapping a favorite shows its password for 20 seconds.
 
 A tile shows your first code, and says so when that code has run out. The complication opens the app and shows no code, because a complication refreshes far less often than a code changes.
 

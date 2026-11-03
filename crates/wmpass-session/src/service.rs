@@ -116,6 +116,16 @@ fn invalid(message: impl Into<String>) -> SessionError {
     }
 }
 
+/// For a field that can be cleared: absent is `None`, null is `Some(None)`. Serde alone reads
+/// both as `None`, and then asking to clear a colour, icon or folder changed nothing.
+fn nullable<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
+}
+
 fn parse<T: DeserializeOwned>(args: &str) -> Result<T, SessionError> {
     serde_json::from_str(if args.is_empty() { "{}" } else { args })
         .map_err(|e| invalid(format!("bad arguments: {e}")))
@@ -1439,8 +1449,42 @@ impl Service {
             }
             "categorise.suggest" => {
                 let a: Id = parse(call.args)?;
-                let suggestion = categorise::suggest(session.entry(&a.id)?);
-                Ok(Reply::view(json!({"category": suggestion.map(|s| s.category)})))
+                let entry = session.entry(&a.id)?;
+                let suggestion = categorise::suggest(entry);
+                Ok(Reply::view(json!({
+                    "category": suggestion.map(|s| s.category),
+                    "categories": categorise::suggest_all(entry),
+                    // The site's alone, without the kind's, for tagging a new item.
+                    "site": categorise::site_category(entry).map(|(category, _)| category),
+                })))
+            }
+            "tags.icons" => {
+                let icons: BTreeMap<&str, &str> = session
+                    .vault
+                    .doc
+                    .prefs
+                    .tag_icons
+                    .iter()
+                    .filter(|(_, icon)| !icon.v.is_empty())
+                    .map(|(tag, icon)| (tag.as_str(), icon.v.as_str()))
+                    .collect();
+                Ok(Reply::view(json!(icons)))
+            }
+            "tags.set_icon" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    tag: String,
+                    icon: Option<String>,
+                }
+                let a: A = parse(call.args)?;
+                if a.tag.trim().is_empty() {
+                    return Err(invalid("a tag has a name"));
+                }
+                let at = session.vault.tick(now);
+                session.vault.doc.prefs.tag_icons.insert(a.tag, Lww::new(a.icon.unwrap_or_default(), at));
+                session.touched();
+                Ok(Reply::ok())
             }
             "match.web" => {
                 #[derive(Deserialize, Default)]
@@ -1590,14 +1634,18 @@ impl Service {
                 struct A {
                     id: String,
                     title: Option<String>,
+                    #[serde(deserialize_with = "nullable")]
                     icon: Option<Option<String>>,
+                    #[serde(deserialize_with = "nullable")]
                     color: Option<Option<String>>,
                     pinned: Option<bool>,
                     favourite: Option<bool>,
+                    #[serde(deserialize_with = "nullable")]
                     folder: Option<Option<String>>,
                     tags: Option<Vec<String>>,
                     links: Option<Vec<String>>,
                     hidden: Option<bool>,
+                    #[serde(deserialize_with = "nullable")]
                     destroy_at_ms: Option<Option<u64>>,
                     reminders: Option<views::RemindersView>,
                     sites: Option<Vec<SiteMatcher>>,
@@ -1649,6 +1697,34 @@ impl Service {
                     if let (Some(v), Some(login)) = (a.sites, entry.login_mut()) {
                         login.site_matchers = Lww::new(v, at);
                     }
+                })?;
+                session.touched();
+                Ok(Reply::ok())
+            }
+            // A code that gains a username and password becomes a login that keeps its code.
+            "entry.convert" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    id: String,
+                    kind: String,
+                }
+                let a: A = parse(call.args)?;
+                if a.kind != "login" {
+                    return Err(invalid("only a code can become a login"));
+                }
+                if !matches!(session.entry(&a.id)?.kind, Kind::Otp(_)) {
+                    return Err(invalid("only a code can become a login"));
+                }
+                session.vault.edit(&a.id, now, |entry, at| {
+                    let config = match &entry.kind {
+                        Kind::Otp(otp) => otp.config.v.clone(),
+                        _ => None,
+                    };
+                    entry.kind = Kind::Login(wmpass_core::model::Login {
+                        otp: Lww::new(config, at),
+                        ..wmpass_core::model::Login::default()
+                    });
                 })?;
                 session.touched();
                 Ok(Reply::ok())
@@ -1818,9 +1894,14 @@ impl Service {
                     folder: Option<String>,
                     color: Option<String>,
                     tag: String,
+                    /// The new name, for a rename.
+                    to: String,
                     flag: bool,
                 }
                 let a: A = parse(call.args)?;
+                if a.op == "tag_rename" && a.to.trim().is_empty() {
+                    return Err(invalid("a tag has a name"));
+                }
                 let mut delete_blobs = Vec::new();
                 for id in &a.ids {
                     session.entry(id)?;
@@ -1853,6 +1934,17 @@ impl Service {
                         "tag_remove" => session.vault.edit(id, now, |e, at| {
                             let mut tags = e.common.tags.v.clone();
                             tags.retain(|t| *t != a.tag);
+                            e.common.tags = Lww::new(tags, at);
+                        })?,
+                        // In place, so the tag keeps its spot; merged away if the item already had the new name.
+                        "tag_rename" => session.vault.edit(id, now, |e, at| {
+                            let mut tags: Vec<String> = Vec::new();
+                            for tag in &e.common.tags.v {
+                                let name = if *tag == a.tag { &a.to } else { tag };
+                                if !tags.contains(name) {
+                                    tags.push(name.clone());
+                                }
+                            }
                             e.common.tags = Lww::new(tags, at);
                         })?,
                         _ => return Err(invalid("unknown bulk action")),
@@ -2004,7 +2096,7 @@ impl Service {
                 let format = match a.format.as_deref() {
                     Some(name) => format_by_name(name).ok_or_else(|| invalid("unknown format"))?,
                     None => io::detect(data)
-                        .ok_or_else(|| invalid("this file's format was not recognised"))?,
+                        .ok_or_else(|| invalid("this file's format was not recognized"))?,
                 };
                 let password = (!call.secret.is_empty())
                     .then(|| text(call.secret))

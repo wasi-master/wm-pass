@@ -169,7 +169,7 @@ fun SettingsRoot() {
                 NavRow("Sync and accounts", "Other devices, servers, Bitwarden and KeePass", route = "settings/sync", accent = routeAccent("settings/sync"), icon = PassIcons.Sync) { nav.navigate("settings/sync") }
             }
         }
-        SettingsGroup("Tools and customising") {
+        SettingsGroup("Tools and customizing") {
             item {
                 NavRow("Tools", "Email aliases, a throwaway inbox, names and comparing", route = "settings/tools", accent = routeAccent("settings/tools"), icon = PassIcons.Widgets) { nav.navigate("settings/tools") }
             }
@@ -310,6 +310,11 @@ private fun SecurityScreen() {
     var sheet by rememberSaveable { mutableStateOf<String?>(null) }
     var refresh by remember { mutableStateOf(0) }
     LaunchedEffect(revision, refresh) { slots = runCatching { Pass.slots() }.getOrDefault(emptyList()) }
+    // Keyboard and watch access start on once their companion is really there; the toggles show what was decided.
+    LaunchedEffect(Unit) {
+        if (com.wasimaster.wmpass.system.KeyboardProvider.installed(context)) prefs.switchOnFirstTime(prefs.keyboardAccess)
+        prefs.wearAccess.load()
+    }
     val quick = remember { runCatching { QuickUnlock(context) }.getOrNull() }
     var quickOn by remember { mutableStateOf(quick?.enrolledFile() != null) }
     val keyFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -432,7 +437,7 @@ private fun SecurityScreen() {
             item {
                 ToggleSetting(
                     "Let WM Keyboard fill",
-                    "Its WM Pass tool can list your logins and type them while the vault is open. A password it types passes through the keyboard.",
+                    "Its WM Pass tool can list your logins and type them while the vault is open. A password it types passes through the keyboard. On by default when WM Keyboard is installed.",
                     prefs.keyboardAccess.value,
                     icon = PassIcons.Keyboard,
                 ) { prefs.keyboardAccess.set(it) }
@@ -441,7 +446,7 @@ private fun SecurityScreen() {
                 item {
                     ToggleSetting(
                         "Show on my watch",
-                        "While the vault is open here, your paired watch can show one-time codes and favourites. The watch keeps nothing.",
+                        "While the vault is open here, your paired watch can show one-time codes and favorites. The watch keeps nothing. On once a watch with WM Pass asks.",
                         prefs.wearAccess.value,
                         icon = PassIcons.Key,
                     ) { prefs.wearAccess.set(it) }
@@ -1253,7 +1258,7 @@ private fun AboutScreen() {
     WmScreen("About", route = "settings/about", onBack = back()) {
         Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("WM Pass ${com.wasimaster.wmpass.BuildConfig.VERSION_NAME}", color = colors.text, style = MaterialTheme.typography.titleLarge)
-            Text("Part of the WM Suite. Free and open source under the MIT licence. It sends nothing anywhere unless you turn on a feature that has to.", color = colors.textMid, style = MaterialTheme.typography.bodyLarge)
+            Text("Part of the WM Suite. Free and open source under the MIT license. It sends nothing anywhere unless you turn on a feature that has to.", color = colors.textMid, style = MaterialTheme.typography.bodyLarge)
         }
     }
 }

@@ -20,6 +20,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.int
@@ -85,6 +87,10 @@ object Pass {
 
     private val mutableFolders = MutableStateFlow<List<FolderView>>(emptyList())
     val folders: StateFlow<List<FolderView>> = mutableFolders.asStateFlow()
+
+    /** The glyph picked for each tag, by name. Tags with none are left out. */
+    private val mutableTagIcons = MutableStateFlow<Map<String, String>>(emptyMap())
+    val tagIcons: StateFlow<Map<String, String>> = mutableTagIcons.asStateFlow()
 
     /** Rises on every change, for screens that hold a detail view. */
     private val mutableRevision = MutableStateFlow(0L)
@@ -338,6 +344,7 @@ object Pass {
         mutableAccount.value = null
         mutableEntries.value = emptyList()
         mutableFolders.value = emptyList()
+        mutableTagIcons.value = emptyMap()
         mutableState.value = if (vaultFiles().isEmpty()) LockState.NoVault else LockState.Locked
     }
 
@@ -367,6 +374,7 @@ object Pass {
         mutableChild.value = null
         mutableAccount.value = null
         mutableEntries.value = emptyList()
+        mutableTagIcons.value = emptyMap()
         mutableState.value = LockState.NoVault
     }
 
@@ -420,6 +428,7 @@ object Pass {
             { put("sort", "title") },
         )
         mutableFolders.value = Engine.view("folder.list", ListSerializer(FolderView.serializer()), active)
+        mutableTagIcons.value = Engine.view("tags.icons", MapSerializer(String.serializer(), String.serializer()), active)
         mutableRevision.value++
     }
 

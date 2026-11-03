@@ -242,7 +242,7 @@ impl Vault {
             slots_at: at,
             prefs: crate::model::VaultPrefs {
                 trash_days: DEFAULT_TRASH_DAYS,
-                history_limit: 0,
+                ..crate::model::VaultPrefs::default()
             },
             ..VaultDoc::default()
         };

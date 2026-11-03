@@ -152,7 +152,7 @@ pub fn fields_of(kind: &str) -> &'static [FieldSpec] {
     ];
     const LICENCE: &[FieldSpec] = &[
         spec("product", "Product", Input::Text),
-        spec("key", "Licence key", Input::Hidden),
+        spec("key", "License key", Input::Hidden),
         spec("email", "Licensed to", Input::Email),
         spec("order_id", "Order number", Input::Text),
         spec("expires_ms", "Expires", Input::Date),

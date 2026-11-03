@@ -19,7 +19,7 @@
 <Group title="Fields">
   <Toggle title="Click a field to copy it" icon="content_copy" pref="tap_copies" />
   <Choice title="Hide shown secrets after" icon="timer" pref="reveal_seconds" options={[[15, '15 seconds'], [45, '45 seconds'], [120, '2 minutes'], [0, 'Leaving']] as [number, string][]} />
-  <Toggle title="Colour digits and symbols" sub="Makes a password easier to read aloud or retype." icon="palette" pref="colour_secrets" />
+  <Toggle title="Color digits and symbols" sub="Makes a password easier to read aloud or retype." icon="palette" pref="colour_secrets" />
 </Group>
 {#if limit !== null}
   <Group title="History">

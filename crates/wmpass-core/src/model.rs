@@ -712,13 +712,16 @@ pub struct SharedLink {
 }
 
 /// A saved generator setting.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct VaultPrefs {
     /// Days before the trash empties. Zero keeps things forever.
     pub trash_days: u32,
     /// Past values kept per field. Zero keeps them all.
     pub history_limit: u32,
+    /// The glyph each tag is drawn with, by tag name. Empty means the automatic one. Kept in the
+    /// vault rather than the app's settings because tag names say what is in it.
+    pub tag_icons: BTreeMap<String, Lww<String>>,
 }
 
 /// The encrypted contents of a vault file.
@@ -796,6 +799,15 @@ impl VaultDoc {
         if other.slots_at > self.slots_at {
             self.slots = other.slots.clone();
             self.slots_at = other.slots_at;
+        }
+        for (tag, icon) in &other.prefs.tag_icons {
+            match self.prefs.tag_icons.get_mut(tag) {
+                Some(mine) if icon.at > mine.at => *mine = icon.clone(),
+                Some(_) => {}
+                None => {
+                    self.prefs.tag_icons.insert(tag.clone(), icon.clone());
+                }
+            }
         }
         self.generation = self.generation.max(other.generation);
         self.minor = self.minor.max(other.minor);

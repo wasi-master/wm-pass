@@ -222,6 +222,8 @@ fun SwipeRow(
 private fun swipeIcon(action: String): ImageVector = when (action) {
     "trash" -> PassIcons.Delete
     "favourite" -> PassIcons.Star
+    "code" -> PassIcons.Pin
+    "edit" -> PassIcons.Edit
     else -> PassIcons.ContentCopy
 }
 
@@ -244,16 +246,16 @@ fun EntryRow(
     val source = remember { MutableInteractionSource() }
     val tileSize = if (compact) 36.dp else if (colors.flat) 40.dp else 46.dp
     val prefs = shell.prefs
-    val right = prefs.swipeRight.value
-    val left = prefs.swipeLeft.value
+    val right = shell.effective(prefs.swipeRight.value, entry)
+    val left = shell.effective(prefs.swipeLeft.value, entry)
     SwipeRow(
         modifier,
         shape,
         enabled = !selecting,
-        onCopy = if (shell.canDo(right, entry)) ({ shell.perform(right, entry) }) else null,
-        onTrash = if (shell.canDo(left, entry)) ({ shell.perform(left, entry) }) else null,
-        rightIcon = swipeIcon(right),
-        leftIcon = swipeIcon(left),
+        onCopy = right?.let { action -> { shell.perform(action, entry) } },
+        onTrash = left?.let { action -> { shell.perform(action, entry) } },
+        rightIcon = swipeIcon(right.orEmpty()),
+        leftIcon = swipeIcon(left.orEmpty()),
     ) {
         Row(
             Modifier
@@ -294,13 +296,13 @@ fun EntryRow(
                     )
                 }
             }
-            val button = prefs.rowButton.value
+            val button = shell.effective(prefs.rowButton.value, entry)
             if (showCopy && !selecting) {
                 if (prefs.tapAction.value != "open") {
                     // A tap copies, so this is now the way to the entry's page.
                     Spacer(Modifier.width(8.dp))
                     RowIconButton(PassIcons.ChevronRight, "Open ${entry.title}") { shell.open(entry.id) }
-                } else if (shell.canDo(button, entry)) {
+                } else if (button != null) {
                     Spacer(Modifier.width(8.dp))
                     RowIconButton(PassIcons.ContentCopy, "Copy for ${entry.title}") { shell.perform(button, entry) }
                 }

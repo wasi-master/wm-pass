@@ -267,9 +267,9 @@ object ThemeCodec {
             colors.background, colors.surface, colors.surfaceHigh, colors.surfaceHighest, colors.text, colors.textMid,
             colors.textLow, colors.primary, colors.danger, colors.warn, colors.info,
         )
-        require(all.all(HEX::matches)) { "That theme has a colour that is not valid." }
+        require(all.all(HEX::matches)) { "That theme has a color that is not valid." }
         val optional = listOf(colors.onPrimary, colors.primaryContainer, colors.secondaryContainer, colors.outline, colors.digit, colors.symbol)
-        require(optional.all { it.isEmpty() || HEX.matches(it) }) { "That theme has a colour that is not valid." }
+        require(optional.all { it.isEmpty() || HEX.matches(it) }) { "That theme has a color that is not valid." }
         return colors.readableOn()
     }
 
@@ -290,7 +290,7 @@ object ThemeCodec {
             .getOrElse { throw IllegalArgumentException("That is not a WM Pass theme.") }
         require(parsed.format == "wmpass-theme") { "That is not a WM Pass theme." }
         require(parsed.version <= 1) { "This theme needs a newer version of WM Pass." }
-        require(parsed.light != null || parsed.dark != null) { "That theme has no colours." }
+        require(parsed.light != null || parsed.dark != null) { "That theme has no colors." }
         return parsed.copy(
             id = "custom_" + java.util.UUID.randomUUID().toString().take(8),
             name = parsed.name.filter { !it.isISOControl() }.trim().take(40).ifEmpty { "Shared theme" },

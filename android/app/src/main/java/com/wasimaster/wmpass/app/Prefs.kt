@@ -149,6 +149,7 @@ class Prefs(context: Context) {
     val editorRemember = flag("editor_remember", true)
     val editorFoldDetails = flag("editor_fold_details", true)
     val editorGenerate = flag("editor_generate", false)
+    val autoTag = flag("auto_tag", true)
 
     // ---- entry page ----
 
@@ -203,6 +204,15 @@ class Prefs(context: Context) {
     val autofillSave = flag("autofill_save", true, portable = false)
     val keyboardAccess = flag("keyboard_access", false, portable = false)
     val wearAccess = flag("wear_access", false, portable = false)
+    val autofillNudge = flag("autofill_nudge", true)
+
+    /**
+     * Turns a companion's access on the first time the real one shows up: WM Keyboard installed,
+     * or a watch with WM Pass on it asking. Once the person has set it either way, that stands.
+     */
+    fun switchOnFirstTime(opt: Opt<Boolean>) {
+        if (!store.contains(opt.key)) opt.set(true) else opt.load()
+    }
     private val panicActionOpt = local("panic_action", "lock")
     val panicAction: String get() = panicActionOpt.value
     private val panicAppOpt = local("panic_app", "")

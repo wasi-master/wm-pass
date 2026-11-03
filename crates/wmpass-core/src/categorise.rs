@@ -34,7 +34,7 @@ pub const KIND_CATEGORIES: [&str; 11] = [
     "SSH keys",
     "API keys",
     "Databases",
-    "Licences",
+    "Licenses",
     "Recovery",
     "Wi-Fi",
     "Authenticator",
@@ -148,9 +148,9 @@ pub fn classify(text: &str) -> Option<&'static str> {
     (confidence >= MIN_CONFIDENCE).then_some(CATEGORIES[index])
 }
 
-/// Suggests a category. `None` leaves the entry unfiled rather than guessing wrong.
-pub fn suggest(entry: &Entry) -> Option<Suggestion> {
-    let by_kind = match &entry.kind {
+/// The category an entry's kind gives it, whatever its site. Logins have none.
+fn kind_category(kind: &Kind) -> Option<&'static str> {
+    match kind {
         Kind::Card(_) => Some("Payment cards"),
         Kind::Identity(_) => Some("Identities"),
         Kind::Note(_) => Some("Notes"),
@@ -158,24 +158,27 @@ pub fn suggest(entry: &Entry) -> Option<Suggestion> {
         Kind::SshKey(_) => Some("SSH keys"),
         Kind::ApiKey(_) => Some("API keys"),
         Kind::Database(_) => Some("Databases"),
-        Kind::Licence(_) => Some("Licences"),
+        Kind::Licence(_) => Some("Licenses"),
         Kind::Recovery(_) => Some("Recovery"),
         Kind::Wifi(_) => Some("Wi-Fi"),
         Kind::Otp(_) => Some("Authenticator"),
         Kind::Login(_) => None,
-    };
-    if let Some(category) = by_kind {
-        return Some(Suggestion {
-            category,
-            source: Source::Kind,
-        });
     }
+}
+
+/// What the site or the name says, by the list first and the classifier after.
+pub fn site_category(entry: &Entry) -> Option<(&'static str, Source)> {
     let domains = entry_domains(entry);
     if let Some(category) = domains.iter().find_map(|domain| listed_category(domain)) {
-        return Some(Suggestion {
-            category,
-            source: Source::DomainList,
-        });
+        return Some((category, Source::DomainList));
+    }
+    let title = entry.common.title.v.trim().to_lowercase();
+    // A code has no website, only a name, and the name is usually the site's: GitHub, Discord.
+    if domains.is_empty() && !title.is_empty() {
+        let guess: String = title.chars().filter(|c| c.is_alphanumeric()).collect();
+        if let Some(category) = listed_category(&format!("{guess}.com")) {
+            return Some((category, Source::DomainList));
+        }
     }
     let name = domains
         .iter()
@@ -183,10 +186,33 @@ pub fn suggest(entry: &Entry) -> Option<Suggestion> {
         .collect::<Vec<_>>()
         .join(" ");
     let text = format!("{} {name}", entry.common.title.v);
-    classify(&text).map(|category| Suggestion {
-        category,
-        source: Source::Classifier,
-    })
+    classify(&text).map(|category| (category, Source::Classifier))
+}
+
+/// Suggests a category. `None` leaves the entry unfiled rather than guessing wrong.
+pub fn suggest(entry: &Entry) -> Option<Suggestion> {
+    if let Some(category) = kind_category(&entry.kind) {
+        return Some(Suggestion {
+            category,
+            source: Source::Kind,
+        });
+    }
+    site_category(entry).map(|(category, source)| Suggestion { category, source })
+}
+
+/// Every category worth offering, what the site is about before what the kind is: a code for
+/// GitHub is both Developer and Authenticator.
+pub fn suggest_all(entry: &Entry) -> Vec<&'static str> {
+    let mut out = Vec::new();
+    if let Some((category, _)) = site_category(entry) {
+        out.push(category);
+    }
+    if let Some(category) = kind_category(&entry.kind)
+        && !out.contains(&category)
+    {
+        out.push(category);
+    }
+    out
 }
 
 #[cfg(test)]
@@ -235,6 +261,18 @@ mod tests {
                 .category,
             "Entertainment"
         );
+    }
+
+    #[test]
+    fn a_code_is_filed_by_its_site_as_well_as_its_kind() {
+        let mut code = Entry {
+            kind: Kind::Otp(crate::model::Otp::default()),
+            ..Entry::default()
+        };
+        code.common.title = Lww::new("GitHub".into(), Hlc::default());
+        assert_eq!(suggest_all(&code), vec!["Developer", "Authenticator"]);
+        assert_eq!(suggest(&code).unwrap().category, "Authenticator");
+        assert_eq!(suggest_all(&site_entry("x", "https://discord.com")), vec!["Social"]);
     }
 
     #[test]

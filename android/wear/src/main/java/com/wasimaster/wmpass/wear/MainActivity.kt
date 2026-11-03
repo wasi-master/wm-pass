@@ -89,7 +89,7 @@ private fun Screen() {
             PhoneAnswer.Off -> Note("Turn on Show on my watch in WM Pass on your phone") { round++ }
             is PhoneAnswer.Open -> ScalingLazyColumn(Modifier.fillMaxSize(), state = list) {
                 if (now.codes.isEmpty() && now.favourites.isEmpty()) {
-                    item { Text("No codes or favourites yet", textAlign = TextAlign.Center) }
+                    item { Text("No codes or favorites yet", textAlign = TextAlign.Center) }
                 }
                 if (now.codes.isNotEmpty()) item { ListHeader { Text("Codes") } }
                 items(now.codes, key = { it.id }) { row ->
@@ -99,7 +99,7 @@ private fun Screen() {
                         Text("${(row.secondsLeft - clock).coerceAtLeast(0)} s", style = MaterialTheme.typography.labelSmall)
                     }
                 }
-                if (now.favourites.isNotEmpty()) item { ListHeader { Text("Favourites") } }
+                if (now.favourites.isNotEmpty()) item { ListHeader { Text("Favorites") } }
                 items(now.favourites, key = { "f" + it.id }) { row ->
                     Button(
                         onClick = {

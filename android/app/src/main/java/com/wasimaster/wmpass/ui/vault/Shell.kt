@@ -76,7 +76,24 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 /** A change that can still be taken back. */
-class UndoOffer(val message: String, val action: suspend () -> Unit)
+/** A line at the bottom of the screen, with a way to take back what it reports when there is one. */
+/**
+ * A tab coming in from the side its button sits on, as pages are pushed: the new one slides the
+ * whole way across, the old one drifts a third of the way back and fades under it.
+ */
+fun tabSlide(forward: Boolean): androidx.compose.animation.ContentTransform {
+    val shift = if (forward) 1 else -1
+    val motion = androidx.compose.animation.core.tween<androidx.compose.ui.unit.IntOffset>(
+        340,
+        easing = androidx.compose.animation.core.CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f),
+    )
+    return androidx.compose.animation.ContentTransform(
+        androidx.compose.animation.slideInHorizontally(motion) { shift * it },
+        androidx.compose.animation.slideOutHorizontally(motion) { -shift * it / 3 } + androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(260)),
+    )
+}
+
+class UndoOffer(val message: String, val action: (suspend () -> Unit)? = null)
 
 /** What every screen in the vault can ask of the shell around it. */
 @Stable
@@ -106,6 +123,9 @@ class Shell(
     /** An otpauth link or note waiting for the editor it was meant for. */
     var pendingOtp: String? = null
     var pendingNote: String? = null
+
+    /** A shared `WIFI:` network waiting for the Wi-Fi editor. */
+    var pendingWifi: String? = null
 
     /** Who gets the next QR code scanned. Setting it opens the scanner over whatever is showing. */
     var scanTarget by mutableStateOf<((String) -> Unit)?>(null)
@@ -142,7 +162,7 @@ class Shell(
     private fun copyUsername(id: String) {
         scope.launch {
             val name = Pass.detail(id).fields.firstOrNull { it.key == "username" || it.key == "user" }?.text.orEmpty()
-            if (name.isNotEmpty()) copyPlain("Username", name)
+            if (name.isNotEmpty()) copyPlain("Username", name) else notice("This item has no username to copy")
         }
     }
 
@@ -175,10 +195,27 @@ class Shell(
         }
     }
 
+    /**
+     * What a swipe, tap or row button set to [action] really does to this entry. Copying falls
+     * back from the password to the code to the username, so an imported code still answers a
+     * swipe set to copy passwords. Null when nothing fits.
+     */
+    fun effective(action: String, entry: com.wasimaster.wmpass.core.Summary): String? {
+        if (canDo(action, entry)) return action
+        if (action != "password" && action != "code" && action != "username") return null
+        return listOf("password", "code", "username").firstOrNull { canDo(it, entry) }
+    }
+
+    /** Says something at the bottom of the screen, with nothing to undo. */
+    fun notice(message: String) {
+        undo = UndoOffer(message)
+    }
+
     /** A tap on a row. Something that cannot be copied still opens. */
     fun tapped(entry: com.wasimaster.wmpass.core.Summary) {
         val action = prefs.tapAction.value
-        if (action != "open" && canDo(action, entry)) perform(action, entry) else open(entry.id)
+        val doing = if (action == "open") null else effective(action, entry)
+        if (doing != null) perform(doing, entry) else open(entry.id)
     }
 
     fun copyPlain(label: String, text: String) {
@@ -234,6 +271,10 @@ private fun ReceiveIncoming() {
                     text.startsWith("otpauth://") -> {
                         shell.pendingOtp = text
                         shell.nav.navigate("new/otp")
+                    }
+                    text.startsWith("WIFI:", ignoreCase = true) -> {
+                        shell.pendingWifi = text
+                        shell.nav.navigate("new/wifi")
                     }
                     text.startsWith("http://") || text.startsWith("https://") -> {
                         // A link: show what is saved for it, and search offers to add it if nothing is.
