@@ -36,6 +36,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -51,7 +52,10 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.wasimaster.wmpass.ui.fx.BackdropSource
+import com.wasimaster.wmpass.ui.fx.LocalBackdrop
 import com.wasimaster.wmpass.ui.fx.glass
+import com.wasimaster.wmpass.ui.fx.rememberBackdrop
 import com.wasimaster.wmpass.ui.fx.rim
 import com.wasimaster.wmpass.ui.icons.PassIcons
 import com.wasimaster.wmpass.ui.theme.Springs
@@ -82,8 +86,12 @@ fun HomeScreen() {
     }
     BackHandler(shell.selecting) { shell.selection.clear() }
     BackHandler(shell.searching) { shell.searching = false }
+    // The page as a whole is already a backdrop, for the capsule above it, so glass in here
+    // gets none. The dock wants the rows sliding under it, so the tab is a backdrop of its own.
+    val backdrop = rememberBackdrop()
     Box(Modifier.fillMaxSize().background(colors.ground)) {
         val order = prefs.tabs
+        BackdropSource(backdrop, Modifier.fillMaxSize()) {
         AnimatedContent(
             targetState = shell.tab,
             modifier = Modifier.fillMaxSize(),
@@ -105,6 +113,8 @@ fun HomeScreen() {
                 else -> ToolsTab()
             }
         }
+        }
+        CompositionLocalProvider(LocalBackdrop provides backdrop) {
         // The bar fades the page into the ground behind the dock, so rows never collide with it.
         Box(
             Modifier
@@ -127,6 +137,7 @@ fun HomeScreen() {
         }
         AddLayer()
         SearchLayer()
+        }
     }
 }
 

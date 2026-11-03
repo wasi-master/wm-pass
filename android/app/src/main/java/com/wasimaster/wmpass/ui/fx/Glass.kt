@@ -3,7 +3,9 @@ package com.wasimaster.wmpass.ui.fx
 import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
@@ -52,8 +54,19 @@ fun rememberBackdrop(): Backdrop? {
     return remember(layer) { Backdrop(layer) }
 }
 
-/** Marks a page as what the glass above it blurs. */
-fun Modifier.backdropSource(backdrop: Backdrop?): Modifier {
+/**
+ * Marks [content] as what the glass above it blurs. Glass inside [content] gets no backdrop and
+ * shows its tint: a pane drawn into the layer it blurs would draw itself, and the render thread
+ * recurses until it runs out of stack.
+ */
+@Composable
+fun BackdropSource(backdrop: Backdrop?, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Box(modifier.backdropSource(backdrop)) {
+        CompositionLocalProvider(LocalBackdrop provides null, content = content)
+    }
+}
+
+private fun Modifier.backdropSource(backdrop: Backdrop?): Modifier {
     if (backdrop == null) return this
     return onGloballyPositioned { backdrop.origin = it.positionInRoot() }
         .drawWithContent {
