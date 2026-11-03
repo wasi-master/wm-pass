@@ -23,6 +23,8 @@ Two devices can sync directly, with no server. Pair them once by QR code or a si
 
 A Bitwarden or Vaultwarden account can be used in place of a local vault, and so can a KeePass database opened where it is. You can also run the WM Pass server yourself, from `crates/wmpass-server`; `packaging/server` has a Docker setup. Bitwarden does not publish its API, so official changes can break this.
 
+Add one under Settings, Sync and accounts. An account opens in place of your vault, so WM Pass then offers to lock the vault and take you to the unlock screen, with the account chosen and its password asked for.
+
 The first sign-in from a device Bitwarden has not seen before is held back until you confirm it, unless the account has two-step login. Bitwarden emails a code, and the unlock screen asks for it beside your password. Two-step login asks for its code in the same place.
 
 ## Sharing

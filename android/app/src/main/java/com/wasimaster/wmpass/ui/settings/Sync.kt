@@ -228,12 +228,36 @@ fun SyncScreen() {
     }
 }
 
-/** Adding an account stores only where it is. Signing in happens at the door. */
+/**
+ * Adding an account stores only where it is. Signing in happens at the door, since an account opens
+ * in place of the vault: added from Settings, it offers to lock this vault and go there.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AddAccountSheet(onDismiss: () -> Unit) {
     val colors = palette
     val context = LocalContext.current
+    var added by remember { mutableStateOf<AccountRef?>(null) }
+    added?.let { made ->
+        PassSheet(onDismiss, "Sign in to ${made.label}") {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "An account opens in place of this vault. Signing in locks this one, and the door asks for the account's password.",
+                    color = colors.textMid,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(horizontal = 6.dp),
+                )
+                PrimaryButton("Sign in now", Modifier.fillMaxWidth()) {
+                    Accounts.signInNext(made.id)
+                    onDismiss()
+                    // Not this sheet's scope, which goes with it: a lock cut short would leave saves behind.
+                    kotlinx.coroutines.MainScope().launch { Pass.lock() }
+                }
+                QuietButton("Later", Modifier.fillMaxWidth(), onClick = onDismiss)
+            }
+        }
+        return
+    }
     var kind by remember { mutableStateOf("bitwarden") }
     var region by remember { mutableStateOf("") }
     val server = rememberTextFieldState()
@@ -294,19 +318,23 @@ fun AddAccountSheet(onDismiss: () -> Unit) {
                     else -> "Bitwarden"
                 }
                 if (kind != "kdbx") com.wasimaster.wmpass.app.Prefs.of(context).updateNetworkAllowed(true)
-                Accounts.add(
-                    context,
-                    AccountRef(
-                        id = Accounts.newId(),
-                        kind = if (kind == "kdbx") "kdbx" else "bitwarden",
-                        label = label.text.toString().trim().ifEmpty { fallback },
-                        server = if (kind == "server") server.text.toString().trim() else "",
-                        region = region,
-                        email = email.text.toString().trim(),
-                        uri = uri?.toString().orEmpty(),
-                    ),
+                val ref = AccountRef(
+                    id = Accounts.newId(),
+                    kind = if (kind == "kdbx") "kdbx" else "bitwarden",
+                    label = label.text.toString().trim().ifEmpty { fallback },
+                    server = if (kind == "server") server.text.toString().trim() else "",
+                    region = region,
+                    email = email.text.toString().trim(),
+                    uri = uri?.toString().orEmpty(),
                 )
-                onDismiss()
+                Accounts.add(context, ref)
+                if (Pass.state.value is com.wasimaster.wmpass.core.LockState.Unlocked) {
+                    added = ref
+                } else {
+                    // Added from the door itself: it opens with this account chosen.
+                    Accounts.signInNext(ref.id)
+                    onDismiss()
+                }
             }
         }
     }
