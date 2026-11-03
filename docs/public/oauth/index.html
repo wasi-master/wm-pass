@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Back to WM Pass</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 16px/1.5 system-ui, sans-serif; margin: 0; padding: 32px 16px; text-align: center; }
+  a { font-weight: 600; }
+</style>
+</head>
+<body>
+<!--
+  Box only sends a sign-in back to an https address. This page is that address: it hands
+  the code on to the app's own wmpass://oauth, where it is traded for a token. Nothing is
+  stored or sent anywhere else; the code is useless without the app's client secret, and
+  expires in 30 seconds.
+-->
+<p>Returning to WM Pass…</p>
+<p><a id="link" href="wmpass://oauth">Open WM Pass</a></p>
+<script>
+  var target = 'wmpass://oauth' + window.location.search;
+  document.getElementById('link').href = target;
+  window.location.replace(target);
+</script>
+</body>
+</html>

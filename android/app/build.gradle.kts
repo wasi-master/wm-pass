@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -6,6 +8,17 @@ plugins {
 
 val wearLink = providers.gradleProperty("wmpass.offline").orNull != "true" &&
     providers.gradleProperty("wmpass.fdroid").orNull != "true"
+
+// App ids for the cloud services backups can sign in to, registered for WM Pass in each
+// service's console. Not secrets: the sign-in is PKCE. Missing means that service is not offered.
+val localProperties = Properties().apply {
+    rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+}
+
+fun appKey(name: String, env: String): String =
+    providers.gradleProperty(name).orNull ?: localProperties.getProperty(name) ?: providers.environmentVariable(env).orNull ?: ""
+
+val driveClientId = appKey("wmpass.driveClientId", "WMPASS_DRIVE_CLIENT_ID")
 
 android {
     namespace = "com.wasimaster.wmpass"
@@ -20,6 +33,14 @@ android {
         versionName = "0.1.0"
         buildConfigField("boolean", "WATCH", wearLink.toString())
         buildConfigField("boolean", "OFFLINE", (providers.gradleProperty("wmpass.offline").orNull == "true").toString())
+        buildConfigField("String", "DROPBOX_APP_KEY", "\"${appKey("wmpass.dropboxAppKey", "WMPASS_DROPBOX_APP_KEY")}\"")
+        buildConfigField("String", "ONEDRIVE_CLIENT_ID", "\"${appKey("wmpass.oneDriveClientId", "WMPASS_ONEDRIVE_CLIENT_ID")}\"")
+        buildConfigField("String", "BOX_CLIENT_ID", "\"${appKey("wmpass.boxClientId", "WMPASS_BOX_CLIENT_ID")}\"")
+        buildConfigField("String", "BOX_CLIENT_SECRET", "\"${appKey("wmpass.boxClientSecret", "WMPASS_BOX_CLIENT_SECRET")}\"")
+        buildConfigField("String", "DRIVE_CLIENT_ID", "\"$driveClientId\"")
+        // Google sends a sign-in back on the reversed client id. Without one, a scheme nothing uses.
+        manifestPlaceholders["driveScheme"] = driveClientId.removeSuffix(".apps.googleusercontent.com")
+            .let { if (it.isEmpty()) "wmpass-no-drive" else "com.googleusercontent.apps.$it" }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

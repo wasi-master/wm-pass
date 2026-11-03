@@ -14,6 +14,7 @@ class PassApplication : Application() {
         com.wasimaster.wmpass.system.Accounts.load(this)
         com.wasimaster.wmpass.system.Destinations.load(this)
         com.wasimaster.wmkeyboard.core.settings.sink.AutoBackupNaming.appFiles = com.wasimaster.wmpass.system.Backups::isOurs
+        com.wasimaster.wmpass.system.CloudSignIn.install()
         com.wasimaster.wmsuite.sinks.net.SinkNet.checkInternet = {
             if (com.wasimaster.wmpass.BuildConfig.OFFLINE) throw java.io.IOException("This build has no network access.")
         }

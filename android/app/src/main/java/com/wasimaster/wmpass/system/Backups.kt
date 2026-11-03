@@ -9,12 +9,43 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.wasimaster.wmkeyboard.core.settings.BoxConfig
+import com.wasimaster.wmkeyboard.core.settings.DriveSpace
+import com.wasimaster.wmkeyboard.core.settings.FtpConfig
+import com.wasimaster.wmkeyboard.core.settings.GitConfig
+import com.wasimaster.wmkeyboard.core.settings.GitProvider
+import com.wasimaster.wmkeyboard.core.settings.ICloudConfig
+import com.wasimaster.wmkeyboard.core.settings.ImapConfig
+import com.wasimaster.wmkeyboard.core.settings.ImapSecurity
+import com.wasimaster.wmkeyboard.core.settings.MegaConfig
+import com.wasimaster.wmkeyboard.core.settings.NasConfig
+import com.wasimaster.wmkeyboard.core.settings.NfsConfig
+import com.wasimaster.wmkeyboard.core.settings.PCloudConfig
+import com.wasimaster.wmkeyboard.core.settings.ProtonConfig
 import com.wasimaster.wmkeyboard.core.settings.S3Config
 import com.wasimaster.wmkeyboard.core.settings.SftpConfig
+import com.wasimaster.wmkeyboard.core.settings.SmbConfig
+import com.wasimaster.wmkeyboard.core.settings.sink.BackupClients
 import com.wasimaster.wmkeyboard.core.settings.sink.BackupSink
+import com.wasimaster.wmkeyboard.core.settings.sink.BackupSinkException
+import com.wasimaster.wmkeyboard.core.settings.sink.BoxSink
+import com.wasimaster.wmkeyboard.core.settings.sink.DriveSink
+import com.wasimaster.wmkeyboard.core.settings.sink.DropboxSink
+import com.wasimaster.wmkeyboard.core.settings.sink.FtpSink
+import com.wasimaster.wmkeyboard.core.settings.sink.GitSink
+import com.wasimaster.wmkeyboard.core.settings.sink.ICloudSink
+import com.wasimaster.wmkeyboard.core.settings.sink.ImapSink
+import com.wasimaster.wmkeyboard.core.settings.sink.MegaSink
+import com.wasimaster.wmkeyboard.core.settings.sink.NfsSink
+import com.wasimaster.wmkeyboard.core.settings.sink.OneDriveSink
+import com.wasimaster.wmkeyboard.core.settings.sink.PCloudSink
+import com.wasimaster.wmkeyboard.core.settings.sink.QnapSink
 import com.wasimaster.wmkeyboard.core.settings.sink.S3Sink
 import com.wasimaster.wmkeyboard.core.settings.sink.SafFolderSink
 import com.wasimaster.wmkeyboard.core.settings.sink.SftpSink
+import com.wasimaster.wmkeyboard.core.settings.sink.SmbSink
+import com.wasimaster.wmkeyboard.core.settings.sink.SynologySink
+import com.wasimaster.wmkeyboard.core.settings.sink.proton.ProtonDriveSink
 import com.wasimaster.wmkeyboard.core.settings.sink.SinkEntry
 import com.wasimaster.wmkeyboard.core.settings.sink.SinkError
 import com.wasimaster.wmkeyboard.core.settings.sink.WebDavSink
@@ -71,8 +102,64 @@ data class Destination(
     val hostKey: String = "",
     val backup: Boolean = true,
     val sync: Boolean = false,
+    /** Dropbox, OneDrive, Box and Drive: what the browser sign-in handed back. Empty is signed out. */
+    val refreshToken: String = "",
+    /** The folder inside an account (Drive, Box, pCloud, MEGA, iCloud, Proton) or the IMAP mailbox. */
+    val folder: String = "",
+    /** Drive: the hidden app folder ("appdata"), or a folder the owner can see ("folder"). */
+    val driveSpace: String = "appdata",
+    /** FTP: TLS before the login. */
+    val secure: Boolean = true,
+    /** SMB. */
+    val share: String = "",
+    val domain: String = "",
+    val encrypt: Boolean = true,
+    /** IMAP: "tls", "starttls" or "none". */
+    val security: String = "tls",
+    /** Git: "github", "gitlab" or "gitea"; the server is [url], empty for the provider's own. */
+    val provider: String = "github",
+    val repository: String = "",
+    val branch: String = "",
+    val token: String = "",
+    val allowPublic: Boolean = false,
+    /** WebDAV and S3: which known service filled the address in, for the screen. */
+    val preset: String = "",
+    val pcloud: PCloudConfig = PCloudConfig(),
+    /** Synology and QNAP both. */
+    val nas: NasConfig = NasConfig(),
+    val nfs: NfsConfig = NfsConfig(),
+    val mega: MegaConfig = MegaConfig(),
+    val icloud: ICloudConfig = ICloudConfig(),
+    val proton: ProtonConfig = ProtonConfig(),
 ) {
     val remote: Boolean get() = kind != "folder"
+
+    /** The folder inside an account, never WM Keyboard's default. */
+    val folderOrDefault: String get() = folder.trim().ifEmpty { DEFAULT_FOLDER }
+
+    /** Whether everything a run needs is here: an account kind is not, until it is signed in. */
+    val configured: Boolean
+        get() = when (kind) {
+            "folder" -> uri.isNotEmpty()
+            "webdav" -> url.isNotEmpty()
+            "s3" -> bucket.isNotEmpty() && accessKeyId.isNotEmpty() && secretAccessKey.isNotEmpty()
+            "sftp", "ftp" -> host.isNotEmpty() && user.isNotEmpty()
+            "smb" -> host.isNotEmpty() && share.isNotEmpty() && user.isNotEmpty()
+            "nfs" -> nfs.configured
+            "git" -> repository.contains('/') && token.isNotEmpty()
+            "imap" -> host.isNotEmpty() && user.isNotEmpty() && password.isNotEmpty()
+            "drive", "dropbox", "onedrive", "box" -> refreshToken.isNotEmpty()
+            "pcloud" -> pcloud.configured
+            "synology", "qnap" -> nas.configured
+            "mega" -> mega.configured
+            "icloud" -> icloud.configured
+            "proton" -> proton.configured
+            else -> false
+        }
+
+    companion object {
+        const val DEFAULT_FOLDER = "WM Pass"
+    }
 }
 
 /** How a place's last run went. */
@@ -82,22 +169,36 @@ data class RunResult(val atMs: Long, val problem: String? = null)
 object Destinations {
     private const val FILE = "destinations"
     private val serializer = ListSerializer(Destination.serializer())
+    private val json = Json {
+        ignoreUnknownKeys = true
+        coerceInputValues = true
+    }
     private val mutable = MutableStateFlow<List<Destination>>(emptyList())
     val list: StateFlow<List<Destination>> = mutable
 
     fun load(context: Context) {
         val raw = Sealed.read(context, FILE) ?: return
-        mutable.value = runCatching { Json.decodeFromString(serializer, raw.decodeToString()) }.getOrDefault(emptyList())
+        mutable.value = runCatching { json.decodeFromString(serializer, raw.decodeToString()) }.getOrDefault(emptyList())
     }
 
     private fun save(context: Context, value: List<Destination>) {
         mutable.value = value
-        Sealed.write(context, FILE, Json.encodeToString(serializer, value).encodeToByteArray())
+        Sealed.write(context, FILE, json.encodeToString(serializer, value).encodeToByteArray())
     }
 
     fun put(context: Context, destination: Destination) {
         val rest = mutable.value.filter { it.id != destination.id }
         save(context, (rest + destination).sortedBy { it.label.lowercase() })
+    }
+
+    /**
+     * Changes one place as it is now, not as some caller last saw it: a sink run can rotate a
+     * token while the screen is open on the same place.
+     */
+    @Synchronized
+    fun update(context: Context, id: String, change: (Destination) -> Destination) {
+        val current = mutable.value.firstOrNull { it.id == id } ?: return
+        put(context, change(current))
     }
 
     fun remove(context: Context, id: String) {
@@ -134,9 +235,71 @@ object Destinations {
                 path = d.path,
                 hostKey = d.hostKey,
             ),
-        ) { key -> put(context, d.copy(hostKey = key)) }
+        ) { key -> update(context, d.id) { it.copy(hostKey = key) } }
+        "ftp" -> FtpSink(FtpConfig(host = d.host, port = d.port, user = d.user, password = d.password, path = d.path, secure = d.secure))
+        "smb" -> SmbSink(
+            SmbConfig(
+                host = d.host,
+                port = d.port,
+                share = d.share,
+                path = d.path,
+                domain = d.domain,
+                user = d.user,
+                password = d.password,
+                encrypt = d.encrypt,
+            ),
+        )
+        "nfs" -> NfsSink(d.nfs)
+        "git" -> GitSink(
+            GitConfig(
+                provider = GitProvider.of(d.provider),
+                server = d.url,
+                repository = d.repository,
+                branch = d.branch,
+                path = d.path,
+                token = d.token,
+                authorName = "WM Pass",
+                allowPublic = d.allowPublic,
+            ),
+            device = android.os.Build.MODEL.orEmpty(),
+        )
+        "imap" -> ImapSink(
+            ImapConfig(
+                host = d.host,
+                port = d.port,
+                security = ImapSecurity.of(d.security),
+                user = d.user,
+                password = d.password,
+                mailbox = d.folder.trim().ifEmpty { "WM Pass backups" },
+            ),
+        )
+        "drive" -> DriveSink(CloudSignIn.driveTokens(d) ?: unavailable(), DriveSpace.of(d.driveSpace), d.folderOrDefault)
+        "dropbox" -> DropboxSink(d.refreshToken, BackupClients.dropbox() ?: unavailable())
+        "onedrive" -> OneDriveSink(d.refreshToken, BackupClients.oneDrive() ?: unavailable()) { rotated ->
+            update(context, d.id) { it.copy(refreshToken = rotated) }
+        }
+        "box" -> BoxSink(d.refreshToken, BackupClients.box() ?: unavailable(), BoxConfig(d.folderOrDefault)) { rotated ->
+            update(context, d.id) { it.copy(refreshToken = rotated) }
+        }
+        "pcloud" -> PCloudSink(d.pcloud.copy(folder = d.folderOrDefault))
+        "synology" -> SynologySink(d.nas) { pin -> storePin(context, d.id, pin) }
+        "qnap" -> QnapSink(d.nas) { pin -> storePin(context, d.id, pin) }
+        "mega" -> MegaSink(d.mega.copy(folder = d.folderOrDefault))
+        "icloud" -> ICloudSink(d.icloud.copy(folder = d.folderOrDefault)) { cookies, trust ->
+            update(context, d.id) { it.copy(icloud = it.icloud.copy(cookies = cookies, trustToken = trust.ifEmpty { it.icloud.trustToken })) }
+        }
+        "proton" -> ProtonDriveSink(d.proton.copy(folder = d.folderOrDefault)) { access, refresh ->
+            update(context, d.id) { it.copy(proton = it.proton.copy(accessToken = access, refreshToken = refresh)) }
+        }
         else -> error("unknown destination")
     }
+
+    /** The first certificate a NAS showed, so every later connection is held to it. */
+    private fun storePin(context: Context, id: String, pin: String) =
+        update(context, id) { if (it.nas.certPin.isEmpty()) it.copy(nas = it.nas.copy(certPin = pin)) else it }
+
+    /** A kind this build has no app id for. Reported as "not set up", which is what it is here. */
+    private fun unavailable(): Nothing = throw BackupSinkException(SinkError.NOT_CONFIGURED)
 
     fun lastRun(context: Context, id: String): RunResult? =
         context.getSharedPreferences("runs", Context.MODE_PRIVATE).getString(id, null)?.let {
