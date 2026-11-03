@@ -25,6 +25,19 @@ quick-xml = "0.42.0"
 base64 = "0.23.1"
 getrandom.workspace = true
 url = "2.5.8"
+# MEGA: AES for its node keys, PBKDF2 for v2 accounts, RSA (by hand) for the session id.
+aes = "0.9"
+pbkdf2 = { version = "0.13", default-features = false, features = ["hmac"] }
+num-bigint = { version = "0.5", default-features = false, features = ["std"] }
+subtle = "2.6"
+
+# SMB: NTLM's digests, SMB 3 signing and encryption. Native only, like the sink.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+md4 = "0.11"
+md-5 = "0.11"
+cmac = "0.8"
+ccm = "0.6"
+aes-gcm = { version = "0.11", default-features = false, features = ["aes", "alloc"] }
 
 [dev-dependencies]
 tempfile = "3"
