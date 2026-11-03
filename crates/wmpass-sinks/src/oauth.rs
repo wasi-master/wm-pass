@@ -1,5 +1,8 @@
 //! OAuth for Dropbox, OneDrive and Drive: PKCE, so no client secret needs to ship, and
 //! refresh tokens, because access tokens last hours and backups run for years.
+//!
+//! Box is the exception: it has no PKCE and wants the client secret on every token call,
+//! so it has its own three functions below.
 
 use base64::Engine;
 use serde_json::Value;
@@ -43,6 +46,15 @@ pub const DRIVE: Service = Service {
     token: "https://oauth2.googleapis.com/token",
     scope: "https://www.googleapis.com/auth/drive.appdata",
     extra: "access_type=offline&prompt=consent",
+};
+
+/// Box, the whole account: Box has no app-folder scope. Scopes are set on the app in
+/// Box's console, so none is asked for here.
+pub const BOX: Service = Service {
+    authorize: "https://account.box.com/api/oauth2/authorize",
+    token: "https://api.box.com/oauth2/token",
+    scope: "",
+    extra: "",
 };
 
 /// A PKCE pair. Keep the verifier until the redirect comes back.
@@ -137,6 +149,62 @@ pub fn refresh(service: Service, client_id: &str, token: &Secret) -> Call<Tokens
     ])
 }
 
+/// The sign-in address for a service without PKCE, such as Box. Box takes only an https
+/// redirect (or a loopback one), never a custom scheme. `state` ties the redirect to this
+/// request; [`pkce`] makes a good one.
+pub fn authorize_url_with_secret(service: Service, client_id: &str, redirect: &str, state: &str) -> String {
+    let mut url = format!(
+        "{}?response_type=code&client_id={}&redirect_uri={}&state={}",
+        service.authorize,
+        percent_encode(client_id),
+        percent_encode(redirect),
+        percent_encode(state),
+    );
+    if !service.scope.is_empty() {
+        url.push_str("&scope=");
+        url.push_str(&percent_encode(service.scope));
+    }
+    if !service.extra.is_empty() {
+        url.push('&');
+        url.push_str(service.extra);
+    }
+    url
+}
+
+/// Swaps the code from the redirect for tokens, proving the app with its client secret
+/// instead of a PKCE verifier.
+pub fn exchange_code_with_secret(
+    service: Service,
+    client_id: &str,
+    client_secret: &Secret,
+    redirect: &str,
+    code: &Secret,
+) -> Call<Tokens> {
+    token_call(service, &[
+        ("grant_type", "authorization_code"),
+        ("client_id", client_id),
+        ("client_secret", client_secret.expose()),
+        ("redirect_uri", redirect),
+        ("code", code.expose()),
+    ])
+}
+
+/// Gets a fresh access token with the client secret. Box's refresh tokens are single use:
+/// the answer always carries the next one, which must be saved before anything else.
+pub fn refresh_with_secret(service: Service, client_id: &str, client_secret: &Secret, token: &Secret) -> Call<Tokens> {
+    token_call(service, &[
+        ("grant_type", "refresh_token"),
+        ("client_id", client_id),
+        ("client_secret", client_secret.expose()),
+        ("refresh_token", token.expose()),
+    ])
+}
+
+/// A form body, for the services that sign in with a posted form.
+pub(crate) fn form_body(fields: &[(&str, &str)]) -> Vec<u8> {
+    form(fields)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -180,5 +248,26 @@ mod tests {
         assert!(String::from_utf8(body).unwrap().contains("grant_type=refresh_token"));
         let expired = FakeHttp::new().answer(DROPBOX.token, 401, "");
         assert_eq!(refresh(DROPBOX, "id", &"r".into()).run(&expired, NetPolicy::Any).err(), Some(NetError::Unauthorised));
+    }
+
+    #[test]
+    fn box_sends_its_secret_and_no_pkce() {
+        let url = authorize_url_with_secret(BOX, "id", "https://wmpass.example/oauth/", "st");
+        assert!(url.starts_with("https://account.box.com/api/oauth2/authorize?response_type=code&client_id=id"));
+        assert!(url.contains("redirect_uri=https%3A%2F%2Fwmpass.example%2Foauth%2F&state=st"));
+        assert!(!url.contains("code_challenge") && !url.contains("scope="));
+
+        let http = FakeHttp::new().answer(BOX.token, 200, r#"{"access_token":"a","refresh_token":"r2","expires_in":3600}"#);
+        let tokens = refresh_with_secret(BOX, "id", &"shh".into(), &"r1".into()).run(&http, NetPolicy::Any).unwrap();
+        assert_eq!(tokens.refresh.unwrap().expose(), "r2");
+        let body = String::from_utf8(http.last().unwrap().body.unwrap().1).unwrap();
+        assert_eq!(body, "grant_type=refresh_token&client_id=id&client_secret=shh&refresh_token=r1");
+
+        let exchanged = exchange_code_with_secret(BOX, "id", &"shh".into(), "https://r.example/", &"c".into())
+            .run(&http, NetPolicy::Any)
+            .unwrap();
+        assert_eq!(exchanged.access.expose(), "a");
+        let body = String::from_utf8(http.last().unwrap().body.unwrap().1).unwrap();
+        assert!(body.contains("grant_type=authorization_code") && body.contains("client_secret=shh") && !body.contains("code_verifier"));
     }
 }

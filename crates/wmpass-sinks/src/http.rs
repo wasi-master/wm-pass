@@ -41,7 +41,11 @@ impl<H: AsyncHttp> Client<H> {
             NetError::Blocked | NetError::Insecure => Fault::Blocked,
             _ => Fault::NotConfigured,
         })?;
-        self.http.send(&request).await.map_err(|_| Fault::Io)
+        self.http.send(&request).await.map_err(|error| match error {
+            // A certificate refused is not a bad minute: the server is not the one first seen.
+            NetError::Untrusted => Fault::Unsafe,
+            _ => Fault::Io,
+        })
     }
 
     /// Sends and refuses anything but success.
