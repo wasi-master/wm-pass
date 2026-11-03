@@ -1,4 +1,5 @@
 //! `wmpass`: scripting access to vault files, and the harness for integration tests.
+//! With no subcommand, in a terminal, it opens the full-screen app instead.
 //!
 //! The password is read from the terminal. `WMPASS_PASSWORD` exists for tests and
 //! scripts, and anything else running as the same user can read a process's
@@ -29,11 +30,17 @@ use wmpass_core::{Error, Secret, categorise, emergency, health, io, search, stre
 )]
 struct Cli {
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Subcommand)]
 enum Command {
+    /// Open the full-screen app. Running `wmpass` alone in a terminal does the same.
+    #[cfg(feature = "tui")]
+    Tui {
+        /// Vault file. The last one opened if left out.
+        vault: Option<PathBuf>,
+    },
     /// Create a vault file.
     Create {
         /// Path of the new file.
@@ -349,7 +356,12 @@ fn login_line(entry: &wmpass_core::model::Entry) -> String {
 
 fn run(cli: Cli) -> Result<(), String> {
     let now = now_ms();
-    match cli.command {
+    let Some(command) = cli.command else {
+        return no_subcommand();
+    };
+    match command {
+        #[cfg(feature = "tui")]
+        Command::Tui { vault } => wmpass_tui::run(vault)?,
         Command::Create { vault, name } => {
             if vault.exists() {
                 return Err(format!("{} already exists", vault.display()));
@@ -675,11 +687,26 @@ fn run(cli: Cli) -> Result<(), String> {
     Ok(())
 }
 
+/// In a terminal, the full-screen app; anywhere else, the list of subcommands, so a script
+/// that forgot one fails plainly rather than hanging on a screen nobody sees.
+fn no_subcommand() -> Result<(), String> {
+    #[cfg(feature = "tui")]
+    use std::io::IsTerminal;
+    #[cfg(feature = "tui")]
+    if std::io::stdout().is_terminal() && std::io::stdin().is_terminal() {
+        return wmpass_tui::run(None);
+    }
+    let _ = <Cli as clap::CommandFactory>::command().print_help();
+    Err(String::new())
+}
+
 fn main() -> ExitCode {
     match run(Cli::parse()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {
-            eprintln!("{message}");
+            if !message.is_empty() {
+                eprintln!("{message}");
+            }
             ExitCode::FAILURE
         }
     }
