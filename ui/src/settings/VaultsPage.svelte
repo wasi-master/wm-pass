@@ -234,10 +234,10 @@
 {#if problem}<p class="danger-text" style="padding-bottom:12px">{problem}</p>{/if}
 
 <Group title="Add">
-  <Row title="A nested vault" sub="Its own encrypted file, kept apart from this one" icon="layers" chevron onclick={() => openSheet('nested')} />
+  <Row title="A nested vault" help="action.nested_vault" sub="Its own encrypted file, kept apart from this one" icon="layers" chevron onclick={() => openSheet('nested')} />
   {#if places.available}
-    <Row title="A shared vault" sub="For family or a team, without a server" icon="family_restroom" chevron onclick={() => openSheet('shared')} />
-    <Row title="Join someone’s shared vault" sub="Make a code to send them" icon="add" chevron onclick={() => openSheet('join')} />
+    <Row title="A shared vault" help="action.shared_vault" sub="For family or a team, without a server" icon="family_restroom" chevron onclick={() => openSheet('shared')} />
+    <Row title="Join someone’s shared vault" help="action.join_shared_vault" sub="Make a code to send them" icon="add" chevron onclick={() => openSheet('join')} />
   {/if}
 </Group>
 

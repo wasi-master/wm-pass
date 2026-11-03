@@ -364,6 +364,8 @@ fun NavRow(
     icon: ImageVector? = null,
     tint: Color = palette.primary,
     trailing: String? = null,
+    /** The guide's topic for what the row does, drawn as a "?" before the chevron. */
+    help: String? = null,
     onClick: () -> Unit,
 ) {
     val colors = palette
@@ -392,6 +394,7 @@ fun NavRow(
             Spacer(Modifier.width(10.dp))
             Text(trailing, color = colors.textLow, style = MaterialTheme.typography.bodyMedium)
         }
+        if (help != null) com.wasimaster.wmpass.ui.help.HelpMark(help, title)
         Spacer(Modifier.width(6.dp))
         Icon(com.wasimaster.wmpass.ui.icons.PassIcons.ChevronRight, null, tint = colors.textLow, modifier = Modifier.size(20.dp))
     }

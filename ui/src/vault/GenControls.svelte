@@ -27,8 +27,8 @@
   <button type="button" class="chip" aria-pressed={on} onclick={() => { flip(); reroll(); }}>{label}</button>
 {/snippet}
 
-<div class="stack" style="gap:6px">
-  <div class="form-row">
+<div class="stack" style="gap:6px" data-help-anchor="generator.controls">
+  <div class="form-row" data-help-anchor="generator.modes">
     <span class="label">Type</span>
     <span>
       <Segmented

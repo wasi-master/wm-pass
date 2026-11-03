@@ -26,7 +26,7 @@
 </script>
 
 <Group>
-  <Choice title="Keep deleted items for" icon="timer" value={days} {options} onchange={(value) => { days = value; void pass.change('vault.prefs', { trash_days: value }); }} />
+  <Choice title="Keep deleted items for" help="action.trash_keep" icon="timer" value={days} {options} onchange={(value) => { days = value; void pass.change('vault.prefs', { trash_days: value }); }} />
 </Group>
 
 {#if items.length === 0}

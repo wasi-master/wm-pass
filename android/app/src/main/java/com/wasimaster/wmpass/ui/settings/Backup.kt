@@ -39,6 +39,8 @@ import com.wasimaster.wmpass.system.Backups
 import com.wasimaster.wmpass.system.Destination
 import com.wasimaster.wmpass.system.Destinations
 import com.wasimaster.wmpass.system.sinkProblem
+import com.wasimaster.wmpass.ui.help.HelpMark
+import com.wasimaster.wmpass.ui.help.helpAnchor
 import com.wasimaster.wmpass.ui.icons.PassIcons
 import com.wasimaster.wmpass.ui.parts.Eyebrow
 import com.wasimaster.wmpass.ui.parts.GlyphTile
@@ -132,7 +134,8 @@ fun BackupScreen() {
                 style = MaterialTheme.typography.bodyLarge,
                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
             )
-            Eyebrow("Where they go")
+            Column(Modifier.helpAnchor("group:backup.places")) {
+            Eyebrow("Where they go") { HelpMark("group.backup.places", "where backups go") }
             GroupCard {
                 places.forEachIndexed { index, place ->
                     if (index > 0) Hairline(inset = 70.dp)
@@ -154,9 +157,11 @@ fun BackupScreen() {
                     )
                 }
                 if (places.isNotEmpty()) Hairline()
-                com.wasimaster.wmpass.ui.parts.NavRow("Add a place", icon = PassIcons.Add) { adding = true }
+                com.wasimaster.wmpass.ui.parts.NavRow("Add a place", icon = PassIcons.Add, help = "action.add_place") { adding = true }
             }
-            Eyebrow("How often")
+            }
+            Column(Modifier.helpAnchor("group:backup.schedule")) {
+            Eyebrow("How often") { HelpMark("action.backup_schedule", "how often") }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(0 to "By hand", 1 to "Every day", 7 to "Every week").forEach { (days, name) ->
                     Pill(name, every == days) {
@@ -173,7 +178,7 @@ fun BackupScreen() {
                     modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 10.dp),
                 )
             }
-            Eyebrow("How many to keep")
+            Eyebrow("How many to keep") { HelpMark("action.backup_keep", "how many to keep") }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(3, 7, 14, 30).forEach { count ->
                     Pill(count.toString(), keep == count) {
@@ -182,8 +187,9 @@ fun BackupScreen() {
                     }
                 }
             }
+            }
             Eyebrow("By hand")
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.helpAnchor("group:backup.manual"), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 QuietButton("Save a file", Modifier.weight(1f), PassIcons.Upload, height = 50.dp) { saveFile.launch("wm-pass.wmbackup") }
                 QuietButton("Merge a file", Modifier.weight(1f), PassIcons.Download, height = 50.dp) { openFile.launch(arrayOf("*/*")) }
             }

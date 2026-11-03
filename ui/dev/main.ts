@@ -14,4 +14,5 @@ import { prefs } from '$ui/engine/prefs.svelte';
 
 import { unzip, zipStored } from '$ui/engine/bundle';
 import { PAGES } from '$ui/settings/pages';
-Object.assign((window as any).wm, { unzip, zipStored, PAGES });
+import { help } from '$ui/help/help.svelte';
+Object.assign((window as any).wm, { unzip, zipStored, PAGES, help });

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import HelpButton from '../help/HelpButton.svelte';
   import Icon from '../parts/Icon.svelte';
   import IconBtn from '../parts/IconBtn.svelte';
   import { pass } from '../engine/pass.svelte';
@@ -67,11 +68,13 @@
 <aside class="sidebar" style="width:{prefs.v.sidebar_width}px" aria-label="Sections">
   <div class="top" data-tauri-drag-region></div>
   <nav class="items scroll">
-    {#each tabs as tab}
-      {#if TAB_INFO[tab]}
-        {@render item(tab, TAB_INFO[tab].icon, TAB_INFO[tab].label, count(tab))}
-      {/if}
-    {/each}
+    <div data-help-anchor="sidebar.tabs">
+      {#each tabs as tab}
+        {#if TAB_INFO[tab]}
+          {@render item(tab, TAB_INFO[tab].icon, TAB_INFO[tab].label, count(tab))}
+        {/if}
+      {/each}
+    </div>
 
     {#if prefs.v.sidebar_kinds && kinds.length > 0}
       <div class="side-title">Types</div>
@@ -81,7 +84,7 @@
     {/if}
 
     {#if prefs.v.sidebar_folders}
-      <div class="side-title">
+      <div class="side-title" data-help-anchor="sidebar.folders">
         <span>Folders</span>
         <IconBtn icon="add" label="New folder" size={15} class="tiny" onclick={() => (ui.renamingFolder = { id: '', name: '' })} />
       </div>
@@ -101,7 +104,8 @@
   </nav>
   <div class="side-foot">
     <span class="name ell" title={name}>{pass.child ?? name}</span>
-    {#if prefs.v.show_lock}<IconBtn icon="lock" label="Lock" onclick={() => void pass.lock()} />{/if}
-    <IconBtn icon="settings" label="Settings" on={ui.section.startsWith('settings')} onclick={() => go('settings')} />
+    <HelpButton id="screen.window" title="this window" />
+    {#if prefs.v.show_lock}<span data-help-anchor="sidebar.lock" style="display:flex"><IconBtn icon="lock" label="Lock" onclick={() => void pass.lock()} /></span>{/if}
+    <span data-help-anchor="sidebar.settings" style="display:flex"><IconBtn icon="settings" label="Settings" on={ui.section.startsWith('settings')} onclick={() => go('settings')} /></span>
   </div>
 </aside>

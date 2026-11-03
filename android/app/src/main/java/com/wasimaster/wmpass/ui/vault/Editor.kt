@@ -79,6 +79,8 @@ import com.wasimaster.wmpass.core.FieldView
 import com.wasimaster.wmpass.core.NativeFailure
 import com.wasimaster.wmpass.core.Pass
 import com.wasimaster.wmpass.core.StrengthView
+import com.wasimaster.wmpass.ui.help.HelpAction
+import com.wasimaster.wmpass.ui.help.helpAnchor
 import com.wasimaster.wmpass.ui.icons.PassIcons
 import com.wasimaster.wmpass.ui.parts.Eyebrow
 import com.wasimaster.wmpass.ui.parts.GlassCircle
@@ -564,7 +566,8 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                         androidx.compose.material3.IconButton(onClick = { leave() }) { Icon(PassIcons.Close, "Close") }
                     },
                     actions = {
-                        androidx.compose.material3.TextButton(onClick = { save() }, enabled = ready && !saving && (dirty || entryId == null)) { Text("Save") }
+                        HelpAction("screen.editor", "the editor")
+                        androidx.compose.material3.TextButton(onClick = { save() }, enabled = ready && !saving && (dirty || entryId == null), modifier = Modifier.helpAnchor("editor.save")) { Text("Save") }
                     },
                     colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(containerColor = colors.ground),
                 )
@@ -960,12 +963,13 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                         modifier = Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, bottom = 8.dp),
                     )
                 }
-                PrimaryButton(if (entryId == null) "Save" else "Save changes", Modifier.fillMaxWidth(), enabled = ready && !saving && (dirty || entryId == null)) { save() }
+                PrimaryButton(if (entryId == null) "Save" else "Save changes", Modifier.fillMaxWidth().helpAnchor("editor.save"), enabled = ready && !saving && (dirty || entryId == null)) { save() }
             }
         }
         if (!colors.flat) {
             Box(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 14.dp, vertical = 8.dp)) {
                 GlassCircle(PassIcons.Close, "Close") { leave() }
+                HelpAction("screen.editor", "the editor", Modifier.align(Alignment.CenterEnd), tint = colors.text)
             }
         }
     }

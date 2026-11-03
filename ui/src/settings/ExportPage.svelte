@@ -39,13 +39,13 @@
 </script>
 
 <Group title="Stays encrypted">
-  <Row title="WM Pass vault" sub="The vault file itself, sealed. Opens with your password." icon="encrypted" chevron onclick={sealed} />
-  <Row title="KeePass database" sub="A new .kdbx file with a password you choose." icon="database" chevron onclick={() => (asking = true)} />
+  <Row title="WM Pass vault" help="action.export_wmvault" sub="The vault file itself, sealed. Opens with your password." icon="encrypted" chevron onclick={sealed} />
+  <Row title="KeePass database" help="action.export_kdbx" sub="A new .kdbx file with a password you choose." icon="database" chevron onclick={() => (asking = true)} />
 </Group>
-<Group title="Plain text">
-  <Row title="Bitwarden JSON" sub="Anyone who opens this file can read every password." icon="warning" chevron onclick={() => plain('bitwarden', 'Bitwarden JSON', 'wm-pass-bitwarden.json')} />
-  <Row title="CSV" sub="Anyone who opens this file can read every password." icon="warning" chevron onclick={() => plain('csv', 'CSV', 'wm-pass.csv')} />
-  <Row title="Printable page" sub="Anyone who opens this file can read every password." icon="warning" chevron onclick={() => plain('html', 'Printable page', 'wm-pass.html')} />
+<Group title="Plain text" help="group.export.plain">
+  <Row title="Bitwarden JSON" help="action.export_bitwarden" sub="Anyone who opens this file can read every password." icon="warning" chevron onclick={() => plain('bitwarden', 'Bitwarden JSON', 'wm-pass-bitwarden.json')} />
+  <Row title="CSV" help="action.export_csv" sub="Anyone who opens this file can read every password." icon="warning" chevron onclick={() => plain('csv', 'CSV', 'wm-pass.csv')} />
+  <Row title="Printable page" help="action.export_html" sub="Anyone who opens this file can read every password." icon="warning" chevron onclick={() => plain('html', 'Printable page', 'wm-pass.html')} />
 </Group>
 
 {#if asking}

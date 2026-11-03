@@ -58,6 +58,8 @@ jobs:
       - run: npm ci
       - run: npm run extension:build
       - run: npm run check
+      # The phone's help.json and the docs' Guide pages are written from help/ and committed.
+      - run: npm run help && test -z "$(git status --porcelain data/help docs/src/content/docs/guide)"
       - run: npx playwright install --with-deps chromium
       - run: xvfb-run -a node extension/test/run.mjs
 

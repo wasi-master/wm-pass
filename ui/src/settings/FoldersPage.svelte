@@ -19,5 +19,5 @@
       <IconBtn icon="delete" label="Remove {folder.name}" onclick={() => remove(folder.id, folder.name)} />
     </Row>
   {/each}
-  <Row title="New folder" icon="add" chevron onclick={() => (ui.renamingFolder = { id: '', name: '' })} />
+  <Row title="New folder" help="action.new_folder" icon="add" chevron onclick={() => (ui.renamingFolder = { id: '', name: '' })} />
 </Group>

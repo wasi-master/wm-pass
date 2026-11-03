@@ -50,8 +50,17 @@ import com.wasimaster.wmpass.ui.vault.LocalShell
 import com.wasimaster.wmpass.ui.vault.PassSheet
 import com.wasimaster.wmpass.ui.vault.SheetField
 import com.wasimaster.wmpass.ui.vault.TradeOff
+import com.wasimaster.wmpass.ui.help.Guide
+import com.wasimaster.wmpass.ui.help.Help
 import com.wasimaster.wmsuite.settings.AdvancedFolds
+import com.wasimaster.wmsuite.settings.ChoiceDetail
 import com.wasimaster.wmsuite.settings.ChoiceSetting
+import com.wasimaster.wmsuite.settings.LocalInfoButtons
+import com.wasimaster.wmsuite.settings.LocalInfoIcon
+import com.wasimaster.wmsuite.settings.LocalInfoOpener
+import com.wasimaster.wmsuite.settings.LocalScreenExtras
+import com.wasimaster.wmsuite.settings.LocalScreenRoute
+import com.wasimaster.wmsuite.settings.ScreenExtras
 import com.wasimaster.wmsuite.settings.LocalAdvancedFolds
 import com.wasimaster.wmsuite.settings.LocalIconReveal
 import com.wasimaster.wmsuite.settings.NavRow
@@ -99,12 +108,17 @@ private val RouteColours: Map<String, Color> = mapOf(
     "settings/shortcuts" to Color(0xFF78909C),
     "settings/file" to Color(0xFF8D6E63),
     "settings/about" to Color(0xFF90A4AE),
+    "settings/guide" to Color(0xFF039BE5),
 )
+
+/** A settings page's own colour, for drawings of settings rows elsewhere, such as the guide's. */
+internal fun routeColour(route: String): Color? = RouteColours[route]
 
 /** What the settings kit asks of the app it is in. */
 @Composable
 fun ProvideSettingsKit(prefs: Prefs, content: @Composable () -> Unit) {
     SettingsTables.routeAccent = { route -> if (prefs.settingsIcons.value == "coloured") RouteColours[route] else null }
+    Help.attach(LocalContext.current)
     val folds = remember(prefs) {
         object : AdvancedFolds {
             override val toggle: (String, Boolean) -> Unit = { id, open -> prefs.setFoldOpen(id, open) }
@@ -113,19 +127,69 @@ fun ProvideSettingsKit(prefs: Prefs, content: @Composable () -> Unit) {
             override fun isOpen(id: String): Boolean = id in prefs.foldsOpen
         }
     }
-    val reveal = rememberIconReveal(prefs.settingsIcons.value != "off", LocalReduceMotion.current)
-    CompositionLocalProvider(LocalAdvancedFolds provides folds, LocalIconReveal provides reveal, content = content)
+    val reduce = LocalReduceMotion.current
+    val reveal = rememberIconReveal(prefs.settingsIcons.value != "off", reduce)
+    val shell = LocalShell.current
+    // A row's "?" opens the guide's page for that row, found by its title on the page it is on.
+    val opener: (String, String) -> Unit = remember(shell) {
+        { title, detail -> Guide.openRow(shell.nav.currentBackStackEntry?.destination?.route, title, detail) }
+    }
+    CompositionLocalProvider(
+        LocalAdvancedFolds provides folds,
+        LocalIconReveal provides reveal,
+        // Settings motion follows Animations like the rest of the app, not only the system's scale.
+        com.wasimaster.wmsuite.settings.LocalReduceMotion provides reduce,
+        LocalInfoOpener provides opener,
+        LocalInfoIcon provides PassIcons.Help,
+        LocalInfoButtons provides (prefs.helpButtons.value != "off"),
+        LocalScreenExtras provides GuideExtras,
+        content = content,
+    )
+}
+
+/** What every settings page gets from the app: a "?" in its bar, opening the guide's page about it. */
+private object GuideExtras : ScreenExtras {
+    @Composable
+    override fun fabs(route: String?, hasDock: Boolean, hasOwnFab: Boolean): List<@Composable () -> Unit> = emptyList()
+
+    @Composable
+    override fun bottomBar(route: String?, hasDock: Boolean): (@Composable () -> Unit)? = null
+
+    @Composable
+    override fun barAction(title: String) {
+        val prefs = Prefs.of(LocalContext.current)
+        val topic = Help.forRoute(LocalScreenRoute.current) ?: return
+        if (prefs.helpButtons.value == "off") return
+        // The kit's bar is Material's in either style, so this is a plain bar button in both.
+        androidx.compose.material3.IconButton(onClick = { Guide.open(topic.id) }) {
+            Icon(PassIcons.Help, "About $title", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
 }
 
 @Composable
 private fun SwitchRow(title: String, subtitle: String?, opt: Prefs.Opt<Boolean>, icon: ImageVector) {
-    ToggleSetting(title, subtitle, opt.value, icon = icon) { opt.set(it) }
+    ToggleSetting(title, subtitle, opt.value, info = Help.forPref(opt.key)?.plain, icon = icon) { opt.set(it) }
 }
 
 @Composable
 private fun ChoiceRow(title: String, opt: Prefs.Opt<String>, icon: ImageVector, subtitle: String? = null, options: List<Pair<String, String>>) {
-    ChoiceSetting(title, subtitle = subtitle, options = options, selected = opt.value, icon = icon) { opt.set(it) }
+    ChoiceSetting(
+        title,
+        subtitle = subtitle,
+        info = Help.forPref(opt.key)?.plain,
+        options = options,
+        selected = opt.value,
+        icon = icon,
+        detail = choiceDetail(opt.key),
+    ) { opt.set(it) }
 }
+
+/** Each option's line in a choice sheet, from what the guide says that choice does. */
+internal fun <T> choiceDetail(key: String): @Composable (T) -> ChoiceDetail? = { value -> Help.effectDetail(key, value)?.let { ChoiceDetail(description = it) } }
+
+/** The guide's words for a setting, for its row's "?". */
+internal fun infoFor(key: String): String? = Help.forPref(key)?.plain
 
 @Composable
 private fun back(): () -> Unit {
@@ -183,7 +247,7 @@ internal fun IconsScreen() {
     val prefs = shell.prefs
     val colors = palette
     WmScreen("Icons", route = "settings/icons", onBack = back()) {
-        SettingsGroup("App icons") {
+        SettingsGroup("App icons", info = infoFor("icon_style")) {
             IconStyles.forEach { (id, name, about) ->
                 item {
                     PickRow(name, about, prefs.iconStyle.value == id, { prefs.updateIconStyle(id) }) {
@@ -194,7 +258,7 @@ internal fun IconsScreen() {
                 }
             }
         }
-        SettingsGroup("Site icons") {
+        SettingsGroup("Site icons", info = infoFor("site_icon_style")) {
             SiteStyles.forEach { (id, name, about) ->
                 item {
                     PickRow(name, about, prefs.siteIconStyle.value == id, { prefs.siteIconStyle.set(id) }) {
@@ -244,17 +308,21 @@ internal fun ListSettingsScreen() {
             item {
                 ChoiceSetting(
                     "Layout",
+                    info = infoFor("layout"),
                     options = listOf("list" to "List", "compact" to "Compact", "grid" to "Grid"),
                     selected = prefs.layout,
                     icon = PassIcons.ViewAgenda,
+                    detail = choiceDetail("layout"),
                 ) { prefs.updateLayout(it) }
             }
             item {
                 ChoiceSetting(
                     "Grouping",
+                    info = infoFor("grouping"),
                     options = listOf("smart" to "By site", "folder" to "By folder"),
                     selected = prefs.grouping,
                     icon = PassIcons.Layers,
+                    detail = choiceDetail("grouping"),
                 ) { prefs.updateGrouping(it) }
             }
             item {
@@ -285,7 +353,7 @@ internal fun ListSettingsScreen() {
                 ChoiceRow("Swipe left", prefs.swipeLeft, PassIcons.Swipe, options = listOf("trash" to "Move to trash", "favourite" to "Favorite", "password" to "Copy password", "none" to "Nothing"))
             }
         }
-        SettingsGroup("Above the list") {
+        SettingsGroup("Above the list", info = infoFor("widgets")) {
             val all = listOf("favourites" to "Favorites", "recent" to "Recently changed", "health" to "Health", "codes" to "Codes")
             val names = all.toMap()
             item {
@@ -311,7 +379,7 @@ internal fun NavigationSettingsScreen() {
     val shell = LocalShell.current
     val prefs = shell.prefs
     WmScreen("Navigation", route = "settings/navigation", onBack = back()) {
-        SettingsGroup("Navigation bar") {
+        SettingsGroup("Navigation bar", info = infoFor("tabs")) {
             val names = AllTabs.associate { it.id to it.label }
             item {
                 ReorderableColumn(
@@ -345,7 +413,7 @@ internal fun NavigationSettingsScreen() {
         }
         SettingsGroup("Hand") {
             item {
-                ToggleSetting("Left-handed", "Move search and add to the other side. Applies to Glass.", prefs.leftHanded, icon = PassIcons.TouchApp) { prefs.updateLeftHanded(it) }
+                ToggleSetting("Left-handed", "Move search and add to the other side. Applies to Glass.", prefs.leftHanded, info = infoFor("left_handed"), icon = PassIcons.TouchApp) { prefs.updateLeftHanded(it) }
             }
         }
     }
@@ -358,7 +426,7 @@ internal fun AddMenuScreen() {
     val shell = LocalShell.current
     val prefs = shell.prefs
     WmScreen("Add menu", route = "settings/add", onBack = back()) {
-        SettingsGroup("Shown") {
+        SettingsGroup("Shown", info = infoFor("add_kinds")) {
             item {
                 ReorderableColumn(
                     items = prefs.addKinds,
@@ -377,7 +445,7 @@ internal fun AddMenuScreen() {
             }
         }
         SettingsGroup {
-            item { NavRow("Show all in the usual order", icon = PassIcons.Refresh) { prefs.updateAddKinds(Prefs.DEFAULT_ADD) } }
+            item { NavRow("Show all in the usual order", icon = PassIcons.Refresh, info = Help.info("action.add_show_all")) { prefs.updateAddKinds(Prefs.DEFAULT_ADD) } }
         }
     }
 }
@@ -389,7 +457,7 @@ internal fun EditorSettingsScreen() {
     val shell = LocalShell.current
     val prefs = shell.prefs
     WmScreen("Editor", route = "settings/editor", onBack = back()) {
-        SettingsGroup("Shown and open at the start") {
+        SettingsGroup("Shown and open at the start", info = infoFor("editor_open")) {
             listOf(
                 Triple("sites", "Websites and apps", PassIcons.Language),
                 Triple("otp", "One-time code", PassIcons.Pin),
@@ -452,9 +520,11 @@ internal fun EntrySettingsScreen() {
             item {
                 ChoiceSetting(
                     "Hide shown secrets after",
+                    info = infoFor("reveal_seconds"),
                     options = listOf(15 to "15 s", 45 to "45 s", 120 to "2 min", 0 to "Leaving"),
                     selected = prefs.revealSeconds.value,
                     icon = PassIcons.Timer,
+                    detail = choiceDetail("reveal_seconds"),
                 ) { prefs.revealSeconds.set(it) }
             }
             item { SwitchRow("Color digits and symbols", "Makes a password easier to read aloud or retype.", prefs.colourSecrets, PassIcons.Palette) }
@@ -464,6 +534,7 @@ internal fun EntrySettingsScreen() {
                 item {
                     ChoiceSetting(
                         "Old passwords to keep",
+                        info = Help.info("action.history_keep"),
                         options = (listOf(5, 10, 20, 50) + current).distinct().sorted().map { it to it.toString() },
                         selected = current,
                         icon = PassIcons.History,
@@ -514,17 +585,21 @@ internal fun GeneratorSettingsScreen() {
             item {
                 ChoiceSetting(
                     "Length",
+                    info = infoFor("gen_length"),
                     options = listOf(12, 16, 20, 24, 32, 48, 64).map { it to it.toString() },
                     selected = prefs.genLength.value,
                     icon = PassIcons.Numbers,
+                    detail = choiceDetail("gen_length"),
                 ) { prefs.genLength.set(it) }
             }
             item {
                 ChoiceSetting(
                     "Words",
+                    info = infoFor("gen_words"),
                     options = listOf(3, 4, 5, 6, 7, 8).map { it to it.toString() },
                     selected = prefs.genWords.value,
                     icon = PassIcons.Abc,
+                    detail = choiceDetail("gen_words"),
                 ) { prefs.genWords.set(it) }
             }
             item { SwitchRow("Symbols", null, prefs.genSymbols, PassIcons.Tag) }
@@ -545,7 +620,7 @@ internal fun HealthSettingsScreen() {
         SettingsGroup("Page") {
             item { SwitchRow("Show the score", null, prefs.healthScore, PassIcons.EcgHeart) }
         }
-        SettingsGroup("Problems to list") {
+        SettingsGroup("Problems to list", info = Help.info("group.health.problems")) {
             listOf(
                 Triple("breached", "In a known breach", PassIcons.Dangerous),
                 Triple("reused", "Used more than once", PassIcons.SwapHoriz),
@@ -556,7 +631,7 @@ internal fun HealthSettingsScreen() {
                 Triple("twofactor", "No second factor", PassIcons.Pin),
                 Triple("duplicates", "Duplicate items", PassIcons.Layers),
             ).forEach { (key, name, icon) ->
-                item { ToggleSetting(name, null, key !in prefs.healthHidden, icon = icon) { prefs.setHealthShown(key, it) } }
+                item { ToggleSetting(name, null, key !in prefs.healthHidden, info = Help.info("action.health_check_$key"), icon = icon) { prefs.setHealthShown(key, it) } }
             }
         }
     }
@@ -585,15 +660,15 @@ internal fun SettingsFileScreen() {
         )
         result?.let { Text(it, color = colors.text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) }
         SettingsGroup {
-            item { NavRow("Save to a file", icon = PassIcons.Download) { save.launch("wm-pass-settings.json") } }
+            item { NavRow("Save to a file", icon = PassIcons.Download, info = Help.info("action.settings_save_file")) { save.launch("wm-pass-settings.json") } }
             item {
-                NavRow("Send to an app", icon = PassIcons.Share) {
+                NavRow("Send to an app", icon = PassIcons.Share, info = Help.info("action.settings_copy_text")) {
                     val intent = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, prefs.exportText())
                     context.startActivity(Intent.createChooser(intent, "Share settings"))
                 }
             }
-            item { NavRow("Import", icon = PassIcons.Upload) { importing = true } }
-            item { NavRow("Reset all customization", "Keeps your own themes and protection settings", icon = PassIcons.Refresh) { resetting = true } }
+            item { NavRow("Import", icon = PassIcons.Upload, info = Help.info("action.settings_import")) { importing = true } }
+            item { NavRow("Reset all customization", "Keeps your own themes and protection settings", icon = PassIcons.Refresh, info = Help.info("action.settings_reset")) { resetting = true } }
         }
     }
     if (importing) {
@@ -713,6 +788,9 @@ private val SearchIndex = listOf(
     Found("Disposable inbox", "Tools › Disposable inbox", "settings/inbox", "throwaway email temporary"),
     Found("Username checker", "Tools › Username checker", "settings/usernames", "handle available"),
     Found("Compare two passwords", "Tools › Compare two passwords", "settings/compare", "same match"),
+    Found("Guide", "Settings", "settings/guide", "help manual tour tutorial explain question what is this"),
+    Found("Help buttons", "Guide", "settings/guide", "question mark explain"),
+    Found("Tips on new pages", "Guide", "settings/guide", "hints first time"),
 )
 
 @Composable
@@ -730,24 +808,36 @@ internal fun SettingsSearchScreen() {
             words.all { it in text }
         }.sortedBy { if (it.title.lowercase().startsWith(query)) 0 else if (query in it.title.lowercase()) 1 else 2 }
     }
+    // What the guide has on the same words: screens, buttons and ideas the rows above do not name.
+    // A plain setting is left out, since its row is already listed.
+    val guide = if (query.isEmpty()) emptyList() else Help.search(query).filter { topic -> topic.kind != "setting" && found.none { it.title == topic.title } }
     WmScreen("Search settings", onBack = back()) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) { SheetField(field, "Search settings") }
-        if (query.isNotEmpty() && found.isEmpty()) {
+        if (query.isNotEmpty() && found.isEmpty() && guide.isEmpty()) {
             Text("No settings match.", color = colors.textMid, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(16.dp))
         }
         found.forEach { item ->
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        SettingsHighlight.requestTitle(item.title)
-                        shell.nav.navigate(item.route)
-                    }
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-            ) {
-                Text(item.title, color = colors.text, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(item.where, color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
+            SearchResult(item.title, item.where) {
+                SettingsHighlight.requestTitle(item.title)
+                shell.nav.navigate(item.route)
             }
         }
+        guide.forEach { topic ->
+            SearchResult(topic.title, "Guide, ${Help.where(topic)}") { Guide.open(topic.id) }
+        }
+    }
+}
+
+@Composable
+private fun SearchResult(title: String, where: String, onClick: () -> Unit) {
+    val colors = palette
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+    ) {
+        Text(title, color = colors.text, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(where, color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
     }
 }

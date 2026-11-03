@@ -9,8 +9,10 @@
     "skipLibCheck": true,
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
     "types": ["svelte", "vite/client"],
-    "paths": { "$ui/*": ["./ui/src/*"] }
+    "paths": { "$ui/*": ["./ui/src/*"], "$help": ["./help/index.ts"], "$help/*": ["./help/*"] }
   },
-  "include": ["ui/src/**/*", "ui/dev/main.ts", "desktop/src/**/*", "extension/src/**/*"]
+  "include": ["help/**/*", "ui/src/**/*", "ui/dev/main.ts", "desktop/src/**/*", "extension/src/**/*"]
 }

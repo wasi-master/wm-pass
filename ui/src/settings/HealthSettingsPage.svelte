@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { TopicId } from '$help';
   import Group from '../parts/Group.svelte';
   import Row from '../parts/Row.svelte';
   import Switch from '../parts/Switch.svelte';
@@ -22,9 +23,9 @@
 <Group title="Page">
   <Toggle title="Show the score" icon="ecg_heart" pref="health_score" />
 </Group>
-<Group title="Problems to list">
+<Group title="Problems to list" help="group.health.problems">
   {#each CHECKS as [key, name, icon] (key)}
-    <Row title={name} {icon}>
+    <Row title={name} {icon} help={`action.health_check_${key}` as TopicId}>
       <Switch checked={!hidden.includes(key)} label={name} onchange={(on) => prefs.toggleInList('health_hidden', key, !on)} />
     </Row>
   {/each}

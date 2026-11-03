@@ -22,6 +22,7 @@
     ['open_site', 'Open site'],
     ['toggle_sidebar', 'Show or hide the sidebar'],
     ['palette', 'Quick search'],
+    ['help', 'What is this page?'],
   ];
   let editing = $state<string | null>(null);
   const os = host().os;

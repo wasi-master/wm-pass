@@ -55,6 +55,9 @@ import com.wasimaster.wmpass.core.Pass
 import com.wasimaster.wmpass.core.Summary
 import com.wasimaster.wmpass.ui.fx.Aurora
 import com.wasimaster.wmpass.ui.fx.rim
+import com.wasimaster.wmpass.ui.help.HelpAction
+import com.wasimaster.wmpass.ui.help.Hint
+import com.wasimaster.wmpass.ui.help.helpAnchor
 import com.wasimaster.wmpass.ui.icons.PassIcons
 import com.wasimaster.wmpass.ui.parts.GlyphTile
 import com.wasimaster.wmpass.ui.parts.bleed
@@ -151,9 +154,12 @@ fun HealthTab() {
             ),
             verticalArrangement = Arrangement.spacedBy(if (colors.flat) 0.dp else 10.dp),
         ) {
+            item("hint") {
+                Hint(shell.prefs, "health", "screen.health", Modifier.padding(vertical = 4.dp))
+            }
             if (colors.flat && shell.prefs.healthScore.value) {
                 item("score") {
-                    Column(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(bottom = 12.dp).helpAnchor("health.score")) {
                         Row(verticalAlignment = Alignment.Bottom) {
                             Text(h?.score?.toString() ?: "-", color = colors.text, style = MaterialTheme.typography.displaySmall.merge(PassType.numeric))
                             Spacer(Modifier.width(8.dp))
@@ -176,16 +182,19 @@ fun HealthTab() {
                 }
             } else if (!colors.flat) {
                 item("title") {
-                    Text(
-                        "Health",
-                        color = colors.text,
-                        style = MaterialTheme.typography.headlineLarge.copy(fontSize = 32.sp),
-                        modifier = Modifier.padding(start = 6.dp, top = 12.dp),
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Health",
+                            color = colors.text,
+                            style = MaterialTheme.typography.headlineLarge.copy(fontSize = 32.sp),
+                            modifier = Modifier.weight(1f).padding(start = 6.dp, top = 12.dp),
+                        )
+                        HelpAction("screen.health", "Health", tint = colors.text)
+                    }
                 }
                 item("ring") {
                     Box(Modifier.fillMaxWidth().padding(vertical = 18.dp), contentAlignment = Alignment.Center) {
-                        ScoreRing(h?.score)
+                        ScoreRing(h?.score, Modifier.helpAnchor("health.score"))
                     }
                 }
             }
@@ -218,7 +227,9 @@ fun HealthTab() {
             }
             issues.forEachIndexed { index, issue ->
                 item(issue.key) {
-                    IssueCard(issue, entries, Modifier.arrive(index), if (issue.key == "duplicates") health?.duplicates.orEmpty() else emptyList())
+                    // The first group stands for all of them when a tour points at them.
+                    val placed = Modifier.arrive(index)
+                    IssueCard(issue, entries, if (index == 0) placed.helpAnchor("health.groups") else placed, if (issue.key == "duplicates") health?.duplicates.orEmpty() else emptyList())
                 }
             }
             item("tools") {
@@ -239,7 +250,7 @@ fun HealthTab() {
 
 /** Sweeps up to the score while the number counts with it. */
 @Composable
-private fun ScoreRing(score: Int?) {
+private fun ScoreRing(score: Int?, modifier: Modifier = Modifier) {
     val colors = palette
     val reduce = LocalReduceMotion.current
     val shown = remember { Animatable(0f) }
@@ -257,7 +268,7 @@ private fun ScoreRing(score: Int?) {
         else -> colors.danger
     }
     val end by androidx.compose.animation.animateColorAsState(tone, tween(400), label = "tone")
-    Box(contentAlignment = Alignment.Center) {
+    Box(modifier, contentAlignment = Alignment.Center) {
         Canvas(Modifier.size(196.dp)) {
             val stroke = 13.dp.toPx()
             val box = Size(size.width - stroke, size.height - stroke)

@@ -219,7 +219,7 @@ private fun EmailChecks(entries: List<Summary>) {
     var busy by remember { mutableStateOf<String?>(null) }
     val results = remember { mutableStateMapOf<String, String>() }
     if (emails.isEmpty()) return
-    Eyebrow("Your email addresses")
+    Eyebrow("Your email addresses") { com.wasimaster.wmpass.ui.help.HelpMark("group.breaches.emails", "your email addresses") }
     Text(
         when (source) {
             "hibp" -> "Have I Been Pwned needs an API key of your own."
@@ -348,7 +348,7 @@ fun AliasScreen() {
             AddressTricks()
             NetGate("Alias services create addresses that forward to you, so a site never sees your real one. The service you pick receives your API key and the note you write.") {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Eyebrow("Forwarding services")
+                    Eyebrow("Forwarding services") { com.wasimaster.wmpass.ui.help.HelpMark("group.aliases.services", "forwarding services") }
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         AliasServices.forEach { option -> Pill(option.name, option == service) { service = option } }
                     }
@@ -493,7 +493,7 @@ private fun AddressTricks() {
     val tag = rememberTextFieldState()
     var result by remember { mutableStateOf<String?>(null) }
     var problem by remember { mutableStateOf<String?>(null) }
-    Eyebrow("With your own address")
+    Eyebrow("With your own address") { com.wasimaster.wmpass.ui.help.HelpMark("group.aliases.own", "aliases with your own address") }
     Text(
         "A plus tag works with Gmail, Fastmail and many others. Dots work with Gmail. Neither hides your real address from a site that strips them.",
         color = colors.textMid,
@@ -593,7 +593,7 @@ fun InboxScreen() {
                         Text(current, color = colors.text, style = PassType.secretSmall, modifier = Modifier.weight(1f))
                         RowIconButton(PassIcons.ContentCopy, "Copy") { shell.copyPlain("Address", current) }
                     }
-                    Eyebrow("Arrived")
+                    Eyebrow("Arrived") { com.wasimaster.wmpass.ui.help.HelpMark("group.inbox.arrived", "mail that arrived") }
                     if (messages.isEmpty()) {
                         Text("Nothing yet. This page checks every few seconds.", color = colors.textMid, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 6.dp))
                     } else {
@@ -725,7 +725,7 @@ fun UsernameScreen() {
                     }
                 }
                 if (links.isNotEmpty()) {
-                    Eyebrow("Look for yourself")
+                    Eyebrow("Look for yourself") { com.wasimaster.wmpass.ui.help.HelpMark("group.usernames.links", "the profile links") }
                     GroupCard {
                         links.forEachIndexed { index, (site, url) ->
                             if (index > 0) Hairline(inset = 70.dp)

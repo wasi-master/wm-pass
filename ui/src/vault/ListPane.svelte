@@ -299,7 +299,7 @@
 
 <section class="list-pane" style={ui.narrow ? 'flex:1' : `width:${prefs.v.list_width}px`} aria-label="Items">
   <div class="list-head" data-tauri-drag-region>
-    <div class="grow">
+    <div class="grow" data-help-anchor="list.search">
       <Field bind:value={ui.query} bind:ref={searchInput} placeholder={searchHint} label="Search" oninput={typed} onkeydown={keyed}>
         {#snippet lead()}<Icon name="search" size={15} />{/snippet}
         {#snippet trail()}
@@ -310,7 +310,7 @@
       </Field>
     </div>
     <IconBtn icon="sort" label="Sort and layout" onclick={sortMenu} />
-    <IconBtn icon="add" label="Add an item" onclick={addMenu} />
+    <span data-help-anchor="list.add" style="display:flex"><IconBtn icon="add" label="Add an item" onclick={addMenu} /></span>
   </div>
 
   {#if ui.section === 'trash' && trashed.length > 0 && !ui.query}
@@ -320,7 +320,7 @@
   {/if}
 
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-  <div class="list-body scroll" role="listbox" tabindex="0" aria-label={heading} onkeydown={keyed}>
+  <div class="list-body scroll" role="listbox" tabindex="0" aria-label={heading} onkeydown={keyed} data-help-anchor="list.rows">
     {#if prefs.v.layout === 'grid' && !ui.searchResults}
       <div class="grid">
         {#each sorted(base) as entry (entry.id)}

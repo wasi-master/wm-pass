@@ -6,14 +6,22 @@
     wide = false,
     onclose,
     children,
+    head,
     foot,
+    class: extra = '',
+    onkeydown,
   }: {
     title?: string;
     wide?: boolean;
     onclose?: () => void;
     children?: Snippet;
+    /** A head of its own, in place of the plain title. */
+    head?: Snippet;
     foot?: Snippet;
+    class?: string;
+    onkeydown?: (event: KeyboardEvent) => void;
   } = $props();
+  const id = `dialog-${Math.random().toString(36).slice(2, 8)}`;
 
   let element: HTMLDialogElement;
 
@@ -33,9 +41,9 @@
   }
 </script>
 
-<dialog bind:this={element} class="sheet" class:wide onclick={clicked} oncancel={cancelled}>
+<dialog bind:this={element} class="sheet {extra}" class:wide aria-labelledby={title || head ? id : undefined} onclick={clicked} oncancel={cancelled} {onkeydown}>
   <div class="sheet-inner">
-    {#if title}<div class="sheet-head">{title}</div>{/if}
+    {#if head}<div class="sheet-head" {id}>{@render head()}</div>{:else if title}<div class="sheet-head" {id}>{title}</div>{/if}
     <div class="sheet-body">{@render children?.()}</div>
     {#if foot}<div class="sheet-foot">{@render foot()}</div>{/if}
   </div>

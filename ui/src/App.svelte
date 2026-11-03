@@ -1,5 +1,11 @@
 <script lang="ts">
   import Overlays from './parts/Overlays.svelte';
+  import HelpSheet from './help/HelpSheet.svelte';
+  import Coach from './help/Coach.svelte';
+  import Welcome from './help/Welcome.svelte';
+  import { help } from './help/help.svelte';
+  import { overlays } from './parts/floating.svelte';
+  import { chordOf } from './engine/text';
   import Door from './door/Door.svelte';
   import Main from './vault/Main.svelte';
   import { pass } from './engine/pass.svelte';
@@ -20,7 +26,11 @@
     const resize = () => (ui.width = window.innerWidth);
     resize();
     window.addEventListener('resize', resize);
-    host().onCommand?.((name) => main?.command(name));
+    host().onCommand?.((name) => {
+      // At the door there is no window to explain but the door itself.
+      if (!main && (name === 'help' || name === 'guide')) void help.open('screen.door');
+      else main?.command(name);
+    });
     return () => {
       media.removeEventListener('change', onChange);
       window.removeEventListener('resize', resize);
@@ -37,6 +47,7 @@
   $effect(() => {
     const root = document.documentElement;
     root.dataset.motion = prefs.v.rich_motion ? 'on' : 'off';
+    root.dataset.help = prefs.v.help_buttons;
     root.dataset.density = prefs.v.density;
     root.style.setProperty('font-size', `${prefs.v.text_scale}%`);
     root.style.setProperty('--fs', `${(13 * prefs.v.text_scale) / 100}px`);
@@ -99,6 +110,31 @@
     };
   });
 
+  // ---- the guide ----
+
+  // A new vault, or the first one opened on this install, gets the welcome once. Someone who used
+  // the app before the guide existed gets one pointer to it instead.
+  $effect(() => {
+    if (pass.state.kind !== 'unlocked') return;
+    untrack(() => {
+      if (!prefs.v.help_welcome_seen) help.welcome = true;
+      else if (prefs.upgraded && !help.seen('guide-pointer')) {
+        help.markSeen('guide-pointer');
+        overlays.toast('The Guide explains every setting and screen.', { action: 'Open', run: () => main?.command('guide'), ms: 8000 });
+      }
+    });
+  });
+
+  function doorKey(event: KeyboardEvent) {
+    active();
+    if (pass.state.kind === 'unlocked') return;
+    const chord = chordOf(event, host().os);
+    if (chord && chord === prefs.shortcuts.help) {
+      event.preventDefault();
+      void help.open('screen.door');
+    }
+  }
+
   // Leaving the page must not lose a pending save.
   $effect(() => {
     const flush = () => {
@@ -109,7 +145,7 @@
   });
 </script>
 
-<svelte:window onpointerdown={active} onkeydown={active} onwheel={active} />
+<svelte:window onpointerdown={active} onkeydown={doorKey} onwheel={active} />
 
 {#if pass.state.kind === 'unlocked'}
   <Main bind:this={main} />
@@ -117,5 +153,10 @@
   {#key pass.state.kind}
     <Door />
   {/key}
+{/if}
+<HelpSheet />
+{#if pass.state.kind === 'unlocked'}
+  <Coach />
+  {#if help.welcome}<Welcome />{/if}
 {/if}
 <Overlays />

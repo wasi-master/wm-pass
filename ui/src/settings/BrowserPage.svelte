@@ -40,20 +40,20 @@
 
 <p class="dim" style="padding-bottom:14px">The browser extension works on its own. Connected to this app it uses the vault already open here, so you unlock once. The two compare a fingerprint on first contact, and the link is encrypted after that.</p>
 
-<Group title="Connection">
+<Group title="Connection" anchor="group:browser.connect">
   <Toggle title="Let the extension connect" icon="extension" pref="bridge_enabled" onchange={apply} />
   <Toggle title="Ask before the first fill on each site" sub="Recommended. A site approved once fills without asking again." icon="rule" pref="bridge_ask_every_site" onchange={apply} />
-  <Row title="Set up browsers" sub={installed ? (installed.length ? `Ready in ${installed.join(', ')}.` : 'No supported browser was found.') : 'Registers WM Pass with Chrome, Edge, Brave, Vivaldi, Chromium and Firefox.'} icon="language" chevron onclick={install} />
+  <Row title="Set up browsers" help="action.setup_browsers" sub={installed ? (installed.length ? `Ready in ${installed.join(', ')}.` : 'No supported browser was found.') : 'Registers WM Pass with Chrome, Edge, Brave, Vivaldi, Chromium and Firefox.'} icon="language" chevron onclick={install} />
 </Group>
 
 {#if prefs.v.bridge_enabled && fingerprint}
-  <Group title="This computer">
-    <Row title="Fingerprint"><span class="mono dim selectable">{fingerprint}</span></Row>
+  <Group title="This computer" anchor="group:browser.setup">
+    <Row title="Fingerprint" help="action.bridge_fingerprint"><span class="mono dim selectable">{fingerprint}</span></Row>
   </Group>
 {/if}
 
 {#if shown.paired.length > 0}
-  <Group title="Connected extensions">
+  <Group title="Connected extensions" help="group.browser.paired" anchor="group:browser.paired">
     {#each shown.paired as item (item.id)}
       <Row title={item.name} icon="extension">
         <IconBtn icon="delete" label="Forget {item.name}" onclick={() => desktop.bridgeForget(item.id).then(refresh)} />

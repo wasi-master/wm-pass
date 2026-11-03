@@ -61,6 +61,7 @@ import com.wasimaster.wmpass.ui.fx.LocalBackdrop
 import com.wasimaster.wmpass.ui.fx.glass
 import com.wasimaster.wmpass.ui.fx.rememberBackdrop
 import com.wasimaster.wmpass.ui.fx.rim
+import com.wasimaster.wmpass.ui.help.helpAnchor
 import com.wasimaster.wmpass.ui.icons.PassIcons
 import com.wasimaster.wmpass.ui.theme.Springs
 import com.wasimaster.wmpass.ui.theme.onBrand
@@ -180,11 +181,12 @@ private fun ActionStack() {
             enter = scaleIn(Springs.lively(), 0.4f) + fadeIn(tween(120)),
             exit = scaleOut(tween(120), 0.4f) + fadeOut(tween(100)),
         ) {
-            AddButton(Modifier.padding(bottom = 10.dp))
+            AddButton(Modifier.padding(bottom = 10.dp).helpAnchor(if (shell.tab == "codes") "codes.add" else "list.add"))
         }
         val source = remember { MutableInteractionSource() }
         Box(
             Modifier
+                .helpAnchor("list.search")
                 .pressScale(source, 0.92f)
                 .size(64.dp)
                 .drawBehind {
@@ -227,6 +229,7 @@ private fun TabsPill(modifier: Modifier = Modifier) {
     val density = LocalDensity.current
     BoxWithConstraints(
         modifier
+            .helpAnchor("narrow.tabs")
             .height(64.dp)
             .glass(CircleShape)
             .padding(horizontal = 4.dp),

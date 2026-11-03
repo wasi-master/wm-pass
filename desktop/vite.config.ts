@@ -8,7 +8,7 @@ export default defineConfig({
   root: here('.'),
   publicDir: here('../ui/public'),
   plugins: [svelte()],
-  resolve: { alias: { $ui: here('../ui/src') } },
+  resolve: { alias: { $ui: here('../ui/src'), $help: here('../help') } },
   server: { port: 5184, strictPort: true, fs: { allow: [here('..')] } },
   build: {
     outDir: here('dist'),

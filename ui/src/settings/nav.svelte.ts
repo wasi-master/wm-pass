@@ -34,6 +34,7 @@ export const ROUTE_COLOURS: Record<string, string> = {
   shortcuts: '#78909C',
   file: '#8D6E63',
   about: '#90A4AE',
+  guide: '#0097A7',
   browser: '#0288D1',
   ssh: '#546E7A',
   updates: '#00838F',

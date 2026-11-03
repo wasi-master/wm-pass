@@ -1,4 +1,5 @@
 <script lang="ts">
+  import HelpButton from '../help/HelpButton.svelte';
   import Btn from '../parts/Btn.svelte';
   import Dialog from '../parts/Dialog.svelte';
   import Field from '../parts/Field.svelte';
@@ -446,19 +447,21 @@
 <div class="detail-bar" data-tauri-drag-region>
   <IconBtn icon="close" label="Close" onclick={leave} />
   <span class="grow" style="font-weight:600" data-tauri-drag-region>{entryId ? 'Edit' : 'New'} {kindName(kind).toLowerCase()}</span>
-  <Btn label={saving ? 'Saving…' : 'Save'} variant="primary" disabled={!ready || saving || (!dirty && !!entryId)} onclick={save} />
+  <HelpButton id="screen.editor" title="the editor" />
+  <span data-help-anchor="editor.save" style="display:flex"><Btn label={saving ? 'Saving…' : 'Save'} variant="primary" disabled={!ready || saving || (!dirty && !!entryId)} onclick={save} /></span>
 </div>
 
 <div class="detail-body scroll">
   <div class="detail-inner">
-    <div class="form-row" style="padding-bottom:8px">
+    <div class="form-row" style="padding-bottom:8px" data-help-anchor="editor.name">
       <span style="justify-self:end"><Tile title={title || siteTitle} site={previewSite} {kind} label={color} {icon} size={36} /></span>
       <Field bind:value={title} bind:ref={titleInput} placeholder={siteTitle || 'Name'} label="Name" />
     </div>
 
     {#if ready}
-      {#each mainRows as f (f.spec.key)}{@render fieldEditor(f)}{/each}
+      <div data-help-anchor="editor.fields">{#each mainRows as f (f.spec.key)}{@render fieldEditor(f)}{/each}</div>
 
+      <div data-help-anchor="editor.folds">
       {#if detailRows.length > 0}
         {@const content = detailRows.some(hasContent)}
         <Fold title="More details" summary={detailRows.map((f) => f.spec.label).join(', ')} open={isOpen('details', content)} ontoggle={(o) => remember('details', content, o)}>
@@ -504,8 +507,7 @@
         </Fold>
       {/if}
 
-      {@const customContent = liveCustoms > 0}
-      <Fold title="More fields" summary={liveCustoms ? String(liveCustoms) : null} open={isOpen('custom', customContent)} ontoggle={(o) => remember('custom', customContent, o)}>
+      <Fold title="More fields" summary={liveCustoms ? String(liveCustoms) : null} open={isOpen('custom', liveCustoms > 0)} ontoggle={(o) => remember('custom', liveCustoms > 0, o)}>
         {#each customs as custom}
           {#if !custom.remove}
             <div class="gap" style="padding:3px 0;align-items:flex-start">
@@ -554,6 +556,7 @@
         </div>
         <div class="form-row"><span class="label">Favorite</span><span><Switch checked={favourite} label="Favorite" onchange={(v) => (favourite = v)} /></span></div>
       </Fold>
+      </div>
     {/if}
 
     {#if error}<p class="danger-text" style="padding-top:10px">{error}</p>{/if}

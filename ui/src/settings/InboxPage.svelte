@@ -72,7 +72,7 @@
         <span class="mono selectable grow">{address}</span>
         <IconBtn icon="content_copy" label="Copy" onclick={() => copyPlainLine('Address', address!)} />
       </div>
-      <Group title="Arrived">
+      <Group title="Arrived" help="group.inbox.arrived">
         {#if messages.length === 0}
           <div class="set-body"><p class="dim">Nothing yet. This page checks every few seconds.</p></div>
         {/if}

@@ -25,6 +25,7 @@
 :root[data-density='compact'] { --row: 36px; --ctl: 26px; }
 :root[data-density='spacious'] { --row: 52px; --ctl: 32px; }
 :root[data-motion='off'] { --t-fast: 0ms; --t-med: 0ms; }
+@media (prefers-reduced-motion: reduce) { :root { --t-fast: 0ms; --t-med: 0ms; } }
 
 * { box-sizing: border-box; }
 html, body, #app { height: 100%; margin: 0; }
@@ -212,9 +213,17 @@ input[type='checkbox'] { accent-color: var(--primary); }
 .section-title { font-size: var(--fs-s); font-weight: 600; color: var(--text2); padding: 14px 0 6px; }
 
 .set-group { display: flex; flex-direction: column; margin-bottom: 18px; }
-.set-group > .title { font-size: var(--fs-s); font-weight: 600; color: var(--text2); padding: 0 0 6px; }
+.set-group > .title { display: flex; align-items: center; gap: 2px; min-height: 20px; font-size: var(--fs-s); font-weight: 600; color: var(--text2); padding: 0 0 6px; }
 .set-group > .body { border: 1px solid var(--hair); border-radius: var(--r-l); background: var(--s1); overflow: hidden; }
-.set-row { display: flex; align-items: center; gap: 12px; min-height: 42px; padding: 7px 12px; width: 100%; border: 0; background: transparent; text-align: left; }
+.set-row { position: relative; display: flex; align-items: center; gap: 12px; min-height: 42px; padding: 7px 12px; width: 100%; border: 0; background: transparent; text-align: left; }
+/* A row that does something takes its click on a button stretched across it, so the controls in it
+   are not buttons inside a button. Words pass the click through; controls sit above it. */
+.set-row > .hit { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; background: transparent; }
+.set-row > .hit:focus-visible { outline-offset: -2px; }
+.set-row > :not(.hit) { position: relative; }
+.set-row.act > .text, .set-row.act > .tile-glyph, .set-row.act > .dim, .set-row.act > .dimmer { pointer-events: none; }
+.set-row.act:hover { background: var(--hover); }
+.set-row.act:active { background: var(--press); }
 .set-row + .set-row, .set-row + .set-body, .set-body + .set-row { border-top: 1px solid var(--hair); }
 button.set-row:hover { background: var(--hover); }
 button.set-row:active { background: var(--press); }
@@ -470,3 +479,82 @@ dialog.sheet::backdrop { background: rgb(0 0 0 / 0.32); }
 .narrow .settings-pane { padding: 12px 14px 20px; }
 .icon-btn.star-on { color: var(--warn); }
 .icon-btn.tiny { width: 20px; height: 20px; }
+
+/* ---- the guide ---- */
+
+.help-btn { color: var(--text3); }
+.help-btn:hover:not(:disabled), .help-btn:focus-visible { color: var(--text); }
+/* "On hover": the "?" keeps its place, so nothing shifts, and stays reachable with Tab. */
+:root[data-help='hover'] .set-row .help-btn, :root[data-help='hover'] .set-group > .title .help-btn { opacity: 0; transition: opacity var(--t-fast); }
+:root[data-help='hover'] .set-row:hover .help-btn,
+:root[data-help='hover'] .set-row:focus-within .help-btn,
+:root[data-help='hover'] .set-group > .title:hover .help-btn,
+:root[data-help='hover'] .help-btn:focus-visible { opacity: 1; }
+.page-title-row { display: flex; align-items: center; gap: 4px; }
+
+dialog.sheet.help-sheet { width: min(620px, calc(100vw - 32px)); }
+.help-where { font-weight: 400; padding-bottom: 1px; }
+.help-body { display: flex; flex-direction: column; gap: 16px; padding-bottom: 4px; user-select: text; -webkit-user-select: text; cursor: auto; }
+.help-body h3 { font-size: var(--fs-s); font-weight: 600; color: var(--text2); padding-bottom: 5px; }
+.rich { display: flex; flex-direction: column; gap: 7px; line-height: 1.5; }
+.rich.lead { font-size: var(--fs-l); line-height: 1.45; }
+.rich ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.rich strong { font-weight: 600; }
+.rich .link { font: inherit; text-align: left; }
+.help-caveats .rich { color: var(--text2); }
+.help-choices { display: flex; flex-direction: column; border: 1px solid var(--hair); border-radius: var(--r-l); overflow: hidden; }
+.help-choice { display: flex; align-items: flex-start; gap: 6px; width: 100%; padding: 8px 12px 8px 8px; border: 0; background: transparent; text-align: left; }
+.help-choice + .help-choice { border-top: 1px solid var(--hair); }
+button.help-choice:hover { background: var(--hover); }
+.help-choice[aria-checked='true'] { background: var(--second-c); }
+.help-choice .mark { flex: none; display: flex; width: 18px; padding-top: 1px; color: var(--primary); }
+.help-choice .name { display: block; font-weight: 500; padding-bottom: 1px; }
+.help-choice .rich { color: var(--text2); font-size: var(--fs-s); gap: 4px; }
+.preview { padding: 12px; border: 1px solid var(--hair); border-radius: var(--r-l); background: var(--s1); margin-bottom: 10px; overflow: hidden; }
+.preview-caption { padding-top: 8px; font-size: var(--fs-xs); color: var(--text3); }
+
+.figure { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.figure-frame { position: relative; display: flex; flex-direction: column; gap: 34px; padding: 14px 12px; border: 1px solid var(--hair); border-radius: var(--r-l); background: var(--s1); color: var(--text3); }
+.figure-row { display: flex; justify-content: center; flex-wrap: wrap; gap: 14px 54px; }
+.figure-box { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 84px; max-width: 168px; padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--bg); color: var(--text); text-align: center; }
+.figure-label { font-size: var(--fs-s); font-weight: 500; line-height: 1.3; }
+.figure-sub { font-size: var(--fs-xs); color: var(--text2); line-height: 1.3; }
+.figure-icon { display: flex; color: var(--text2); }
+.figure-box.danger { border-color: var(--danger); }
+.figure-box.danger .figure-label { color: var(--danger); }
+.figure-box.warn { border-color: var(--warn); }
+.figure-box.good { border-color: var(--primary); }
+.figure-box.muted { border-style: dashed; background: transparent; }
+.figure-box.muted .figure-label { color: var(--text2); }
+.figure-lines { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
+.figure-edge { position: absolute; z-index: 2; transform: translate(-50%, -100%); padding: 0 3px; font-size: var(--fs-xs); line-height: 1.3; color: var(--text2); white-space: nowrap; background: var(--s1); }
+.figure-edge.side { transform: translate(0, -50%); }
+.figure figcaption { font-size: var(--fs-s); color: var(--text2); }
+
+.coach { position: fixed; inset: 0; z-index: 40; pointer-events: none; }
+.coach-band { position: absolute; background: rgb(0 0 0 / 0.4); pointer-events: auto; transition: left var(--t-med) ease-out, top var(--t-med) ease-out, width var(--t-med) ease-out, height var(--t-med) ease-out; }
+.coach-cover { position: absolute; pointer-events: auto; }
+.coach-ring { position: absolute; border: 2px solid var(--primary); border-radius: var(--r-m); pointer-events: none; transition: left var(--t-med) ease-out, top var(--t-med) ease-out, width var(--t-med) ease-out, height var(--t-med) ease-out; }
+.coach-card { position: absolute; display: flex; flex-direction: column; gap: 8px; width: min(320px, calc(100vw - 16px)); padding: 12px 12px 10px 14px; border: 1px solid var(--line); border-radius: var(--r-l); background: var(--bg); box-shadow: 0 12px 40px rgb(0 0 0 / 0.28); pointer-events: auto; transition: left var(--t-med) ease-out, top var(--t-med) ease-out; }
+
+.hint { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; margin-bottom: 12px; border-radius: var(--r-m); background: var(--second-c); }
+.guide-list .set-row { min-height: 38px; }
+
+/* A small drawing of the window, for previews. */
+.mock-frame { border-radius: var(--r-m); background: var(--bg); color: var(--text); overflow: hidden; border: 1px solid var(--hair); font-size: var(--fs-xs); }
+.mock { display: grid; grid-template-columns: 1fr 1.3fr 1.6fr; min-height: 150px; }
+.mock > button { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 8px 6px; border: 0; border-radius: 0; background: transparent; color: inherit; font-size: inherit; text-align: left; }
+.mock > button:not(:disabled):hover { box-shadow: inset 0 0 0 2px var(--primary); }
+.mock > button:disabled { opacity: 1; }
+.mock-side { background: var(--s1) !important; border-right: 1px solid var(--hair) !important; }
+.mock-list { border-right: 1px solid var(--hair) !important; }
+.mock-tab, .mock-row { display: flex; align-items: center; gap: 4px; padding: 2px 4px; border-radius: var(--r-s); min-width: 0; }
+.mock-tab.on { background: var(--second-c); }
+.mock-row.on { background: var(--primary-c); }
+.mock-search { display: flex; align-items: center; gap: 4px; padding: 2px 5px; margin-bottom: 3px; border: 1px solid var(--line); border-radius: var(--r-s); color: var(--text3); }
+.mock-item { gap: 6px !important; padding: 10px !important; }
+.mock-btn { padding: 1px 6px; border: 1px solid var(--line); border-radius: var(--r-s); white-space: nowrap; }
+.mock-btn.primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.mock-field { display: grid; grid-template-columns: 60px 1fr; gap: 6px; padding-top: 3px; border-top: 1px solid var(--hair); }
+.mock-sidebar { width: 220px; max-width: 100%; padding: 4px; border-radius: var(--r-m); background: var(--s1); }
+.mock-sidebar .side-item { cursor: default; }

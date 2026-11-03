@@ -69,6 +69,8 @@ android {
     }
     androidResources { ignoreAssetsPatterns += "*.md" }
     sourceSets["main"].assets.directories.add("../../data/brands")
+    // The in-app guide, written by scripts/build-help.mjs from help/ at the root.
+    sourceSets["main"].assets.directories.add("../../data/help")
     sourceSets["main"].assets.directories.add("../../data/passkeys")
     // The card scanner's digit detector and its license.
     sourceSets["main"].assets.directories.add("../../data/cardscan")

@@ -1,9 +1,9 @@
 <script lang="ts">
   import { prefs } from '../engine/prefs.svelte';
   // A secret in a face people can read aloud, with digits and symbols in their own colours.
-  let { value, class: extra = '' }: { value: string; class?: string } = $props();
+  let { value, class: extra = '', colour }: { value: string; class?: string; colour?: boolean } = $props();
   const parts = $derived.by(() => {
-    if (!prefs.v.colour_secrets) return [{ text: value, cls: '' }];
+    if (!(colour ?? prefs.v.colour_secrets)) return [{ text: value, cls: '' }];
     const out: { text: string; cls: string }[] = [];
     for (const ch of value) {
       const cls = /\d/.test(ch) ? 'd' : /[\p{L}\s]/u.test(ch) ? '' : 's';

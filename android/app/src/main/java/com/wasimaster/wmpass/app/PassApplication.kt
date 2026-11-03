@@ -11,6 +11,8 @@ class PassApplication : Application() {
         Pass.init(this)
         AutoLock.install(this)
         Thread { com.wasimaster.wmpass.ui.parts.Brands.warm(this) }.start()
+        // Only where to read it from: the guide is parsed the first time it is needed.
+        com.wasimaster.wmpass.ui.help.Help.attach(this)
         com.wasimaster.wmpass.system.Accounts.load(this)
         com.wasimaster.wmpass.system.Destinations.load(this)
         com.wasimaster.wmkeyboard.core.settings.sink.AutoBackupNaming.appFiles = com.wasimaster.wmpass.system.Backups::isOurs

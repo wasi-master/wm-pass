@@ -224,6 +224,39 @@ class Prefs(context: Context) {
     private val panicAppOpt = local("panic_app", "")
     val panicTrustedApp: String? get() = panicAppOpt.value.ifEmpty { null }
 
+    // ---- the guide: what it has shown on this phone stays on this phone ----
+
+    /**
+     * Whether the welcome has been shown, or put away, on this phone. An install from before the
+     * guide, whose settings file already holds something, counts as having seen it: its owner
+     * knows their way round, and the guide is in Settings when they want it.
+     */
+    val helpWelcomeSeen = flag("help_welcome_seen", false, portable = false).also { opt ->
+        if (!store.contains(opt.key)) opt.set(store.all.isNotEmpty())
+    }
+
+    /** A line about Codes, Health or the shelf the first time each one opens. */
+    val helpHints = flag("help_hints", true)
+
+    /** `always`, or `off` for no "?" at all. A touch screen has no hover. */
+    val helpButtons = word("help_buttons", "always", "always", "off")
+
+    /** The hints already shown or followed, by name. */
+    private val helpSeenOpt = local("help_seen", "")
+    val helpSeen: Set<String> get() = helpSeenOpt.value.split(",").filter { it.isNotEmpty() }.toSet()
+
+    /** The tours someone has gone through to the end. */
+    private val helpToursDoneOpt = local("help_tours_done", "")
+    val helpToursDone: Set<String> get() = helpToursDoneOpt.value.split(",").filter { it.isNotEmpty() }.toSet()
+
+    fun markHelpSeen(key: String) {
+        if (key !in helpSeen) helpSeenOpt.set((helpSeen + key).joinToString(","))
+    }
+
+    fun markTourDone(id: String) {
+        if (id !in helpToursDone) helpToursDoneOpt.set((helpToursDone + id).joinToString(","))
+    }
+
     /** Key chords for a physical keyboard, by what they do. */
     private val shortcutsOpt = word("shortcuts", "")
     val shortcuts: Map<String, String?> get() = DEFAULT_SHORTCUTS + shortcutsOpt.value.split('\n').filter { '=' in it }.associate {
@@ -301,6 +334,12 @@ class Prefs(context: Context) {
         val next = if (open) foldsOpen + id else foldsOpen - id
         foldsOpt.set(next.joinToString(","))
     }
+
+    /** Every setting's key, in the order they are declared, for a test that each one is explained. */
+    val keys: List<String> get() = all.map { it.key }
+
+    /** The setting stored under [key], for the guide's "Now" and "Default" marks and its **Use this**. */
+    fun opt(key: String): Opt<*>? = all.firstOrNull { it.key == key }
 
     /** Every customisation as a file. Protection settings are left out on purpose. */
     fun exportText(): String = JSONObject().apply {

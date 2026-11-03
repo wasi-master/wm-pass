@@ -8,7 +8,10 @@
   import type { IconName } from '../engine/icons.svelte';
   import { ui } from '../vault/ui.svelte';
   import { highlight, ROUTE_COLOURS } from './nav.svelte';
-  import { GROUPS, PAGES, SEARCH_INDEX, type PageInfo } from './pages';
+  import { GROUPS, PAGES, SEARCH_INDEX, type Found, type PageInfo } from './pages';
+  import HelpButton from '../help/HelpButton.svelte';
+  import { help } from '../help/help.svelte';
+  import GuidePage from '../help/GuidePage.svelte';
 
   import AboutPage from './AboutPage.svelte';
   import AddMenuPage from './AddMenuPage.svelte';
@@ -82,6 +85,7 @@
     ssh: SshPage,
     updates: UpdatesPage,
     desktop: DesktopPage,
+    guide: GuidePage,
   };
 
   let query = $state('');
@@ -99,15 +103,31 @@
     return true;
   }
 
-  const found = $derived.by(() => {
+  type Hit = Found & { topic?: string };
+
+  // The guide's words load with the first letter typed, so its pages can be found too.
+  $effect(() => {
+    if (query.trim()) void help.load();
+  });
+
+  const found = $derived.by<Hit[]>(() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
     const words = q.split(/\s+/);
-    return SEARCH_INDEX.filter((item) => {
+    const rows: Hit[] = SEARCH_INDEX.filter((item) => {
       if (item.desktop && !isDesktop) return false;
       const text = `${item.title} ${item.where} ${item.words ?? ''}`.toLowerCase();
       return words.every((w) => text.includes(w));
     }).sort((a, b) => rank(a.title, q) - rank(b.title, q));
+    // A setting is already found as its row, which has its own "?". The rest of the guide (pages,
+    // screens, how things work) is listed after the rows.
+    const titles = new Set(rows.map((r) => r.title));
+    const extra: Hit[] = help
+      .search(q)
+      .filter((t) => t.kind !== 'setting' && !titles.has(t.title))
+      .slice(0, 12)
+      .map((t) => ({ title: t.title, where: `Guide, ${help.where(t)}`, route: t.page ?? '', topic: t.id }));
+    return [...rows, ...extra];
   });
 
   function rank(title: string, q: string) {
@@ -161,16 +181,16 @@
         </button>
       </div>
     {/if}
-    <div class="list-head" style="padding-top:4px">
-      <Field bind:value={query} placeholder="Search settings" />
+    <div class="list-head" style="padding-top:4px" data-help-anchor="settings.search">
+      <Field bind:value={query} placeholder="Search settings and the guide" />
     </div>
-    <div class="list-body scroll">
+    <div class="list-body scroll" data-help-anchor="settings.list">
       {#if query.trim()}
         {#if found.length === 0}
           <p class="empty">No settings match.</p>
         {/if}
         {#each found as item}
-          <button type="button" class="row" style="min-height:40px" onclick={() => jump(item.route, item.title)}>
+          <button type="button" class="row" style="min-height:40px" onclick={() => (item.topic ? help.open(item.topic) : jump(item.route, item.title))}>
             <span class="grow">
               <span class="ell" style="display:block">{item.title}</span>
               <span class="dim small ell" style="display:block">{item.where}</span>
@@ -183,7 +203,7 @@
           {#if pages.length > 0}
             <div class="side-title" style="padding-left:8px">{group}</div>
             {#each pages as info (info.id)}
-              <button type="button" class="side-item" style="height:32px" aria-current={pageId === info.id || page?.parent === info.id} onclick={() => go(info.id)}>
+              <button type="button" class="side-item" style="height:32px" aria-current={pageId === info.id || page?.parent === info.id} data-help-anchor={info.id === 'guide' ? 'settings.guide' : undefined} onclick={() => go(info.id)}>
                 {@render tile(info.id, info.icon)}
                 <span class="grow ell">{info.title}</span>
               </button>
@@ -203,6 +223,7 @@
           <IconBtn icon="arrow_back" label="Back" onclick={() => (backTo ? go(backTo.id) : (ui.section = 'settings'))} />
         {/if}
         <h1 class="page-title">{page.title}</h1>
+        <HelpButton id="page.{page.id}" title={page.title} />
       </div>
       {#key pageId}
         <Current />

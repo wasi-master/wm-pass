@@ -143,7 +143,7 @@
   }
 </script>
 
-<Group title="Your devices, on this network">
+<Group title="Your devices, on this network" help="group.sync.lan" anchor="group:sync.lan">
   <div class="set-body stack">
     <NetGate what="Sync talks directly to your own devices on this network, encrypted end to end, with nothing in between. It still counts as network use, so it needs your yes like the rest.">
       {#if mode === 'waiting'}
@@ -182,7 +182,7 @@
     {#each lan.peers as peer (peer.key)}
       <Row title={peer.name} icon="devices" onclick={() => forget(peer)} />
     {/each}
-    <Row title="Pair a device" sub="A phone and this computer, or two computers" icon="add" chevron onclick={() => (adding = true)} />
+    <Row title="Pair a device" help="action.lan_pair" sub="A phone and this computer, or two computers" icon="add" chevron onclick={() => (adding = true)} />
   {/if}
 </Group>
 

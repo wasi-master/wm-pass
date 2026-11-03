@@ -195,11 +195,11 @@ fun VaultsScreen() {
             problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 6.dp, top = 12.dp)) }
             Eyebrow("Add")
             GroupCard {
-                NavRow("A nested vault", "Its own encrypted file, kept apart from this one", icon = PassIcons.Layers) { sheet = "nested" }
+                NavRow("A nested vault", "Its own encrypted file, kept apart from this one", icon = PassIcons.Layers, help = "action.nested_vault") { sheet = "nested" }
                 Hairline(inset = 70.dp)
-                NavRow("A shared vault", "For family or a team, without a server", icon = PassIcons.FamilyRestroom) { sheet = "shared" }
+                NavRow("A shared vault", "For family or a team, without a server", icon = PassIcons.FamilyRestroom, help = "action.shared_vault") { sheet = "shared" }
                 Hairline(inset = 70.dp)
-                NavRow("Join someone's shared vault", "Make a code to send them", icon = PassIcons.Add) { sheet = "join" }
+                NavRow("Join someone's shared vault", "Make a code to send them", icon = PassIcons.Add, help = "action.join_shared_vault") { sheet = "join" }
             }
             Spacer(Modifier.height(40.dp))
         }

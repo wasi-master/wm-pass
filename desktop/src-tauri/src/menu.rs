@@ -82,7 +82,19 @@ pub fn build<R: Runtime>(app: &AppHandle<R>, shortcuts: &HashMap<String, String>
         ],
     )?;
     let window = Submenu::with_items(app, "Window", true, &[&PredefinedMenuItem::minimize(app, None)?, &PredefinedMenuItem::fullscreen(app, None)?])?;
-    let help = Submenu::with_items(app, "Help", true, &[&MenuItem::with_id(app, "source", "Source Code", true, None::<&str>)?])?;
+    // The guide's own entries work at the door too, where they explain the door.
+    let help = Submenu::with_items(
+        app,
+        "Help",
+        true,
+        &[
+            &item("guide", "WM Pass Guide", true)?,
+            &item("help", "What Is This Page?", true)?,
+            &item("tour", "Take the Tour", unlocked)?,
+            &separator()?,
+            &MenuItem::with_id(app, "source", "Source Code", true, None::<&str>)?,
+        ],
+    )?;
 
     #[cfg(target_os = "macos")]
     {

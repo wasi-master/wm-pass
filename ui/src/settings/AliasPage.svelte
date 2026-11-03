@@ -98,7 +98,7 @@
   }
 </script>
 
-<Group title="With your own address">
+<Group title="With your own address" help="group.aliases.own">
   <div class="set-body stack">
     <p class="dim">A plus tag works with Gmail, Fastmail and many others. Dots work with Gmail. Neither hides your real address from a site that strips them.</p>
     <Field bind:value={address} placeholder="you@gmail.com" />
@@ -117,7 +117,7 @@
   </div>
 </Group>
 
-<Group title="Forwarding services">
+<Group title="Forwarding services" help="group.aliases.services">
   <div class="set-body stack">
     <NetGate what="Alias services create addresses that forward to you, so a site never sees your real one. The service you pick receives your API key and the note you write.">
       <Segmented value={serviceId} options={ALIAS_SERVICES.map((s) => [s.id, s.name] as [string, string])} onchange={(id) => (serviceId = id)} />

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import HelpButton from '../help/HelpButton.svelte';
   import Btn from '../parts/Btn.svelte';
   import { pass } from '../engine/pass.svelte';
   import { host } from '../engine/host';
@@ -27,11 +28,14 @@
 
 <div class="settings-pane scroll">
   <div class="settings-inner stack" style="gap:14px">
-    <h1 class="page-title">Generator</h1>
-    <div><GenValue state={gen} /></div>
+    <div class="page-title-row">
+      <h1 class="page-title">Generator</h1>
+      <HelpButton id="screen.generator" title="the generator" />
+    </div>
+    <div data-help-anchor="generator.value"><GenValue state={gen} /></div>
     <div class="gap">
       <Btn label="Copy" variant="primary" icon="content_copy" onclick={copy} />
-      <Btn label="Save as login" icon="add" onclick={() => ui.add('login', { presetPassword: gen.value })} />
+      <span data-help-anchor="generator.save" style="display:flex"><Btn label="Save as login" icon="add" onclick={() => ui.add('login', { presetPassword: gen.value })} /></span>
     </div>
     <GenControls state={gen} />
     {#if presets.length}

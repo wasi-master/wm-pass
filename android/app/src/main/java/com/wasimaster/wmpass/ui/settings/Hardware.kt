@@ -78,12 +78,12 @@ fun HardwareScreen() {
                         )
                         Eyebrow("What kind of key")
                         GroupCard {
-                            NavRow("A FIDO2 security key", "YubiKey 5, SoloKey, Nitrokey and others, by NFC or USB", icon = PassIcons.SecurityKey) {
+                            NavRow("A FIDO2 security key", "YubiKey 5, SoloKey, Nitrokey and others, by NFC or USB", help = "action.hardware_fido2", icon = PassIcons.SecurityKey) {
                                 fido = true
                                 step = KeyStep.DETAILS
                             }
                             Hairline(inset = 70.dp)
-                            NavRow("A YubiKey with challenge-response", "Uses slot 2, set up beforehand in Yubico's own tool", icon = PassIcons.Key) {
+                            NavRow("A YubiKey with challenge-response", "Uses slot 2, set up beforehand in Yubico's own tool", help = "action.hardware_yubikey", icon = PassIcons.Key) {
                                 fido = false
                                 step = KeyStep.DETAILS
                             }

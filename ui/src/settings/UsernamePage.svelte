@@ -94,7 +94,7 @@
     </Group>
   {/if}
   {#if links.length > 0}
-    <Group title="Look for yourself">
+    <Group title="Look for yourself" help="group.usernames.links">
       {#each links as link}
         <Row title={link.site} sub="Opens the profile in your browser" icon="open_in_new" chevron onclick={() => void host().openUrl(link.url)} />
       {/each}

@@ -23,6 +23,6 @@
 </Group>
 {#if limit !== null}
   <Group title="History">
-    <Choice title="Old passwords to keep" icon="history" value={limit} options={limits} onchange={(value) => { limit = value; void pass.change('vault.prefs', { history_limit: value }); }} />
+    <Choice title="Old passwords to keep" help="action.history_keep" icon="history" value={limit} options={limits} onchange={(value) => { limit = value; void pass.change('vault.prefs', { history_limit: value }); }} />
   </Group>
 {/if}

@@ -18,7 +18,7 @@
   const open = $derived(prefs.listOf('editor_open'));
 </script>
 
-<Group title="Sections open at the start">
+<Group title="Sections open at the start" help="setting.editor_open">
   {#each SECTIONS as [key, name, icon] (key)}
     <Row title={name} {icon}>
       <Switch checked={open.includes(key)} label={name} onchange={(on) => prefs.toggleInList('editor_open', key, on)} />
