@@ -9,6 +9,7 @@ import java.security.SecureRandom
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.boolean
@@ -156,21 +158,27 @@ object Pass {
 
     /** Makes the first vault, with chaff files beside it so the folder gives nothing away. */
     suspend fun create(name: String, password: ByteArray): Unit = writing.withLock {
-        val memory = kdfMemoryKib()
-        val reply = Engine.call(
-            "vault.create",
-            args = {
-                put("name", name)
-                put("kdf", kotlinx.serialization.json.buildJsonObject { put("m_kib", memory) })
-            },
-            secret = password,
-        )
-        adopt(reply.obj["handle"]!!.jsonPrimitive.long, File(vaultDir, randomHex(16)), name, false)
-        saveNow()
-        // One decoy that never changes, so that a hidden vault's unchanging file is nothing
-        // unusual. Its partner is made by saveNow and keeps pace with this vault.
-        writeChaff(File(vaultDir, randomHex(16)), file!!.length())
-        refresh()
+        // Finished even if the caller goes away: a vault that opened on screen but never
+        // reached the disk would go with the process.
+        withContext(NonCancellable) {
+            val memory = kdfMemoryKib()
+            val reply = Engine.call(
+                "vault.create",
+                args = {
+                    put("name", name)
+                    put("kdf", kotlinx.serialization.json.buildJsonObject { put("m_kib", memory) })
+                },
+                secret = password,
+            )
+            val target = File(vaultDir, randomHex(16))
+            adopt(reply.obj["handle"]!!.jsonPrimitive.long, target)
+            saveNow()
+            // One decoy that never changes, so that a hidden vault's unchanging file is nothing
+            // unusual. Its partner is made by saveNow and keeps pace with this vault.
+            writeChaff(File(vaultDir, randomHex(16)), target.length())
+            refresh()
+            showOpen(name, target, false)
+        }
     }
 
     /** Adds a vault with its own password. The door shows no sign of it. */
@@ -201,6 +209,8 @@ object Pass {
             },
         )
         target.writeAtomically(reply.blobs[0])
+        // A fresh time would mark the decoy written last, until the next save covered it.
+        target.setLastModified(FILE_TIME_MS)
     }
 
     /**
@@ -214,10 +224,17 @@ object Pass {
         vaultFiles().forEach { it.setLastModified(FILE_TIME_MS) }
     }
 
-    private suspend fun adopt(newHandle: Long, target: File, name: String, readOnly: Boolean) {
+    private fun adopt(newHandle: Long, target: File) {
         handle = newHandle
         file = target
         blobDir(target.name).mkdirs()
+    }
+
+    /**
+     * Always the last step of opening. The door leaves the screen on this change and cancels
+     * the coroutine that opened the vault, so nothing after it can be relied on to run.
+     */
+    private fun showOpen(name: String, target: File, readOnly: Boolean) {
         mutableState.value = LockState.Unlocked(name, target.name, readOnly)
     }
 
@@ -253,13 +270,9 @@ object Pass {
                 noteSuccess()
                 val index = obj["index"]!!.jsonPrimitive.int
                 val target = files[index]
-                adopt(
-                    obj["handle"]!!.jsonPrimitive.long,
-                    target,
-                    obj["name"]!!.jsonPrimitive.content,
-                    obj["read_only"]?.jsonPrimitive?.boolean == true,
-                )
+                adopt(obj["handle"]!!.jsonPrimitive.long, target)
                 afterOpen(target.name, obj["generation"]!!.jsonPrimitive.long)
+                showOpen(obj["name"]!!.jsonPrimitive.content, target, obj["read_only"]?.jsonPrimitive?.boolean == true)
                 UnlockResult.Opened
             }
             "duress" -> when (obj["action"]?.jsonPrimitive?.content) {
@@ -295,13 +308,9 @@ object Pass {
         val reply = Engine.call("vault.open_key", secret = key, blobs = listOf(target.readBytes()))
         noteSuccess()
         val obj = reply.obj
-        adopt(
-            obj["handle"]!!.jsonPrimitive.long,
-            target,
-            obj["name"]!!.jsonPrimitive.content,
-            obj["read_only"]?.jsonPrimitive?.boolean == true,
-        )
+        adopt(obj["handle"]!!.jsonPrimitive.long, target)
         afterOpen(target.name, obj["generation"]!!.jsonPrimitive.long)
+        showOpen(obj["name"]!!.jsonPrimitive.content, target, obj["read_only"]?.jsonPrimitive?.boolean == true)
     }
 
     private suspend fun afterOpen(name: String, generation: Long) {
@@ -604,8 +613,9 @@ object Pass {
         accountWriter = writer
         mutableAccount.value = accountId
         noteSuccess()
-        mutableState.value = LockState.Unlocked(obj["name"]!!.jsonPrimitive.content, accountId, false)
         refresh()
+        // Last, as in showOpen.
+        mutableState.value = LockState.Unlocked(obj["name"]!!.jsonPrimitive.content, accountId, false)
     }
 
     // ---- nested and shared vaults ----
@@ -635,8 +645,9 @@ object Pass {
         blobDir(id).mkdirs()
         val name = obj["name"]!!.jsonPrimitive.content
         mutableChild.value = name
-        mutableState.value = LockState.Unlocked(name, id, false)
         refresh()
+        // Last, as in showOpen.
+        mutableState.value = LockState.Unlocked(name, id, false)
     }
 
     /** Back to the vault this one was opened from. */
@@ -784,18 +795,21 @@ object Pass {
     }
 
     /** Opens with emergency shares and a vault file, sets a new password and keeps the file. */
-    suspend fun recover(file: ByteArray, shares: List<String>, password: ByteArray) {
+    suspend fun recover(file: ByteArray, shares: List<String>, password: ByteArray) = withContext(NonCancellable) {
+        // Finished even if the caller goes away, as in create.
         val reply = Engine.call(
             "emergency.recover",
             args = { putJsonArray("shares") { shares.forEach { add(it) } } },
             blobs = listOf(file),
         )
         val obj = reply.obj
-        adopt(obj["handle"]!!.jsonPrimitive.long, File(vaultDir, randomHex(16)), obj["name"]!!.jsonPrimitive.content, false)
+        val target = File(vaultDir, randomHex(16))
+        adopt(obj["handle"]!!.jsonPrimitive.long, target)
         Engine.call("vault.change_password", handle, { put("index", 0) }, secret = password)
         saveNow()
-        writeChaff(File(vaultDir, randomHex(16)), this.file!!.length())
+        writeChaff(File(vaultDir, randomHex(16)), target.length())
         refresh()
+        showOpen(obj["name"]!!.jsonPrimitive.content, target, false)
     }
 
     /** Reloads the lists, after something changed the vault from outside these calls. */

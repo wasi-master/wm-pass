@@ -1,5 +1,8 @@
 package com.wasimaster.wmpass.core
 
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -22,8 +25,16 @@ class PassTest {
         val context = RuntimeEnvironment.getApplication()
         Pass.init(context)
         assertEquals(LockState.NoVault, Pass.state.value)
-        Pass.create("Personal", password)
+        // As the door does it: in a scope that goes away as soon as the vault opens.
+        coroutineScope {
+            val door = launch { Pass.create("Personal", password) }
+            Pass.state.first { it is LockState.Unlocked }
+            door.cancel()
+        }
         assertTrue(Pass.state.value is LockState.Unlocked)
+        val made = java.io.File(context.filesDir, "vaults").listFiles()!!
+        assertEquals("the vault and both decoys are on disk before anything else saves", 3, made.size)
+        assertEquals("and already carry the same time", 1, made.map { it.lastModified() }.distinct().size)
 
         val id = Pass.change("entry.create") {
             put("kind", "login")
