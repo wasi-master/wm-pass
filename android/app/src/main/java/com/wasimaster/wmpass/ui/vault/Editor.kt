@@ -88,6 +88,7 @@ import com.wasimaster.wmpass.ui.parts.SiteTile
 import com.wasimaster.wmpass.ui.parts.StrengthBar
 import com.wasimaster.wmpass.ui.parts.kindName
 import com.wasimaster.wmpass.ui.parts.oklch
+import com.wasimaster.wmpass.ui.parts.secretSemantics
 import com.wasimaster.wmpass.ui.theme.MonoFamily
 import com.wasimaster.wmpass.ui.theme.Springs
 import com.wasimaster.wmpass.ui.theme.palette
@@ -992,7 +993,7 @@ private fun FieldEditor(
                     }
                     isSecret && !multiline -> androidx.compose.material3.OutlinedSecureTextField(
                         state = field.text,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().secretSemantics(field.text, field.showing),
                         label = { Text(spec.label) },
                         textStyle = TextStyle(fontFamily = MonoFamily, fontSize = 16.sp),
                         trailingIcon = actions,
@@ -1046,7 +1047,7 @@ private fun FieldEditor(
                             if (field.text.text.isEmpty()) Text("Not set", color = colors.textLow, style = MaterialTheme.typography.bodyLarge)
                             BasicSecureTextField(
                                 field.text,
-                                Modifier.fillMaxWidth(),
+                                Modifier.fillMaxWidth().secretSemantics(field.text, field.showing),
                                 textStyle = TextStyle(fontFamily = MonoFamily, fontSize = 16.sp, color = colors.text),
                                 cursorBrush = SolidColor(colors.primary),
                                 textObfuscationMode = if (field.showing) TextObfuscationMode.Visible else TextObfuscationMode.RevealLastTyped,

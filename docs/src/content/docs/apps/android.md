@@ -24,6 +24,10 @@ On Android 14 and up, WM Pass can be your passkey provider. Apps other than know
 
 Screenshots and screen recording are blocked by default. You can change this under Settings, Security.
 
+## Accessibility services
+
+A password field you have not shown gives screen readers and other accessibility services a row of dots, as Android's own password fields do. Once you tap Show, the text is read like anything else on screen.
+
 ## The build without internet
 
 An offline build drops the internet permission, so no line of code can reach a network. It cannot sync over your local network either, since that needs the same permission.

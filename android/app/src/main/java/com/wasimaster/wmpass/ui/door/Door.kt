@@ -103,6 +103,7 @@ import com.wasimaster.wmpass.ui.parts.SecretText
 import com.wasimaster.wmpass.ui.parts.ShieldMark
 import com.wasimaster.wmpass.ui.parts.ShieldState
 import com.wasimaster.wmpass.ui.parts.StrengthBar
+import com.wasimaster.wmpass.ui.parts.secretSemantics
 import com.wasimaster.wmpass.ui.theme.MonoFamily
 import com.wasimaster.wmpass.ui.theme.PassType
 import com.wasimaster.wmpass.ui.theme.palette
@@ -152,19 +153,22 @@ fun PasswordPill(
     enabled: Boolean = true,
     imeAction: ImeAction = ImeAction.Done,
     focus: FocusRequester? = null,
-    onSubmit: () -> Unit = {},
+    onSubmit: (() -> Unit)? = null,
     error: Boolean = false,
     trailing: @Composable (() -> Unit)? = null,
 ) {
     val colors = palette
     var showing by remember { mutableStateOf(false) }
     val haptics = rememberHaptics()
+    // Without its own action the key does what it says: Next moves on, Done closes the keyboard.
+    val keyAction = KeyboardActionHandler { performDefault -> if (onSubmit != null) onSubmit() else performDefault() }
     if (colors.flat) {
         androidx.compose.material3.OutlinedSecureTextField(
             state = field,
             modifier = modifier
                 .fillMaxWidth()
-                .then(if (focus != null) Modifier.focusRequester(focus) else Modifier),
+                .then(if (focus != null) Modifier.focusRequester(focus) else Modifier)
+                .secretSemantics(field, showing),
             enabled = enabled,
             isError = error,
             textStyle = TextStyle(fontFamily = MonoFamily, fontSize = 16.sp),
@@ -176,7 +180,7 @@ fun PasswordPill(
             },
             textObfuscationMode = if (showing) TextObfuscationMode.Visible else TextObfuscationMode.RevealLastTyped,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false, imeAction = imeAction),
-            onKeyboardAction = KeyboardActionHandler { onSubmit() },
+            onKeyboardAction = keyAction,
         )
         return
     }
@@ -197,7 +201,8 @@ fun PasswordPill(
                 enabled = enabled,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .then(if (focus != null) Modifier.focusRequester(focus) else Modifier),
+                    .then(if (focus != null) Modifier.focusRequester(focus) else Modifier)
+                    .secretSemantics(field, showing),
                 textStyle = TextStyle(fontFamily = MonoFamily, fontSize = 17.sp, color = colors.text),
                 cursorBrush = SolidColor(colors.primary),
                 textObfuscationMode = if (showing) TextObfuscationMode.Visible else TextObfuscationMode.RevealLastTyped,
@@ -206,7 +211,7 @@ fun PasswordPill(
                     autoCorrectEnabled = false,
                     imeAction = imeAction,
                 ),
-                onKeyboardAction = KeyboardActionHandler { onSubmit() },
+                onKeyboardAction = keyAction,
             )
         }
         Box(
@@ -330,13 +335,14 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
                         shield = ShieldState.IDLE
                         message = "This account also needs a code from your authenticator."
                     }
-                    "network" -> {
+                    // Not a guess at the password, so neither counts towards the wait.
+                    "network", "bitwarden" -> {
                         shield = ShieldState.IDLE
-                        message = "The server could not be reached."
+                        message = failure.message?.let { it.replaceFirstChar(Char::uppercase) + "." } ?: "The server could not be reached."
                     }
                     else -> {
                         shield = ShieldState.REFUSED
-                        message = failure.message ?: "Wrong password."
+                        message = failure.message?.let { it.replaceFirstChar(Char::uppercase) + "." } ?: "Wrong password."
                         retryAt = Pass.noteWrongAccountPassword()
                         delay(900)
                         shield = ShieldState.IDLE

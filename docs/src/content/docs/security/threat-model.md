@@ -18,6 +18,7 @@ sidebar:
 
 - A compromised operating system while the vault is unlocked.
 - A copy of a vault made before an entry self-destructed or before you rekeyed.
+- An accessibility service you have turned on, while a secret is on show. Hidden password fields give these services dots in place of their text, but anything visible on screen is theirs to read.
 
 ## Keys
 

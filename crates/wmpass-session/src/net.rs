@@ -552,8 +552,12 @@ pub fn call(
             };
             let http = NativeHttp::default();
             let policy = if online { NetPolicy::Any } else { NetPolicy::Offline };
+            // Only a refused password is a guess. The unlock screen counts those towards its
+            // wait, so a dropped connection or a server fault must not look like one.
             let bw_error = |e: wmpass_bw::BwError| match e {
                 wmpass_bw::BwError::TwoFactor(providers) => failed("two_factor", format!("{providers:?}")),
+                wmpass_bw::BwError::Net(error) => net_error(error),
+                wmpass_bw::BwError::BadLogin | wmpass_bw::BwError::Crypto => failed("wrong_password", e.to_string()),
                 other => failed("bitwarden", other.to_string()),
             };
             if method == "bitwarden.register" {
@@ -606,5 +610,27 @@ pub fn call(
             Ok(view(json!({})))
         }
         _ => Err(failed("invalid", format!("no such call: {method}"))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn login_error(online: bool) -> SessionError {
+        let service = Mutex::new(None);
+        let args = json!({"server": "https://127.0.0.1:9", "email": "a@example.com", "device": "test"}).to_string();
+        let Err(error) = call(&service, "bitwarden.login", 0, &args, b"not the password", online, 0) else {
+            panic!("a login with no server cannot succeed");
+        };
+        error
+    }
+
+    /// The unlock screen waits longer after each wrong password, so a sign-in that never
+    /// reached a server must not come back looking like one.
+    #[test]
+    fn a_login_that_reaches_no_server_is_a_network_failure() {
+        assert_eq!(login_error(false).code, "network");
+        assert_eq!(login_error(true).code, "network");
     }
 }

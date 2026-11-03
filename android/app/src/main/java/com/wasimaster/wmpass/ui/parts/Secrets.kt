@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -34,6 +35,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.editableText
+import androidx.compose.ui.semantics.inputText
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -65,6 +69,23 @@ fun colouredSecret(text: String, colors: Palette, base: Color = colors.text): An
         withStyle(SpanStyle(color = color)) { append(ch) }
     }
 }
+
+/**
+ * Keeps a hidden secret field's text out of the accessibility tree. Compose hands a secure field's
+ * real text to every accessibility service and only marks the node as a password, where a View's
+ * password field leaves the text out. Goes on the field's own modifier: a node's outermost
+ * semantics are applied last, so these dots replace what the field set.
+ */
+fun Modifier.secretSemantics(state: TextFieldState, showing: Boolean): Modifier =
+    if (showing) {
+        this
+    } else {
+        semantics {
+            val dots = AnnotatedString(MASK_DOT.toString().repeat(state.text.length))
+            editableText = dots
+            inputText = dots
+        }
+    }
 
 /**
  * A secret on show or under dots. Changing between the two scrambles through random glyphs and
