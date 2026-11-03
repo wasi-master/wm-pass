@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -94,7 +95,8 @@ fun AppRoot(prefs: Prefs) {
                     .fillMaxSize()
                     .drawWithCache {
                         val p = open.value
-                        val centre = Offset(size.width / 2f, shieldCentreY.coerceAtMost(size.height / 2f))
+                        val placed = DoorShieldCentre.floatValue
+                        val centre = Offset(size.width / 2f, if (placed.isNaN()) shieldCentreY.coerceAtMost(size.height / 2f) else placed)
                         // Wide enough that the shield's narrow tip still clears the far corner.
                         val reach = hypot(size.width, size.height) * 3.2f
                         val start = 96f * density
@@ -142,6 +144,12 @@ fun NoLearningInput(content: @Composable () -> Unit) {
     )
 }
 
-/** Where the door draws its shield's centre, so the opening starts exactly from it. */
+/** Where the door draws its shield's centre while nothing is in the way. */
 const val DoorShieldCentreDp = 262f
+
+/**
+ * Where the door's shield is centred, in pixels from the top, as last placed: the keyboard lifts
+ * it. The opening starts exactly from here. Not a number until the door has drawn.
+ */
+internal val DoorShieldCentre = mutableFloatStateOf(Float.NaN)
 

@@ -64,6 +64,9 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
@@ -72,6 +75,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -94,6 +98,7 @@ import com.wasimaster.wmpass.core.Pass
 import com.wasimaster.wmpass.core.QuickUnlock
 import com.wasimaster.wmpass.core.StrengthView
 import com.wasimaster.wmpass.core.UnlockResult
+import com.wasimaster.wmpass.ui.DoorShieldCentre
 import com.wasimaster.wmpass.ui.DoorShieldCentreDp
 import com.wasimaster.wmpass.ui.fx.Aurora
 import com.wasimaster.wmpass.ui.fx.glass
@@ -133,13 +138,23 @@ fun DoorScreen(state: LockState, prefs: Prefs) {
 
 @Composable
 private fun ShieldSlot(state: ShieldState, typed: Int = 0, modifier: Modifier = Modifier) {
-    // Centred on the same point every time, because the opening starts from it.
-    Box(modifier.fillMaxWidth().height((DoorShieldCentreDp * 2).dp.coerceAtMost(420.dp)), contentAlignment = Alignment.TopCenter) {
+    Box(modifier.fillMaxWidth().height((DoorShieldCentreDp * 2).dp.coerceAtMost(420.dp))) {
         ShieldMark(
             state,
             Modifier
-                .padding(top = (DoorShieldCentreDp - 96).dp)
-                .size(176.dp),
+                // On the same point while there is room for it. The keyboard takes that room, so
+                // the mark rises into what is left above the form, whole, and shrinks only once
+                // even that is too short. Squeezed in place, its lower half was cut off.
+                .layout { measurable, constraints ->
+                    val side = minOf(176.dp.roundToPx(), constraints.maxHeight)
+                    val mark = measurable.measure(Constraints.fixed(side, side))
+                    val top = minOf((DoorShieldCentreDp - 96).dp.roundToPx(), constraints.maxHeight - side)
+                    layout(constraints.maxWidth, constraints.maxHeight) {
+                        mark.place((constraints.maxWidth - side) / 2, top)
+                    }
+                }
+                // The opening starts from wherever the shield is, so it is told each time it moves.
+                .onGloballyPositioned { DoorShieldCentre.floatValue = it.positionInRoot().y + it.size.height * 72f / 108f },
             typed,
         )
     }
