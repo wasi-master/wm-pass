@@ -1,3 +1,4 @@
+import './freeze';
 import { mount } from 'svelte';
 import '$ui/app.css';
 import { setHost } from '$ui/engine/host';

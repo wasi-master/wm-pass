@@ -1,3 +1,4 @@
+import './freeze';
 import { boot } from '$ui/boot';
 import { host } from '$ui/engine/host';
 import { prefs } from '$ui/engine/prefs.svelte';

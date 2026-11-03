@@ -43,6 +43,8 @@ Keys stay in Rust and are wiped on lock. View data crossing into a user interfac
 
 **WM Keyboard** checks WM Pass's signing certificate, and WM Pass checks WM Keyboard's on every call, and it is off until you allow it.
 
+**The username checker** loads TikTok and Instagram in a hidden browser view, because their pages only answer once their own scripts run. Those scripts run inside the desktop and phone apps, so the view gets nothing from the app: it keeps no cookies or storage afterwards, may only load https pages on that site's domain, and has no route to the app's commands. On desktop, Tauri refuses commands from any page it did not ship. On Android, the view has no JavaScript bridge. The app reads only the text the page shows.
+
 ## Supply chain
 
 Only RustCrypto and dalek primitives are used, with no new constructions. `cargo deny` enforces permissive licences and known advisories on every change. There are property tests on merging and the format, and test vectors in the repository. Desktop updates carry a minisign signature that the app verifies.

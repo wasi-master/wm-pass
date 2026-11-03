@@ -3,6 +3,11 @@
 //! same for every name, including X, Instagram, Reddit, Twitch, npm and PyPI, are left
 //! out: a guess is worse than no answer here. `tests/live.rs` checks that each listed
 //! signal still holds.
+//!
+//! Some sites only show their answer once their own scripts have run. [`PAGE_SITES`]
+//! are read by an app that can load them in a private, hidden browser view, and
+//! [`LINK_SITES`] give no answer anything can read, so they are only opened for a person
+//! to look at.
 
 use crate::http::{Call, NetError, Request, Response};
 use wmpass_core::otp::percent_encode;
@@ -192,6 +197,92 @@ pub const SITES: &[Site] = &[
         url: "https://myanimelist.net/profile/{}",
         signal: Signal::Status,
     },
+    Site {
+        name: "YouTube",
+        url: "https://www.youtube.com/@{}",
+        signal: Signal::Status,
+    },
+    Site {
+        name: "Snapchat",
+        url: "https://www.snapchat.com/@{}",
+        signal: Signal::Status,
+    },
+];
+
+/// A site read from the page it draws, after its scripts have run.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PageSite {
+    /// Display name.
+    pub name: &'static str,
+    /// Address, with `{}` for the name. It asks for English, which the markers are in.
+    pub url: &'static str,
+    /// The page may only load frames from this domain and the hosts under it.
+    pub domain: &'static str,
+    /// Lowercase text on the page that means nobody has the name.
+    pub free: &'static str,
+    /// Lowercase text on the page that means somebody has it.
+    pub taken: &'static str,
+}
+
+/// Every site read from its page. A login wall shows neither marker, so it reads as no
+/// answer rather than a guess.
+pub const PAGE_SITES: &[PageSite] = &[
+    PageSite {
+        name: "TikTok",
+        url: "https://www.tiktok.com/@{}?lang=en",
+        domain: "tiktok.com",
+        free: "find this account",
+        taken: "followers",
+    },
+    PageSite {
+        name: "Instagram",
+        url: "https://www.instagram.com/{}/?hl=en",
+        domain: "instagram.com",
+        free: "the link may be broken",
+        taken: "followers",
+    },
+];
+
+/// A site whose answer cannot be read: it needs a login, or says the same for a free name
+/// as for a suspended one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LinkSite {
+    /// Display name.
+    pub name: &'static str,
+    /// The profile's address, with `{}` for the name.
+    pub url: &'static str,
+}
+
+/// Every site that is only opened for a person to look at.
+pub const LINK_SITES: &[LinkSite] = &[
+    LinkSite {
+        name: "X",
+        url: "https://x.com/{}",
+    },
+    LinkSite {
+        name: "Threads",
+        url: "https://www.threads.com/@{}",
+    },
+    LinkSite {
+        name: "Reddit",
+        url: "https://www.reddit.com/user/{}",
+    },
+    LinkSite {
+        name: "Facebook",
+        url: "https://www.facebook.com/{}",
+    },
+    LinkSite {
+        name: "Pinterest",
+        url: "https://www.pinterest.com/{}/",
+    },
+    LinkSite {
+        name: "Twitch",
+        url: "https://www.twitch.tv/{}",
+    },
+    LinkSite {
+        name: "Telegram",
+        url: "https://t.me/{}",
+    },
 ];
 
 fn read(signal: Signal, response: &Response) -> Result<Availability, NetError> {
@@ -225,10 +316,10 @@ fn read(signal: Signal, response: &Response) -> Result<Availability, NetError> {
     }
 }
 
-/// Builds the check for one site. Names outside letters, digits, dot, dash and
+/// Fills a name into an address. Names outside letters, digits, dot, dash and
 /// underscore are refused, since none of these sites allow others, and so are names
 /// of dots alone, which a path would read as `.` or `..`.
-pub fn check(site: Site, name: &str) -> Result<Call<Availability>, NetError> {
+fn address(template: &str, name: &str) -> Result<String, NetError> {
     let valid = name.chars().any(|c| c != '.')
         && name.len() <= 64
         && name
@@ -239,12 +330,62 @@ pub fn check(site: Site, name: &str) -> Result<Call<Availability>, NetError> {
             "usernames here are letters, digits, dots, dashes and underscores".into(),
         ));
     }
-    let url = site.url.replace("{}", &percent_encode(name));
-    let mut request = Request::get(url);
+    Ok(template.replace("{}", &percent_encode(name)))
+}
+
+/// Builds the check for one site.
+pub fn check(site: Site, name: &str) -> Result<Call<Availability>, NetError> {
+    let mut request = Request::get(address(site.url, name)?);
     request.timeout_ms = 8_000;
     Ok(Call::new(request, move |response| {
         read(site.signal, response)
     }))
+}
+
+/// The page to load for one name.
+pub fn page_url(site: &PageSite, name: &str) -> Result<String, NetError> {
+    address(site.url, name)
+}
+
+/// The profile to open for one name.
+pub fn link_url(site: &LinkSite, name: &str) -> Result<String, NetError> {
+    address(site.url, name)
+}
+
+/// What the page's text says so far, or `None` while it shows neither marker.
+pub fn read_page(site: &PageSite, text: &str) -> Option<Availability> {
+    let text = text.to_lowercase().replace('\u{2019}', "'");
+    if text.contains(site.free) {
+        Some(Availability::Available)
+    } else if text.contains(site.taken) {
+        Some(Availability::Taken)
+    } else {
+        None
+    }
+}
+
+/// Whether the hidden view may load this address into a frame: only https on the site's
+/// own domain, so a page cannot send it to the app's own pages or anywhere else.
+pub fn may_visit(site: &PageSite, url: &str) -> bool {
+    if url == "about:blank" || url == "about:srcdoc" {
+        return true;
+    }
+    let Some(rest) = url.strip_prefix("https://") else {
+        return false;
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    if authority.contains(['@', '\\']) {
+        return false;
+    }
+    let host = authority
+        .split(':')
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    host == site.domain
+        || host
+            .strip_suffix(site.domain)
+            .is_some_and(|start| start.ends_with('.'))
 }
 
 #[cfg(test)]
@@ -338,14 +479,83 @@ mod tests {
         );
     }
 
+    fn page(name: &str) -> PageSite {
+        *PAGE_SITES.iter().find(|s| s.name == name).unwrap()
+    }
+
+    #[test]
+    fn pages_read_their_markers() {
+        let tok = page("TikTok");
+        assert_eq!(read_page(&tok, "TikTok\n\nLoading"), None);
+        assert_eq!(
+            read_page(&tok, "Couldn\u{2019}t find this account"),
+            Some(Availability::Available)
+        );
+        assert_eq!(
+            read_page(&tok, "khaby.lame\n82\nFollowing\n163M\nFollowers"),
+            Some(Availability::Taken)
+        );
+        let gram = page("Instagram");
+        assert_eq!(
+            read_page(
+                &gram,
+                "Log in\nProfile isn't available\nThe link may be broken, or the profile may have been removed."
+            ),
+            Some(Availability::Available)
+        );
+        assert_eq!(read_page(&gram, "Log in\nContinue with Facebook"), None);
+        assert_eq!(
+            page_url(&gram, "natgeo").unwrap(),
+            "https://www.instagram.com/natgeo/?hl=en"
+        );
+        assert!(page_url(&gram, "../x").is_err());
+    }
+
+    #[test]
+    fn pages_stay_on_their_own_domain() {
+        let tok = page("TikTok");
+        for good in [
+            "https://www.tiktok.com/@x",
+            "https://tiktok.com",
+            "https://m.tiktok.com:443/a?b",
+            "about:blank",
+        ] {
+            assert!(may_visit(&tok, good), "{good}");
+        }
+        for bad in [
+            "http://www.tiktok.com/",
+            "tauri://localhost/index.html",
+            "https://tauri.localhost/",
+            "https://evil.com/?tiktok.com",
+            "https://eviltiktok.com/",
+            "https://tiktok.com.evil.com/",
+            "https://tiktok.com@evil.com/",
+            "https://evil.com\\@tiktok.com/",
+            "javascript:alert(1)",
+            "data:text/html,x",
+            "blob:https://www.tiktok.com/1",
+        ] {
+            assert!(!may_visit(&tok, bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn links_fill_the_name() {
+        let x = LINK_SITES.iter().find(|s| s.name == "X").unwrap();
+        assert_eq!(link_url(x, "nasa").unwrap(), "https://x.com/nasa");
+        assert!(link_url(x, "..").is_err());
+    }
+
     #[test]
     fn site_names_are_unique() {
-        for (i, a) in SITES.iter().enumerate() {
-            assert!(
-                SITES[i + 1..].iter().all(|b| b.name != a.name),
-                "{}",
-                a.name
-            );
+        let names: Vec<&str> = SITES
+            .iter()
+            .map(|s| s.name)
+            .chain(PAGE_SITES.iter().map(|s| s.name))
+            .chain(LINK_SITES.iter().map(|s| s.name))
+            .collect();
+        for (i, a) in names.iter().enumerate() {
+            assert!(!names[i + 1..].contains(a), "{a}");
         }
     }
 
@@ -370,12 +580,22 @@ mod tests {
 
     #[test]
     fn every_site_uses_https_and_has_a_slot() {
-        for site in SITES {
+        let urls = SITES
+            .iter()
+            .map(|s| s.url)
+            .chain(PAGE_SITES.iter().map(|s| s.url))
+            .chain(LINK_SITES.iter().map(|s| s.url));
+        for url in urls {
+            assert!(url.starts_with("https://") && url.contains("{}"), "{url}");
+        }
+        for site in PAGE_SITES {
             assert!(
-                site.url.starts_with("https://") && site.url.contains("{}"),
+                may_visit(site, &page_url(site, "x").unwrap()),
                 "{}",
                 site.name
             );
+            assert_eq!(site.free, site.free.to_lowercase());
+            assert_eq!(site.taken, site.taken.to_lowercase());
         }
     }
 }

@@ -66,6 +66,8 @@ export interface Host {
   link?: DesktopLink;
   /** Calls that reach a network run in this shell. */
   network?: boolean;
+  /** Reads a username page in a hidden, private browser view, for sites that only answer once their scripts run. */
+  checkUsernamePage?(site: string, name: string, online: boolean): Promise<string>;
   places?: PlacesHost;
   hardware?: HardwareHost;
   outside?: OutsideFiles;
