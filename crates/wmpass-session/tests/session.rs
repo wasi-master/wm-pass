@@ -1,4 +1,6 @@
 //! The contract the shells rely on: secrets stay behind the handle unless asked for.
+// The helpers below are not `#[test]` functions, so clippy's test exemption misses them.
+#![allow(clippy::unwrap_used)]
 
 use serde_json::{Value, json};
 use wmpass_session::{Call, Reply, Service};
