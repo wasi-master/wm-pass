@@ -77,6 +77,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.wasimaster.wmpass.app.LaunchGuard
 import com.wasimaster.wmpass.app.Prefs
 import com.wasimaster.wmpass.core.NativeFailure
 import com.wasimaster.wmpass.system.AccountRef
@@ -287,6 +288,8 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
     var remaining by remember { mutableStateOf(0L) }
     var needed by remember { mutableStateOf<List<NeededFactor>?>(null) }
     var source by remember { mutableStateOf(if (hasLocal) null else accounts.firstOrNull()) }
+    // After a reset the look is standard, so only the standard door below says why.
+    val notice = remember { LaunchGuard.takeNotice() }
     val codeField = rememberTextFieldState()
     var asksCode by remember { mutableStateOf(false) }
     var keyFile by remember { mutableStateOf<ByteArray?>(null) }
@@ -480,6 +483,10 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
                 color = if (remaining > 0) colors.danger else colors.textMid,
                 style = MaterialTheme.typography.bodyMedium,
             )
+            if (notice != null) {
+                Spacer(Modifier.height(12.dp))
+                Text(notice, color = colors.text, style = MaterialTheme.typography.bodyMedium)
+            }
             Spacer(Modifier.height(24.dp))
             if (accounts.isNotEmpty()) {
                 FlowRow(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -6,6 +6,8 @@ import com.wasimaster.wmpass.core.Pass
 class PassApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        // First, so a look that keeps crashing is gone before anything reads it.
+        LaunchGuard.start(this) { Prefs.of(this).resetLook() }
         Pass.init(this)
         AutoLock.install(this)
         Thread { com.wasimaster.wmpass.ui.parts.Brands.warm(this) }.start()
