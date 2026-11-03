@@ -20,6 +20,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -32,6 +33,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -47,8 +49,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wasimaster.wmpass.ui.fx.BackdropSource
@@ -208,31 +213,48 @@ private fun ActionStack() {
     }
 }
 
+// A tab's icon and its padding, shut and open: the label is all the open one adds.
+private val TabShut = 23.dp + 10.dp * 2
+private val TabOpen = 23.dp + 12.dp * 2 + 6.dp
+
 @Composable
 private fun TabsPill(modifier: Modifier = Modifier) {
     val shell = LocalShell.current
     val prefs = shell.prefs
     val tabs = prefs.tabs.mapNotNull { id -> AllTabs.firstOrNull { it.id == id } }
-    Row(
+    val style = LocalTextStyle.current.merge(TextStyle(fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold))
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    BoxWithConstraints(
         modifier
             .height(64.dp)
             .glass(CircleShape)
-            .padding(horizontal = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
+            .padding(horizontal = 4.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        tabs.forEach { tab -> TabButton(tab, shell.tab == tab.id) }
+        // Every icon keeps its place. The open tab's name shows only when it fits beside them,
+        // or a long one ("Generator") would push the last icon out of the pill.
+        val label = tabs.firstOrNull { it.id == shell.tab }?.label
+        val room = maxWidth - TabShut * (tabs.size - 1) - TabOpen
+        val fits = label == null || with(density) { measurer.measure(label, style, maxLines = 1).size.width.toDp() } <= room
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            tabs.forEach { tab -> TabButton(tab, shell.tab == tab.id, fits, style) }
+        }
     }
 }
 
 @Composable
-private fun TabButton(tab: Tab, selected: Boolean) {
+private fun TabButton(tab: Tab, selected: Boolean, named: Boolean, style: TextStyle) {
     val shell = LocalShell.current
     val colors = palette
     val source = remember { MutableInteractionSource() }
     val lit by animateFloatAsState(if (selected) 1f else 0f, Springs.glide(), label = "lit")
     val bounce by animateFloatAsState(if (selected) 1f else 0.92f, Springs.lively(), label = "bounce")
-    val pad by animateDpAsState(if (selected) 16.dp else 12.dp, Springs.glide(), label = "pad")
+    val pad by animateDpAsState(if (selected) 12.dp else 10.dp, Springs.glide(), label = "pad")
     Row(
         Modifier
             .height(52.dp)
@@ -257,13 +279,13 @@ private fun TabButton(tab: Tab, selected: Boolean) {
                 },
         )
         AnimatedVisibility(
-            visible = selected,
+            visible = selected && named,
             enter = expandHorizontally(Springs.glide()) + fadeIn(tween(160, 60)),
             exit = shrinkHorizontally(Springs.glide()) + fadeOut(tween(80)),
         ) {
             Row {
-                Spacer(Modifier.width(8.dp))
-                Text(tab.label, color = colors.primary, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                Spacer(Modifier.width(6.dp))
+                Text(tab.label, color = colors.primary, style = style, maxLines = 1, softWrap = false)
             }
         }
     }
