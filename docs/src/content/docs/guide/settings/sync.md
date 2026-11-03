@@ -147,6 +147,40 @@ Choose one of four ways. Each ends with both devices holding the other's key.
 
 See also [Your devices, on this network](/guide/settings/sync/#group-sync-lan), [Wait for one](/guide/settings/sync/#action-lan-wait).
 
+<a id="action-lan-join"></a>
+
+## Add a new device
+
+*Only in the desktop app and Android.*
+
+Sends this vault to a phone or computer that has none yet, and pairs the two for syncing.
+
+#### How it works
+
+First, on the new device, choose **I already have a vault**, then Get it from another device. It shows a code and waits.
+
+- **Find it on this network** looks for it, then both screens show six digits. If they match, choose **They match** on both.
+- **Paste its code** takes the text under the new device's QR code, for a computer or the terminal app.
+
+The new device then asks for this vault's master password.
+
+#### Limits
+
+It sends the vault you opened at the door, not an account or a nested vault.
+
+If the six digits differ, choose **They differ**, and nothing is sent.
+
+#### On Android
+
+First, on the new device, choose **I already have a vault**, then Get it from another device. It shows a code and waits.
+
+- **Scan its code** reads the QR code on the new device's screen, from a computer, a phone or the terminal app.
+- **Find it on this network** looks for it, then both screens show six digits. If they match, tap **They match** on both.
+
+The new device then asks for this vault's master password.
+
+See also [Pair a device](/guide/settings/sync/#action-lan-pair), [Your devices, on this network](/guide/settings/sync/#group-sync-lan).
+
 <a id="action-lan-wait"></a>
 
 ## Wait for one

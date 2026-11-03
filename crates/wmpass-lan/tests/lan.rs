@@ -401,3 +401,85 @@ fn devices_find_each_other() {
     drop(advert);
     assert!(found.iter().any(|a| a.port() == 47113), "{found:?}");
 }
+
+#[derive(Default)]
+struct Shelf(BTreeMap<String, Vec<u8>>);
+
+impl BlobStore for Shelf {
+    fn get(&self, name: &str) -> Option<Vec<u8>> {
+        self.0.get(name).cloned()
+    }
+    fn put(&mut self, name: &str, bytes: &[u8]) -> Result<(), LanError> {
+        self.0.insert(name.to_owned(), bytes.to_vec());
+        Ok(())
+    }
+}
+
+#[test]
+fn a_new_device_joins_by_qr_and_gets_the_file_and_attachments() {
+    use wmpass_lan::join::{Arrival, arrive, send_by_qr};
+    let (mut vault, _) = vault_pair();
+    let file = vault.save().unwrap();
+    let (old, new) = (Identity::generate().unwrap(), Identity::generate().unwrap());
+    let (old_key, new_key) = (*old.public(), *new.public());
+    let qr = PairingQr::new("127.0.0.1:1", 1000).unwrap();
+    let scanned = PairingQr::parse(&qr.text(), 1000).unwrap();
+    let mut held = Shelf::default();
+    held.0.insert("abc123".into(), b"sealed".to_vec());
+    held.0.insert("not-referenced".into(), b"private".to_vec());
+    let (left, right) = linked();
+    let sent = file.clone();
+    let sender = thread::spawn(move || send_by_qr(left, &scanned, &old, "Phone", 1000, &sent, &["abc123".to_owned()], &held).unwrap());
+    let mut got = Shelf::default();
+    let Arrival::Done(joined) = arrive(right, &new, "Mac", Some(&qr), 1000, &mut got).unwrap() else { panic!("asked for digits") };
+    let peer = sender.join().unwrap();
+    assert_eq!(joined.file, file);
+    assert_eq!(joined.peer, Peer { key: old_key, name: "Phone".into() });
+    assert_eq!(peer, Peer { key: new_key, name: "Mac".into() });
+    assert_eq!(got.0.keys().collect::<Vec<_>>(), ["abc123"]);
+    // The file opens with the vault's password on the new device.
+    let opened = wmpass_core::vault::open_set(&[&joined.file], b"pw", &[], 3).unwrap();
+    assert!(matches!(opened, wmpass_core::vault::OpenOutcome::Opened { .. }));
+}
+
+#[test]
+fn a_new_device_joins_by_digits_only_when_both_accept() {
+    use wmpass_lan::join::{Arrival, arrive, begin_send_by_code, finish_send};
+    let (mut vault, _) = vault_pair();
+    let file = vault.save().unwrap();
+    for (sender_yes, joiner_yes) in [(true, true), (true, false)] {
+        let (old, new) = (Identity::generate().unwrap(), Identity::generate().unwrap());
+        let (left, right) = linked();
+        let sent = file.clone();
+        let sender = thread::spawn(move || {
+            let pending = begin_send_by_code(left, &old, "Phone").unwrap();
+            let code = pending.code().to_owned();
+            (code, finish_send(pending, sender_yes, &sent, &[], &NoBlobs))
+        });
+        let Arrival::Code(pending) = arrive(right, &new, "Mac", None, 1000, &mut NoBlobs).unwrap() else { panic!("no digits") };
+        let code = pending.code().to_owned();
+        let joined = pending.finish(joiner_yes, &mut NoBlobs);
+        let (their_code, sent) = sender.join().unwrap();
+        assert_eq!(code, their_code);
+        if joiner_yes {
+            assert_eq!(joined.unwrap().file, file);
+            assert!(sent.is_ok());
+        } else {
+            assert_eq!(joined.unwrap_err(), LanError::Declined);
+            assert_eq!(sent.unwrap_err(), LanError::Declined);
+        }
+    }
+}
+
+#[test]
+fn a_qr_sender_cannot_reach_a_device_showing_another_code() {
+    use wmpass_lan::join::{arrive, send_by_qr};
+    let (mut vault, _) = vault_pair();
+    let file = vault.save().unwrap();
+    let shown = PairingQr::new("127.0.0.1:1", 1000).unwrap();
+    let forged = PairingQr::new("127.0.0.1:1", 1000).unwrap();
+    let (left, right) = linked();
+    let sender = thread::spawn(move || send_by_qr(left, &forged, &Identity::generate().unwrap(), "X", 1000, &file, &[], &NoBlobs));
+    assert!(arrive(right, &Identity::generate().unwrap(), "Mac", Some(&shown), 1000, &mut NoBlobs).is_err());
+    assert!(sender.join().unwrap().is_err());
+}

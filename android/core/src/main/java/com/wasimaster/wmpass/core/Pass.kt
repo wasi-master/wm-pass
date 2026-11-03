@@ -618,8 +618,8 @@ object Pass {
     }
 
     /** Takes a vault file from elsewhere as this phone's vault. */
-    suspend fun adoptFile(bytes: ByteArray) {
-        File(vaultDir, randomHex(16)).writeAtomically(bytes)
+    suspend fun adoptFile(bytes: ByteArray, name: String = randomHex(16)) {
+        File(vaultDir, name).writeAtomically(bytes)
         // A chaff file of its own, or a lone file would say which one is the vault.
         val chaff = Engine.call(
             "vault.chaff",
@@ -852,6 +852,15 @@ object Pass {
     /** A call that waits on a network, with the open vault's handle. */
     suspend fun net(method: String, online: Boolean, secret: ByteArray? = null, args: JsonObjectBuilder.() -> Unit = {}): EngineReply =
         Engine.net(method, handle, online, secret, args)
+
+    /** A name for a vault file about to arrive, so its attachments can arrive first. */
+    fun freshVaultName(): String = randomHex(16)
+
+    /** Where the attachments of the vault file [name] live, made if need be. */
+    fun blobFolderFor(name: String): File = blobDir(name).apply { mkdirs() }
+
+    /** Whether the open vault is the one in this folder: the only one that goes to a new device. */
+    val isFolderVault: Boolean get() = carriesSettings
 
     /** Where attachments live, for a sync that carries them. */
     fun blobFolder(): File? = file?.let { blobDir(it.name) }

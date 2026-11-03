@@ -6,6 +6,8 @@
   import PasswordField from '../parts/PasswordField.svelte';
   import Strength from '../parts/Strength.svelte';
   import Shield from './Shield.svelte';
+  import JoinSheet from './JoinSheet.svelte';
+  import DesktopLinkPage from '../settings/DesktopLinkPage.svelte';
   import { pass, bytesOf, consumeText } from '../engine/pass.svelte';
   import { host } from '../engine/host';
   import type { NeededFactor, StrengthView } from '../engine/types';
@@ -30,7 +32,9 @@
   // Bitwarden's check on a device it has not seen before, rather than a two-step code.
   let emailedCode = $state(false);
   let returning = $state(false);
-  let sheet = $state<'account' | 'shares' | null>(null);
+  let sheet = $state<'account' | 'shares' | 'join' | 'link' | null>(null);
+  /** Said once a vault has come from another device, above the password field. */
+  let arrivedFrom = $state<string | null>(null);
   let problem = $state<string | null>(null);
   let shares = $state('');
   let sharesFile = $state<Uint8Array | null>(null);
@@ -210,7 +214,7 @@
 
   async function restoreFile() {
     problem = null;
-    const file = await host().pickFile('Choose a vault file', ['wmvault']);
+    const file = await host().pickFile('Choose a vault file or backup', ['wmvault', 'wmbackup']);
     if (!file) return;
     try {
       await pass.restore(file.bytes);
@@ -307,6 +311,7 @@
         onenter={() => submit()}
       />
       {#if message}<p class="danger-text small">{message}</p>{/if}
+      {#if arrivedFrom && !message}<p class="dim small">Your vault came from {arrivedFrom}. Unlock it with its master password. The two are paired, so they can sync on this network.</p>{/if}
       {#if quick}
         <Btn label="Unlock from the system keyring" wide onclick={unlockQuick} disabled={busy} />
       {/if}
@@ -331,8 +336,18 @@
 {#if returning}
   <Dialog title="Existing vault" onclose={() => (returning = false)}>
     <div class="stack">
+      {#if host().link}
+        <button type="button" class="set-row" onclick={() => { returning = false; sheet = 'link'; }}>
+          <span class="text">Use the vault in the desktop app<span class="sub" style="display:block">WM Pass on this computer lends this browser its vault</span></span>
+        </button>
+      {/if}
+      {#if host().lan}
+        <button type="button" class="set-row" onclick={() => { returning = false; sheet = 'join'; }}>
+          <span class="text">Get it from another device<span class="sub" style="display:block">Your phone or another computer sends it over this network</span></span>
+        </button>
+      {/if}
       <button type="button" class="set-row" onclick={restoreFile}>
-        <span class="text">Restore from a file<span class="sub" style="display:block">A .wmvault file, from a backup or another device</span></span>
+        <span class="text">Restore from a file<span class="sub" style="display:block">A .wmvault or .wmbackup file, from a backup or another device</span></span>
       </button>
       <button type="button" class="set-row" onclick={() => { returning = false; sheet = 'account'; }}>
         <span class="text">Open a KeePass file or sign in<span class="sub" style="display:block">KeePass, Bitwarden, Vaultwarden or a WM Pass server</span></span>
@@ -346,6 +361,23 @@
   </Dialog>
 {/if}
 
+{#if sheet === 'link'}
+  <Dialog title="Use the vault in the desktop app" onclose={() => (sheet = null)}>
+    <p class="dim" style="padding-bottom:10px">A browser cannot reach your other devices itself, so the WM Pass app on this computer lends it the vault it has open. In the app, open <strong>Settings, Browser extension</strong> and turn on <strong>Let the extension connect</strong>, then choose <strong>Connect</strong> here. To get the vault onto this computer first, use <strong>Get it from another device</strong> in the app.</p>
+    <DesktopLinkPage />
+    {#snippet foot()}<Btn label="Done" onclick={() => (sheet = null)} />{/snippet}
+  </Dialog>
+{/if}
+{#if sheet === 'join'}
+  <JoinSheet
+    onclose={() => (sheet = null)}
+    ondone={(from) => {
+      sheet = null;
+      creating = false;
+      arrivedFrom = from;
+    }}
+  />
+{/if}
 {#if sheet === 'account'}
   <AddAccount onclose={() => (sheet = null)} />
 {/if}

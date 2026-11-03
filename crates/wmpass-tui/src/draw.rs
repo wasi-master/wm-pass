@@ -256,7 +256,7 @@ fn draw_door(frame: &mut Frame, area: Rect, door: &Door, theme: &Theme, recent: 
     }
     let hints = match door.mode {
         door::Mode::Unlock => {
-            let mut keys = vec![("Enter", "unlock"), ("Tab", "next"), ("^N", "new vault")];
+            let mut keys = vec![("Enter", "unlock"), ("Tab", "next"), ("^N", "new vault"), ("^G", "from another device")];
             if !recent.is_empty() {
                 keys.push(("^R", "recent"));
             }
