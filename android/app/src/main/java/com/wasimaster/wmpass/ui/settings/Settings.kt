@@ -437,7 +437,7 @@ private fun SecurityScreen() {
             item {
                 ToggleSetting(
                     "Let WM Keyboard fill",
-                    "Its WM Pass tool can list your logins and type them while the vault is open. A password it types passes through the keyboard. On by default when WM Keyboard is installed.",
+                    "Its WM Pass tool can list your logins and type them while the vault is open, and its settings can fill API keys from here or save new ones. A password it types passes through the keyboard. On by default when WM Keyboard is installed.",
                     prefs.keyboardAccess.value,
                     icon = PassIcons.Keyboard,
                 ) { prefs.keyboardAccess.set(it) }
