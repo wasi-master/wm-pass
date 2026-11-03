@@ -276,6 +276,8 @@ A small bar counts down until it is cleared, with **Clear now**.
 
 When the time set under [Clear the clipboard after](/guide/settings/security/#setting-clipboard-seconds) is up, WM Pass empties the clipboard, unless you have copied something else since.
 
+If WM Keyboard is your keyboard, its clipboard history keeps the copy only until then: when WM Pass empties the clipboard, the keyboard drops it from its history too.
+
 Usernames, websites and other plain fields are copied as they are, and not cleared.
 
 See also [Clear the clipboard after](/guide/settings/security/#setting-clipboard-seconds), [Filling logins](/guide/how-it-works/#feature-autofill), [Typing logins with auto-type](/guide/how-it-works/#feature-autotype), [Item view](/guide/screens/#screen-item).
