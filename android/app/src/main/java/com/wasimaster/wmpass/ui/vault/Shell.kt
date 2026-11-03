@@ -8,6 +8,7 @@ import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -25,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -63,6 +65,7 @@ import com.wasimaster.wmpass.ui.fx.LocalBackdrop
 import com.wasimaster.wmpass.ui.fx.rememberBackdrop
 import com.wasimaster.wmpass.ui.settings.settingsGraph
 import com.wasimaster.wmpass.ui.theme.Haptics
+import com.wasimaster.wmpass.ui.theme.LocalReduceMotion
 import com.wasimaster.wmpass.ui.theme.palette
 import com.wasimaster.wmpass.ui.theme.rememberHaptics
 import kotlinx.coroutines.CoroutineScope
@@ -281,7 +284,8 @@ fun VaultShell(prefs: Prefs) {
     val haptics = rememberHaptics()
     val shell = remember(nav) { Shell(nav, prefs, scope, context, haptics) }
     val backdrop = rememberBackdrop()
-    val axisTravel = with(androidx.compose.ui.platform.LocalDensity.current) { 30.dp.roundToPx() }
+    // WM Keyboard's push, collapsed to a cut when motion is reduced.
+    val push = tween<IntOffset>(if (LocalReduceMotion.current) 0 else 340, easing = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f))
     // Runs as the vault's first frame is put together, before the render thread gets it.
     DisposableEffect(Unit) {
         LaunchGuard.arm()
@@ -314,24 +318,16 @@ fun VaultShell(prefs: Prefs) {
                     NavHost(
                         nav,
                         startDestination = "home",
-                        // The standard look uses Material's shared axis: both pages move the same short
-                        // way, one fading out as the other fades in.
-                        enterTransition = {
-                            if (colors.flat) fadeIn(tween(210, 90)) + slideInHorizontally(tween(300)) { axisTravel }
-                            else fadeIn(tween(260, 60)) + slideInHorizontally(tween(340)) { it / 7 }
-                        },
-                        exitTransition = {
-                            if (colors.flat) fadeOut(tween(90)) + slideOutHorizontally(tween(300)) { -axisTravel }
-                            else fadeOut(tween(160)) + slideOutHorizontally(tween(340)) { -it / 12 }
-                        },
-                        popEnterTransition = {
-                            if (colors.flat) fadeIn(tween(210, 90)) + slideInHorizontally(tween(300)) { -axisTravel }
-                            else fadeIn(tween(240, 40)) + slideInHorizontally(tween(320)) { -it / 12 }
-                        },
-                        popExitTransition = {
-                            if (colors.flat) fadeOut(tween(90)) + slideOutHorizontally(tween(300)) { axisTravel }
-                            else fadeOut(tween(160)) + slideOutHorizontally(tween(320)) { it / 7 }
-                        },
+                        // A push, as in WM Keyboard: the new page comes the whole way in from the
+                        // right while the one behind drifts a third of the way left. Pages are opaque,
+                        // so nothing fades. A back gesture plays the same pair in reverse; left to
+                        // itself, navigation-compose shrinks the page from every side instead.
+                        enterTransition = { slideInHorizontally(push) { it } },
+                        exitTransition = { slideOutHorizontally(push) { -it / 3 } },
+                        popEnterTransition = { slideInHorizontally(push) { -it / 3 } },
+                        popExitTransition = { slideOutHorizontally(push) { it } },
+                        predictivePopEnterTransition = { slideInHorizontally(push) { -it / 3 } },
+                        predictivePopExitTransition = { slideOutHorizontally(push) { it } },
                     ) {
                         composable("home") {
                             CompositionLocalProvider(LocalRouteScope provides this) { HomeScreen() }
