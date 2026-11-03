@@ -28,6 +28,14 @@ import_export file_open draft cloud_sync contactless content_paste keyboard text
 check_circle! shuffle balance schedule event dark_mode light_mode contrast mobile_lock_portrait screen_lock_portrait
 vibration animation folder_open home_storage hub qr_code password_2 lock_reset lock_clock person_search mark_email_read
 database_upload snooze motion_photos_on swipe touch_app inbox format_list_bulleted tag dangerous sentiment_satisfied
+shopping_cart storefront shopping_bag restaurant local_cafe flight hotel luggage directions_car train directions_bus
+local_shipping local_gas_station school work account_balance savings payments wallet currency_bitcoin toll
+sports_esports movie music_note headphones live_tv podcasts subscriptions photo_camera videocam mic call smartphone
+laptop_mac desktop_windows watch cast chat forum contacts public map location_on home apartment local_hospital
+medication fitness_center pets child_care local_grocery_store sports_soccer menu_book newspaper science code bug_report
+memory storage cloud hard_drive bluetooth print gavel policy verified_user admin_panel_settings support_agent
+volunteer_activism celebration cake redeem rocket_launch construction water_drop eco park beach_access flag translate
+brush photo_library theater_comedy smart_toy face calendar_month alarm hiking kitchen bed power electric_car
 """.split()
 
 # Only the desktop app and the extension draw these, so the phone does not carry them.
@@ -114,7 +122,7 @@ object PassIcons {{
     private val built = HashMap<String, Array<ImageVector?>>()
 
     /** `outlined`, `rounded`, `sharp` or `light`. */
-    var style by mutableStateOf("outlined")
+    var style by mutableStateOf("rounded")
 
     private fun pathOf(style: String, index: Int): String = when (style) {{
         "rounded" -> IconPathsRounded.path(index)
@@ -151,7 +159,9 @@ object PassIcons {{
 WEB = pathlib.Path("ui/src/icons")
 WEB.mkdir(parents=True, exist_ok=True)
 web_glyphs = [(symbol + ("_fill" if filled else ""), symbol, filled) for _, symbol, filled in glyphs]
-web_glyphs += [(symbol, symbol, False) for symbol in DESKTOP_NAMES]
+# A desktop name the phone now carries too is already in the table.
+phone_symbols = {symbol for _, symbol, _ in glyphs}
+web_glyphs += [(symbol, symbol, False) for symbol in DESKTOP_NAMES if symbol not in phone_symbols]
 
 with concurrent.futures.ThreadPoolExecutor(16) as pool:
     for style in STYLES:
