@@ -50,7 +50,7 @@ On the phone it is called Shown and open at the start.
 
 Which sections of the editor are on show, and open, when it starts. The rest wait behind one **Add more** line.
 
-A section that already holds something is always shown, so a saved website or note is never out of sight.
+A section that already holds something is always shown, but it starts folded like the rest, its line saying what is inside, unless its switch here is on. One you add under **Add more** opens straight away.
 
 - Websites and apps, for logins.
 - One-time code, for logins and codes.
@@ -77,7 +77,7 @@ Opening or closing an empty section in the editor changes its switch under **Sec
 
 #### On Android
 
-Opening or closing an empty section in the editor changes its switch under **Shown and open at the start**, so it starts the same way next time.
+Opening or closing a section in the editor changes its switch under **Shown and open at the start**, so it starts the same way next time.
 
 See also [Sections open at the start](/guide/settings/editor/#setting-editor-open).
 

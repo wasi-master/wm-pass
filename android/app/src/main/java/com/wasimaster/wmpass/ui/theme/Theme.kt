@@ -5,6 +5,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes as MaterialShapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
@@ -26,7 +27,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.wasimaster.wmpass.R
-import androidx.compose.material3.Shapes as MaterialShapes
 import com.wasimaster.wmsuite.theme.WmShapes
 import com.wasimaster.wmsuite.theme.WmTypography
 
@@ -361,7 +361,56 @@ private fun Typography.inFamily(family: FontFamily) = Typography(
     labelLarge.copy(fontFamily = family), labelMedium.copy(fontFamily = family), labelSmall.copy(fontFamily = family),
 )
 
-private fun typeFor(font: String): Typography = when (font) {
+/**
+ * Font files the owner added for their themes, kept in the app's own storage. A theme names one
+ * as `file:<name>`; on a device without that file the theme falls back to the system font.
+ */
+object ThemeFonts {
+    private const val LIMIT = 12L * 1024 * 1024
+
+    fun dir(context: android.content.Context): java.io.File = java.io.File(context.filesDir, "fonts").apply { mkdirs() }
+
+    fun saved(context: android.content.Context): List<String> =
+        dir(context).listFiles()?.filter { it.isFile }?.sortedBy { it.name.lowercase() }?.map { "file:${it.name}" }.orEmpty()
+
+    fun label(key: String): String = key.removePrefix("file:").substringBeforeLast('.')
+
+    fun family(context: android.content.Context, key: String): FontFamily? {
+        if (!key.startsWith("file:")) return null
+        val file = java.io.File(dir(context), key.removePrefix("file:"))
+        return if (file.isFile) runCatching { FontFamily(Font(file)) }.getOrNull() else null
+    }
+
+    /** Copies a picked font file in and checks Android can draw with it. The key, or an error. */
+    fun add(context: android.content.Context, uri: android.net.Uri): Result<String> = runCatching {
+        val resolver = context.contentResolver
+        val shown = resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { if (it.moveToFirst()) it.getString(0) else null } ?: "font.ttf"
+        val name = shown.filter { it.isLetterOrDigit() || it in " ._-" }.trim().ifEmpty { "font.ttf" }
+        require(name.substringAfterLast('.').lowercase() in setOf("ttf", "otf")) { "Choose a .ttf or .otf font file." }
+        val target = java.io.File(dir(context), name)
+        resolver.openInputStream(uri)?.use { input ->
+            target.outputStream().use { out ->
+                val copied = input.copyTo(out)
+                require(copied in 1..LIMIT) { "That font file is too large." }
+            }
+        } ?: error("That file could not be read.")
+        val ok = runCatching { android.graphics.Typeface.createFromFile(target) != android.graphics.Typeface.DEFAULT }.getOrDefault(false)
+        if (!ok) {
+            target.delete()
+            throw IllegalArgumentException("Android could not read that font.")
+        }
+        "file:$name"
+    }
+}
+
+/** The type a flat theme draws with: a built-in family, or a font file the owner added. */
+fun typeFor(font: String, context: android.content.Context? = null): Typography = when {
+    font.startsWith("file:") -> context?.let { ThemeFonts.family(it, font) }?.let { Typography().inFamily(it) } ?: typeFor("system")
+    else -> builtInType(font)
+}
+
+private fun builtInType(font: String): Typography = when (font) {
     "inter" -> WmTypography
     "serif" -> Typography().inFamily(FontFamily.Serif)
     "mono" -> Typography().inFamily(FontFamily.Monospace)
@@ -428,7 +477,7 @@ fun PassTheme(
             }
         }
     }
-    val type = remember(flat, theme) { if (flat) typeFor(theme?.font ?: "system") else WmTypography }
+    val type = remember(flat, theme) { if (flat) typeFor(theme?.font ?: "system", context) else WmTypography }
     val shapes = remember(flat, theme) { if (flat) shapesFor(theme?.corners ?: 12) else WmShapes }
     val prefs = com.wasimaster.wmpass.app.Prefs.of(context)
     CompositionLocalProvider(

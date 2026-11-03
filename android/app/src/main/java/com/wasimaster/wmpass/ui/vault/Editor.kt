@@ -99,6 +99,7 @@ import com.wasimaster.wmpass.ui.theme.Springs
 import com.wasimaster.wmpass.ui.theme.palette
 import java.net.URI
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
@@ -400,6 +401,40 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
     val firstSite = sites.firstOrNull()?.first?.text?.toString().orEmpty()
     val derived = remember(firstSite) { titleFromSite(firstSite) }
 
+    // The name, websites and apps suggest each other: Facebook brings messenger.com and the
+    // Facebook, Lite and Messenger apps that are installed. Worked out on the phone, a moment
+    // after typing stops.
+    var related by remember { mutableStateOf<com.wasimaster.wmpass.system.Related.Found?>(null) }
+    LaunchedEffect(ready, kind) {
+        if (!ready || kind != "login") return@LaunchedEffect
+        androidx.compose.runtime.snapshotFlow { Triple(title.text.toString(), sites.map { it.first.text.toString() }, apps.map(::appPackage)) }
+            .collectLatest { (name, typed, chosen) ->
+                delay(300)
+                related = runCatching { com.wasimaster.wmpass.system.Related.find(context, name, typed, chosen) }.getOrNull()
+            }
+    }
+    fun addApp(pkg: String, label: String) {
+        if (apps.none { appPackage(it) == pkg }) {
+            val cert = com.wasimaster.wmpass.system.Trust.certOf(context, pkg)
+            apps.add(
+                buildJsonObject {
+                    put(
+                        "AndroidApp",
+                        buildJsonObject {
+                            put("package", pkg)
+                            if (cert != null) put("cert_sha256", cert) else put("cert_sha256", JsonNull)
+                        },
+                    )
+                },
+            )
+        }
+        if (title.text.isEmpty()) title.setTextAndPlaceCursorAtEnd(label)
+    }
+    fun addSite(site: String) {
+        val blank = sites.firstOrNull { it.second == null && it.first.text.isBlank() }
+        if (blank != null) blank.first.setTextAndPlaceCursorAtEnd(site) else sites.add(TextFieldState(site) to null)
+    }
+
     val dirty = fields.any { it.changed } ||
         title.text.toString() != (detail?.title ?: presetTitle) ||
         sites.any { it.second == null && it.first.text.isNotBlank() } ||
@@ -596,6 +631,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                         lineLimits = TextFieldLineLimits.SingleLine,
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
                     )
+                    related?.name?.takeIf { !it.equals(derived, ignoreCase = true) }?.let { FieldSuggestions(title, listOf(it)) }
                 } else {
                 Spacer(Modifier.height(62.dp))
                 Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -625,6 +661,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                         color = colors.textMid,
                         style = MaterialTheme.typography.bodyMedium,
                     )
+                    related?.name?.takeIf { !it.equals(derived, ignoreCase = true) }?.let { FieldSuggestions(title, listOf(it), center = true) }
                 }
                 }
                 if (ready) {
@@ -655,7 +692,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                     val detailRows = fields.filter { mainKeys != null && it.spec.key !in mainKeys }
                     if (mainRows.isNotEmpty()) {
                         Spacer(Modifier.height(if (colors.flat) 4.dp else 18.dp))
-                        GroupCard {
+                        GroupCard(plain = true) {
                             mainRows.forEachIndexed { index, field ->
                                 if (index > 0) Hairline()
                                 fieldEditor(field)
@@ -680,7 +717,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                     }
                     if (colors.flat) Spacer(Modifier.height(8.dp))
                     if (detailRows.isNotEmpty()) {
-                        EditorFold("details", "Other details", detailRows.joinToString(", ") { it.spec.label }, detailRows.any { it.hasContent }) {
+                        EditorFold("details", "Other details", detailRows.joinToString(", ") { it.spec.label }, false) {
                             detailRows.forEachIndexed { index, field ->
                                 if (index > 0) Hairline()
                                 fieldEditor(field)
@@ -691,8 +728,10 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                     if (kind == "login") {
                         val firstWebsite = sites.firstOrNull()?.first?.text?.toString().orEmpty()
                         val appNames = apps.map { com.wasimaster.wmpass.system.Trust.labelOf(context, appPackage(it)) }
+                        val offered = related?.let { it.sites + it.apps.map { app -> app.label } }.orEmpty()
                         val summary = (listOf(firstWebsite).filter { it.isNotEmpty() } + appNames).joinToString(", ").ifEmpty { null }
-                        EditorFold("sites", "Websites and apps", summary, firstWebsite.isNotEmpty() || sites.size > 1 || apps.isNotEmpty()) {
+                            ?: offered.take(3).joinToString(", ").takeIf { it.isNotEmpty() }?.let { "Suggests $it" }
+                        EditorFold("sites", "Websites and apps", summary, false) {
                             sites.forEachIndexed { index, (state, _) ->
                                 if (index > 0) Hairline()
                                 if (colors.flat) {
@@ -737,6 +776,24 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                             AddLine("Add a website") { sites.add(TextFieldState() to null) }
                             Hairline()
                             AddLine("Add an app") { sheet = "app" }
+                            val offer = related
+                            AnimatedVisibility(offer != null && (offer.sites.isNotEmpty() || offer.apps.isNotEmpty())) {
+                                Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 14.dp)) {
+                                    Row(Modifier.padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(PassIcons.AutoAwesome, null, tint = colors.textMid, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("Goes with this login", color = colors.textMid, style = MaterialTheme.typography.labelLarge)
+                                    }
+                                    FlowRow(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                        itemVerticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        offer?.sites?.forEach { site -> Pill(site, false, icon = PassIcons.Language) { addSite(site) } }
+                                        offer?.apps?.forEach { app -> Pill(app.label, false, icon = PassIcons.Smartphone) { addApp(app.pkg, app.label) } }
+                                    }
+                                }
+                            }
                         }
                     }
                     val otpShown = kind == "otp" || otpOpen || detail?.otp != null || "otp" in added || "otp" in opened
@@ -790,7 +847,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                     }
                     val notesShown = detail?.hasNotes == true || notes.text.isNotEmpty() || "notes" in added || "notes" in opened
                     if (kind != "note") Appear(notesShown) {
-                        EditorFold("notes", "Notes", if (detail?.hasNotes == true) "Saved" else null, detail?.hasNotes == true || notes.text.isNotEmpty() || "notes" in added) {
+                        EditorFold("notes", "Notes", if (detail?.hasNotes == true) "Saved" else null, "notes" in added) {
                             if ((notesLoaded || detail?.hasNotes != true) && colors.flat) {
                                 if (!notesLoaded) notesLoaded = true
                                 androidx.compose.material3.OutlinedTextField(
@@ -828,7 +885,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                     }
                     val customCount = customs.count { !it.remove }
                     Appear(customCount > 0 || "custom" in added || "custom" in opened) {
-                        EditorFold("custom", "Custom fields", if (customCount == 0) null else "$customCount", customCount > 0 || "custom" in added) {
+                        EditorFold("custom", "Custom fields", if (customCount == 0) null else "$customCount", "custom" in added) {
                             val first = customs.indexOfFirst { !it.remove }
                             customs.forEachIndexed { index, custom ->
                                 // New ones grow in and removed ones fold away, rather than jumping.
@@ -852,7 +909,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                         }
                     }
                     if (kind == "login") Appear(questions.isNotEmpty() || "questions" in added || "questions" in opened) {
-                        EditorFold("questions", "Security questions", if (questions.isEmpty()) null else "${questions.size}", questions.isNotEmpty() || "questions" in added) {
+                        EditorFold("questions", "Security questions", if (questions.isEmpty()) null else "${questions.size}", "questions" in added) {
                             questions.forEachIndexed { index, q ->
                                 if (index > 0) Hairline()
                                 Column(Modifier.padding(horizontal = 18.dp, vertical = 12.dp)) {
@@ -867,7 +924,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                     }
                     val hasPasswordField = fields.any { it.spec.input == "password" }
                     Appear(hasPasswordField && (remindDays != null || "reminder" in added)) {
-                        EditorFold("reminder", "Change reminder", remindDays?.let { "Every $it days" } ?: "Off", true) {
+                        EditorFold("reminder", "Change reminder", remindDays?.let { "Every $it days" } ?: "Off", "reminder" in added) {
                             FlowRow(
                                 Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -880,7 +937,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                     }
                     Appear(links.isNotEmpty() || "links" in added) {
                         val everything by Pass.entries.collectAsStateWithLifecycle()
-                        EditorFold("links", "Linked items", if (links.isEmpty()) null else "${links.size}", true) {
+                        EditorFold("links", "Linked items", if (links.isEmpty()) null else "${links.size}", "links" in added) {
                             links.toList().forEach { linked ->
                                 val other = everything.firstOrNull { it.id == linked }
                                 Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -954,7 +1011,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                     }
                     // Everything an item can also hold waits behind one line instead of a stack of empty sections.
                     if (!colors.flat) Spacer(Modifier.height(10.dp)) else Spacer(Modifier.height(8.dp))
-                    GroupCard { AddLine("Add more", PassIcons.Add) { sheet = "more" } }
+                    GroupCard(plain = true) { AddLine("Add more", PassIcons.Add) { sheet = "more" } }
                 }
                 Spacer(Modifier.height(24.dp))
             }
@@ -1027,23 +1084,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                 SheetRow(PassIcons.Snooze, "Change reminder", "A nudge to change the password now and then") { pick { added.add("reminder") } }
             }
         }
-        "app" -> AppPickerSheet({ sheet = null }) { pkg, label ->
-            if (apps.none { appPackage(it) == pkg }) {
-                val cert = com.wasimaster.wmpass.system.Trust.certOf(context, pkg)
-                apps.add(
-                    buildJsonObject {
-                        put(
-                            "AndroidApp",
-                            buildJsonObject {
-                                put("package", pkg)
-                                if (cert != null) put("cert_sha256", cert) else put("cert_sha256", JsonNull)
-                            },
-                        )
-                    },
-                )
-            }
-            if (title.text.isEmpty()) title.setTextAndPlaceCursorAtEnd(label)
-        }
+        "app" -> AppPickerSheet({ sheet = null }) { pkg, label -> addApp(pkg, label) }
         "link" -> PassSheet({ sheet = null }, "Link to") {
             val everything by Pass.entries.collectAsStateWithLifecycle()
             everything.filter { it.id != entryId }.take(80).forEach { other ->
@@ -1102,25 +1143,26 @@ private val EditField.hasContent: Boolean
     get() = !loaded || text.text.isNotEmpty() || flag || millis != null
 
 /**
- * A part of the form that stays out of the way until it is wanted. It starts open if it holds
- * something, or if the owner keeps it open. Otherwise its line says what is inside.
+ * A part of the form that stays out of the way until it is wanted. Every fold starts closed, with
+ * its line saying what is inside, unless it was just asked for under Add more ([startOpen]) or
+ * the owner keeps it open.
  */
 @Composable
-private fun EditorFold(key: String, title: String, summary: String?, hasContent: Boolean, content: @Composable () -> Unit) {
+private fun EditorFold(key: String, title: String, summary: String?, startOpen: Boolean, content: @Composable () -> Unit) {
     val colors = palette
     val shell = LocalShell.current
     val prefs = shell.prefs
-    var open by androidx.compose.runtime.saveable.rememberSaveable(key) { mutableStateOf(hasContent || key in prefs.editorOpen) }
+    var open by androidx.compose.runtime.saveable.rememberSaveable(key) { mutableStateOf(startOpen || key in prefs.editorOpen) }
     val turn by androidx.compose.animation.core.animateFloatAsState(if (open) 180f else 0f, Springs.glide(), label = "fold")
     if (!colors.flat) Spacer(Modifier.height(10.dp))
-    GroupCard {
+    GroupCard(plain = true) {
         Row(
             Modifier
                 .fillMaxWidth()
                 .clickable {
                     shell.haptics.tick()
                     open = !open
-                    if (prefs.editorRemember.value && !hasContent) prefs.setEditorOpen(key, open)
+                    if (prefs.editorRemember.value) prefs.setEditorOpen(key, open)
                 }
                 .padding(start = 16.dp, end = 12.dp, top = 14.dp, bottom = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -1254,7 +1296,7 @@ private fun AppPickerSheet(onDismiss: () -> Unit, onPick: (String, String) -> Un
 
 /** Common values for a field, as chips under it, narrowed by what has been typed. */
 @Composable
-private fun FieldSuggestions(state: TextFieldState, options: List<String>) {
+private fun FieldSuggestions(state: TextFieldState, options: List<String>, center: Boolean = false) {
     val typed = state.text.toString().trim()
     val shown = remember(typed) {
         if (options.any { it.equals(typed, ignoreCase = true) }) emptyList() else options.filter { typed.isEmpty() || it.contains(typed, ignoreCase = true) }
@@ -1265,7 +1307,7 @@ private fun FieldSuggestions(state: TextFieldState, options: List<String>) {
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
                 .padding(top = 8.dp, bottom = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, if (center) Alignment.CenterHorizontally else Alignment.Start),
         ) {
             shown.forEach { option -> Pill(option, false) { state.setTextAndPlaceCursorAtEnd(option) } }
         }

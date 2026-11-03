@@ -1,5 +1,6 @@
 <script lang="ts">
   import Group from '../parts/Group.svelte';
+  import Glyph from '../parts/Glyph.svelte';
   import Icon from '../parts/Icon.svelte';
   import Tile from '../parts/Tile.svelte';
   import { icons, type IconName } from '../engine/icons.svelte';
@@ -11,6 +12,10 @@
     ['rounded', 'Material Symbols Rounded', 'Softer corners'],
     ['sharp', 'Material Symbols Sharp', 'Square corners'],
     ['light', 'Rounded light', 'Thin strokes and soft corners'],
+    ['phosphor', 'Phosphor', 'Even lines and friendly, rounded shapes'],
+    ['phosphor_bold', 'Phosphor Bold', 'The same shapes in heavier lines'],
+    ['phosphor_light', 'Phosphor Light', 'The same shapes in fine lines'],
+    ['lucide', 'Lucide', 'Plain line drawings, as on many websites'],
   ];
   const SITE_STYLES = [
     ['brand', 'Brand colors', 'Each site’s mark on its own color'],
@@ -33,7 +38,7 @@
         <span><span style="display:block">{name}</span><span class="sub" style="display:block">{about}</span></span>
         <span class="gap dim" style="gap:12px">
           {#each SAMPLE as glyph}
-            <svg width="20" height="20" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d={tables[id]?.[glyph]} /></svg>
+            <Glyph d={tables[id]?.[glyph]} style={id} size={20} />
           {/each}
         </span>
       </span>

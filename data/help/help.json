@@ -1581,6 +1581,7 @@
     }
    ],
    "related": [
+    "setting.network_allowed",
     "feature.breaches",
     "feature.aliases",
     "feature.places",
@@ -1743,7 +1744,8 @@
    "related": [
     "page.breaches",
     "screen.health",
-    "feature.health"
+    "feature.health",
+    "setting.network_allowed"
    ],
    "words": "breach leak pwned hibp have i been pwned leakcheck comb",
    "plain": "Checks whether your passwords, or the email addresses in your vault, appear in published leaks. It runs only when you ask."
@@ -1903,7 +1905,8 @@
     "page.backup",
     "page.sync",
     "feature.sync",
-    "feature.vaults"
+    "feature.vaults",
+    "setting.network_allowed"
    ],
    "docs": "/guides/backup-sync/",
    "words": "place backup destination cloud webdav s3 sftp ftp smb nfs nas dropbox google drive onedrive icloud git imap",
@@ -2222,7 +2225,8 @@
    "related": [
     "page.sync",
     "feature.sync",
-    "page.receive"
+    "page.receive",
+    "setting.network_allowed"
    ],
    "docs": "/security/lan/",
    "words": "lan wifi local network pair peer direct",
@@ -2361,7 +2365,8 @@
    "related": [
     "page.sync",
     "screen.door",
-    "feature.sync"
+    "feature.sync",
+    "setting.network_allowed"
    ],
    "docs": "/guides/backup-sync/",
    "words": "account bitwarden vaultwarden keepass kdbx server sign in",
@@ -3383,7 +3388,8 @@
    "related": [
     "page.aliases",
     "page.inbox",
-    "screen.editor"
+    "screen.editor",
+    "setting.network_allowed"
    ],
    "words": "alias masked email forward hide simplelogin addy relay duckduckgo plus",
    "plain": "An alias is an email address you give one site in place of your real one. Mail to it still reaches you, and you can see who passed it on, or stop it."
@@ -3485,6 +3491,7 @@
    ],
    "related": [
     "page.usernames",
+    "setting.network_allowed",
     "feature.network"
    ],
    "words": "username handle availability taken free",
@@ -6657,6 +6664,85 @@
    "plain": "Splits a recovery key into shares for people you trust, so that enough of them together can open your vault if you cannot."
   },
   {
+   "id": "setting.network_allowed",
+   "kind": "setting",
+   "title": "Allow network features",
+   "page": "security",
+   "pref": "network_allowed",
+   "what": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "The one switch every feature that talks to the internet needs. Off means nothing leaves this device."
+      }
+     ]
+    }
+   ],
+   "why": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "WM Pass works fully without a network. Some extras cannot: checking breaches, making aliases, syncing with a server, signing in to an account, and checking for updates. Each one says what it sends, and to whom, on its own page."
+      }
+     ]
+    }
+   ],
+   "effects": [
+    {
+     "value": false,
+     "label": "Off",
+     "text": [
+      {
+       "t": "p",
+       "runs": [
+        {
+         "t": "text",
+         "s": "No feature can reach the internet. Pages that need it say so and offer to turn this on."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "value": true,
+     "label": "On",
+     "text": [
+      {
+       "t": "p",
+       "runs": [
+        {
+         "t": "text",
+         "s": "Network features run when you use them. Nothing is sent in the background except what you set up, such as scheduled backups or update checks."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "caveats": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Syncing with other devices on your own network uses its own pairing, under Settings, Sync and accounts."
+      }
+     ]
+    }
+   ],
+   "related": [
+    "page.breaches",
+    "page.aliases",
+    "page.sync"
+   ],
+   "words": "offline internet online privacy",
+   "plain": "The one switch every feature that talks to the internet needs. Off means nothing leaves this device."
+  },
+  {
    "id": "page.shelf",
    "kind": "page",
    "title": "Hidden shelf",
@@ -6929,6 +7015,7 @@
    "figure": "fig.breach",
    "related": [
     "feature.breaches",
+    "setting.network_allowed",
     "screen.health",
     "feature.network"
    ],
@@ -7020,7 +7107,8 @@
    ],
    "related": [
     "screen.health",
-    "action.health_check_breached"
+    "action.health_check_breached",
+    "setting.network_allowed"
    ],
    "words": "pwned passwords k-anonymity sha1 hash range",
    "plain": "Looks up each password in this vault in Have I Been Pwned's list of leaked passwords, and lists the items whose password has been seen, with how many times."
@@ -7127,7 +7215,8 @@
    ],
    "related": [
     "action.check_every_password",
-    "page.aliases"
+    "page.aliases",
+    "setting.network_allowed"
    ],
    "words": "email address leakcheck hibp haveibeenpwned proxynova comb api key account",
    "plain": "Asks a breach service whether one of your email addresses appears in a leak. Choose the service, then the search button beside an address."
@@ -9105,8 +9194,8 @@
        "s": "Any place but a folder needs "
       },
       {
-       "t": "text",
-       "s": "Allow network features"
+       "t": "link",
+       "id": "setting.network_allowed"
       },
       {
        "t": "text",
@@ -9244,8 +9333,8 @@
        "s": "Any place but a folder needs "
       },
       {
-       "t": "text",
-       "s": "Allow network features"
+       "t": "link",
+       "id": "setting.network_allowed"
       },
       {
        "t": "text",
@@ -10008,7 +10097,8 @@
     }
    ],
    "related": [
-    "group.sync.accounts"
+    "group.sync.accounts",
+    "setting.network_allowed"
    ],
    "plain": "The server account that is open now, and how its changes reach the server."
   },
@@ -10121,8 +10211,8 @@
        "s": "Android files this under internet access, so it needs "
       },
       {
-       "t": "text",
-       "s": "Allow network features"
+       "t": "link",
+       "id": "setting.network_allowed"
       },
       {
        "t": "text",
@@ -10450,8 +10540,8 @@
        "s": "Any place but a folder needs "
       },
       {
-       "t": "text",
-       "s": "Allow network features"
+       "t": "link",
+       "id": "setting.network_allowed"
       },
       {
        "t": "text",
@@ -10801,8 +10891,8 @@
        "s": "A server account needs "
       },
       {
-       "t": "text",
-       "s": "Allow network features"
+       "t": "link",
+       "id": "setting.network_allowed"
       },
       {
        "t": "text",
@@ -11063,8 +11153,8 @@
        "s": "Everyone needs access to the place. A place that needs the network needs "
       },
       {
-       "t": "text",
-       "s": "Allow network features"
+       "t": "link",
+       "id": "setting.network_allowed"
       },
       {
        "t": "text",
@@ -11674,8 +11764,8 @@
        "s": "Needs "
       },
       {
-       "t": "text",
-       "s": "Allow network features"
+       "t": "link",
+       "id": "setting.network_allowed"
       },
       {
        "t": "text",
@@ -12061,8 +12151,8 @@
        "s": "Needs "
       },
       {
-       "t": "text",
-       "s": "Allow network features"
+       "t": "link",
+       "id": "setting.network_allowed"
       },
       {
        "t": "text",
@@ -12197,8 +12287,8 @@
        "s": "Needs "
       },
       {
-       "t": "text",
-       "s": "Allow network features"
+       "t": "link",
+       "id": "setting.network_allowed"
       },
       {
        "t": "text",
@@ -12470,8 +12560,8 @@
        "s": "Needs "
       },
       {
-       "t": "text",
-       "s": "Allow network features"
+       "t": "link",
+       "id": "setting.network_allowed"
       },
       {
        "t": "text",
@@ -13461,7 +13551,15 @@
       },
       {
        "t": "text",
-       "s": " is System, Inter, Serif or Mono."
+       "s": " is System, Inter, Serif, Mono, or a .ttf or .otf file you add with "
+      },
+      {
+       "t": "strong",
+       "s": "Add a font file"
+      },
+      {
+       "t": "text",
+       "s": ", which is kept inside the app. The font buttons and the sample line under them are drawn in each font."
       }
      ]
     },
@@ -13827,7 +13925,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "The style of the symbols on buttons, tabs and menus. Every choice is a version of Material Symbols."
+       "s": "The style of the symbols on buttons, tabs and menus: one of four versions of Material Symbols, Phosphor in three weights, or Lucide."
       }
      ]
     }
@@ -13892,6 +13990,66 @@
        ]
       }
      ]
+    },
+    {
+     "value": "phosphor",
+     "label": "Phosphor",
+     "text": [
+      {
+       "t": "p",
+       "runs": [
+        {
+         "t": "text",
+         "s": "Even lines and friendly, rounded shapes."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "value": "phosphor_bold",
+     "label": "Phosphor Bold",
+     "text": [
+      {
+       "t": "p",
+       "runs": [
+        {
+         "t": "text",
+         "s": "The same shapes in heavier lines."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "value": "phosphor_light",
+     "label": "Phosphor Light",
+     "text": [
+      {
+       "t": "p",
+       "runs": [
+        {
+         "t": "text",
+         "s": "The same shapes in fine lines."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "value": "lucide",
+     "label": "Lucide",
+     "text": [
+      {
+       "t": "p",
+       "runs": [
+        {
+         "t": "text",
+         "s": "Plain line drawings, as on many websites. A selected tab is not filled in."
+        }
+       ]
+      }
+     ]
     }
    ],
    "caveats": [
@@ -13918,8 +14076,8 @@
    "related": [
     "setting.site_icon_style"
    ],
-   "words": "glyphs material symbols rounded sharp light outlined",
-   "plain": "The style of the symbols on buttons, tabs and menus. Every choice is a version of Material Symbols."
+   "words": "glyphs material symbols rounded sharp light outlined phosphor lucide packs",
+   "plain": "The style of the symbols on buttons, tabs and menus: one of four versions of Material Symbols, Phosphor in three weights, or Lucide."
   },
   {
    "id": "setting.site_icon_style",
@@ -14243,7 +14401,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Only the Standard style follows this. Glass always draws its settings on cards."
+       "s": "Shown only with the Standard style. Glass always draws its settings on cards."
       }
      ]
     }
@@ -14365,7 +14523,7 @@
        "runs": [
         {
          "t": "text",
-         "s": "Smaller icons and no second line, so more rows fit."
+         "s": "One line per item, with a small icon and the second line beside the name, so many more rows fit."
         }
        ]
       }
@@ -14445,15 +14603,7 @@
        "runs": [
         {
          "t": "text",
-         "s": "A part for each folder, in alphabetical order, and "
-        },
-        {
-         "t": "strong",
-         "s": "No folder"
-        },
-        {
-         "t": "text",
-         "s": " for items in none. Each part follows the sort order. Sites are not folded."
+         "s": "Each folder is one row, in alphabetical order, that opens in place to show its items. Items in no folder come after the folders. Sites are not folded."
         }
        ]
       }
@@ -15743,7 +15893,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "The Glass style always has a lock button at the top of the vault page, whatever this is set to."
+       "s": "Shown only with the Standard style. Glass always has a lock button at the top of the vault page."
       }
      ]
     }
@@ -16082,7 +16232,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Only in the Glass "
+       "s": "Shown only with the Glass "
       },
       {
        "t": "link",
@@ -16091,7 +16241,7 @@
       },
       {
        "t": "text",
-       "s": ". Standard keeps the usual Android layout."
+       "s": ". Standard keeps the usual Android layout, with nothing to move."
       }
      ]
     }
@@ -16340,7 +16490,15 @@
      "runs": [
       {
        "t": "text",
-       "s": "A section that already holds something is always shown, so a saved website or note is never out of sight."
+       "s": "A section that already holds something is always shown, but it starts folded like the rest, its line saying what is inside, unless its switch here is on. One you add under "
+      },
+      {
+       "t": "strong",
+       "s": "Add more"
+      },
+      {
+       "t": "text",
+       "s": " opens straight away."
       }
      ]
     },
@@ -16419,7 +16577,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Opening or closing an empty section in the editor changes its switch under "
+       "s": "Opening or closing a section in the editor changes its switch under "
       },
       {
        "t": "strong",
@@ -16467,7 +16625,7 @@
    "related": [
     "setting.editor_open"
    ],
-   "plain": "Opening or closing an empty section in the editor changes its switch under Shown and open at the start, so it starts the same way next time."
+   "plain": "Opening or closing a section in the editor changes its switch under Shown and open at the start, so it starts the same way next time."
   },
   {
    "id": "setting.editor_fold_details",
@@ -16948,7 +17106,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "In the Glass style these buttons are always shown."
+       "s": "Shown only with the Standard style. Glass always shows these buttons."
       }
      ]
     }
@@ -16991,7 +17149,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "In the Glass style this button is always shown."
+       "s": "Shown only with the Standard style. Glass always shows this button."
       }
      ]
     }
@@ -17032,7 +17190,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "In the Glass style this button is always shown."
+       "s": "Shown only with the Standard style. Glass always shows this button."
       }
      ]
     }
@@ -18462,7 +18620,9 @@
      ]
     }
    ],
-   "related": [],
+   "related": [
+    "setting.network_allowed"
+   ],
    "words": "version license license open source mit",
    "plain": "Which version of WM Pass this is, and its license: free and open source, under the MIT license."
   },
@@ -18979,7 +19139,8 @@
     "page.usernames",
     "page.compare",
     "page.breaches",
-    "page.navigation"
+    "page.navigation",
+    "setting.network_allowed"
    ],
    "words": "aliases inbox username compare utilities",
    "plain": "Small tools that sit beside the vault: email aliases, a throwaway inbox, a username checker and a way to compare two passwords."
@@ -19598,7 +19759,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "What WM Pass does when a panic app, such as Ripple, sends its signal."
+       "s": "What WM Pass does when a panic app, such as Ripple, sends its signal. Until you choose, signals are ignored."
       }
      ]
     }
@@ -19609,12 +19770,60 @@
      "runs": [
       {
        "t": "text",
-       "s": "Any app may send the signal, and any signal at least locks the vault. Only the app you name can make WM Pass wipe, because an app that cannot be identified must not be able to erase a vault."
+       "s": "Choosing "
+      },
+      {
+       "t": "strong",
+       "s": "Lock"
+      },
+      {
+       "t": "text",
+       "s": " or "
+      },
+      {
+       "t": "strong",
+       "s": "Wipe"
+      },
+      {
+       "t": "text",
+       "s": " shows "
+      },
+      {
+       "t": "link",
+       "id": "setting.panic_app",
+       "s": "Panic apps"
+      },
+      {
+       "t": "text",
+       "s": " below it, where you pick the apps to listen to. Signals from any other app are ignored, so no app can keep the vault locked or erase it. With "
+      },
+      {
+       "t": "strong",
+       "s": "Lock"
+      },
+      {
+       "t": "text",
+       "s": " and no app chosen, any app may ask for a lock. A wipe always needs a chosen app."
       }
      ]
     }
    ],
    "effects": [
+    {
+     "value": "none",
+     "label": "None",
+     "text": [
+      {
+       "t": "p",
+       "runs": [
+        {
+         "t": "text",
+         "s": "Panic signals do nothing."
+        }
+       ]
+      }
+     ]
+    },
     {
      "value": "lock",
      "label": "Lock",
@@ -19624,7 +19833,7 @@
        "runs": [
         {
          "t": "text",
-         "s": "Any panic signal locks the vault and refuses every password for an hour. Nothing is lost."
+         "s": "A signal locks the vault and refuses every password for an hour. Nothing is lost."
         }
        ]
       }
@@ -19639,7 +19848,7 @@
        "runs": [
         {
          "t": "text",
-         "s": "A signal from the app you name erases the vault on this phone with no warning. A signal from any other app locks it and refuses passwords for an hour."
+         "s": "A signal from an app you chose erases the vault on this phone with no warning."
         }
        ]
       }
@@ -19652,7 +19861,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "If a signal does not say which app sent it, WM Pass locks rather than wipes."
+       "s": "If a signal does not say which app sent it, WM Pass cannot tell it came from an app you chose, so it never wipes for it."
       }
      ]
     },
@@ -19684,12 +19893,12 @@
    ],
    "docs": "/apps/android/",
    "words": "panic ripple guardian project panickit trigger wipe erase duress",
-   "plain": "What WM Pass does when a panic app, such as Ripple, sends its signal."
+   "plain": "What WM Pass does when a panic app, such as Ripple, sends its signal. Until you choose, signals are ignored."
   },
   {
    "id": "setting.panic_app",
    "kind": "setting",
-   "title": "Wipe on a panic signal",
+   "title": "Panic apps",
    "page": "security",
    "pref": "panic_app",
    "what": [
@@ -19698,7 +19907,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "The one panic app allowed to make WM Pass wipe, named by its package name, such as info.guardianproject.ripple."
+       "s": "The apps whose panic signal WM Pass listens to, picked from the apps on this phone."
       }
      ]
     }
@@ -19709,39 +19918,23 @@
      "runs": [
       {
        "t": "text",
-       "s": "Choosing "
+       "s": "Apps known to send the signal, Ripple and Panic Button, are listed first. Tick the ones you use and tap "
       },
       {
        "t": "strong",
-       "s": "Wipe"
+       "s": "Done"
       },
       {
        "t": "text",
-       "s": " under "
-      },
-      {
-       "t": "link",
-       "id": "setting.panic_action"
-      },
-      {
-       "t": "text",
-       "s": " asks for it. Type the package name and tap "
+       "s": ", or "
       },
       {
        "t": "strong",
-       "s": "Wipe on its signal"
+       "s": "Wipe on their signal"
       },
       {
        "t": "text",
-       "s": ". Choosing "
-      },
-      {
-       "t": "strong",
-       "s": "Lock"
-      },
-      {
-       "t": "text",
-       "s": " again forgets it."
+       "s": " when the choice above is Wipe."
       }
      ]
     }
@@ -19752,7 +19945,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "WM Pass compares the name with the app Android says sent the signal. Name only an app you trust to erase your vault."
+       "s": "WM Pass compares each app with the one Android says sent the signal. Choose for a wipe only an app you trust to erase your vault."
       }
      ]
     }
@@ -19761,7 +19954,7 @@
     "setting.panic_action"
    ],
    "words": "panic package name trusted app ripple",
-   "plain": "The one panic app allowed to make WM Pass wipe, named by its package name, such as info.guardianproject.ripple."
+   "plain": "The apps whose panic signal WM Pass listens to, picked from the apps on this phone."
   },
   {
    "id": "feature.lock_tile",

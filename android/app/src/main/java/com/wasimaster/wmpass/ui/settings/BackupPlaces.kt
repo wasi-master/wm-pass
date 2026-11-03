@@ -59,6 +59,7 @@ import com.wasimaster.wmpass.system.Destination
 import com.wasimaster.wmpass.system.Destinations
 import com.wasimaster.wmpass.ui.door.PasswordPill
 import com.wasimaster.wmpass.ui.icons.PassIcons
+import com.wasimaster.wmpass.ui.parts.Brands
 import com.wasimaster.wmpass.ui.parts.Pill
 import com.wasimaster.wmpass.ui.parts.PrimaryButton
 import com.wasimaster.wmpass.ui.parts.QuietButton
@@ -68,27 +69,30 @@ import com.wasimaster.wmpass.ui.vault.PassSwitch
 import com.wasimaster.wmpass.ui.vault.SheetField
 import kotlinx.coroutines.launch
 
-/** One kind of place: what it is called on the chooser, on its row, and its glyph. */
-internal data class PlaceKind(val id: String, val name: String, val blurb: String, val icon: ImageVector, val group: Int)
+/**
+ * One kind of place: what it is called on the chooser, on its row, and its glyph. [brand] is the
+ * service's own mark in the bundled brand set, used in place of the glyph where it has one.
+ */
+internal data class PlaceKind(val id: String, val name: String, val blurb: String, val icon: ImageVector, val group: Int, val brand: String? = null)
 
 internal val placeKinds = listOf(
     PlaceKind("folder", "Folder", "Folder on this phone or a cloud app", PassIcons.Folder, 0),
-    PlaceKind("drive", "Google Drive", "Google Drive", PassIcons.CloudUpload, 1),
-    PlaceKind("dropbox", "Dropbox", "Dropbox", PassIcons.CloudUpload, 1),
-    PlaceKind("onedrive", "OneDrive", "OneDrive", PassIcons.CloudUpload, 1),
-    PlaceKind("box", "Box", "Box", PassIcons.CloudUpload, 1),
-    PlaceKind("pcloud", "pCloud", "pCloud", PassIcons.CloudUpload, 1),
-    PlaceKind("mega", "MEGA", "MEGA", PassIcons.CloudUpload, 1),
-    PlaceKind("icloud", "iCloud Drive", "iCloud Drive", PassIcons.CloudUpload, 1),
-    PlaceKind("proton", "Proton Drive", "Proton Drive", PassIcons.CloudUpload, 1),
+    PlaceKind("drive", "Google Drive", "Google Drive", PassIcons.CloudUpload, 1, brand = "googledrive"),
+    PlaceKind("dropbox", "Dropbox", "Dropbox", PassIcons.CloudUpload, 1, brand = "dropbox"),
+    PlaceKind("onedrive", "OneDrive", "OneDrive", PassIcons.Cloud, 1),
+    PlaceKind("box", "Box", "Box", PassIcons.CloudUpload, 1, brand = "box"),
+    PlaceKind("pcloud", "pCloud", "pCloud", PassIcons.CloudSync, 1),
+    PlaceKind("mega", "MEGA", "MEGA", PassIcons.CloudUpload, 1, brand = "mega"),
+    PlaceKind("icloud", "iCloud Drive", "iCloud Drive", PassIcons.CloudUpload, 1, brand = "icloud"),
+    PlaceKind("proton", "Proton Drive", "Proton Drive", PassIcons.CloudUpload, 1, brand = "protondrive"),
     PlaceKind("webdav", "WebDAV", "WebDAV, such as Nextcloud", PassIcons.Language, 2),
     PlaceKind("s3", "S3", "S3, such as Backblaze or MinIO", PassIcons.Database, 2),
     PlaceKind("sftp", "SFTP", "SFTP server", PassIcons.Terminal, 2),
     PlaceKind("ftp", "FTP", "FTP server", PassIcons.Dns, 2),
-    PlaceKind("smb", "SMB", "Windows or Samba share", PassIcons.HomeStorage, 2),
+    PlaceKind("smb", "SMB", "Windows or Samba share", PassIcons.Storage, 2),
     PlaceKind("nfs", "NFS", "NFS export", PassIcons.Router, 2),
-    PlaceKind("synology", "Synology", "Synology NAS", PassIcons.HomeStorage, 2),
-    PlaceKind("qnap", "QNAP", "QNAP NAS", PassIcons.HomeStorage, 2),
+    PlaceKind("synology", "Synology", "Synology NAS", PassIcons.HomeStorage, 2, brand = "synology"),
+    PlaceKind("qnap", "QNAP", "QNAP NAS", PassIcons.HomeStorage, 2, brand = "qnap"),
     PlaceKind("git", "Git", "A Git repository", PassIcons.Hub, 3),
     PlaceKind("imap", "Email", "A mailbox, over IMAP", PassIcons.Mail, 3),
 )
@@ -99,7 +103,13 @@ internal fun placeKind(id: String) = placeKinds.firstOrNull { it.id == id }
 
 internal fun placeLabel(kind: String) = placeKind(kind)?.blurb ?: kind
 
-internal fun placeIcon(kind: String) = placeKind(kind)?.icon ?: PassIcons.Terminal
+@Composable
+internal fun placeIcon(kind: String): ImageVector {
+    val context = LocalContext.current
+    val known = placeKind(kind)
+    val mark = remember(kind) { known?.brand?.let { Brands.bySlug(context, it)?.glyph } }
+    return mark ?: known?.icon ?: PassIcons.Terminal
+}
 
 private fun defaultPort(kind: String, security: String) = when (kind) {
     "ftp" -> 21
@@ -403,7 +413,7 @@ fun DestinationSheet(existing: Destination?, onDismiss: () -> Unit, onSaved: (De
                     Text(groupNames[group], color = colors.textLow, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 6.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         kinds.forEach { option ->
-                            Pill(option.name, kind == option.id) {
+                            Pill(option.name, kind == option.id, icon = placeIcon(option.id)) {
                                 kind = option.id
                                 preset = ""
                                 problem = null

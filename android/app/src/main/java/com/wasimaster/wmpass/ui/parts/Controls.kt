@@ -55,9 +55,9 @@ import com.wasimaster.wmpass.ui.theme.onBrand
 import com.wasimaster.wmpass.ui.theme.palette
 import com.wasimaster.wmpass.ui.theme.pressScale
 import com.wasimaster.wmpass.ui.theme.rememberHaptics
+import kotlin.math.hypot
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import kotlin.math.hypot
 
 /** The main action: the brand gradient, lit from inside. */
 @Composable
@@ -314,11 +314,26 @@ fun Eyebrow(text: String, modifier: Modifier = Modifier, trailing: (@Composable 
 
 /** A card of grouped rows. */
 @Composable
-fun GroupCard(modifier: Modifier = Modifier, shape: Shape = Shapes.card, content: @Composable () -> Unit) {
+fun GroupCard(
+    modifier: Modifier = Modifier,
+    shape: Shape = Shapes.card,
+    // In the standard look, whether the rows go without a card: Settings follows its Cards switch.
+    plain: Boolean = com.wasimaster.wmsuite.settings.LocalWmPlainGroups.current,
+    content: @Composable () -> Unit,
+) {
     val colors = palette
-    // The standard look has no cards: rows run edge to edge, past the page's margin.
     if (colors.flat) {
-        Column(modifier.bleed(16.dp).fillMaxWidth()) { content() }
+        // Rows run edge to edge, past the page's margin.
+        if (plain) {
+            Column(modifier.bleed(16.dp).fillMaxWidth()) { content() }
+            return
+        }
+        // The card a settings group sits on, so these pages match the rest of Settings.
+        androidx.compose.material3.Surface(
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            modifier = modifier.fillMaxWidth(),
+        ) { Column { content() } }
         return
     }
     Column(

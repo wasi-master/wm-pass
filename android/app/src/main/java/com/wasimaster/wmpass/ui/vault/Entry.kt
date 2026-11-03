@@ -1,7 +1,5 @@
 package com.wasimaster.wmpass.ui.vault
 
-import com.wasimaster.wmpass.app.Prefs
-
 import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -9,8 +7,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
-import androidx.compose.animation.togetherWith
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -63,6 +61,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.wasimaster.wmpass.app.Prefs
 import com.wasimaster.wmpass.core.AttachmentView
 import com.wasimaster.wmpass.core.Detail
 import com.wasimaster.wmpass.core.FieldView
@@ -200,17 +199,17 @@ fun EntryScreen(id: String) {
             ) {
                 Spacer(Modifier.height(66.dp))
                 val inSearch = shell.searching
-                SiteTile(entry.title, entry.site, entry.kind, Modifier.sharedEntry("tile-$id", inSearch), 84.dp, entry.color, entry.icon)
+                SiteTile(entry.title, entry.site, entry.kind, Modifier.sharedEntryWhileShown("tile-$id", inSearch), 84.dp, entry.color, entry.icon)
                 Spacer(Modifier.height(14.dp))
                 Text(
                     entry.title.ifEmpty { "Untitled" },
                     color = colors.text,
                     style = MaterialTheme.typography.headlineMedium,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.sharedEntry("title-$id", inSearch),
+                    modifier = Modifier.sharedEntryWhileShown("title-$id", inSearch),
                 )
                 val under = entry.subtitle.ifEmpty { kindName(entry.kind) }
-                Text(under, color = colors.textMid, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.sharedEntry("subtitle-$id", inSearch))
+                Text(under, color = colors.textMid, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.sharedEntryWhileShown("subtitle-$id", inSearch))
                 if (entry.trashed) {
                     TrashedActions(entry)
                 } else {
@@ -286,11 +285,11 @@ private fun StandardEntry(id: String, entry: Detail?, revealed: MutableMap<Strin
             ) {
                 Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     val inSearch = shell.searching
-                    SiteTile(entry.title, entry.site, entry.kind, Modifier.sharedEntry("tile-$id", inSearch), 56.dp, entry.color, entry.icon)
+                    SiteTile(entry.title, entry.site, entry.kind, Modifier.sharedEntryWhileShown("tile-$id", inSearch), 56.dp, entry.color, entry.icon)
                     Spacer(Modifier.width(16.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(entry.title.ifEmpty { "Untitled" }, color = colors.text, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.sharedEntry("title-$id", inSearch))
-                        Text(entry.subtitle.ifEmpty { kindName(entry.kind) }, color = colors.textMid, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.sharedEntry("subtitle-$id", inSearch))
+                        Text(entry.title.ifEmpty { "Untitled" }, color = colors.text, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.sharedEntryWhileShown("title-$id", inSearch))
+                        Text(entry.subtitle.ifEmpty { kindName(entry.kind) }, color = colors.textMid, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.sharedEntryWhileShown("subtitle-$id", inSearch))
                     }
                 }
                 if (entry.trashed) TrashedActions(entry) else Box(Modifier.helpAnchor("detail.actions")) { QuickActions(entry) }
@@ -536,7 +535,7 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
     val shownFields = entry.fields.filter { it.hasValue || it.flag }
     if (shownFields.isNotEmpty()) {
         if (!colors.flat) Eyebrow(kindName(entry.kind))
-        GroupCard {
+        GroupCard(plain = true) {
             shownFields.forEachIndexed { index, field ->
                 if (index > 0) Hairline()
                 FieldRow(entry, field, revealed)
@@ -547,7 +546,7 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
 
     val sites = entry.sites.mapNotNull(::siteLine)
     if (sites.isNotEmpty() && colors.flat) {
-        GroupCard {
+        GroupCard(plain = true) {
             sites.forEach { site ->
                 val open = site.openable?.let { url -> { shell.openUrl(url) } }
                 Row(
@@ -568,7 +567,7 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
         }
     } else if (sites.isNotEmpty()) {
         Eyebrow(if (sites.size == 1) "Website" else "Websites")
-        GroupCard {
+        GroupCard(plain = true) {
             sites.forEachIndexed { index, site ->
                 if (index > 0) Hairline()
                 PlainRow(site.label, PassIcons.Language, site.openable?.let { url -> { shell.openUrl(url) } })
@@ -578,7 +577,7 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
 
     if (entry.passkeys.isNotEmpty()) {
         Eyebrow("Passkeys")
-        GroupCard {
+        GroupCard(plain = true) {
             entry.passkeys.forEachIndexed { index, key ->
                 if (index > 0) Hairline()
                 PlainRow("${key.rpId}  ${key.userName}", PassIcons.KeyVertical, null, "Made ${whenText(key.createdMs)}")
@@ -588,7 +587,7 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
 
     if (entry.customFields.isNotEmpty()) {
         Eyebrow("Custom fields")
-        GroupCard {
+        GroupCard(plain = true) {
             entry.customFields.forEachIndexed { index, field ->
                 if (index > 0) Hairline()
                 if (field.value != null) {
@@ -607,7 +606,7 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
 
     if (entry.questions.isNotEmpty()) {
         Eyebrow("Security questions")
-        GroupCard {
+        GroupCard(plain = true) {
             entry.questions.forEachIndexed { index, question ->
                 if (index > 0) Hairline()
                 suspend fun fetch() = Pass.plainCall("entry.reveal_question") {
@@ -626,7 +625,7 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
 
     if (entry.hasNotes) {
         Eyebrow("Notes")
-        GroupCard {
+        GroupCard(plain = true) {
             SecretRow(
                 "Notes",
                 revealed["notes"],
@@ -654,7 +653,13 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
     }
     if (!entry.trashed || entry.tags.isNotEmpty()) {
         Eyebrow("Tags")
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(horizontal = 2.dp).animateContentSize(Springs.glide())) {
+        // Material's chip keeps a 48dp touch height around a 32dp chip, so the row lines them up by their middles.
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            itemVerticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 2.dp).animateContentSize(Springs.glide()),
+        ) {
             entry.tags.forEach { tag ->
                 TagChip(tag, true, onRemove = { setTags(entry.tags - tag) }, onLongClick = { managing = tag }) { managing = tag }
             }
@@ -678,7 +683,7 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
     History(entry, revealed)
 
     Eyebrow("More")
-    GroupCard {
+    GroupCard(plain = true) {
         val remind = entry.reminders
         val reminderText = when {
             remind.changeEveryDays != null -> "Every ${remind.changeEveryDays} days"
@@ -808,7 +813,7 @@ private fun OtpCard(entry: Detail) {
     }
     val otp = entry.otp ?: return
     if (!colors.flat) Eyebrow("One-time code")
-    GroupCard {
+    GroupCard(plain = true) {
         val current = row?.code ?: hotp
         Row(
             Modifier
@@ -1068,7 +1073,7 @@ private fun Attachments(entry: Detail) {
     var opened by remember { mutableStateOf<AttachmentView?>(null) }
     if (entry.attachmentList.isNotEmpty()) {
         Eyebrow("Attachments")
-        GroupCard {
+        GroupCard(plain = true) {
             entry.attachmentList.forEachIndexed { index, file ->
                 if (index > 0) Hairline()
                 PlainRow(file.name, if (file.mime.startsWith("image/")) PassIcons.Image else PassIcons.AttachFile, { opened = file }, sizeText(file.size))
@@ -1146,7 +1151,7 @@ private fun Linked(entry: Detail, picking: Boolean, onPicking: (Boolean) -> Unit
     val colors = palette
     if (others.isNotEmpty()) {
         Eyebrow("Linked")
-        GroupCard {
+        GroupCard(plain = true) {
             others.forEachIndexed { index, other ->
                 if (index > 0) Hairline(inset = 70.dp)
                 Row(
@@ -1197,7 +1202,7 @@ private fun History(entry: Detail, revealed: MutableMap<String, String>) {
         )
     }
     AnimatedVisibility(open) {
-        GroupCard {
+        GroupCard(plain = true) {
             entry.history.sortedByDescending { it.atMs }.forEachIndexed { index, revision ->
                 if (index > 0) Hairline()
                 val key = "history:${revision.index}"

@@ -8,6 +8,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.dp
@@ -21,13 +23,20 @@ object PassIcons {
     private const val COUNT = 259
     private val built = HashMap<String, Array<ImageVector?>>()
 
-    /** `outlined`, `rounded`, `sharp` or `light`. */
+    /** `outlined`, `rounded`, `sharp` or `light` from Material Symbols, or one of the other packs. */
     var style by mutableStateOf("rounded")
+
+    /** The packs drawn with lines, and how wide, on the same 960-unit grid as everything else. */
+    private val strokes = mapOf("lucide" to 80f)
 
     private fun pathOf(style: String, index: Int): String = when (style) {
         "rounded" -> IconPathsRounded.path(index)
         "sharp" -> IconPathsSharp.path(index)
         "light" -> IconPathsLight.path(index)
+        "phosphor" -> IconPathsPhosphor.path(index)
+        "phosphor_bold" -> IconPathsPhosphorBold.path(index)
+        "phosphor_light" -> IconPathsPhosphorLight.path(index)
+        "lucide" -> IconPathsLucide.path(index)
         else -> IconPathsOutlined.path(index)
     }
 
@@ -36,7 +45,12 @@ object PassIcons {
 
     private fun glyph(index: Int, current: String = style): ImageVector {
         val table = built.getOrPut(current) { arrayOfNulls(COUNT) }
-        return table[index] ?: ImageVector.Builder(
+        table[index]?.let { return it }
+        val path = pathOf(current, index)
+        // A pack with nothing for this glyph lends the Material one.
+        if (path.isEmpty() && current != "rounded") return glyph(index, "rounded")
+        val stroke = strokes[current]
+        return ImageVector.Builder(
             name = "$current$index",
             defaultWidth = 24.dp,
             defaultHeight = 24.dp,
@@ -44,7 +58,14 @@ object PassIcons {
             viewportHeight = 960f,
         )
             .addGroup(translationY = 960f)
-            .addPath(pathData = addPathNodes(pathOf(current, index)), fill = SolidColor(Color.Black))
+            .addPath(
+                pathData = addPathNodes(path),
+                fill = if (stroke == null) SolidColor(Color.Black) else null,
+                stroke = if (stroke == null) null else SolidColor(Color.Black),
+                strokeLineWidth = stroke ?: 0f,
+                strokeLineCap = StrokeCap.Round,
+                strokeLineJoin = StrokeJoin.Round,
+            )
             .clearGroup()
             .build()
             .also { table[index] = it }

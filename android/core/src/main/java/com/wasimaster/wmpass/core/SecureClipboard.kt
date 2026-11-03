@@ -34,7 +34,7 @@ object SecureClipboard {
 
     /** Seconds before a copy is wiped. Zero leaves it. */
     @Volatile
-    var clearAfterSeconds: Int = 30
+    var clearAfterSeconds: Int = 60
 
     fun copy(context: Context, label: String, secret: SecretBytes) {
         copyText(context, label, secret.consumeText(), sensitive = true)

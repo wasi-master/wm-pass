@@ -402,7 +402,7 @@ private fun SecurityScreen() {
                 ChoiceSetting(
                     "Clear the clipboard after",
                     info = infoFor("clipboard_seconds"),
-                    options = listOf(15 to "15 s", 30 to "30 s", 60 to "1 min", 120 to "2 min"),
+                    options = listOf(15 to "15 s", 30 to "30 s", 60 to "1 min", 120 to "2 min", 300 to "5 min"),
                     selected = prefs.clipboardSeconds,
                     icon = PassIcons.ContentPaste,
                     detail = choiceDetail("clipboard_seconds"),
@@ -449,7 +449,7 @@ private fun SecurityScreen() {
         }
         SettingsGroup("Autofill and panic", info = Help.info("group.security.autofill")) {
             item {
-                ToggleSetting("Inline suggestions", "Show saved logins in the keyboard's suggestion row.", prefs.autofillInline.value, info = infoFor("autofill_inline"), icon = PassIcons.Keyboard) { prefs.autofillInline.set(it) }
+                ToggleSetting("Inline suggestions", "Show saved logins in the suggestion row of any keyboard that has one, such as Gboard or WM Keyboard.", prefs.autofillInline.value, info = infoFor("autofill_inline"), icon = PassIcons.Keyboard) { prefs.autofillInline.set(it) }
             }
             item {
                 ToggleSetting("Offer to save passwords", "Ask after you sign in with a new or changed password.", prefs.autofillSave.value, info = infoFor("autofill_save"), icon = PassIcons.Key) { prefs.autofillSave.set(it) }
@@ -488,17 +488,52 @@ private fun SecurityScreen() {
                 ChoiceSetting(
                     "When a panic app signals",
                     info = infoFor("panic_action"),
-                    subtitle = if (prefs.panicAction == "wipe") "Wipes only for ${prefs.panicTrustedApp ?: "the app you name"}. Others just lock." else "Locks and refuses passwords for an hour.",
-                    options = listOf("lock" to "Lock", "wipe" to "Wipe"),
+                    subtitle = when (prefs.panicAction) {
+                        "wipe" -> "Erases the vault on this phone, for the apps below only."
+                        "lock" -> "Locks and refuses passwords for an hour."
+                        else -> "Panic signals are ignored."
+                    },
+                    options = listOf("none" to "None", "lock" to "Lock", "wipe" to "Wipe"),
                     selected = prefs.panicAction,
                     icon = PassIcons.Dangerous,
                     detail = choiceDetail("panic_action"),
-                ) { action -> if (action == "wipe") sheet = "panic" else prefs.updatePanic("lock", null) }
+                ) { action ->
+                    // A wipe needs an app it may come from, so choosing one comes first.
+                    if (action == "wipe" && prefs.panicApps.isEmpty()) sheet = "panic:wipe" else prefs.updatePanic(action)
+                }
+            }
+            if (prefs.panicAction != "none") {
+                item {
+                    val names = prefs.panicApps.map { pkg -> com.wasimaster.wmpass.system.PanicActivity.KNOWN[pkg] ?: com.wasimaster.wmpass.system.Trust.labelOf(context, pkg) }
+                    NavRow(
+                        "Panic apps",
+                        when {
+                            names.isNotEmpty() -> names.joinToString(", ")
+                            prefs.panicAction == "lock" -> "Any app may ask for a lock. Choose apps to listen to them alone."
+                            else -> "None chosen"
+                        },
+                        icon = PassIcons.Smartphone,
+                        info = infoFor("panic_app"),
+                    ) { sheet = "panic" }
+                }
             }
         }
         SettingsGroup("Emergency access", modifier = Modifier.helpAnchor("group:security.emergency")) {
             item {
                 NavRow("Emergency kit", "Split your key between trusted people", icon = PassIcons.FamilyRestroom, info = Help.info("action.emergency_kit")) { sheet = "kit" }
+            }
+        }
+        if (!com.wasimaster.wmpass.BuildConfig.OFFLINE) {
+            SettingsGroup("Network", modifier = Modifier.helpAnchor("group:security.network")) {
+                item {
+                    ToggleSetting(
+                        "Allow network features",
+                        "Breach checks, aliases, sync servers and accounts. Off, nothing leaves this phone.",
+                        prefs.networkAllowed,
+                        info = infoFor("network_allowed"),
+                        icon = PassIcons.Language,
+                    ) { prefs.updateNetworkAllowed(it) }
+                }
             }
         }
     }
@@ -516,22 +551,9 @@ private fun SecurityScreen() {
         current == "duress:lock" -> AddPasswordSheet("Lockout password", "Refuses every attempt for an hour.", "lock") { sheet = null; refresh++ }
         current == "decoy" -> DecoySheet { sheet = null }
         current == "kit" -> KitSheet { sheet = null }
-        current == "panic" -> {
-            val app = rememberTextFieldState(prefs.panicTrustedApp.orEmpty())
-            PassSheet({ sheet = null }, "Wipe on a panic signal") {
-                Text(
-                    "Type the package name of the panic app you use, such as info.guardianproject.ripple. A signal from it erases this phone's vault with no warning. Backups and synced copies stay.",
-                    color = palette.textMid,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Spacer(Modifier.height(14.dp))
-                SheetField(app, "Package name")
-                Spacer(Modifier.height(14.dp))
-                QuietButton("Wipe on its signal", Modifier.fillMaxWidth(), PassIcons.Dangerous, palette.danger, enabled = app.text.isNotBlank()) {
-                    prefs.updatePanic("wipe", app.text.toString().trim())
-                    sheet = null
-                }
-            }
+        current == "panic" || current == "panic:wipe" -> PanicAppsSheet(wiping = current == "panic:wipe" || prefs.panicAction == "wipe", onDismiss = { sheet = null }) { apps ->
+            prefs.updatePanic(if (current == "panic:wipe") "wipe" else prefs.panicAction, apps)
+            sheet = null
         }
         current?.startsWith("slot:") == true -> {
             val index = current.removePrefix("slot:").toInt()
@@ -1411,6 +1433,62 @@ private fun AboutScreen() {
         Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("WM Pass ${com.wasimaster.wmpass.BuildConfig.VERSION_NAME}", color = colors.text, style = MaterialTheme.typography.titleLarge)
             Text("Part of the WM Suite. Free and open source under the MIT license. It sends nothing anywhere unless you turn on a feature that has to.", color = colors.textMid, style = MaterialTheme.typography.bodyLarge)
+        }
+    }
+}
+
+/**
+ * The apps whose panic signal WM Pass listens to, picked from those installed. Apps known to send
+ * the signal come first. Choosing for a wipe says plainly what a signal will then do.
+ */
+@Composable
+private fun PanicAppsSheet(wiping: Boolean, onDismiss: () -> Unit, onDone: (Set<String>) -> Unit) {
+    val colors = palette
+    val context = LocalContext.current
+    val prefs = LocalShell.current.prefs
+    val chosen = remember { androidx.compose.runtime.mutableStateListOf<String>().apply { addAll(prefs.panicApps) } }
+    var all by remember { mutableStateOf<List<com.wasimaster.wmpass.system.Related.App>?>(null) }
+    val query = rememberTextFieldState()
+    LaunchedEffect(Unit) { all = com.wasimaster.wmpass.system.Related.installed(context) }
+    PassSheet(onDismiss, if (wiping) "Apps that may wipe" else "Panic apps") {
+        Text(
+            if (wiping) {
+                "A signal from one of these erases this phone's vault with no warning. Backups and synced copies stay. Signals from other apps are ignored."
+            } else {
+                "A signal from one of these locks the vault and refuses passwords for an hour. With none chosen, any app may ask for a lock."
+            },
+            color = colors.textMid,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(start = 2.dp, end = 2.dp, bottom = 12.dp),
+        )
+        SheetField(query, "Search apps")
+        Spacer(Modifier.height(8.dp))
+        val typed = query.text.toString().trim()
+        val known = com.wasimaster.wmpass.system.PanicActivity.KNOWN
+        val shown = all
+            ?.filter { typed.isEmpty() || it.label.contains(typed, true) || it.pkg.contains(typed, true) }
+            ?.sortedWith(compareBy({ it.pkg !in chosen }, { it.pkg !in known }, { it.label.lowercase() }))
+        when {
+            shown == null -> Text("Looking at your apps…", color = colors.textMid, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(8.dp))
+            shown.isEmpty() -> Text("No app matches “$typed”.", color = colors.textMid, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(8.dp))
+            else -> androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
+                items(shown.size, key = { shown[it].pkg }) { index ->
+                    val app = shown[index]
+                    val on = app.pkg in chosen
+                    com.wasimaster.wmpass.ui.vault.SheetRow(
+                        PassIcons.Smartphone,
+                        app.label,
+                        if (app.pkg in known) "Sends panic signals" else app.pkg,
+                        selected = on,
+                    ) { if (!chosen.remove(app.pkg)) chosen.add(app.pkg) }
+                }
+            }
+        }
+        Spacer(Modifier.height(14.dp))
+        if (wiping) {
+            QuietButton("Wipe on their signal", Modifier.fillMaxWidth(), PassIcons.Dangerous, colors.danger, enabled = chosen.isNotEmpty()) { onDone(chosen.toSet()) }
+        } else {
+            PrimaryButton("Done", Modifier.fillMaxWidth()) { onDone(chosen.toSet()) }
         }
     }
 }

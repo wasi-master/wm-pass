@@ -3,6 +3,7 @@ package com.wasimaster.wmpass.ui.vault
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.graphics.Rect
 import android.os.SystemClock
 import android.util.Size as CameraSize
@@ -154,7 +155,7 @@ private fun ReaderChoice(onPick: (String) -> Unit, onClose: () -> Unit) {
 @Composable
 private fun ReaderOption(title: String, points: List<Pair<Boolean, String>>, selected: Boolean, onSelect: () -> Unit) {
     val colors = palette
-    GroupCard(Modifier.selectable(selected, role = Role.RadioButton, onClick = onSelect)) {
+    GroupCard(Modifier.selectable(selected, role = Role.RadioButton, onClick = onSelect), plain = true) {
         Row(Modifier.padding(start = 6.dp, end = 16.dp, top = 6.dp, bottom = 14.dp)) {
             RadioButton(selected, onClick = null, modifier = Modifier.padding(12.dp), colors = RadioButtonDefaults.colors(selectedColor = colors.primary))
             Column(Modifier.weight(1f).padding(top = 10.dp)) {
@@ -191,8 +192,33 @@ private fun CardScanScreen(google: Boolean, onCard: (CardReader.Read) -> Unit, o
     var numberIn by remember { mutableStateOf(false) }
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed = it }
     LaunchedEffect(Unit) { if (!allowed) ask.launch(Manifest.permission.CAMERA) }
+    // A photo of the card, chosen through Android's picker, which hands over that one picture.
+    var picture by remember { mutableStateOf<android.net.Uri?>(null) }
+    val choose = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> if (uri != null) picture = uri }
+    val pickPicture = { choose.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+    LaunchedEffect(picture) {
+        val uri = picture ?: return@LaunchedEffect
+        problem = null
+        // The camera's reader lets go on its own thread first; only one reader runs at a time.
+        kotlinx.coroutines.delay(400)
+        val read = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { readPicture(context, uri, google) }
+        if (read != null) {
+            shell.haptics.confirm()
+            onCard(read)
+        } else {
+            problem = "No card number found in that picture. Try one where the card fills most of it."
+            picture = null
+        }
+    }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        if (allowed) {
+        if (picture != null) {
+            Text(
+                "Reading the picture…",
+                color = Color.White,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.align(Alignment.Center),
+            )
+        } else if (allowed) {
             CardFeed(
                 google = google,
                 onEngine = { all, note ->
@@ -220,9 +246,14 @@ private fun CardScanScreen(google: Boolean, onCard: (CardReader.Read) -> Unit, o
                     textAlign = TextAlign.Center,
                 )
                 PrimaryButton("Allow the camera", Modifier.padding(top = 20.dp)) { ask.launch(Manifest.permission.CAMERA) }
+                com.wasimaster.wmpass.ui.parts.QuietButton("Choose a picture of the card", Modifier.padding(top = 12.dp), PassIcons.Image) { pickPicture() }
+                problem?.let { Text(it, color = colors.warn, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 12.dp)) }
             }
         }
         GlassCircle(PassIcons.Close, "Close", Modifier.statusBarsPadding().padding(14.dp), onClick = onClose)
+        if (allowed && picture == null) {
+            GlassCircle(PassIcons.Image, "Choose a picture of the card", Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(14.dp)) { pickPicture() }
+        }
         if (allowed) {
             Column(
                 Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(start = 24.dp, end = 24.dp, bottom = 28.dp),
@@ -247,6 +278,40 @@ private fun CardScanScreen(google: Boolean, onCard: (CardReader.Read) -> Unit, o
     }
 }
 
+/**
+ * Reads a chosen picture with the reader asked for, falling back to WM Pass's own. The picture is
+ * shrunk to the size the camera would give, and wiped once read.
+ */
+private fun readPicture(context: Context, uri: android.net.Uri, google: Boolean): CardReader.Read? {
+    val picture = runCatching {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            val source = android.graphics.ImageDecoder.createSource(context.contentResolver, uri)
+            android.graphics.ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+                decoder.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
+                val longest = maxOf(info.size.width, info.size.height)
+                if (longest > PictureEdge) {
+                    val scale = PictureEdge.toFloat() / longest
+                    decoder.setTargetSize((info.size.width * scale).toInt(), (info.size.height * scale).toInt())
+                }
+            }
+        } else {
+            context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) }
+        }
+    }.getOrNull()?.let { if (it.config == Bitmap.Config.ARGB_8888) it else it.copy(Bitmap.Config.ARGB_8888, false) } ?: return null
+    val engine = (if (google) MlKitCards.engine()?.takeIf { it.open(context) } else null) ?: OwnCardEngine().takeIf { it.open(context) }
+    val read = try {
+        engine?.readPicture(picture)
+    } finally {
+        engine?.close()
+        picture.eraseColor(0)
+        picture.recycle()
+    }
+    return read
+}
+
+/** The longest side a chosen picture is read at, about what the camera gives. */
+private const val PictureEdge = 1920
+
 /** One way of reading a card from camera frames. Every call comes from the camera's thread. */
 internal interface CardEngine {
     /** Gets ready. False when it cannot run on this phone right now. */
@@ -254,6 +319,9 @@ internal interface CardEngine {
 
     /** One RGBA frame, looking only inside [crop] of the upright frame. Null until three frames agree on a number. */
     fun read(image: ImageProxy, crop: FloatArray): CardReader.Read?
+
+    /** A still picture of the card, upright, read as though three frames had shown it. */
+    fun readPicture(picture: Bitmap): CardReader.Read?
 
     /** Lets go of everything, wiping what it can of the frames. */
     fun close()
@@ -281,6 +349,16 @@ private class OwnCardEngine : CardEngine {
         }
         buffer.get(pixels, 0, size)
         return CardReader.frame(pixels, image.width, image.height, plane.rowStride, image.imageInfo.rotationDegrees, crop)
+    }
+
+    override fun readPicture(picture: Bitmap): CardReader.Read? {
+        val bytes = ByteArray(picture.byteCount)
+        picture.copyPixelsToBuffer(java.nio.ByteBuffer.wrap(bytes))
+        val whole = floatArrayOf(0f, 0f, 1f, 1f)
+        var read: CardReader.Read? = null
+        repeat(3) { read = CardReader.frame(bytes, picture.width, picture.height, picture.rowBytes, 0, whole) ?: read }
+        bytes.fill(0)
+        return read
     }
 
     override fun close() {

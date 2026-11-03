@@ -148,8 +148,9 @@ private fun go(shell: Shell, where: String) {
  * A tour: the screen dims except for one part of it, and a note beside that part says what it is.
  * The dim is one layer with a hole cleared out of it, and four bands around the hole take the taps,
  * so on a step meant to be tried the part in the hole still answers. A step whose part is not on
- * screen here, such as the lock button someone has hidden, is skipped. Nothing moves except the
- * hole, from one part to the next, and not even that with animations off.
+ * screen here, such as the lock button someone has hidden, shows its note in the middle instead,
+ * so the count of steps stays true. Nothing moves except the hole, from one part to the next, and
+ * not even that with animations off.
  */
 @Composable
 fun Coach(prefs: Prefs) {
@@ -165,10 +166,11 @@ fun Coach(prefs: Prefs) {
         return
     }
     val last = index >= tour.steps.lastIndex
-    var forward by remember(tour.id) { mutableStateOf(true) }
     var origin by remember { mutableStateOf(Offset.Zero) }
     var view by remember { mutableStateOf(Size.Zero) }
     var found by remember(tour.id, index) { mutableStateOf<HelpAnchors.Spot?>(null) }
+    // A step whose part is not on screen here still shows its note, in the middle, with no hole.
+    var missing by remember(tour.id, index) { mutableStateOf(false) }
     var target by remember(tour.id, index) { mutableStateOf<Rect?>(null) }
     val hole = remember(tour.id) { Animatable(Rect.Zero, Rect.VectorConverter) }
     var shown by remember(tour.id) { mutableStateOf(false) }
@@ -176,7 +178,6 @@ fun Coach(prefs: Prefs) {
     fun finish(done: Boolean) = Guide.endTour(prefs, done)
     fun move(by: Int) {
         val to = index + by
-        forward = by > 0
         when {
             to < 0 -> Unit
             to > tour.steps.lastIndex -> finish(true)
@@ -205,8 +206,7 @@ fun Coach(prefs: Prefs) {
             spot = HelpAnchors.find(step.anchor)
         }
         if (spot == null) {
-            // Not on this screen. Keep going the way the person was going.
-            if (forward) move(1) else if (index > 0) move(-1) else move(1)
+            missing = true
             return@LaunchedEffect
         }
         runCatching { spot.requester.bringIntoView() }
@@ -266,6 +266,22 @@ fun Coach(prefs: Prefs) {
         )
         if (rect == null) {
             Blocker(Rect(Offset.Zero, view))
+            if (missing) {
+                Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.width(360.dp)) {
+                        CoachCard(
+                            tour,
+                            step,
+                            index,
+                            last,
+                            onBack = { move(-1) },
+                            onNext = { move(1) },
+                            onEnd = { finish(false) },
+                            note = "This part is not on the screen right now, so there is nothing to point at.",
+                        )
+                    }
+                }
+            }
         } else {
             val clear = rect.intersect(Rect(Offset.Zero, view))
             Blocker(Rect(0f, 0f, view.width, clear.top))
@@ -343,7 +359,16 @@ private fun CardPlacer(hole: Rect, placement: String?, card: @Composable () -> U
 }
 
 @Composable
-private fun CoachCard(tour: HelpTour, step: HelpStep, index: Int, last: Boolean, onBack: () -> Unit, onNext: () -> Unit, onEnd: () -> Unit) {
+private fun CoachCard(
+    tour: HelpTour,
+    step: HelpStep,
+    index: Int,
+    last: Boolean,
+    onBack: () -> Unit,
+    onNext: () -> Unit,
+    onEnd: () -> Unit,
+    note: String? = null,
+) {
     val colors = palette
     Surface(
         color = if (colors.flat) MaterialTheme.colorScheme.surfaceContainerHigh else colors.surface2,
@@ -364,6 +389,7 @@ private fun CoachCard(tour: HelpTour, step: HelpStep, index: Int, last: Boolean,
                 IconButton(onClick = onEnd) { Icon(PassIcons.Close, "End the tour", tint = colors.textMid, modifier = Modifier.size(20.dp)) }
             }
             RichText(step.body, Modifier.padding(end = 8.dp))
+            note?.let { Text(it, color = colors.textLow, style = MaterialTheme.typography.bodySmall) }
             if (step.tryIt) {
                 Text("Go ahead and try it. The tour waits.", color = colors.textLow, style = MaterialTheme.typography.bodySmall)
             }

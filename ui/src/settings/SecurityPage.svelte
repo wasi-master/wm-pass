@@ -182,7 +182,7 @@
     title="Clear the clipboard after"
     icon="content_paste"
     pref="clipboard_seconds"
-    options={[[15, '15 seconds'], [30, '30 seconds'], [60, '1 minute'], [120, '2 minutes'], [0, 'Never']] as [number, string][]}
+    options={[[15, '15 seconds'], [30, '30 seconds'], [60, '1 minute'], [120, '2 minutes'], [300, '5 minutes'], [0, 'Never']] as [number, string][]}
   />
   {#if host().desktop && quickReady}
     <Row title="Unlock from the system keyring" help="action.keyring_unlock" sub="A convenience, not protection: any program in your session can ask the keyring for the key." icon="key">

@@ -69,10 +69,10 @@ import com.wasimaster.wmpass.ui.parts.GlassCircle
 import com.wasimaster.wmpass.ui.parts.Hairline
 import com.wasimaster.wmpass.ui.parts.LifeRing
 import com.wasimaster.wmpass.ui.parts.Pill
-import com.wasimaster.wmpass.ui.parts.bleed
-import com.wasimaster.wmpass.ui.parts.fadeEdges
 import com.wasimaster.wmpass.ui.parts.RollingCode
 import com.wasimaster.wmpass.ui.parts.SiteTile
+import com.wasimaster.wmpass.ui.parts.bleed
+import com.wasimaster.wmpass.ui.parts.fadeEdges
 import com.wasimaster.wmpass.ui.parts.kindIcon
 import com.wasimaster.wmpass.ui.parts.kindName
 import com.wasimaster.wmpass.ui.theme.Shapes
@@ -93,14 +93,27 @@ private sealed interface Item {
         override val key = "gap"
     }
 
-    data class One(val entry: Summary, val first: Boolean, val last: Boolean) : Item {
+    /** [inside] marks an item shown under its open folder. */
+    data class One(val entry: Summary, val first: Boolean, val last: Boolean, val inside: Boolean = false) : Item {
         override val key = entry.id
+    }
+
+    data class Folder(val id: String, val name: String, val entries: List<Summary>, val first: Boolean, val last: Boolean) : Item {
+        override val key = "f:$id"
     }
 
     data class Stack(val site: String, val entries: List<Summary>, val first: Boolean, val last: Boolean) : Item {
         override val key = "s:$site"
     }
 }
+
+/** A folder's row in a run of rows, and an item listed under it while it is open. */
+private class FolderRun(val id: String, val name: String, val entries: List<Summary>)
+
+private class Inside(val entry: Summary)
+
+/** Where an open folder is kept among the open sites, which can never look like this. */
+private fun folderOpenKey(id: String) = "folder:$id"
 
 private fun filtered(entries: List<Summary>, filter: String): List<Summary> = when (filter) {
     "all" -> entries
@@ -131,6 +144,8 @@ private fun arrange(
             val last = index == run.lastIndex
             when (value) {
                 is Summary -> into += Item.One(value, first, last)
+                is Inside -> into += Item.One(value.entry, first, last, inside = true)
+                is FolderRun -> into += Item.Folder(value.id, value.name, value.entries, first, last)
                 is Pair<*, *> -> {
                     @Suppress("UNCHECKED_CAST")
                     val group = value as Pair<String, List<Summary>>
@@ -147,10 +162,24 @@ private fun arrange(
     }
     if (rest.isEmpty()) return out
     if (grouping == "folder") {
-        val names = Pass.folders.value.associate { it.id to it.name }
-        rest.groupBy { it.folder?.let(names::get) ?: "No folder" }.toSortedMap().forEach { (name, group) ->
-            if (headings) out += Item.Heading(name)
-            card(group, out)
+        // Each folder is one row that opens in place, with the items in no folder after them.
+        val folders = Pass.folders.value.sortedBy { it.name.lowercase() }
+        val byFolder = rest.groupBy { it.folder }
+        val run = mutableListOf<Any>()
+        folders.forEach { folder ->
+            val inside = byFolder[folder.id] ?: return@forEach
+            run += FolderRun(folder.id, folder.name, inside)
+            if (folderOpenKey(folder.id) in open) inside.mapTo(run, ::Inside)
+        }
+        val known = folders.mapTo(HashSet()) { it.id }
+        val loose = rest.filter { it.folder == null || it.folder !in known }
+        if (run.isNotEmpty()) {
+            if (pinned.isNotEmpty()) out += if (flat && headings) Item.Heading("Folders") else Item.Gap
+            card(run, out)
+        }
+        if (loose.isNotEmpty()) {
+            if (out.isNotEmpty()) out += if (flat && headings) Item.Heading("No folder") else Item.Gap
+            card(loose, out)
         }
         return out
     }
@@ -303,7 +332,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.itemsIndexedStable(
     compact: Boolean,
 ) {
     // The first row stands for the list when a tour points at it.
-    val firstRow = items.indexOfFirst { it is Item.One || it is Item.Stack }
+    val firstRow = items.indexOfFirst { it is Item.One || it is Item.Stack || it is Item.Folder }
     items.forEachIndexed { index, item ->
         item(item.key) {
             val shell = LocalShell.current
@@ -314,6 +343,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.itemsIndexedStable(
                 Item.Gap -> Spacer(modifier.height(12.dp))
                 is Item.One -> {
                     val selected = item.entry.id in shell.selection
+                    val indent = if (item.inside) FolderIndent else 0.dp
                     Column(modifier) {
                         EntryRow(
                             item.entry,
@@ -321,12 +351,13 @@ private fun androidx.compose.foundation.lazy.LazyListScope.itemsIndexedStable(
                             compact,
                             shell.selecting,
                             selected,
+                            indent = indent,
                             onClick = {
                                 if (shell.selecting) shell.toggleSelected(item.entry.id) else shell.tapped(item.entry)
                             },
                             onLongClick = { shell.toggleSelected(item.entry.id) },
                         )
-                        if (!item.last) Hairline(Modifier.background(palette.surface1), inset = 74.dp)
+                        if (!item.last) Hairline(Modifier.background(palette.surface1), inset = 74.dp + indent)
                     }
                 }
                 is Item.Stack -> Column(modifier) {
@@ -337,6 +368,17 @@ private fun androidx.compose.foundation.lazy.LazyListScope.itemsIndexedStable(
                         if (palette.flat) androidx.compose.ui.graphics.RectangleShape else remember(item.first, item.last) { SegmentShape(28.dp, item.first, item.last) },
                         open,
                     ) { if (open) openSites.remove(item.site) else openSites.add(item.site) }
+                    if (!item.last) Hairline(Modifier.background(palette.surface1), inset = 74.dp)
+                }
+                is Item.Folder -> Column(modifier) {
+                    val key = folderOpenKey(item.id)
+                    val open = key in openSites
+                    FolderRow(
+                        item.name,
+                        item.entries.size,
+                        if (palette.flat) androidx.compose.ui.graphics.RectangleShape else remember(item.first, item.last) { SegmentShape(28.dp, item.first, item.last) },
+                        open,
+                    ) { if (open) openSites.remove(key) else openSites.add(key) }
                     if (!item.last) Hairline(Modifier.background(palette.surface1), inset = 74.dp)
                 }
             }

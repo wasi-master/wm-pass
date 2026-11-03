@@ -81,6 +81,21 @@ private class MlKitCardEngine : CardEngine {
         return CardReader.text(Array(lines.size) { lines[it].text }, boxes)
     }
 
+    override fun readPicture(picture: Bitmap): CardReader.Read? {
+        val recognizer = recognizer ?: return null
+        val text = runCatching { Tasks.await(recognizer.process(InputImage.fromBitmap(picture, 0))) }.getOrNull() ?: return null
+        val lines = text.textBlocks.flatMap { it.lines }
+        val boxes = FloatArray(lines.size * 2)
+        lines.forEachIndexed { i, line ->
+            boxes[i * 2] = (line.boundingBox?.left ?: 0) / picture.width.toFloat()
+            boxes[i * 2 + 1] = (line.boundingBox?.top ?: 0) / picture.height.toFloat()
+        }
+        val words = Array(lines.size) { lines[it].text }
+        var read: CardReader.Read? = null
+        repeat(3) { read = CardReader.text(words, boxes) ?: read }
+        return read
+    }
+
     override fun close() {
         recognizer?.close()
         recognizer = null

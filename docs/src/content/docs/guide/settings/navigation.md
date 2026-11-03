@@ -194,7 +194,7 @@ Without it you can still lock with <kbd>Ctrl+L</kbd> (<kbd>⌘L</kbd> on a Mac).
 
 Shows a padlock at the top of each page that locks the vault at once.
 
-The Glass style always has a lock button at the top of the vault page, whatever this is set to.
+Shown only with the Standard style. Glass always has a lock button at the top of the vault page.
 
 See also [Lock after no activity](/guide/settings/security/#setting-lock-after), [Locking](/guide/how-it-works/#feature-locking).
 
@@ -258,6 +258,6 @@ Moves the search and add buttons to the left of the dock, where a left thumb rea
 
 #### Limits
 
-Only in the Glass [style](/guide/settings/look/#setting-ui-style). Standard keeps the usual Android layout.
+Shown only with the Glass [style](/guide/settings/look/#setting-ui-style). Standard keeps the usual Android layout, with nothing to move.
 
 See also [Search at the bottom](/guide/settings/list/#setting-search-at-bottom).

@@ -71,6 +71,8 @@ android {
     // Each app's export guide from the website, shown on the import screen.
     sourceSets["main"].assets.directories.add("../../docs/src/content/docs/guides/import")
     sourceSets["main"].assets.directories.add("../../data/brands")
+    // Sites that share one account, for the editor's website and app suggestions.
+    sourceSets["main"].assets.directories.add("../../data/related")
     // The in-app guide, written by scripts/build-help.mjs from help/ at the root.
     sourceSets["main"].assets.directories.add("../../data/help")
     sourceSets["main"].assets.directories.add("../../data/passkeys")

@@ -44,6 +44,14 @@ The shape of the list: full rows, shorter rows, or a grid of tiles.
 
 *The guide in the app shows this live, with your own settings.*
 
+#### On Android
+
+| Choice | What it does |
+| --- | --- |
+| List | Full rows, with the second line under the name if that is on. |
+| Compact | One line per item, with a small icon and the second line beside the name, so many more rows fit. |
+| Grid | Large tiles with the name under each. Pinned items, headings and folded sites are not used. |
+
 See also [Second line](/guide/settings/list/#setting-row-subtitle), [Grouping](/guide/settings/list/#setting-grouping), [Row height](/guide/settings/look/#setting-density).
 
 <a id="setting-grouping"></a>
@@ -58,6 +66,13 @@ Whether the list runs as one, with logins for the same site folded together, or 
 | --- | --- |
 | By site | One list in the order you sort by. Several logins for one website fold into a single row when [Fold logins on one site](/guide/settings/list/#setting-group-sites) is on. |
 | By folder | A part for each folder, in alphabetical order, and **No folder** for items in none. Each part follows the sort order. Sites are not folded. |
+
+#### On Android
+
+| Choice | What it does |
+| --- | --- |
+| By site | One list in the order you sort by. Several logins for one website fold into a single row when [Fold logins on one site](/guide/settings/list/#setting-group-sites) is on. |
+| By folder | Each folder is one row, in alphabetical order, that opens in place to show its items. Items in no folder come after the folders. Sites are not folded. |
 
 See also [Section headings](/guide/settings/list/#setting-list-headings), [Sort by](/guide/settings/list/#setting-sort), [Folders](/guide/settings/folders/).
 

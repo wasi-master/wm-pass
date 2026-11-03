@@ -377,13 +377,15 @@ pub fn call(
         // Every site in one list: `check` is asked here, `page` is read in a hidden browser
         // view by the app, and `link` is only opened for a person to look at.
         "usernames.site_list" => {
-            let sites: Vec<Value> = usernames::SITES
+            let mut sites: Vec<(usize, Value)> = usernames::SITES
                 .iter()
-                .map(|s| json!({"name": s.name, "profile": s.profile, "icon": s.icon, "kind": "check"}))
-                .chain(usernames::PAGE_SITES.iter().map(|s| json!({"name": s.name, "profile": s.profile, "icon": s.icon, "kind": "page"})))
-                .chain(usernames::LINK_SITES.iter().map(|s| json!({"name": s.name, "profile": s.url, "icon": s.icon, "kind": "link"})))
+                .map(|s| (usernames::rank(s.name), json!({"name": s.name, "profile": s.profile, "icon": s.icon, "kind": "check"})))
+                .chain(usernames::PAGE_SITES.iter().map(|s| (usernames::rank(s.name), json!({"name": s.name, "profile": s.profile, "icon": s.icon, "kind": "page"}))))
+                .chain(usernames::LINK_SITES.iter().map(|s| (usernames::rank(s.name), json!({"name": s.name, "profile": s.url, "icon": s.icon, "kind": "link"}))))
                 .collect();
-            Ok(view(json!(sites)))
+            // Most used first; a stable sort keeps list order among the rest.
+            sites.sort_by_key(|(rank, _)| *rank);
+            Ok(view(json!(sites.into_iter().map(|(_, site)| site).collect::<Vec<_>>())))
         }
         "usernames.check" => {
             let a: NameArgs = parse(args)?;
@@ -817,7 +819,13 @@ pub fn call(
                 wmpass_bw::BwError::NewDevice => failed("new_device", e.to_string()),
                 wmpass_bw::BwError::BadCode => failed("bad_code", e.to_string()),
                 wmpass_bw::BwError::Net(error) => net_error(error),
-                wmpass_bw::BwError::BadLogin | wmpass_bw::BwError::Crypto => failed("wrong_password", e.to_string()),
+                wmpass_bw::BwError::BadLogin => failed("wrong_password", e.to_string()),
+                // Offline, the saved key opening is the password check. Online the server has
+                // already taken the password, so what will not decrypt is the account's own.
+                wmpass_bw::BwError::Crypto if method == "bitwarden.open_cached" => failed("wrong_password", e.to_string()),
+                wmpass_bw::BwError::Crypto => {
+                    failed("bitwarden", "Bitwarden accepted the password, but part of this account is encrypted in a way WM Pass cannot read yet")
+                }
                 other => failed("bitwarden", other.to_string()),
             };
             if method == "bitwarden.register" {

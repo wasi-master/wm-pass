@@ -174,8 +174,10 @@ fun SyncScreen() {
             )
             GroupCard {
                 places.forEachIndexed { index, place ->
-                    if (index > 0) Hairline()
-                    Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 12.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (index > 0) Hairline(inset = 70.dp)
+                    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        GlyphTile(placeIcon(place.kind), colors.primary, size = 40.dp)
+                        Spacer(Modifier.width(14.dp))
                         Text(place.label, color = colors.text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         PassSwitch(place.sync) { on -> Destinations.put(context, place.copy(sync = on)) }
                     }

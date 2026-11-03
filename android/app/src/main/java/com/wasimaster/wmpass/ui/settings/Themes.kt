@@ -281,10 +281,12 @@ private val Slots = listOf(
 
 /** A small piece of the app in the colours being edited, so a change shows at once. */
 @Composable
-private fun ThemePreview(colors: ThemeColors, dark: Boolean, corners: Int) {
+private fun ThemePreview(colors: ThemeColors, dark: Boolean, corners: Int, font: String = "system") {
     val p = colors.toPalette(dark, black = false, flat = true)
     val scheme = p.flatScheme(colors)
-    MaterialTheme(colorScheme = scheme, typography = MaterialTheme.typography) {
+    val context = LocalContext.current
+    val type = remember(font) { com.wasimaster.wmpass.ui.theme.typeFor(font, context) }
+    MaterialTheme(colorScheme = scheme, typography = type) {
         Column(
             Modifier
                 .fillMaxWidth()
@@ -385,6 +387,20 @@ fun ThemeEditor(id: String) {
     var editingDark by remember { mutableStateOf(if (colors.dark) base.dark != null else base.light == null) }
     var corners by remember { mutableIntStateOf(base.corners) }
     var font by remember { mutableStateOf(base.font) }
+    val context = LocalContext.current
+    var fontFiles by remember { mutableStateOf(com.wasimaster.wmpass.ui.theme.ThemeFonts.saved(context)) }
+    var fontProblem by remember { mutableStateOf<String?>(null) }
+    val pickFont = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            com.wasimaster.wmpass.ui.theme.ThemeFonts.add(context, uri)
+                .onSuccess { key ->
+                    fontFiles = com.wasimaster.wmpass.ui.theme.ThemeFonts.saved(context)
+                    font = key
+                    fontProblem = null
+                }
+                .onFailure { fontProblem = it.message ?: "That font could not be added." }
+        }
+    }
     var slot by remember { mutableStateOf<ColourSlot?>(null) }
     val current = if (editingDark) dark else light
     fun update(next: ThemeColors) {
@@ -405,7 +421,7 @@ fun ThemeEditor(id: String) {
                 }
             }
             Spacer(Modifier.height(12.dp))
-            current?.let { ThemePreview(it, editingDark, corners) }
+            current?.let { ThemePreview(it, editingDark, corners, font) }
             Eyebrow("Colors")
             GroupCard {
                 Slots.forEach { item ->
@@ -430,11 +446,26 @@ fun ThemeEditor(id: String) {
                 Text("$corners dp", color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
             }
             Eyebrow("Font")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
+            ) {
                 listOf("system" to "System", "inter" to "Inter", "serif" to "Serif", "mono" to "Mono").forEach { (key, label) ->
                     Pill(label, font == key) { font = key }
                 }
+                fontFiles.forEach { key -> Pill(com.wasimaster.wmpass.ui.theme.ThemeFonts.label(key), font == key) { font = key } }
+                Pill("Add a font file", false, icon = PassIcons.Add) { pickFont.launch(arrayOf("font/ttf", "font/otf", "font/sfnt", "application/x-font-ttf", "application/x-font-otf", "application/vnd.ms-opentype", "application/octet-stream")) }
             }
+            fontProblem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp)) }
+            // Each font shows itself straight away, before anything is saved.
+            val sample = remember(font) { com.wasimaster.wmpass.ui.theme.typeFor(font, context) }
+            Text(
+                "The quick brown fox jumps over the lazy dog. 0123456789",
+                color = colors.text,
+                style = sample.bodyLarge,
+                modifier = Modifier.padding(top = 12.dp, start = 4.dp, end = 4.dp),
+            )
             Spacer(Modifier.height(24.dp))
             PrimaryButton("Save and use", Modifier.fillMaxWidth(), enabled = name.text.isNotBlank()) {
                 val saved = ThemeFile(

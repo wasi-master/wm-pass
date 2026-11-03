@@ -1,5 +1,7 @@
 //! The requests, each one a [`Call`] so any client can run it.
 
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use serde_json::{Value, json};
 use wmpass_core::otp::percent_encode;
 use wmpass_net::{Call, NetError, Request};
@@ -53,7 +55,9 @@ fn number(value: &Value, name: &str) -> Option<u64> {
 /// Asks for an account's stretching settings.
 pub fn prelogin(endpoints: &Endpoints, email: &str) -> Call<Kdf> {
     let body = json!({"email": email.trim().to_lowercase()});
-    Call::new(Request::json("POST", format!("{}/accounts/prelogin", endpoints.identity), &body), |response| {
+    let mut request = Request::json("POST", format!("{}/accounts/prelogin", endpoints.identity), &body);
+    client_headers(&mut request, 0);
+    Call::new(request, |response| {
         let root = response.ok()?.json()?;
         let kdf = Kdf::from_api(
             number(&root, "kdf").unwrap_or(0),
@@ -134,6 +138,18 @@ pub struct Tokens {
     /// Private key, wrapped.
     pub private_key: Option<String>,
 }
+
+/// The client headers Bitwarden's own apps send with each call. Its cloud service expects them,
+/// and `Auth-Email` on a password login, so a login looks like one of theirs.
+fn client_headers(request: &mut Request, device: u32) {
+    request.headers.push(("Bitwarden-Client-Name", "cli".to_owned()));
+    request.headers.push(("Bitwarden-Client-Version", CLIENT_VERSION.to_owned()));
+    request.headers.push(("Device-Type", device.to_string()));
+}
+
+/// The client version WM Pass reports. Bitwarden turns away clients too old for what an account
+/// uses, so this follows a recent release of its command line client.
+const CLIENT_VERSION: &str = "2025.10.0";
 
 fn form(fields: &[(&str, &str)]) -> Vec<u8> {
     fields.iter().map(|(k, v)| format!("{}={}", percent_encode(k), percent_encode(v))).collect::<Vec<_>>().join("&").into_bytes()
@@ -232,6 +248,8 @@ pub fn login(
     }
     let mut request = Request::verb("POST", format!("{}/connect/token", endpoints.identity));
     request.body = Some(("application/x-www-form-urlencoded; charset=utf-8", form(&fields)));
+    client_headers(&mut request, device.kind);
+    request.headers.push(("Auth-Email", URL_SAFE_NO_PAD.encode(email.as_bytes())));
     Call::new(request, |response| {
         if response.status == 400 || response.status == 401 {
             return Ok(Err(refusal(&response.json().unwrap_or(Value::Null))));
@@ -373,6 +391,8 @@ mod tests {
         let device = Device { identifier: "d".into(), name: "WM Pass".into(), kind: 0 };
         let code = SecondFactor::NewDevice("123456".into());
         let call = login(&Endpoints::official(), "Me@Example.com", "hash", &device, Some(&code));
+        let auth = call.request.headers.iter().find(|(name, _)| *name == "Auth-Email").map(|(_, value)| value.clone());
+        assert_eq!(auth.as_deref(), Some("bWVAZXhhbXBsZS5jb20"));
         let body = String::from_utf8(call.request.body.unwrap().1).unwrap();
         assert!(body.contains("newDeviceOtp=123456"), "{body}");
         assert!(!body.contains("twoFactor"), "{body}");

@@ -9,7 +9,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.wasimaster.wmpass.BuildConfig
 import com.wasimaster.wmpass.app.Prefs
 import com.wasimaster.wmpass.core.LockState
 import com.wasimaster.wmpass.core.Pass
@@ -24,7 +23,8 @@ abstract class SecureActivity : FragmentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         window.decorView.filterTouchesWhenObscured = true
-        if (!BuildConfig.DEBUG) {
+        // On in every build unless the owner turns it off: a debug build is still somebody's vault.
+        if (Prefs.of(this).screenProtection) {
             window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         }
     }

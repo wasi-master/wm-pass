@@ -1,0 +1,24 @@
+# Sites that sign in with one account, for the editor to suggest from each other.
+# One family per line, domains separated by spaces. Written for this project (MIT).
+# Smaller families come from Apple's shared-credentials.json beside this file.
+facebook.com messenger.com fb.com
+instagram.com threads.com threads.net
+google.com gmail.com youtube.com accounts.google.com
+microsoft.com live.com outlook.com hotmail.com xbox.com skype.com office.com microsoft365.com bing.com
+apple.com icloud.com
+amazon.com amazon.co.uk amazon.de amazon.fr amazon.it amazon.es amazon.ca amazon.in amazon.co.jp amazon.com.au amazon.com.br amazon.nl amazon.se amazon.pl amazon.sg amazon.ae amazon.sa amazon.com.mx amazon.com.tr primevideo.com
+x.com twitter.com
+yahoo.com yahoo.co.jp flickr.com
+atlassian.com atlassian.net bitbucket.org trello.com
+proton.me protonmail.com
+steampowered.com steamcommunity.com
+epicgames.com fortnite.com unrealengine.com
+ubisoft.com ubisoftconnect.com
+ea.com origin.com
+playstation.com sonyentertainmentnetwork.com
+battle.net blizzard.com
+discord.com discordapp.com
+adobe.com behance.net
+samsung.com samsungaccount.com
+xiaomi.com mi.com
+yandex.ru yandex.com

@@ -49,7 +49,7 @@ const DEFS = {
   density: { value: 'comfortable', allowed: ['compact', 'comfortable', 'spacious'] },
 
   // ---- icons ----
-  icon_style: { value: 'rounded', allowed: ['outlined', 'rounded', 'sharp', 'light'] },
+  icon_style: { value: 'rounded', allowed: ['outlined', 'rounded', 'sharp', 'light', 'phosphor', 'phosphor_bold', 'phosphor_light', 'lucide'] },
   site_icon_style: { value: 'brand', allowed: ['brand', 'tinted', 'uniform', 'letters'] },
   site_icon_shape: { value: 'circle', allowed: ['circle', 'rounded', 'square', 'none'] },
   settings_icons: { value: 'coloured', allowed: ['coloured', 'mono', 'bare', 'off'] },
@@ -135,7 +135,7 @@ const DEFS = {
   lock_after: { value: 300, portable: false },
   lock_on_sleep: { value: true, portable: false },
   lock_on_hide: { value: false, portable: false },
-  clipboard_seconds: { value: 30, portable: false },
+  clipboard_seconds: { value: 60, portable: false },
   screen_protection: { value: true, portable: false },
   network_allowed: { value: false, portable: false },
   close_to_tray: { value: true, portable: false },

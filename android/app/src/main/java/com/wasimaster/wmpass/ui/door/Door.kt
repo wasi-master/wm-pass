@@ -34,16 +34,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicSecureTextField
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.KeyboardActionHandler
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.TextObfuscationMode
 import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -64,6 +64,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
@@ -83,27 +84,25 @@ import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.wasimaster.wmpass.app.LaunchGuard
 import com.wasimaster.wmpass.app.Prefs
-import com.wasimaster.wmpass.core.NativeFailure
-import com.wasimaster.wmpass.system.AccountRef
-import com.wasimaster.wmpass.system.Accounts
-import com.wasimaster.wmpass.system.accountHost
-import com.wasimaster.wmpass.system.Destination
-import com.wasimaster.wmpass.system.HardwareKeys
-import com.wasimaster.wmpass.ui.parts.Pill
-import com.wasimaster.wmpass.ui.vault.PassSheet
-import kotlinx.serialization.json.buildJsonObject
 import com.wasimaster.wmpass.core.Engine
 import com.wasimaster.wmpass.core.LockState
+import com.wasimaster.wmpass.core.NativeFailure
 import com.wasimaster.wmpass.core.NeededFactor
 import com.wasimaster.wmpass.core.Pass
 import com.wasimaster.wmpass.core.QuickUnlock
 import com.wasimaster.wmpass.core.StrengthView
 import com.wasimaster.wmpass.core.UnlockResult
+import com.wasimaster.wmpass.system.AccountRef
+import com.wasimaster.wmpass.system.Accounts
+import com.wasimaster.wmpass.system.Destination
+import com.wasimaster.wmpass.system.HardwareKeys
+import com.wasimaster.wmpass.system.accountHost
 import com.wasimaster.wmpass.ui.DoorShieldCentre
 import com.wasimaster.wmpass.ui.DoorShieldCentreDp
 import com.wasimaster.wmpass.ui.fx.Aurora
 import com.wasimaster.wmpass.ui.fx.glass
 import com.wasimaster.wmpass.ui.icons.PassIcons
+import com.wasimaster.wmpass.ui.parts.Pill
 import com.wasimaster.wmpass.ui.parts.PrimaryButton
 import com.wasimaster.wmpass.ui.parts.QuietButton
 import com.wasimaster.wmpass.ui.parts.SecretText
@@ -116,9 +115,11 @@ import com.wasimaster.wmpass.ui.theme.PassType
 import com.wasimaster.wmpass.ui.theme.onBrand
 import com.wasimaster.wmpass.ui.theme.palette
 import com.wasimaster.wmpass.ui.theme.rememberHaptics
+import com.wasimaster.wmpass.ui.vault.PassSheet
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 
@@ -582,7 +583,15 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
                 Text(message.orEmpty(), color = colors.danger, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 16.dp, top = 4.dp))
             }
             Spacer(Modifier.height(16.dp))
-            PrimaryButton(if (busy) "Unlocking…" else "Unlock", Modifier.fillMaxWidth(), enabled = field.text.isNotEmpty() && remaining == 0L && !busy) { submit() }
+            // Stretching the password takes a second or two; the bar says it is happening.
+            AnimatedVisibility(busy, enter = fadeIn() + androidx.compose.animation.expandVertically(), exit = fadeOut() + androidx.compose.animation.shrinkVertically()) {
+                androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth().padding(bottom = 12.dp))
+            }
+            PrimaryButton(
+                if (busy) "Unlocking…" else "Unlock",
+                Modifier.fillMaxWidth().onGloballyPositioned { com.wasimaster.wmpass.ui.DoorRevealFrom.value = it.boundsInRoot().center },
+                enabled = field.text.isNotEmpty() && remaining == 0L && !busy,
+            ) { submit() }
             if (source?.kind == "kdbx") {
                 Spacer(Modifier.height(8.dp))
                 androidx.compose.material3.TextButton(onClick = { pickAccountKey.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) {

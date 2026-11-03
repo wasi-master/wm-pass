@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -46,6 +47,8 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -110,6 +113,20 @@ fun Modifier.sharedEntry(key: String, inSearch: Boolean = false): Modifier {
             boundsTransform = BoundsTransform { _, _ -> Springs.glide() },
         )
     }
+}
+
+/**
+ * [sharedEntry] for a page that scrolls: once the part has scrolled fully out of view, it stops
+ * taking part, so going back does not fly it in from above the top of the screen.
+ */
+@Composable
+fun Modifier.sharedEntryWhileShown(key: String, inSearch: Boolean = false): Modifier {
+    var shown by remember { mutableStateOf(true) }
+    val tracked = this.onGloballyPositioned { coordinates ->
+        val bounds = coordinates.boundsInWindow()
+        shown = bounds.width > 0f && bounds.height > 0f
+    }
+    return if (shown) tracked.sharedEntry(key, inSearch) else tracked
 }
 
 /**
@@ -238,13 +255,17 @@ fun EntryRow(
     selected: Boolean,
     modifier: Modifier = Modifier,
     showCopy: Boolean = true,
+    // How far in the row starts, for an item listed under its folder.
+    indent: Dp = 0.dp,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
     val colors = palette
     val shell = LocalShell.current
     val source = remember { MutableInteractionSource() }
-    val tileSize = if (compact) 36.dp else if (colors.flat) 40.dp else 46.dp
+    // Compact fits a row in the 48dp a touch needs anyway: a small tile, and the subtitle on the
+    // same line as the name, so more of the vault shows at once without losing what each row says.
+    val tileSize = if (compact) 28.dp else if (colors.flat) 40.dp else 46.dp
     val prefs = shell.prefs
     val right = shell.effective(prefs.swipeRight.value, entry)
     val left = shell.effective(prefs.swipeLeft.value, entry)
@@ -263,18 +284,18 @@ fun EntryRow(
                 .background(if (selected) colors.surface3 else if (colors.flat) colors.ground else colors.surface1)
                 .combinedClickable(source, androidx.compose.material3.ripple(), onClick = onClick, onLongClick = onLongClick)
                 .padding(
-                    start = if (colors.flat) 16.dp else 14.dp,
+                    start = (if (colors.flat) 16.dp else 14.dp) + indent,
                     end = if (colors.flat) 4.dp else 10.dp,
-                    top = if (compact) 8.dp else 12.dp,
-                    bottom = if (compact) 8.dp else 12.dp,
+                    top = if (compact) 2.dp else 12.dp,
+                    bottom = if (compact) 2.dp else 12.dp,
                 ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (prefs.rowIcons.value || selected) {
                 FlipTile(entry, selected, tileSize)
-                Spacer(Modifier.width(14.dp))
+                Spacer(Modifier.width(if (compact) 12.dp else 14.dp))
             }
-            Column(Modifier.weight(1f)) {
+            Column(Modifier.weight(1f).then(if (compact) Modifier.heightIn(min = 44.dp) else Modifier), verticalArrangement = Arrangement.Center) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         entry.title.ifEmpty { "Untitled" },
@@ -284,6 +305,16 @@ fun EntryRow(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false).sharedEntry("title-${entry.id}"),
                     )
+                    if (compact && prefs.rowSubtitle.value && entry.subtitle.isNotEmpty()) {
+                        Text(
+                            entry.subtitle,
+                            color = colors.textMid,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(start = 8.dp).weight(1f, fill = false).sharedEntry("subtitle-${entry.id}"),
+                        )
+                    }
                     if (prefs.rowBadges.value) Badges(entry)
                 }
                 if (!compact && prefs.rowSubtitle.value && entry.subtitle.isNotEmpty()) {
@@ -402,6 +433,53 @@ fun SiteStackRow(
             Text("${entries.size} accounts", color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
         }
         Icon(PassIcons.ExpandMore, if (expanded) "Collapse" else "Expand", tint = colors.textLow, modifier = Modifier.graphicsLayer { rotationZ = turn })
+    }
+}
+
+/** How far in the items under an open folder start, so they read as inside it. */
+val FolderIndent = 24.dp
+
+/** A folder in the list, as one row that opens in place to show what is in it. */
+@Composable
+fun FolderRow(
+    name: String,
+    count: Int,
+    shape: Shape,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+) {
+    val colors = palette
+    val shell = LocalShell.current
+    val source = remember { MutableInteractionSource() }
+    val turn by animateFloatAsState(if (expanded) 180f else 0f, Springs.glide(), label = "chevron")
+    val tile = if (colors.flat) 40.dp else 46.dp
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(if (colors.flat) colors.ground else colors.surface1)
+            .clickable(source, androidx.compose.material3.ripple()) {
+                shell.haptics.tick()
+                onToggle()
+            }
+            .padding(start = if (colors.flat) 16.dp else 14.dp, end = 18.dp, top = 12.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(tile), contentAlignment = Alignment.Center) {
+            com.wasimaster.wmpass.ui.parts.GlyphTile(if (expanded) PassIcons.FolderOpen else PassIcons.Folder, colors.primary, size = tile)
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                name,
+                color = colors.text,
+                style = if (colors.flat) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(if (count == 1) "1 item" else "$count items", color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
+        }
+        Icon(PassIcons.ExpandMore, if (expanded) "Close $name" else "Open $name", tint = colors.textLow, modifier = Modifier.graphicsLayer { rotationZ = turn })
     }
 }
 

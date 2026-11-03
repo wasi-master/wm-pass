@@ -101,7 +101,7 @@ class Prefs(context: Context) {
     // ---- icons ----
 
     /** The app's own glyphs: `outlined`, `rounded`, `sharp` or `light`. */
-    val iconStyle = word("icon_style", "rounded", "outlined", "rounded", "sharp", "light")
+    val iconStyle = word("icon_style", "rounded", "outlined", "rounded", "sharp", "light", "phosphor", "phosphor_bold", "phosphor_light", "lucide")
 
     /** Entries: `brand`, `tinted`, `uniform` or `letters`. */
     val siteIconStyle = word("site_icon_style", if (store.getBoolean("coloured_icons", true)) "brand" else "uniform", "brand", "tinted", "uniform", "letters")
@@ -150,7 +150,7 @@ class Prefs(context: Context) {
 
     private val addKindsOpt = word("add_kinds", DEFAULT_ADD.joinToString(","))
     val addKinds: List<String> get() = addKindsOpt.value.split(",").filter { it.isNotEmpty() }
-    private val editorOpenOpt = word("editor_open", "sites")
+    private val editorOpenOpt = word("editor_open", "")
     val editorOpen: Set<String> get() = editorOpenOpt.value.split(",").filter { it.isNotEmpty() }.toSet()
     val editorRemember = flag("editor_remember", true)
     val editorFoldDetails = flag("editor_fold_details", true)
@@ -206,7 +206,7 @@ class Prefs(context: Context) {
     private val lockAfterOpt = whole("lock_after", 60, portable = false)
     val lockAfter: Int get() = lockAfterOpt.value
     val lockScreenOff = flag("lock_screen_off", true, portable = false)
-    private val clipboardOpt = whole("clipboard_seconds", 30, portable = false)
+    private val clipboardOpt = whole("clipboard_seconds", 60, portable = false)
     val clipboardSeconds: Int get() = clipboardOpt.value
     private val screenOpt = flag("screen_protection", true, portable = false)
     val screenProtection: Boolean get() = screenOpt.value
@@ -225,10 +225,12 @@ class Prefs(context: Context) {
     fun switchOnFirstTime(opt: Opt<Boolean>) {
         if (!store.contains(opt.key)) opt.set(true) else opt.load()
     }
-    private val panicActionOpt = local("panic_action", "lock")
+    private val panicActionOpt = local("panic_action", "none")
     val panicAction: String get() = panicActionOpt.value
+
+    // Package names, comma-separated. An older install kept one name here, which reads the same.
     private val panicAppOpt = local("panic_app", "")
-    val panicTrustedApp: String? get() = panicAppOpt.value.ifEmpty { null }
+    val panicApps: Set<String> get() = panicAppOpt.value.split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
 
     // ---- the guide: what it has shown on this phone stays on this phone ----
 
@@ -314,10 +316,10 @@ class Prefs(context: Context) {
 
     fun resetShortcuts() = shortcutsOpt.reset()
 
-    /** What a panic signal does: "lock", or "wipe" if it comes from the app named below. */
-    fun updatePanic(action: String, app: String?) {
+    /** What a panic signal does, "none", "lock" or "wipe", and which apps are listened to. */
+    fun updatePanic(action: String, apps: Set<String> = panicApps) {
         panicActionOpt.set(action)
-        panicAppOpt.set(app.orEmpty())
+        panicAppOpt.set(apps.sorted().joinToString(","))
     }
 
     fun updateLook(value: Look) = lookOpt.set(value.name)

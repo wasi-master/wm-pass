@@ -16,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
@@ -55,6 +56,8 @@ fun SavedWifiSheet(
     var networks by remember { mutableStateOf<List<SavedWifi.Network>?>(null) }
     var problem by remember { mutableStateOf<String?>(null) }
     var tries by remember { mutableStateOf(0) }
+    // Shizuku can take a few seconds to wake, to show its prompt, and to hand the list over.
+    var asking by remember { mutableStateOf(false) }
     val entries by Pass.entries.collectAsStateWithLifecycle()
     val chosen = remember { mutableStateListOf<String>() }
     LaunchedEffect(tries) {
@@ -76,6 +79,14 @@ fun SavedWifiSheet(
         val explain: @Composable (String) -> Unit = { text ->
             Text(text, color = colors.textMid, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 14.dp))
         }
+        val waiting = state == null || asking || (state == SavedWifi.State.READY && networks == null && problem == null)
+        androidx.compose.animation.AnimatedVisibility(waiting) {
+            androidx.compose.material3.LinearProgressIndicator(
+                color = colors.primary,
+                trackColor = colors.surface3,
+                modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, bottom = 14.dp).clip(androidx.compose.foundation.shape.CircleShape),
+            )
+        }
         when (state) {
             null -> explain("Looking for Shizuku…")
             SavedWifi.State.MISSING -> {
@@ -96,9 +107,14 @@ fun SavedWifiSheet(
             }
             SavedWifi.State.ASK -> {
                 explain("Shizuku asks once whether WM Pass may use it. WM Pass uses it only to read saved networks, and only when you open this.")
-                PrimaryButton("Allow in Shizuku", Modifier.fillMaxWidth()) {
+                PrimaryButton(if (asking) "Waiting for Shizuku…" else "Allow in Shizuku", Modifier.fillMaxWidth(), enabled = !asking) {
+                    asking = true
                     scope.launch {
-                        if (SavedWifi.ask()) tries++ else problem = "Shizuku said no. You can allow WM Pass later in the Shizuku app's list."
+                        try {
+                            if (SavedWifi.ask()) tries++ else problem = "Shizuku said no. You can allow WM Pass later in the Shizuku app's list."
+                        } finally {
+                            asking = false
+                        }
                     }
                 }
             }

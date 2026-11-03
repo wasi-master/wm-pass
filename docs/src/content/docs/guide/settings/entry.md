@@ -39,7 +39,7 @@ Shows buttons under an item's name to copy its password, copy its username and o
 
 #### On Android
 
-In the Glass style these buttons are always shown.
+Shown only with the Standard style. Glass always shows these buttons.
 
 See also [Copy username](/guide/settings/entry/#setting-entry-action-username), [Open site](/guide/settings/entry/#setting-entry-action-open).
 
@@ -51,7 +51,7 @@ Adds a **Copy username** button at the top of items that have a username.
 
 #### On Android
 
-In the Glass style this button is always shown.
+Shown only with the Standard style. Glass always shows this button.
 
 See also [Show them](/guide/settings/entry/#setting-entry-actions).
 
@@ -63,7 +63,7 @@ Adds an **Open site** button that opens the item's first website in your browser
 
 #### On Android
 
-In the Glass style this button is always shown.
+Shown only with the Standard style. Glass always shows this button.
 
 See also [Show them](/guide/settings/entry/#setting-entry-actions).
 

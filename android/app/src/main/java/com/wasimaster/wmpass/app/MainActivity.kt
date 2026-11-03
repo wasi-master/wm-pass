@@ -8,7 +8,6 @@ import android.view.WindowManager
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import com.wasimaster.wmpass.BuildConfig
 import com.wasimaster.wmpass.system.SecureActivity
 import com.wasimaster.wmpass.ui.AppRoot
 import com.wasimaster.wmpass.ui.theme.LocalReduceMotion
@@ -34,9 +33,9 @@ class MainActivity : SecureActivity() {
         if (savedInstanceState == null) receive(intent)
         val prefs = Prefs.of(this)
         setContent {
-            // Off only by the owner's hand, and debug builds so screens can be inspected.
+            // Off only by the owner's hand.
             LaunchedEffect(prefs.screenProtection) {
-                if (prefs.screenProtection && !BuildConfig.DEBUG) {
+                if (prefs.screenProtection) {
                     window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
                 } else {
                     window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)

@@ -71,7 +71,7 @@ internal fun spaceArcFlags(path: String): String {
  * A site's mark and colour, from `data/brands`. Bundled, so showing one asks nobody anything.
  * The drawing is read only when something first shows it.
  */
-class Brand(val slug: String, val name: String, val color: Color, val otherNames: List<String>, private val context: Context) {
+class Brand(val slug: String, val name: String, val color: Color, val otherNames: List<String>, val domains: List<String>, private val context: Context) {
     val glyph: ImageVector by lazy {
         ImageVector.Builder(slug, 24.dp, 24.dp, 24f, 24f)
             .addPath(pathData = addPathNodes(spaceArcFlags(Brands.drawing(context, slug))), fill = SolidColor(Color.White))
@@ -100,13 +100,14 @@ object Brands {
                         val parts = line.split('\t')
                         if (parts.size >= 4) {
                             val others = parts.getOrNull(4).orEmpty().split(',').filter { it.isNotEmpty() }
-                            val brand = Brand(parts[0], parts[1], Color(0xFF000000 or parts[2].toLong(16)), others, context.applicationContext)
+                            val domains = parts[3].split(',').filter { it.isNotEmpty() }
+                            val brand = Brand(parts[0], parts[1], Color(0xFF000000 or parts[2].toLong(16)), others, domains, context.applicationContext)
                             bySlug[brand.slug] = brand
                             // The well-known sites come first in the file and keep their claim on a name.
                             byName.putIfAbsent(normal(brand.name), brand)
                             byName.putIfAbsent(brand.slug, brand)
                             others.forEach { byName.putIfAbsent(normal(it), brand) }
-                            parts[3].split(',').filter { it.isNotEmpty() }.forEach { byDomain.putIfAbsent(it, brand) }
+                            domains.forEach { byDomain.putIfAbsent(it, brand) }
                         }
                     }
                 }

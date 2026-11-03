@@ -24,7 +24,7 @@ See also [App icons](/guide/settings/icons/#setting-icon-style), [Site icons](/g
 
 ## App icons
 
-The style of the symbols on buttons, tabs and menus. Every choice is a version of Material Symbols.
+The style of the symbols on buttons, tabs and menus: one of four versions of Material Symbols, Phosphor in three weights, or Lucide.
 
 #### What each choice does
 
@@ -34,6 +34,10 @@ The style of the symbols on buttons, tabs and menus. Every choice is a version o
 | Material Symbols Rounded | Softer corners. |
 | Material Symbols Sharp | Square corners. |
 | Rounded light | Thin strokes and soft corners. |
+| Phosphor | Even lines and friendly, rounded shapes. |
+| Phosphor Bold | The same shapes in heavier lines. |
+| Phosphor Light | The same shapes in fine lines. |
+| Lucide | Plain line drawings, as on many websites. A selected tab is not filled in. |
 
 *The guide in the app shows this live, with your own settings.*
 
@@ -122,6 +126,6 @@ Draws each group of settings on a card. Off, the rows sit straight on the page u
 
 #### Limits
 
-Only the Standard style follows this. Glass always draws its settings on cards.
+Shown only with the Standard style. Glass always draws its settings on cards.
 
 See also [Style](/guide/settings/look/#setting-ui-style).

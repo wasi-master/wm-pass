@@ -475,6 +475,16 @@ fun MailScreen(id: String, message: String) {
     var mail by remember { mutableStateOf<Mail?>(null) }
     var problem by remember { mutableStateOf<String?>(null) }
     var pictures by remember { mutableStateOf(false) }
+    // A mail with HTML is saved as a page that opens in any browser, the rest as plain text.
+    val saveFile = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.CreateDocument("*/*")) { uri ->
+        val mail = mail
+        if (uri != null && mail != null) {
+            runCatching {
+                context.contentResolver.openOutputStream(uri)?.use { out -> out.write(mailFile(mail).toByteArray()) }
+                shell.notice("Saved")
+            }.onFailure { shell.notice("That file could not be written") }
+        }
+    }
     LaunchedEffect(id, message) {
         try {
             val body = Pass.net("inbox.read", online = NetAccess.allowed(context)) {
@@ -493,16 +503,40 @@ fun MailScreen(id: String, message: String) {
         onBack = { shell.nav.popBackStack() },
         actions = {
             if (open != null) {
-                RowIconButton(PassIcons.ContentCopy, "Copy the text") { shell.copyPlain("Mail", open.text) }
+                RowIconButton(PassIcons.Share, "Forward or share") {
+                    // Android's share sheet hands it to a mail app, or anywhere else, as a forward.
+                    val send = android.content.Intent(android.content.Intent.ACTION_SEND)
+                        .setType("text/plain")
+                        .putExtra(android.content.Intent.EXTRA_SUBJECT, "Fwd: " + open.subject)
+                        .putExtra(android.content.Intent.EXTRA_TEXT, mailAsText(open))
+                    open.html?.let { send.putExtra(android.content.Intent.EXTRA_HTML_TEXT, it) }
+                    runCatching { context.startActivity(android.content.Intent.createChooser(send, "Forward this mail")) }
+                }
+                Box {
+                    var menu by remember { mutableStateOf(false) }
+                    RowIconButton(PassIcons.MoreVert, "More") { menu = true }
+                    androidx.compose.material3.DropdownMenu(menu, { menu = false }) {
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text("Copy the text") },
+                            leadingIcon = { Icon(PassIcons.ContentCopy, null) },
+                            onClick = {
+                                menu = false
+                                shell.copyPlain("Mail", open.text)
+                            },
+                        )
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text("Save as a file") },
+                            leadingIcon = { Icon(PassIcons.Download, null) },
+                            onClick = {
+                                menu = false
+                                saveFile.launch(mailFileName(open))
+                            },
+                        )
+                    }
+                }
                 RowIconButton(PassIcons.StickyNote2, "Save to the vault as a note") {
                     shell.pendingTitle = open.subject.ifEmpty { "Mail from ${open.from}" }
-                    shell.pendingNote = buildString {
-                        appendLine("From: ${open.from}")
-                        if (open.to.isNotEmpty()) appendLine("To: ${open.to}")
-                        if (open.atMs > 0) appendLine("Date: ${DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(open.atMs))}")
-                        appendLine()
-                        append(open.text)
-                    }
+                    shell.pendingNote = mailAsText(open)
                     shell.nav.navigate("new/note")
                 }
             }
@@ -553,6 +587,54 @@ fun MailScreen(id: String, message: String) {
     }
 }
 
+private fun mailDate(mail: Mail): String =
+    if (mail.atMs > 0) DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(mail.atMs)) else ""
+
+/** Headers, then the text: for the vault, the clipboard and a forward. */
+private fun mailAsText(mail: Mail): String = buildString {
+    appendLine("From: ${mail.from}")
+    if (mail.to.isNotEmpty()) appendLine("To: ${mail.to}")
+    if (mail.atMs > 0) appendLine("Date: ${mailDate(mail)}")
+    if (mail.subject.isNotEmpty()) appendLine("Subject: ${mail.subject}")
+    appendLine()
+    append(mail.text)
+}
+
+private fun mailFileName(mail: Mail): String {
+    val stem = mail.subject.filter { it.isLetterOrDigit() || it in " -_" }.trim().take(60).ifEmpty { "mail" }
+    return if (mail.html != null) "$stem.html" else "$stem.txt"
+}
+
+private fun escapeHtml(text: String) = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+
+/** The file a mail is saved as: its HTML under a header block, or its text. */
+private fun mailFile(mail: Mail): String {
+    val html = mail.html ?: return mailAsText(mail)
+    val head = listOfNotNull(
+        "From" to mail.from,
+        ("To" to mail.to).takeIf { mail.to.isNotEmpty() },
+        ("Date" to mailDate(mail)).takeIf { mail.atMs > 0 },
+        "Subject" to mail.subject,
+    ).joinToString("") { (name, value) -> "<div><b>$name:</b> ${escapeHtml(value)}</div>" }
+    return "<!doctype html><meta charset=\"utf-8\"><title>${escapeHtml(mail.subject)}</title>" +
+        "<div style=\"font:14px sans-serif;border-bottom:1px solid #ccc;padding:8px 0;margin-bottom:12px\">$head</div>$html"
+}
+
+/**
+ * Mail is written for a desktop's width. These make it read on a phone the way a mail app shows
+ * it: the page takes the screen's width, and pictures and tables shrink to fit inside it.
+ */
+private const val PhoneFit =
+    "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">" +
+        "<style>html,body{margin:0;padding:8px;word-wrap:break-word;overflow-wrap:anywhere}" +
+        "img{max-width:100% !important;height:auto !important}" +
+        "table{max-width:100% !important}td,th{word-break:break-word}pre{white-space:pre-wrap}</style>"
+
+private fun fitted(html: String): String {
+    val head = Regex("<head[^>]*>", RegexOption.IGNORE_CASE).find(html)
+    return if (head != null) html.substring(0, head.range.last + 1) + PhoneFit + html.substring(head.range.last + 1) else PhoneFit + html
+}
+
 /**
  * A mail's HTML, drawn the way a mail app draws it, minus what lets a sender act: no script runs,
  * nothing on the phone can be reached, and nothing loads from the network until [pictures].
@@ -590,7 +672,7 @@ private fun MailBody(html: String, pictures: Boolean) {
                     web.settings.blockNetworkLoads = !pictures
                     web.settings.blockNetworkImage = !pictures
                 }
-                web.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
+                web.loadDataWithBaseURL(null, fitted(html), "text/html", "utf-8", null)
             }
         },
         onRelease = { web -> web.destroy() },

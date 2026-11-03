@@ -215,6 +215,7 @@ The message that says something was copied has a **Clear now** button.
 | 30 seconds | Enough to switch windows and paste. |
 | 1 minute | For slow forms or a second paste. |
 | 2 minutes | For typing into another device by hand. |
+| 5 minutes | For a long form, or a password typed in pieces. |
 | Never | A copied secret stays until something else replaces it. |
 
 #### Limits
@@ -521,7 +522,7 @@ See also [Emergency access](/guide/how-it-works/#feature-emergency-kit), [Change
 
 ## Allow network features
 
-*Only in the desktop app and the browser extension.*
+*Only in the desktop app and the browser extension and Android.*
 
 The one switch every feature that talks to the internet needs. Off means nothing leaves this device.
 
@@ -715,43 +716,44 @@ See also [Inline suggestions](/guide/settings/security/#setting-autofill-inline)
 
 *Only in Android.*
 
-What WM Pass does when a panic app, such as Ripple, sends its signal.
+What WM Pass does when a panic app, such as Ripple, sends its signal. Until you choose, signals are ignored.
 
 #### How it works
 
-Any app may send the signal, and any signal at least locks the vault. Only the app you name can make WM Pass wipe, because an app that cannot be identified must not be able to erase a vault.
+Choosing **Lock** or **Wipe** shows [Panic apps](/guide/settings/security/#setting-panic-app) below it, where you pick the apps to listen to. Signals from any other app are ignored, so no app can keep the vault locked or erase it. With **Lock** and no app chosen, any app may ask for a lock. A wipe always needs a chosen app.
 
 #### What each choice does
 
 | Choice | What it does |
 | --- | --- |
-| Lock | Any panic signal locks the vault and refuses every password for an hour. Nothing is lost. |
-| Wipe | A signal from the app you name erases the vault on this phone with no warning. A signal from any other app locks it and refuses passwords for an hour. |
+| None | Panic signals do nothing. |
+| Lock | A signal locks the vault and refuses every password for an hour. Nothing is lost. |
+| Wipe | A signal from an app you chose erases the vault on this phone with no warning. |
 
 #### Limits
 
-If a signal does not say which app sent it, WM Pass locks rather than wipes.
+If a signal does not say which app sent it, WM Pass cannot tell it came from an app you chose, so it never wipes for it.
 
 A wipe erases this phone's vault, its attachments and its fingerprint unlock, and forgets its backup places and sync accounts, so their addresses are not left behind. Backups, synced copies and other devices are not touched, which is how you get the vault back.
 
 Flash storage may keep traces after an erase.
 
-See also [Wipe on a panic signal](/guide/settings/security/#setting-panic-app), [Panic lock tile](/guide/how-it-works/#feature-panic-tile), [Wipe password](/guide/settings/security/#action-wipe-password), [Lockout password](/guide/settings/security/#action-lockout-password), [Duress and decoys](/guide/how-it-works/#feature-duress).
+See also [Panic apps](/guide/settings/security/#setting-panic-app), [Panic lock tile](/guide/how-it-works/#feature-panic-tile), [Wipe password](/guide/settings/security/#action-wipe-password), [Lockout password](/guide/settings/security/#action-lockout-password), [Duress and decoys](/guide/how-it-works/#feature-duress).
 
 <a id="setting-panic-app"></a>
 
-## Wipe on a panic signal
+## Panic apps
 
 *Only in Android.*
 
-The one panic app allowed to make WM Pass wipe, named by its package name, such as info.guardianproject.ripple.
+The apps whose panic signal WM Pass listens to, picked from the apps on this phone.
 
 #### How it works
 
-Choosing **Wipe** under [When a panic app signals](/guide/settings/security/#setting-panic-action) asks for it. Type the package name and tap **Wipe on its signal**. Choosing **Lock** again forgets it.
+Apps known to send the signal, Ripple and Panic Button, are listed first. Tick the ones you use and tap **Done**, or **Wipe on their signal** when the choice above is Wipe.
 
 #### Limits
 
-WM Pass compares the name with the app Android says sent the signal. Name only an app you trust to erase your vault.
+WM Pass compares each app with the one Android says sent the signal. Choose for a wipe only an app you trust to erase your vault.
 
 See also [When a panic app signals](/guide/settings/security/#setting-panic-action).

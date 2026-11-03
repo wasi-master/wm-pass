@@ -72,7 +72,7 @@ export const SEARCH_INDEX: Found[] = [
   { title: 'Row height', where: 'Appearance', route: 'look', words: 'density compact spacious' },
   { title: 'Text size', where: 'Appearance', route: 'look', words: 'font zoom scale bigger' },
   { title: 'Animations', where: 'Appearance', route: 'look', words: 'motion reduce' },
-  { title: 'Material Symbols', where: 'Icons', route: 'icons', words: 'app icons rounded sharp light glyphs' },
+  { title: 'App icons', where: 'Icons', route: 'icons', words: 'material symbols rounded sharp light phosphor lucide glyphs' },
   { title: 'Brand colors', where: 'Icons', route: 'icons', words: 'site icons logo simple icons favicon letters' },
   { title: 'Shape', where: 'Icons', route: 'icons', words: 'circle square rounded' },
   { title: 'Style', where: 'Icons', route: 'icons', words: 'settings icons tile coloured background colored' },

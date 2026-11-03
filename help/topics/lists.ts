@@ -41,6 +41,15 @@ export const lists = [
     preview: 'preview.row',
     related: ['setting.row_subtitle', 'setting.grouping', 'setting.density'],
     words: 'grid compact tiles view',
+    on: {
+      android: {
+        effects: [
+          { value: 'list', label: 'List', text: 'Full rows, with the second line under the name if that is on.' },
+          { value: 'compact', label: 'Compact', text: 'One line per item, with a small icon and the second line beside the name, so many more rows fit.' },
+          { value: 'grid', label: 'Grid', text: 'Large tiles with the name under each. Pinned items, headings and folded sites are not used.' },
+        ],
+      },
+    },
   },
   {
     id: 'setting.grouping',
@@ -55,6 +64,14 @@ export const lists = [
     ],
     related: ['setting.list_headings', 'setting.sort', 'page.folders'],
     words: 'folders sites sections',
+    on: {
+      android: {
+        effects: [
+          { value: 'smart', label: 'By site', text: 'One list in the order you sort by. Several logins for one website fold into a single row when [[setting.group_sites]] is on.' },
+          { value: 'folder', label: 'By folder', text: 'Each folder is one row, in alphabetical order, that opens in place to show its items. Items in no folder come after the folders. Sites are not folded.' },
+        ],
+      },
+    },
   },
   {
     id: 'setting.sort',
@@ -479,7 +496,7 @@ export const lists = [
     on: {
       android: {
         what: 'Shows a padlock at the top of each page that locks the vault at once.',
-        how: 'The Glass style always has a lock button at the top of the vault page, whatever this is set to.',
+        how: 'Shown only with the Standard style. Glass always has a lock button at the top of the vault page.',
       },
     },
   },
@@ -531,7 +548,7 @@ export const lists = [
     pref: 'left_handed',
     shells: ['android'],
     what: 'Moves the search and add buttons to the left of the dock, where a left thumb reaches them.',
-    caveats: 'Only in the Glass [[setting.ui_style|style]]. Standard keeps the usual Android layout.',
+    caveats: 'Shown only with the Glass [[setting.ui_style|style]]. Standard keeps the usual Android layout, with nothing to move.',
     related: ['setting.search_at_bottom'],
     words: 'left hand thumb one-handed',
   },

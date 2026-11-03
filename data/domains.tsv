@@ -115,6 +115,7 @@ andrewsfcu.org	Banking	call,sms,email
 angel.co	-	sms,totp
 ankama.com	Gaming	email,custom-software
 anthem.com	Finance	sms,call,email
+anthropic.com	Developer	-
 any.run	Cloud	totp
 anycoindirect.eu	Crypto	totp,sms
 anydesk.com	Cloud	totp
@@ -128,6 +129,7 @@ app.terraform.io	Developer	sms,totp
 app.vagrantup.com	Developer	sms,totp
 appfigures.com	Work	totp
 appfolio.com	Finance	totp
+apple.com	Cloud	-
 appleid.apple.com	Shopping	sms,call,u2f,custom-software
 appodeal.com	Work	email,totp
 appoptics.com	Developer	totp
@@ -155,6 +157,8 @@ atera.com	Cloud	totp
 aternos.org	Gaming	totp
 atlanticcityelectic.com	Utilities	sms,call,email
 atlas-myrmv.massdot.state.ma.us	Government	sms,call,totp
+atlassian.com	Work	-
+atlassian.net	Work	-
 atriumhealth.org	Health	email
 att.com	Utilities	sms
 attentive.com	Work	call,sms
@@ -395,6 +399,7 @@ chatwork.com	Social	sms,totp
 checkfront.com	-	totp,sms
 checkmategaming.com	Gaming	totp
 chegg.com	Education	email
+chess.com	Gaming	-
 chevrolet.com	Travel	sms,email,totp
 chime.com	Banking	sms
 choko.link	Social	totp
@@ -409,6 +414,7 @@ citibank.com	Banking	sms,call
 citibankonline.com	Banking	sms,call
 citicards.com	Banking	sms,call
 classlink.com	Education	sms,totp,u2f
+claude.ai	Developer	-
 clearpay.co.uk	Finance	sms,email
 clearscore.com	Finance	sms,totp
 clemson.edu	Education	sms,call,u2f,custom-software,custom-hardware
@@ -543,6 +549,7 @@ cqu.edu.au	Education	totp,sms,call,custom-software
 cra-arc.gc.ca	Government	sms,call,totp
 crashplan.com	Cloud	totp,email
 crashplanpro.com	Cloud	totp,email
+crates.io	Developer	-
 crazydomains.com	Developer	sms,call
 creditkarma.com	Finance	sms,call
 credly.com	-	totp
@@ -709,6 +716,7 @@ drs.ct.gov	Government	sms,email,totp,u2f
 druide.com	-	totp
 drupal.org	Developer	totp
 duke.edu	Education	custom-software,custom-hardware
+duolingo.com	Education	-
 dwolla.com	Finance	totp
 dynadot.com	Developer	sms,totp,u2f
 dynu.com	Developer	totp,sms
@@ -928,6 +936,7 @@ godaddy.com	Developer	sms,totp,u2f
 godt.no	-	sms,totp
 gofundme.com	Finance	sms,call
 gog.com	Gaming	email,totp
+google.com	Email	-
 googlemail.com	Email	sms,call,totp,custom-software,u2f
 gopro.com	Shopping	sms
 gosquared.com	Work	sms,totp
@@ -1294,6 +1303,7 @@ mbna.co.uk	Banking	custom-software,sms,call
 mbna.com	Banking	sms,email,u2f
 mcafee.com	Cloud	sms
 mcgill.ca	Education	totp,custom-software,sms,call
+medium.com	Social	-
 meet.google.com	Social	sms,call,totp,custom-software,u2f
 mega.io	Cloud	totp
 meine-barmenia.de	Finance	sms,totp
@@ -1340,6 +1350,7 @@ metorik.com	Finance	totp
 mexc.com	Crypto	totp
 miamioh.edu	Education	sms,call,custom-software,u2f,custom-hardware
 michaels.com	Shopping	sms,email
+microsoft.com	Email	-
 microsoft365.com	-	sms,call,email,custom-software,totp
 microworkers.com	-	totp,email
 migadu.com	Email	totp
@@ -1482,6 +1493,7 @@ nicehash.com	Crypto	totp,custom-hardware
 nicovideo.jp	Entertainment	email,totp
 niftypm.com	Work	totp
 nimbusweb.me	Cloud	totp
+nintendo.com	Gaming	-
 nitrotype.com	Gaming	totp
 noip.com	Developer	totp
 nominet.uk	Developer	totp
@@ -1502,7 +1514,7 @@ norton.com	Cloud	sms,call,totp,u2f
 nostarch.com	-	totp
 notejoy.com	Social	totp
 notesnook.com	Cloud	sms,email,totp
-notion.so	Social	sms,totp
+notion.so	Work	sms,totp
 novanode.win	Cloud	email,totp,u2f
 nozbe.com	Work	totp,sms
 npmjs.com	Developer	u2f
@@ -1925,7 +1937,7 @@ shareworks.com	Finance	totp
 shaw.ca	Utilities	sms,email
 shift4shop.com	-	totp
 shop.app	Shopping	sms,email
-shopify.com	-	sms,totp,u2f
+shopify.com	Shopping	sms,totp,u2f
 short.io	Social	totp
 shortcut.com	Work	totp
 shrimpy.io	Crypto	totp
@@ -1958,7 +1970,7 @@ sketchup.com	Work	email,totp
 skinport.com	Gaming	email,totp
 skrill.com	Finance	email,sms,custom-software
 skype.com	Social	sms,email,custom-software,totp
-slack.com	Social	sms,totp
+slack.com	Work	sms,totp
 smarkets.com	Gaming	totp
 smartly.io	Work	totp
 smartsimple.com	-	totp,custom-hardware
@@ -2007,7 +2019,9 @@ squareup.com	Developer	sms,totp
 ssa.gov	Government	sms,email
 ssl.com	Cloud	email
 ssltrust.com.au	Cloud	totp
+stackexchange.com	Developer	-
 stackfield.com	Social	totp
+stackoverflow.com	Developer	-
 stackpath.com	Developer	totp
 stake.com.au	Finance	totp
 standardnotes.com	Cloud	totp,u2f
@@ -2023,6 +2037,8 @@ statefarm.com	Banking	sms,email
 status.io	Developer	custom-hardware
 statuscake.com	Developer	sms,totp
 statuspage.io	Developer	sms,totp
+steamcommunity.com	Gaming	-
+steampowered.com	Gaming	-
 stessa.com	Finance	totp
 stockx.com	Shopping	sms
 store.steampowered.com	Gaming	email,custom-software
@@ -2298,6 +2314,7 @@ vend.se	Shopping	sms,totp
 venmo.com	Finance	sms
 ventraip.com.au	Developer	sms,email,totp
 veracode.com	Developer	totp,u2f
+vercel.com	Developer	-
 verizon.com	Utilities	sms,email,custom-software
 verpex.com	Developer	totp
 versio.nl	Developer	totp
@@ -2441,6 +2458,7 @@ yahoo.co.jp	Email	email,sms
 yahoo.com	Email	sms,call,totp,u2f
 yammer.com	-	sms,call,email,custom-software,totp
 yclas.com	-	totp
+ycombinator.com	Developer	-
 yeah.net	Email	totp,sms
 ynab.com	Finance	totp
 yoomoney.ru	Finance	sms
@@ -2454,6 +2472,7 @@ yoyogames.com	Gaming	email,totp
 zaba.hr	Banking	custom-software
 zapier.com	Developer	totp
 zapsplat.com	Work	totp
+zellepay.com	Banking	-
 zendesk.com	-	sms,totp
 zeplin.io	Work	totp
 zerodha.com	Finance	totp
@@ -2465,4 +2484,4 @@ zkb.ch	Banking	custom-software,custom-hardware
 zoho.com	Social	sms,custom-software,totp,u2f
 zola.com	Developer	sms,email
 zondaglobal.com	Crypto	email,totp
-zoom.us	Social	sms,totp
+zoom.us	Work	sms,totp

@@ -98,7 +98,7 @@ Give it a name, then choose **Light** or **Dark** for the side you are coloring.
 
 There are eleven colors: the accent, the background, three levels of surface, three of text, and danger, warning and information. Tap one to set it with **Hue**, **Saturation** and **Brightness**, or type a #RRGGBB code. Its contrast against the background is shown as you go.
 
-**Corners** goes from square to 28 dp. **Font** is System, Inter, Serif or Mono.
+**Corners** goes from square to 28 dp. **Font** is System, Inter, Serif, Mono, or a .ttf or .otf file you add with **Add a font file**, which is kept inside the app. The font buttons and the sample line under them are drawn in each font.
 
 **Save and use** adds it under Yours and switches to it.
 

@@ -1,5 +1,6 @@
 package com.wasimaster.wmpass.ui.vault
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -57,11 +58,12 @@ import com.wasimaster.wmpass.ui.parts.GlyphChoices
 import com.wasimaster.wmpass.ui.parts.GlyphTile
 import com.wasimaster.wmpass.ui.parts.Hairline
 import com.wasimaster.wmpass.ui.parts.Pill
-import com.wasimaster.wmpass.ui.parts.glyphName
 import com.wasimaster.wmpass.ui.parts.PrimaryButton
 import com.wasimaster.wmpass.ui.parts.QuietButton
+import com.wasimaster.wmpass.ui.parts.glyphName
 import com.wasimaster.wmpass.ui.parts.oklch
 import com.wasimaster.wmpass.ui.theme.Shapes
+import com.wasimaster.wmpass.ui.theme.Springs
 import com.wasimaster.wmpass.ui.theme.palette
 import com.wasimaster.wmpass.ui.theme.pressScale
 import kotlinx.serialization.json.JsonNull
@@ -73,7 +75,12 @@ import kotlinx.serialization.json.putJsonArray
 /** The app's bottom sheet: dragged away, or dismissed by tapping outside it. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PassSheet(onDismiss: () -> Unit, title: String? = null, content: @Composable ColumnScope.() -> Unit) {
+fun PassSheet(
+    onDismiss: () -> Unit,
+    title: String? = null,
+    scroll: androidx.compose.foundation.ScrollState = rememberScrollState(),
+    content: @Composable ColumnScope.() -> Unit,
+) {
     val colors = palette
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
@@ -95,7 +102,7 @@ fun PassSheet(onDismiss: () -> Unit, title: String? = null, content: @Composable
                 .fillMaxWidth()
                 .imePadding()
                 .navigationBarsPadding()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scroll)
                 .padding(start = 18.dp, end = 18.dp, bottom = 16.dp),
         ) {
             if (title != null) {
@@ -319,25 +326,38 @@ fun ColourSheet(current: String?, onDismiss: () -> Unit, natural: com.wasimaster
 fun TagSheet(present: List<String>, onDismiss: () -> Unit, suggested: List<String> = emptyList(), onToggle: (String, Boolean) -> Unit) {
     val colors = palette
     val entries by Pass.entries.collectAsStateWithLifecycle()
-    val all = remember(entries) { entries.flatMap { it.tags }.distinct().sorted() }
+    // Most used first, so the few that matter are in reach without scrolling past the rest.
+    val all = remember(entries) { entries.flatMap { it.tags }.groupingBy { it }.eachCount().entries.sortedWith(compareBy({ -it.value }, { it.key.lowercase() })).map { it.key } }
     val typed = rememberTextFieldState()
     var managing by remember { mutableStateOf<String?>(null) }
+    var everything by remember { mutableStateOf(false) }
     PassSheet(onDismiss, "Tags") {
         val offered = suggested.filter { it !in present && it !in all }
         if (offered.isNotEmpty()) {
             Text("Suggested", color = colors.textMid, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 2.dp, bottom = 8.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
                 offered.forEach { tag -> Pill(tag, false, icon = PassIcons.Add) { onToggle(tag, true) } }
             }
             Spacer(Modifier.height(16.dp))
         }
         if (all.isNotEmpty()) {
             Text("Tap to add or take off. Hold one to rename or delete it.", color = colors.textMid, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 2.dp, bottom = 8.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                all.forEach { tag ->
+            val search = typed.text.toString().trim()
+            // The item's own tags always show; past those, the most used, until asked for the rest.
+            val matching = all.filter { search.isEmpty() || it.contains(search, ignoreCase = true) }
+            val shown = if (everything || search.isNotEmpty()) matching else (present.filter { it in matching } + matching.filter { it !in present }.take(TagsAtFirst)).distinct()
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.animateContentSize(Springs.glide()),
+            ) {
+                shown.forEach { tag ->
                     val on = tag in present
                     TagChip(tag, on, onRemove = if (on) ({ onToggle(tag, false) }) else null, onLongClick = { managing = tag }) { onToggle(tag, !on) }
                 }
+                val hidden = matching.size - shown.size
+                if (hidden > 0) Pill("$hidden more", false, icon = PassIcons.ExpandMore) { everything = true }
             }
             Spacer(Modifier.height(14.dp))
         }
@@ -352,6 +372,9 @@ fun TagSheet(present: List<String>, onDismiss: () -> Unit, suggested: List<Strin
     }
     managing?.let { tag -> TagManageSheet(tag) { managing = null } }
 }
+
+/** How many tags the tag sheet shows before its "more" chip, past the item's own. */
+private const val TagsAtFirst = 12
 
 /**
  * A tag as a chip. Selected, it carries a cross that takes it off; held, it opens the sheet that
@@ -575,7 +598,7 @@ fun IconSheet(
                                 onClickLabel = label,
                                 onLongClick = {
                                     shell.haptics.click()
-                                    about = label to "Material Symbols by Google, Apache License 2.0"
+                                    about = label to com.wasimaster.wmpass.ui.settings.iconCredit(shell.prefs.iconStyle.value)
                                 },
                             ) { choose(id) },
                         contentAlignment = Alignment.Center,
@@ -670,9 +693,8 @@ fun BulkActions() {
             shell.nav.navigate("edit/$id")
         }
     }
-    BarIcon(PassIcons.Folder, "Move to a folder") { sheet = "folder" }
+    // Four at most beside the count, so the bar never squeezes it; the rest wait under More.
     BarIcon(PassIcons.Sell, "Tag") { sheet = "tag" }
-    BarIcon(PassIcons.Palette, "Color") { sheet = "colour" }
     BarIcon(PassIcons.MoreHoriz, "More") { sheet = "more" }
     BarIcon(PassIcons.Delete, "Move to trash", colors.danger) {
         val count = shell.selection.size
@@ -699,6 +721,10 @@ fun BulkActions() {
             val entries by Pass.entries.collectAsStateWithLifecycle()
             val chosen = remember(entries, shell.selection.toList()) { entries.filter { it.id in shell.selection } }
             PassSheet({ sheet = null }, "${shell.selection.size} selected") {
+                SheetRow(PassIcons.Folder, "Move to a folder") { sheet = "folder" }
+                Hairline(inset = 60.dp)
+                SheetRow(PassIcons.Palette, "Color") { sheet = "colour" }
+                Hairline(inset = 60.dp)
                 val allFav = chosen.all { it.favourite }
                 SheetRow(PassIcons.StarFilled, if (allFav) "Remove from favorites" else "Add to favorites", tint = colors.warn) {
                     bulk("favourite") { put("flag", !allFav) }

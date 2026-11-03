@@ -3,6 +3,7 @@ package com.wasimaster.wmpass.ui.settings
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -31,15 +32,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wasimaster.wmpass.app.Prefs
 import com.wasimaster.wmpass.core.Pass
+import com.wasimaster.wmpass.ui.help.Guide
+import com.wasimaster.wmpass.ui.help.Help
 import com.wasimaster.wmpass.ui.icons.PassIcons
+import com.wasimaster.wmpass.ui.parts.LocalSiteIcons
 import com.wasimaster.wmpass.ui.parts.PrimaryButton
 import com.wasimaster.wmpass.ui.parts.QuietButton
-import com.wasimaster.wmpass.ui.parts.LocalSiteIcons
 import com.wasimaster.wmpass.ui.parts.SiteIconLook
 import com.wasimaster.wmpass.ui.parts.SiteTile
 import com.wasimaster.wmpass.ui.parts.kindIcon
 import com.wasimaster.wmpass.ui.parts.kindName
 import com.wasimaster.wmpass.ui.theme.LocalReduceMotion
+import com.wasimaster.wmpass.ui.theme.Springs
 import com.wasimaster.wmpass.ui.theme.palette
 import com.wasimaster.wmpass.ui.vault.AllTabs
 import com.wasimaster.wmpass.ui.vault.CardReaderTradeOffs
@@ -50,21 +54,19 @@ import com.wasimaster.wmpass.ui.vault.LocalShell
 import com.wasimaster.wmpass.ui.vault.PassSheet
 import com.wasimaster.wmpass.ui.vault.SheetField
 import com.wasimaster.wmpass.ui.vault.TradeOff
-import com.wasimaster.wmpass.ui.help.Guide
-import com.wasimaster.wmpass.ui.help.Help
 import com.wasimaster.wmsuite.settings.AdvancedFolds
 import com.wasimaster.wmsuite.settings.ChoiceDetail
 import com.wasimaster.wmsuite.settings.ChoiceSetting
+import com.wasimaster.wmsuite.settings.LocalAdvancedFolds
+import com.wasimaster.wmsuite.settings.LocalIconReveal
 import com.wasimaster.wmsuite.settings.LocalInfoButtons
 import com.wasimaster.wmsuite.settings.LocalInfoIcon
 import com.wasimaster.wmsuite.settings.LocalInfoOpener
 import com.wasimaster.wmsuite.settings.LocalScreenExtras
 import com.wasimaster.wmsuite.settings.LocalScreenRoute
-import com.wasimaster.wmsuite.settings.ScreenExtras
-import com.wasimaster.wmsuite.settings.LocalAdvancedFolds
-import com.wasimaster.wmsuite.settings.LocalIconReveal
 import com.wasimaster.wmsuite.settings.NavRow
 import com.wasimaster.wmsuite.settings.ReorderableColumn
+import com.wasimaster.wmsuite.settings.ScreenExtras
 import com.wasimaster.wmsuite.settings.SettingsGroup
 import com.wasimaster.wmsuite.settings.SettingsHighlight
 import com.wasimaster.wmsuite.settings.SettingsTables
@@ -220,7 +222,18 @@ private val IconStyles = listOf(
     Triple("rounded", "Material Symbols Rounded", "Softer corners"),
     Triple("sharp", "Material Symbols Sharp", "Square corners"),
     Triple("light", "Rounded light", "Thin strokes and soft corners"),
+    Triple("phosphor", "Phosphor", "Even lines and friendly, rounded shapes"),
+    Triple("phosphor_bold", "Phosphor Bold", "The same shapes in heavier lines"),
+    Triple("phosphor_light", "Phosphor Light", "The same shapes in fine lines"),
+    Triple("lucide", "Lucide", "Plain line drawings, as on many websites"),
 )
+
+/** Who drew the app's symbols in a style, for the icon picker. */
+internal fun iconCredit(style: String): String = when {
+    style.startsWith("phosphor") -> "Phosphor Icons, MIT License"
+    style == "lucide" -> "Lucide, ISC License"
+    else -> "Material Symbols by Google, Apache License 2.0"
+}
 
 private val SiteStyles = listOf(
     Triple("brand", "Brand colors", "Each site's mark on its own color"),
@@ -245,6 +258,8 @@ private fun SiteSamples() {
 internal fun IconsScreen() {
     val shell = LocalShell.current
     val prefs = shell.prefs
+    // Glass keeps its own layout for these, so the rows only show where they do something.
+    val flat = palette.flat
     val colors = palette
     WmScreen("Icons", route = "settings/icons", onBack = back()) {
         SettingsGroup("App icons", info = infoFor("icon_style")) {
@@ -284,7 +299,7 @@ internal fun IconsScreen() {
                     options = listOf("coloured" to "Colored", "mono" to "One color", "bare" to "No background", "off" to "None"),
                 )
             }
-            item {
+            if (flat) item {
                 SwitchRow("Cards", "Draw each group of settings on a card.", prefs.settingsCards, PassIcons.ViewAgenda)
             }
         }
@@ -303,6 +318,8 @@ private val RowActions = listOf(
 internal fun ListSettingsScreen() {
     val shell = LocalShell.current
     val prefs = shell.prefs
+    // Glass keeps its own layout for these, so the rows only show where they do something.
+    val flat = palette.flat
     WmScreen("Vault list", route = "settings/list", onBack = back()) {
         SettingsGroup("Layout") {
             item {
@@ -332,7 +349,7 @@ internal fun ListSettingsScreen() {
             item { SwitchRow("Fold logins on one site", "Show several logins for a site as one row.", prefs.groupSites, PassIcons.Layers) }
             item { SwitchRow("Section headings", null, prefs.listHeadings, PassIcons.FormatListBulleted) }
             item { SwitchRow("Filter chips", "All, Favorites and the types you have.", prefs.filterChips, PassIcons.FilterList) }
-            item { SwitchRow("Search at the bottom", "Within reach of your thumb.", prefs.searchAtBottom, PassIcons.Search) }
+            if (flat) item { SwitchRow("Search at the bottom", "Within reach of your thumb.", prefs.searchAtBottom, PassIcons.Search) }
         }
         SettingsGroup("Rows") {
             item { SwitchRow("Icons", null, prefs.rowIcons, PassIcons.Image) }
@@ -353,11 +370,13 @@ internal fun ListSettingsScreen() {
                 ChoiceRow("Swipe left", prefs.swipeLeft, PassIcons.Swipe, options = listOf("trash" to "Move to trash", "favourite" to "Favorite", "password" to "Copy password", "none" to "Nothing"))
             }
         }
-        SettingsGroup("Above the list", info = infoFor("widgets")) {
+        SettingsGroup("Above the list", info = infoFor("widgets"), modifier = Modifier.animateContentSize(Springs.glide())) {
             val all = listOf("favourites" to "Favorites", "recent" to "Recently changed", "health" to "Health", "codes" to "Codes")
             val names = all.toMap()
             item {
                 ReorderableColumn(
+                    // The rows run to their edges; the card around them wants the usual inset.
+                    modifier = Modifier.padding(horizontal = 16.dp),
                     items = prefs.widgets,
                     label = { names[it] ?: it },
                     onReorder = { prefs.updateWidgets(it) },
@@ -378,11 +397,15 @@ internal fun ListSettingsScreen() {
 internal fun NavigationSettingsScreen() {
     val shell = LocalShell.current
     val prefs = shell.prefs
+    // Glass keeps its own layout for these, so the rows only show where they do something.
+    val flat = palette.flat
     WmScreen("Navigation", route = "settings/navigation", onBack = back()) {
-        SettingsGroup("Navigation bar", info = infoFor("tabs")) {
+        SettingsGroup("Navigation bar", info = infoFor("tabs"), modifier = Modifier.animateContentSize(Springs.glide())) {
             val names = AllTabs.associate { it.id to it.label }
             item {
                 ReorderableColumn(
+                    // The rows run to their edges; the card around them wants the usual inset.
+                    modifier = Modifier.padding(horizontal = 16.dp),
                     items = prefs.tabs,
                     label = { names[it] ?: it },
                     onReorder = { prefs.updateTabs(it) },
@@ -392,14 +415,14 @@ internal fun NavigationSettingsScreen() {
             AllTabs.filter { it.id !in prefs.tabs }.forEach { tab ->
                 item { NavRow("Add ${tab.label}", icon = tab.icon) { prefs.updateTabs(prefs.tabs + tab.id) } }
             }
-            item {
+            if (flat) item {
                 ChoiceRow("Labels", prefs.navLabels, PassIcons.TextFields, options = listOf("all" to "All", "selected" to "Selected", "none" to "None"))
             }
             item {
                 ChoiceRow("Open on", prefs.startTab, PassIcons.History, options = listOf("first" to "First page", "last" to "Last page used"))
             }
         }
-        SettingsGroup("Buttons") {
+        if (flat) SettingsGroup("Buttons") {
             item { SwitchRow("Add button", null, prefs.showFab, PassIcons.Add) }
             item {
                 ChoiceRow(
@@ -411,9 +434,10 @@ internal fun NavigationSettingsScreen() {
             }
             item { SwitchRow("Lock button", "Show the padlock at the top of each page.", prefs.showLock, PassIcons.Lock) }
         }
-        SettingsGroup("Hand") {
+        // Only Glass puts search and add beside the tabs, so the other style has nothing to move.
+        if (!flat) SettingsGroup("Hand") {
             item {
-                ToggleSetting("Left-handed", "Move search and add to the other side. Applies to Glass.", prefs.leftHanded, info = infoFor("left_handed"), icon = PassIcons.TouchApp) { prefs.updateLeftHanded(it) }
+                ToggleSetting("Left-handed", "Move search and add to the other side.", prefs.leftHanded, info = infoFor("left_handed"), icon = PassIcons.TouchApp) { prefs.updateLeftHanded(it) }
             }
         }
     }
@@ -426,9 +450,11 @@ internal fun AddMenuScreen() {
     val shell = LocalShell.current
     val prefs = shell.prefs
     WmScreen("Add menu", route = "settings/add", onBack = back()) {
-        SettingsGroup("Shown", info = infoFor("add_kinds")) {
+        SettingsGroup("Shown", info = infoFor("add_kinds"), modifier = Modifier.animateContentSize(Springs.glide())) {
             item {
                 ReorderableColumn(
+                    // The rows run to their edges; the card around them wants the usual inset.
+                    modifier = Modifier.padding(horizontal = 16.dp),
                     items = prefs.addKinds,
                     label = { kindName(it) },
                     onReorder = { prefs.updateAddKinds(it) },
@@ -507,10 +533,12 @@ internal fun EditorSettingsScreen() {
 internal fun EntrySettingsScreen() {
     val shell = LocalShell.current
     val prefs = shell.prefs
+    // Glass keeps its own layout for these, so the rows only show where they do something.
+    val flat = palette.flat
     var limit by remember { mutableStateOf<Int?>(null) }
     androidx.compose.runtime.LaunchedEffect(Unit) { limit = runCatching { Pass.info().historyLimit }.getOrNull() }
     WmScreen("Item page", route = "settings/entry", onBack = back()) {
-        SettingsGroup("Buttons at the top") {
+        if (flat) SettingsGroup("Buttons at the top") {
             item { SwitchRow("Show them", null, prefs.entryActions, PassIcons.TouchApp) }
             item { SwitchRow("Copy username", null, prefs.entryActionUsername, PassIcons.Person) }
             item { SwitchRow("Open site", null, prefs.entryActionOpen, PassIcons.OpenInNew) }
@@ -713,7 +741,7 @@ private val SearchIndex = listOf(
     Found("Dark mode", "Appearance › Style and theme", "settings/look", "light black amoled system"),
     Found("Animations", "Appearance › Style and theme", "settings/look", "motion reduce"),
     Found("Vibration", "Appearance › Style and theme", "settings/look", "haptics feedback"),
-    Found("App icons", "Appearance › Icons", "settings/icons", "material symbols rounded sharp light glyphs"),
+    Found("App icons", "Appearance › Icons", "settings/icons", "material symbols rounded sharp light phosphor lucide glyphs"),
     Found("Site icons", "Appearance › Icons", "settings/icons", "brand logo simple icons favicon letters"),
     Found("Shape", "Appearance › Icons", "settings/icons", "circle square rounded"),
     Found("Settings icons", "Appearance › Icons", "settings/icons", "tile coloured background colored colored"),

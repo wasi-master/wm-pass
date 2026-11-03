@@ -42,3 +42,27 @@ bkash.com	Finance
 nagad.com.bd	Finance
 paypal.com	Finance
 wise.com	Finance
+# Common services the 2FA directory lists under another domain, or files elsewhere.
+google.com	Email
+microsoft.com	Email
+apple.com	Cloud
+steampowered.com	Gaming
+steamcommunity.com	Gaming
+stackoverflow.com	Developer
+stackexchange.com	Developer
+crates.io	Developer
+ycombinator.com	Developer
+vercel.com	Developer
+anthropic.com	Developer
+claude.ai	Developer
+atlassian.com	Work
+atlassian.net	Work
+slack.com	Work
+notion.so	Work
+zoom.us	Work
+duolingo.com	Education
+nintendo.com	Gaming
+chess.com	Gaming
+zellepay.com	Banking
+medium.com	Social
+shopify.com	Shopping

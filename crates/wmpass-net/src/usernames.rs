@@ -280,6 +280,22 @@ pub const SITES: &[Site] = &[
     },
 ];
 
+/// Every site by roughly how many people use it, most first, so the answers people care about
+/// most lead the list. A site missing here goes after these, in list order.
+pub const BY_USERS: &[&str] = &[
+    "YouTube", "Instagram", "Facebook", "TikTok", "X", "Snapchat", "Reddit", "Pinterest", "Telegram",
+    "Threads", "Twitch", "Wikipedia", "Duolingo", "Steam", "Minecraft", "GitHub", "Chess.com", "Vimeo",
+    "Bluesky", "Mastodon", "Linktree", "Lichess", "Dribbble", "Unsplash", "GitLab", "Docker Hub",
+    "Hugging Face", "MyAnimeList", "Pastebin", "DEV", "Stack Overflow", "Bitbucket", "Hacker News",
+    "Codewars", "SourceForge", "crates.io", "Codeberg", "HackerOne", "RubyGems", "Launchpad",
+    "Lobsters", "SourceHut",
+];
+
+/// Where a site falls in [`BY_USERS`].
+pub fn rank(name: &str) -> usize {
+    BY_USERS.iter().position(|known| *known == name).unwrap_or(BY_USERS.len())
+}
+
 /// A site read from the page it draws, after its scripts have run.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PageSite {
@@ -663,6 +679,14 @@ mod tests {
             &"a".repeat(65),
         ] {
             assert!(check(site("GitHub"), bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn every_site_is_ranked() {
+        let names = SITES.iter().map(|s| s.name).chain(PAGE_SITES.iter().map(|s| s.name)).chain(LINK_SITES.iter().map(|s| s.name));
+        for name in names {
+            assert!(BY_USERS.contains(&name), "{name} has no place in BY_USERS");
         }
     }
 

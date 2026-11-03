@@ -1,6 +1,7 @@
 <script lang="ts">
   import { icons, type IconName } from '../engine/icons.svelte';
+  import Glyph from './Glyph.svelte';
   let { name, size = 18, class: extra = '' }: { name: IconName; size?: number; class?: string } = $props();
 </script>
 
-<svg class={extra} width={size} height={size} viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d={icons.table[name]} /></svg>
+<Glyph d={icons.table[name]} style={icons.style} {size} class={extra} />

@@ -3,6 +3,8 @@ package com.wasimaster.wmpass.ui.help
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.using
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,10 +60,32 @@ import kotlinx.serialization.json.intOrNull
 @Composable
 fun HelpSheet(prefs: Prefs, shell: Shell?) {
     val id = Guide.current ?: return
-    PassSheet({ Guide.close() }) {
+    val scroll = androidx.compose.foundation.rememberScrollState()
+    // Each topic starts at its top, whichever way it was reached.
+    androidx.compose.runtime.LaunchedEffect(id) { scroll.scrollTo(0) }
+    PassSheet({ Guide.close() }, scroll = scroll) {
         // Inside the sheet, so it is asked before the sheet's own back, which would close it.
         BackHandler(Guide.stack.size > 1) { Guide.back() }
-        HelpSheetContent(id, prefs, shell)
+        // A link slides the next topic in from the side, and Back slides it out again, while
+        // the sheet eases to the new page's height.
+        androidx.compose.animation.AnimatedContent(
+            id to Guide.stack.size,
+            transitionSpec = {
+                val deeper = targetState.second >= initialState.second
+                val reach = { width: Int -> width / 5 }
+                (
+                    androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(260)) { if (deeper) reach(it) else -reach(it) } +
+                        androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(200, 60))
+                    ) togetherWith (
+                    androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(200)) { if (deeper) -reach(it) else reach(it) } +
+                        androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(120))
+                    ) using androidx.compose.animation.SizeTransform(clip = false)
+            },
+            contentKey = { it.first },
+            label = "topic",
+        ) { (topic, _) ->
+            androidx.compose.foundation.layout.Column { HelpSheetContent(topic, prefs, shell) }
+        }
     }
 }
 

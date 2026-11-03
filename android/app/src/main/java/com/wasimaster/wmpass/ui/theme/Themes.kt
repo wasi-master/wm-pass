@@ -39,7 +39,7 @@ data class ThemeFile(
     val dark: ThemeColors? = null,
     /** The radius of a medium shape, in dp. Everything else scales from it. */
     val corners: Int = 12,
-    /** `system`, `inter`, `serif` or `mono`. */
+    /** `system`, `inter`, `serif` or `mono`, or `file:<name>` for a font file added on this device. */
     val font: String = "system",
     val format: String = "wmpass-theme",
     val version: Int = 1,

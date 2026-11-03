@@ -142,6 +142,55 @@ pub fn listed_category(domain: &str) -> Option<&'static str> {
     CATEGORIES.iter().find(|name| **name == category).copied()
 }
 
+/// The category of a listed domain whose first label is `label`: `pypi` finds pypi.org.
+fn label_category(label: &str) -> Option<&'static str> {
+    DOMAINS.lines().find_map(|line| {
+        let mut parts = line.split('\t');
+        let domain = parts.next()?;
+        let category = parts.next()?;
+        if domain.split('.').next() != Some(label) {
+            return None;
+        }
+        CATEGORIES.iter().find(|name| **name == category).copied()
+    })
+}
+
+/// Names people give a service that are not its domain's first label.
+const NAME_LABELS: &[(&str, &str)] = &[
+    ("npm", "npmjs"),
+    ("steam", "steampowered"),
+    ("x", "x"),
+    ("disney", "disneyplus"),
+    ("hackernews", "ycombinator"),
+    ("jira", "atlassian"),
+    ("confluence", "atlassian"),
+    ("appleid", "apple"),
+    ("chatgpt", "openai"),
+];
+
+/// What a name alone says, the way a code's issuer or a bare login's title is usually the
+/// service's own: "PyPI", "Docker Hub", "GitHub (work)". The whole name squeezed together is
+/// tried first, then its first word, for names of three words or fewer.
+fn name_category(title: &str) -> Option<&'static str> {
+    let lower = title.trim().to_lowercase();
+    let words: Vec<&str> = lower
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect();
+    let mut tries = vec![words.concat()];
+    if (2..=3).contains(&words.len()) {
+        tries.push(words[0].to_owned());
+    }
+    tries.iter().find_map(|name| {
+        let alias = NAME_LABELS.iter().find(|(known, _)| known == name).map(|(_, label)| *label);
+        match alias {
+            Some(label) => label_category(label),
+            None if name.len() >= 3 => label_category(name),
+            None => None,
+        }
+    })
+}
+
 /// The classifier's opinion of a name, if it is confident enough.
 pub fn classify(text: &str) -> Option<&'static str> {
     let (index, confidence) = classify_with(MODEL, text)?;
@@ -172,13 +221,10 @@ pub fn site_category(entry: &Entry) -> Option<(&'static str, Source)> {
     if let Some(category) = domains.iter().find_map(|domain| listed_category(domain)) {
         return Some((category, Source::DomainList));
     }
-    let title = entry.common.title.v.trim().to_lowercase();
-    // A code has no website, only a name, and the name is usually the site's: GitHub, Discord.
-    if domains.is_empty() && !title.is_empty() {
-        let guess: String = title.chars().filter(|c| c.is_alphanumeric()).collect();
-        if let Some(category) = listed_category(&format!("{guess}.com")) {
-            return Some((category, Source::DomainList));
-        }
+    // A code has no website, only a name, and the name is usually the site's: GitHub, PyPI.
+    // A website the list does not know gets the same chance before the classifier guesses.
+    if let Some(category) = name_category(&entry.common.title.v) {
+        return Some((category, Source::DomainList));
     }
     let name = domains
         .iter()
@@ -295,6 +341,38 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(uni.category, "Education");
+    }
+
+    #[test]
+    fn a_name_alone_finds_its_service() {
+        let filed = |name: &str| {
+            let mut code = Entry {
+                kind: Kind::Otp(crate::model::Otp::default()),
+                ..Entry::default()
+            };
+            code.common.title = Lww::new(name.into(), Hlc::default());
+            site_category(&code).map(|(category, _)| category)
+        };
+        for (name, category) in [
+            ("PyPI", "Developer"),
+            ("npm", "Developer"),
+            ("crates.io", "Developer"),
+            ("Docker Hub", "Developer"),
+            ("Stack Overflow", "Developer"),
+            ("GitHub (work)", "Developer"),
+            ("Steam", "Gaming"),
+            ("X", "Social"),
+            ("Disney+", "Entertainment"),
+            ("Jira", "Work"),
+            ("Slack", "Work"),
+            ("Google", "Email"),
+            ("Duolingo", "Education"),
+            ("Bank of America", "Banking"),
+        ] {
+            assert_eq!(filed(name), Some(category), "{name}");
+        }
+        // A word that happens to be a short label says nothing on its own.
+        assert_eq!(name_category("my"), None);
     }
 
     #[test]
