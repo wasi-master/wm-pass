@@ -93,7 +93,7 @@ class SegmentShape(private val radius: Dp, private val top: Boolean, private val
 }
 
 /**
- * The tile and title fly with the entry to its page. Search rows lie over the same entries in
+ * The tile, title and subtitle fly with the entry to its page. Search rows lie over the same entries in
  * the list beneath them, so only whichever list is on top takes part.
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
@@ -293,6 +293,7 @@ fun EntryRow(
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.sharedEntry("subtitle-${entry.id}"),
                     )
                 }
             }
@@ -454,6 +455,7 @@ fun EntryCard(
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = if (entry.subtitle.isEmpty()) Modifier else Modifier.sharedEntry("subtitle-${entry.id}"),
             )
         }
     }

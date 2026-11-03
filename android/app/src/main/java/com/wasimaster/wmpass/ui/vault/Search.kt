@@ -286,9 +286,9 @@ internal fun SearchRow(entry: Summary, query: String, modifier: Modifier = Modif
             SiteTile(entry.title, entry.site, entry.kind, Modifier.sharedEntry("tile-${entry.id}", inSearch = true), 40.dp, entry.color, entry.icon)
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
-                Text(highlighted(entry.title.ifEmpty { "Untitled" }, query, colors.primary), color = colors.text, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(highlighted(entry.title.ifEmpty { "Untitled" }, query, colors.primary), color = colors.text, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.sharedEntry("title-${entry.id}", inSearch = true))
                 if (entry.subtitle.isNotEmpty()) {
-                    Text(highlighted(entry.subtitle, query, colors.primary), color = colors.textMid, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(highlighted(entry.subtitle, query, colors.primary), color = colors.textMid, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.sharedEntry("subtitle-${entry.id}", inSearch = true))
                 }
             }
             if (entry.hasPassword) RowIconButton(PassIcons.ContentCopy, "Copy password for ${entry.title}") { shell.copyPassword(entry.id) }
@@ -324,6 +324,7 @@ internal fun SearchRow(entry: Summary, query: String, modifier: Modifier = Modif
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.sharedEntry("subtitle-${entry.id}", inSearch = true),
                 )
             }
         }
