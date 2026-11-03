@@ -1256,7 +1256,6 @@ private fun SendSheet(entry: Detail, onDismiss: () -> Unit) {
                         }
                     }
                 }
-                shell.nav.navigate("scan")
             }
         }
     }

@@ -1,8 +1,13 @@
 package com.wasimaster.wmpass.ui.vault
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -21,6 +26,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.MaterialTheme
@@ -31,6 +37,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,35 +55,64 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.DecodeHintType
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.PlanarYUVLuminanceSource
+import com.google.zxing.RGBLuminanceSource
+import com.google.zxing.common.GlobalHistogramBinarizer
 import com.google.zxing.common.HybridBinarizer
+import com.google.zxing.multi.qrcode.QRCodeMultiReader
 import com.wasimaster.wmpass.ui.icons.PassIcons
 import com.wasimaster.wmpass.ui.parts.GlassCircle
 import com.wasimaster.wmpass.ui.parts.PrimaryButton
+import com.wasimaster.wmpass.ui.parts.QuietButton
 import com.wasimaster.wmpass.ui.theme.palette
 import java.util.concurrent.Executors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
-/** Point the camera at a QR code. The picture goes nowhere and nothing is stored. */
+/**
+ * Point the camera at a QR code, or pick a picture of one. The picture goes nowhere and nothing is
+ * stored. A dialog rather than a page, so the screen or sheet that asked stays as it was and gets
+ * the code: a page would have taken its place and dropped what it held.
+ */
 @Composable
-fun ScanScreen() {
+fun ScanDialog(onCode: (String) -> Unit, onClose: () -> Unit) {
+    Dialog(onClose, DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        ScanScreen(onCode, onClose)
+    }
+}
+
+@Composable
+private fun ScanScreen(onCode: (String) -> Unit, onClose: () -> Unit) {
     val colors = palette
     val shell = LocalShell.current
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var allowed by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
     }
+    var problem by remember { mutableStateOf<String?>(null) }
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed = it }
     LaunchedEffect(Unit) { if (!allowed) ask.launch(Manifest.permission.CAMERA) }
     val done: (String) -> Unit = { text ->
         shell.haptics.confirm()
-        shell.scanTarget?.invoke(text)
-        shell.scanTarget = null
-        shell.nav.popBackStack()
+        onCode(text)
+    }
+    // The system's photo picker: no storage permission, and only the picture chosen is shared.
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val found = qrCodesIn(context, uri).firstOrNull()
+                if (found != null) done(found) else problem = "No QR code was found in that picture."
+            }
+        }
     }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         if (allowed) {
@@ -89,7 +125,7 @@ fun ScanScreen() {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    "The camera is only for reading the code. You can also type the setup key by hand.",
+                    "The camera is only for reading the code. You can also pick a picture of it, or type the setup key by hand.",
                     color = colors.text,
                     style = MaterialTheme.typography.bodyLarge,
                     textAlign = TextAlign.Center,
@@ -97,14 +133,23 @@ fun ScanScreen() {
                 PrimaryButton("Allow the camera", Modifier.padding(top = 20.dp)) { ask.launch(Manifest.permission.CAMERA) }
             }
         }
-        GlassCircle(PassIcons.Close, "Close", Modifier.statusBarsPadding().padding(14.dp)) { shell.nav.popBackStack() }
-        Text(
-            "Point at the QR code",
-            color = Color.White,
-            style = MaterialTheme.typography.titleMedium,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(bottom = 96.dp),
-        )
+        GlassCircle(PassIcons.Close, "Close", Modifier.statusBarsPadding().padding(14.dp), onClick = onClose)
+        Column(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(start = 24.dp, end = 24.dp, bottom = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                problem ?: if (allowed) "Point at the QR code" else "",
+                color = if (problem != null) colors.danger else Color.White,
+                style = MaterialTheme.typography.titleMedium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 18.dp),
+            )
+            QuietButton("Pick a picture of it", icon = PassIcons.Image) {
+                problem = null
+                pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            }
+        }
     }
 }
 
@@ -114,7 +159,15 @@ private fun CameraFeed(onCode: (String) -> Unit) {
     val owner = LocalLifecycleOwner.current
     val worker = remember { Executors.newSingleThreadExecutor() }
     var found by remember { mutableStateOf(false) }
-    DisposableEffect(Unit) { onDispose { worker.shutdown() } }
+    // Bound to the page underneath, which outlives this dialog, so it lets go of the camera itself.
+    val held = remember { object { var provider: ProcessCameraProvider? = null; var closed = false } }
+    DisposableEffect(Unit) {
+        onDispose {
+            held.closed = true
+            held.provider?.unbindAll()
+            worker.shutdown()
+        }
+    }
     AndroidView(
         modifier = Modifier.fillMaxSize(),
         factory = { ctx ->
@@ -122,7 +175,9 @@ private fun CameraFeed(onCode: (String) -> Unit) {
             val future = ProcessCameraProvider.getInstance(ctx)
             future.addListener(
                 {
+                    if (held.closed) return@addListener
                     val provider = future.get()
+                    held.provider = provider
                     val preview = Preview.Builder().build().also { it.surfaceProvider = view.surfaceProvider }
                     val reader = MultiFormatReader().apply {
                         setHints(mapOf(DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE)))
@@ -174,3 +229,39 @@ private fun Viewfinder() {
         drawLine(colors.primary, Offset(at.x + 18.dp.toPx(), y), Offset(at.x + side - 18.dp.toPx(), y), 2.dp.toPx(), StrokeCap.Round)
     }
 }
+
+/** Every QR code in a picture, such as a screenshot of another app's export. Empty when there is none. */
+suspend fun qrCodesIn(context: Context, uri: Uri): List<String> = withContext(Dispatchers.Default) {
+    val bitmap = runCatching { loadForReading(context, uri) }.getOrNull() ?: return@withContext emptyList()
+    val pixels = IntArray(bitmap.width * bitmap.height)
+    bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+    val source = RGBLuminanceSource(bitmap.width, bitmap.height, pixels)
+    bitmap.recycle()
+    val hints = mapOf(DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE), DecodeHintType.TRY_HARDER to true)
+    // A light code on a dark screen reads only once inverted; a photo can need the other binarizer.
+    for (candidate in listOf(source, source.invert())) {
+        for (binary in listOf(BinaryBitmap(HybridBinarizer(candidate)), BinaryBitmap(GlobalHistogramBinarizer(candidate)))) {
+            val found = runCatching { QRCodeMultiReader().decodeMultiple(binary, hints) }.getOrNull()
+            if (!found.isNullOrEmpty()) return@withContext found.map { it.text }.distinct()
+        }
+    }
+    emptyList()
+}
+
+/** At most [ReadSide] pixels on its longer side: plenty for a code, without a camera photo's full weight. */
+private fun loadForReading(context: Context, uri: Uri): Bitmap? {
+    val resolver = context.contentResolver
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    // Measures only, and so always comes back null itself.
+    resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    var sample = 1
+    while (maxOf(bounds.outWidth, bounds.outHeight) / sample > ReadSide) sample *= 2
+    val options = BitmapFactory.Options().apply {
+        inSampleSize = sample
+        inPreferredConfig = Bitmap.Config.ARGB_8888
+    }
+    return resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+}
+
+private const val ReadSide = 2048

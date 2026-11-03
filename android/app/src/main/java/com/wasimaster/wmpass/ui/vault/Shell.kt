@@ -104,8 +104,8 @@ class Shell(
     var pendingOtp: String? = null
     var pendingNote: String? = null
 
-    /** Who gets the next QR code scanned. */
-    var scanTarget: ((String) -> Unit)? = null
+    /** Who gets the next QR code scanned. Setting it opens the scanner over whatever is showing. */
+    var scanTarget by mutableStateOf<((String) -> Unit)?>(null)
     val selection = mutableStateListOf<String>()
 
     /** The label of the last plain value copied, for the capsule. */
@@ -385,6 +385,15 @@ fun VaultShell(prefs: Prefs) {
                 CopyCapsule(Modifier.align(Alignment.TopCenter).statusBarsPadding())
             }
             ChildPill(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 96.dp))
+            shell.scanTarget?.let { target ->
+                ScanDialog(
+                    onCode = { text ->
+                        shell.scanTarget = null
+                        target(text)
+                    },
+                    onClose = { shell.scanTarget = null },
+                )
+            }
         }
     }
 }
