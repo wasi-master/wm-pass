@@ -22,7 +22,7 @@ object PassIcons {
     private val built = HashMap<String, Array<ImageVector?>>()
 
     /** `outlined`, `rounded`, `sharp` or `light`. */
-    var style by mutableStateOf("outlined")
+    var style by mutableStateOf("rounded")
 
     private fun pathOf(style: String, index: Int): String = when (style) {
         "rounded" -> IconPathsRounded.path(index)
