@@ -1,0 +1,19 @@
+[package]
+name = "wmpass-cardscan"
+description = "Reads a payment card's number, and its expiry when it can, from camera frames on the device."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+tract-tflite = "0.23.9"
+zeroize.workspace = true
+
+[dev-dependencies]
+png = "0.18"

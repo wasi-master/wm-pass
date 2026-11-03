@@ -153,6 +153,19 @@ private fun appPackage(site: JsonElement): String =
     ((site as? kotlinx.serialization.json.JsonObject)?.get("AndroidApp") as? kotlinx.serialization.json.JsonObject)?.get("package")?.jsonPrimitive?.contentOrNull.orEmpty()
 
 /**
+ * Puts what the card scanner read into the form: the number, shown so it can be checked
+ * against the card, and the expiry when the scanner saw one.
+ */
+private fun applyCard(read: com.wasimaster.wmpass.core.CardReader.Read, fields: List<EditField>) {
+    fields.firstOrNull { it.spec.key == "number" }?.let { field ->
+        field.text.setTextAndPlaceCursorAtEnd(read.number)
+        field.loaded = true
+        field.showing = true
+    }
+    read.expiry?.let { expiry -> fields.firstOrNull { it.spec.key == "expiry" }?.text?.setTextAndPlaceCursorAtEnd(expiry) }
+}
+
+/**
  * Reads a `WIFI:` code, the kind Android's own Wi-Fi settings show to share a network, into the
  * form. Returns false when the text is not one.
  */
@@ -644,6 +657,12 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                                 }
                                 Hairline()
                                 AddLine("Pick a network saved on this phone", PassIcons.Wifi) { sheet = "savedwifi" }
+                            }
+                            if (kind == "card") {
+                                Hairline()
+                                AddLine("Scan the card", PassIcons.PhotoCamera) {
+                                    shell.cardTarget = { read -> applyCard(read, fields) }
+                                }
                             }
                         }
                     }

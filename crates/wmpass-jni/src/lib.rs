@@ -7,8 +7,9 @@
 use std::sync::Mutex;
 
 use jni::JNIEnv;
-use jni::objects::{JByteArray, JClass, JObject, JObjectArray, JString, JValue};
+use jni::objects::{JByteArray, JClass, JFloatArray, JObject, JObjectArray, JString, JValue};
 use jni::sys::{jboolean, jint, jlong, jobjectArray};
+use wmpass_cardscan::{Crop, Frame, Month, Reader, Tally};
 use wmpass_core::format::{FactorKind, FactorOutput};
 use wmpass_hwkey::HwError;
 use wmpass_hwkey::otp::OtpHid;
@@ -368,4 +369,90 @@ pub extern "system" fn Java_com_wasimaster_wmpass_core_Native_hardware<'local>(
     };
     let result = run_hardware(&mut env, device, &method, &factor);
     finish(&mut env, result)
+}
+
+/// The card reader while its scanner is open: the model, and what the frames so far read.
+struct CardScan {
+    reader: Reader,
+    tally: Tally,
+}
+
+static CARDS: Mutex<Option<CardScan>> = Mutex::new(None);
+
+/// `cardOpen(model)`: loads the card reader from the model's bytes and forgets earlier reads.
+/// False when the model will not load.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_wasimaster_wmpass_core_Native_cardOpen<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    model: JByteArray<'local>,
+) -> jboolean {
+    let Ok(model) = env.convert_byte_array(&model) else { return 0 };
+    let Ok(reader) = Reader::new(&model) else { return 0 };
+    let Ok(mut guard) = CARDS.lock() else { return 0 };
+    *guard = Some(CardScan { reader, tally: Tally::default() });
+    1
+}
+
+/// `cardFrame(pixels, width, height, rowStride, rotation, crop, nowMs)`: reads one RGBA frame.
+/// Returns null until two frames agree on a number, then `{ByteArray number, String? expiry}`.
+/// The caller wipes the number's array once it has used it.
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_com_wasimaster_wmpass_core_Native_cardFrame<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    pixels: JByteArray<'local>,
+    width: jint,
+    height: jint,
+    row_stride: jint,
+    rotation: jint,
+    crop: JFloatArray<'local>,
+    now_ms: jlong,
+) -> jobjectArray {
+    // The frame shows the card, so the copy is wiped like a secret.
+    let read = (|| -> jni::errors::Result<(Zeroizing<Vec<u8>>, [f32; 4])> {
+        let mut edges = [0f32; 4];
+        env.get_float_array_region(&crop, 0, &mut edges)?;
+        Ok((Zeroizing::new(env.convert_byte_array(&pixels)?), edges))
+    })();
+    let Ok((pixels, [left, top, right, bottom])) = read else {
+        throw(&mut env, "jni", "the frame could not be read");
+        return std::ptr::null_mut();
+    };
+    let (Ok(width), Ok(height), Ok(row_stride), Ok(rotation)) =
+        (usize::try_from(width), usize::try_from(height), usize::try_from(row_stride), u16::try_from(rotation))
+    else {
+        return std::ptr::null_mut();
+    };
+    let frame = Frame { pixels: &pixels, width, height, row_stride, rotation };
+    let crop = Crop { left, top, right, bottom };
+    let Ok(mut guard) = CARDS.lock() else { return std::ptr::null_mut() };
+    let Some(scan) = guard.as_mut() else { return std::ptr::null_mut() };
+    // A frame that will not run is only a frame missed; the next one may.
+    if let Ok(card) = scan.reader.read(&frame, crop, Month::at(now_ms.cast_unsigned())) {
+        scan.tally.add(card);
+    }
+    let Some(number) = scan.tally.number() else { return std::ptr::null_mut() };
+    let expiry = scan.tally.expiry().map(|e| e.to_string());
+    let reply = (|| -> jni::errors::Result<jobjectArray> {
+        let object = env.find_class("java/lang/Object")?;
+        let out = env.new_object_array(2, object, JObject::null())?;
+        let digits = env.byte_array_from_slice(number.as_bytes())?;
+        env.set_object_array_element(&out, 0, digits)?;
+        if let Some(expiry) = expiry {
+            let text = env.new_string(expiry)?;
+            env.set_object_array_element(&out, 1, text)?;
+        }
+        Ok(out.into_raw())
+    })();
+    reply.unwrap_or(std::ptr::null_mut())
+}
+
+/// `cardClose()`: drops the card reader, wiping every number it read.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_wasimaster_wmpass_core_Native_cardClose(_env: JNIEnv<'_>, _class: JClass<'_>) {
+    if let Ok(mut guard) = CARDS.lock() {
+        *guard = None;
+    }
 }
