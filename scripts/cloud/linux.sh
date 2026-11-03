@@ -38,10 +38,24 @@ rust() {
     && run cargo-deny cargo deny check
 }
 
+# A Secret Service for one command: gnome-keyring on a private session bus, its files in $1.
+# The password must not be empty: with an empty one the daemon never creates the login
+# keyring, every store fails with "no storage access", and the app quietly falls back to a
+# key file instead.
+with_keyring() {
+  local home=$1; shift
+  mkdir -p "$home"
+  XDG_DATA_HOME="$home" dbus-run-session -- bash -c '
+    printf "throwaway" | gnome-keyring-daemon --unlock --components=secrets >/dev/null 2>&1
+    exec "$@"' keyring "$@"
+}
+
 desktop() {
+  local keyring; keyring=$(mktemp -d /tmp/wmpass-keyring.XXXXXX)
   prepare \
     && run desktop-clippy cargo clippy -p wmpass-desktop --all-targets -- -D warnings \
-    && run desktop-test cargo test -p wmpass-desktop -p wmpass-host -p wmpass-bridge
+    && run desktop-test cargo test -p wmpass-desktop -p wmpass-host -p wmpass-bridge \
+    && run desktop-keychain with_keyring "$keyring" cargo test -p wmpass-desktop -- --ignored
 }
 
 # The debug build reads VITE_SELFTEST, runs desktop/src/selftest.ts in the real webview against a
@@ -51,7 +65,6 @@ selftest() {
   (cd desktop && VITE_SELFTEST="$dir/backup" run selftest-build tauri build --debug --no-bundle) || return 1
   echo "== selftest-run ($dir)"
   local inner='
-    printf "" | gnome-keyring-daemon --unlock --components=secrets >/dev/null 2>&1
     target/debug/wm-pass &
     app=$!
     for _ in $(seq 120); do
@@ -63,13 +76,20 @@ selftest() {
     wait $app'
   # Root cannot start WebKitGTK's sandbox; this run loads only the app's own pages.
   WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 LIBGL_ALWAYS_SOFTWARE=1 \
-    WMPASS_DATA_DIR="$dir" timeout 240 \
-    dbus-run-session -- xvfb-run -a -s "-screen 0 1280x800x24" bash -c "$inner" \
+    WMPASS_DATA_DIR="$dir" \
+    with_keyring "$dir.keyring" timeout 240 xvfb-run -a -s "-screen 0 1280x800x24" bash -c "$inner" \
     >"$logs/selftest-run.log" 2>&1
   if [ -f "$dir/settings/selftest.json" ]; then
     cat "$dir/settings/selftest.json"
     [ -f "$dir/screen.png" ] && echo "screenshot: $dir/screen.png"
-    ! grep -qE 'FAILED|"~' "$dir/settings/selftest.json"
+    local ok=0
+    grep -qE 'FAILED|"~' "$dir/settings/selftest.json" && ok=1
+    # The sealing key belongs in the keyring; this file means the app could not reach it.
+    if [ -f "$dir/sealed/key" ]; then
+      echo "   the sealing key fell back to a file: the keyring was not reachable"
+      ok=1
+    fi
+    return $ok
   else
     echo "   no results; app log:"
     tail -40 "$logs/selftest-run.log"
