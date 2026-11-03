@@ -84,10 +84,14 @@ object SavedWifi {
 
     /** Every saved network with a name, by name. Throws if the Wi-Fi service refuses. */
     suspend fun list(): List<Network> = withContext(Dispatchers.IO) {
+        // From Android 11 the Wi-Fi service ships as its own module, and the list comes back in that
+        // module's renamed copy of ParceledListSlice, `com.android.wifi.x.com.android.modules.utils`.
         HiddenApiBypass.addHiddenApiExemptions(
             "Landroid/net/wifi/IWifiManager",
             "Landroid/content/pm/ParceledListSlice",
             "Landroid/content/pm/BaseParceledListSlice",
+            "Lcom/android/wifi/x/com/android/modules/utils/",
+            "Lcom/android/modules/utils/",
         )
         val binder = ShizukuBinderWrapper(SystemServiceHelper.getSystemService(Context.WIFI_SERVICE))
         val manager = Class.forName("android.net.wifi.IWifiManager\$Stub")
