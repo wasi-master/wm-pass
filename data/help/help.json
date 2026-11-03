@@ -2582,7 +2582,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Password managers: 1Password, Apple Passwords, Bitwarden, Chrome, Dashlane, Enpass, Firefox, KeePass and KeePassXC, Keeper, LastPass, NordPass, Proton Pass, RoboForm and SafeInCloud. Authenticators: Aegis, 2FAS, andOTP, Ente Auth, FreeOTP+ and Raivo. For Google Authenticator, tap "
+       "s": "Password managers: 1Password, Apple Passwords, Avast, Avira, Bitwarden, Buttercup, Chrome and other Chromium browsers, Dashlane, Enpass, Firefox, Kaspersky, KeePass and KeePassXC, Keeper, LastPass, mSecure, NordPass, Password Safe, Proton Pass, Psono, RoboForm, SafeInCloud, Sticky Password and Zoho Vault. Authenticators: Aegis, 2FAS, andOTP, Authenticator Pro, Bitwarden Authenticator, Ente Auth, FreeOTP+, LastPass Authenticator, Proton Authenticator and Raivo. For Google Authenticator, tap "
       },
       {
        "t": "strong",
@@ -2599,7 +2599,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "A file with a password, such as a KeePass database, asks for it first. Items already in the vault are skipped, and the result says how many."
+       "s": "A file with a password, such as a KeePass or SafeInCloud database, asks for it first. Items already in the vault are skipped, and the result says how many."
       }
      ]
     },
@@ -8166,25 +8166,31 @@
       [
        {
         "t": "text",
-        "s": "1Password (1PUX), Bitwarden (JSON or CSV), and KeePass or KeePassXC (the .kdbx database itself, or KeePassXC's CSV)."
+        "s": "1Password (1PUX), Bitwarden (JSON or CSV), and KeePass or KeePassXC (the .kdbx database itself, KeePass's XML export, or KeePassXC's CSV)."
        }
       ],
       [
        {
         "t": "text",
-        "s": "CSV from Apple Passwords, Chrome, Dashlane, Firefox, LastPass, NordPass and RoboForm."
+        "s": "SafeInCloud's own database file (SafeInCloud.db, or a backup its app made), or its XML export."
        }
       ],
       [
        {
         "t": "text",
-        "s": "JSON from Enpass and Keeper, Proton Pass's JSON or unencrypted ZIP, and SafeInCloud's XML."
+        "s": "CSV from Apple Passwords, Avast, Avira, Buttercup, Chrome and other Chromium browsers, Dashlane, Firefox, LastPass, mSecure, NordPass, RoboForm and Zoho Vault."
        }
       ],
       [
        {
         "t": "text",
-        "s": "Authenticators: Aegis, 2FAS, andOTP, FreeOTP+ and Raivo files, and a text file of otpauth links, one per line, which is what Ente Auth's plain-text export is."
+        "s": "JSON from Avast, Enpass, Keeper and Psono, Proton Pass's JSON or unencrypted ZIP, XML from Password Safe and Sticky Password, and Kaspersky Password Manager's text file."
+       }
+      ],
+      [
+       {
+        "t": "text",
+        "s": "Authenticators: Aegis, 2FAS, andOTP, Authenticator Pro (Stratum), Bitwarden Authenticator, FreeOTP+, LastPass Authenticator, Proton Authenticator and Raivo files, and a text file of otpauth links, one per line, which is what Ente Auth's plain-text export is."
        }
       ],
       [
@@ -8214,7 +8220,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Folders in the file become folders here, matched by name. Attachments in a KeePass database come along. A KeePass database asks for its password."
+       "s": "Folders in the file become folders here, matched by name. Attachments come along from KeePass, SafeInCloud and 1Password files. A KeePass or SafeInCloud database, or a password-protected Proton Authenticator export, asks for its password."
       }
      ]
     },
@@ -8276,7 +8282,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Encrypted exports from Bitwarden, Proton Pass, Aegis and 2FAS cannot be read. Export them again without encryption. A KeePass database that also needs a key file cannot be opened here."
+       "s": "Encrypted exports from Bitwarden, Proton Pass, Aegis, 2FAS and Authenticator Pro cannot be read. Export them again without encryption. A KeePass database that also needs a key file cannot be opened here."
       }
      ]
     },
@@ -8296,7 +8302,7 @@
     "page.folders"
    ],
    "docs": "/guides/import-export/",
-   "words": "1password bitwarden lastpass keepass kdbx chrome firefox dashlane proton csv json aegis 2fas google authenticator migrate move",
+   "words": "1password bitwarden lastpass keepass kdbx chrome firefox dashlane proton csv json aegis 2fas google authenticator safeincloud kaspersky zoho sticky avast avira psono buttercup msecure pwsafe stratum migrate move",
    "plain": "Brings your items over from another password manager or authenticator app, from the file it exports."
   },
   {

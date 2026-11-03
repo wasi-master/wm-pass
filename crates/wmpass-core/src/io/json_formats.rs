@@ -2,9 +2,12 @@
 
 use serde_json::Value;
 
-use super::{Draft, Format, Imported, ImportedEntry, base_entry, fields, non_empty};
+use super::{
+    Draft, Format, Imported, ImportedEntry, base_entry, fields, non_empty, note_item, otp_entry,
+};
 use crate::clock::Hlc;
 use crate::model::{Card, Identity, Kind, Lww, Note, Passkey, SshKey};
+use crate::otp::{OtpAlgorithm, OtpConfig, OtpKind};
 use crate::{Error, Result, Secret};
 
 pub(super) fn text(value: &Value, key: &str) -> String {
@@ -35,8 +38,29 @@ pub(super) fn detect(json: &str) -> Option<Format> {
         }
         return first.get("secret").is_some().then_some(Format::AndOtp);
     }
+    let first_of = |key: &str| list(&root, key).first().cloned().unwrap_or(Value::Null);
     if root.get("db").is_some() && root.get("header").is_some() {
         Some(Format::Aegis)
+    } else if root.get("Authenticators").is_some() {
+        Some(Format::Stratum)
+    } else if root.get("version").is_some()
+        && (root.get("entries").is_some()
+            || root.get("salt").is_some() && root.get("content").is_some())
+    {
+        Some(Format::ProtonAuthenticator)
+    } else if first_of("accounts").get("issuerName").is_some()
+        || first_of("accounts").get("secret").is_some()
+            && first_of("accounts").get("timeStep").is_some()
+    {
+        Some(Format::LastPassAuthenticator)
+    } else if root.get("logins").is_some()
+        && (first_of("logins").get("pwd").is_some()
+            || root.get("cards").is_some()
+            || root.get("notes").is_some())
+    {
+        Some(Format::AvastJson)
+    } else if is_psono(&root) {
+        Some(Format::PsonoJson)
     } else if root.get("services").is_some() {
         Some(Format::TwoFas)
     } else if root.get("tokenOrder").is_some() || root.get("tokens").is_some() {
@@ -240,30 +264,99 @@ pub(super) fn enpass(json: &str, at: Hlc) -> Result<Imported> {
         if item.get("trashed").and_then(Value::as_i64).unwrap_or(0) != 0 {
             continue;
         }
+        let title = text(item, "title");
+        let folder = list(item, "folders")
+            .first()
+            .and_then(Value::as_str)
+            .and_then(|id| folder_names.get(id).cloned())
+            .unwrap_or_default();
+        let live: Vec<&Value> = list(item, "fields")
+            .iter()
+            .filter(|f| f.get("deleted").and_then(Value::as_i64).unwrap_or(0) == 0)
+            .filter(|f| !text(f, "value").is_empty())
+            .collect();
+        let hidden = |field: &Value| {
+            field.get("sensitive").and_then(Value::as_i64).unwrap_or(0) != 0
+                || text(field, "type") == "pin"
+        };
+        let favourite = item.get("favorite").and_then(Value::as_i64).unwrap_or(0) != 0;
+        match text(item, "category").as_str() {
+            "note" => {
+                let extra = live
+                    .iter()
+                    .map(|f| (text(f, "label"), text(f, "value"), hidden(f)))
+                    .collect();
+                let mut entry =
+                    note_item(&title, &text(item, "note"), extra, non_empty(folder), at);
+                entry.entry.common.favourite = Lww::new(favourite, at);
+                out.entries.push(entry);
+                continue;
+            }
+            "creditcard" => {
+                let mut payment = Card::default();
+                let mut extra = Vec::new();
+                for field in &live {
+                    let value = text(field, "value");
+                    match text(field, "type").as_str() {
+                        "ccName" if payment.holder.v.is_empty() => {
+                            payment.holder = Lww::new(value, at)
+                        }
+                        "ccNumber" if payment.number.v.is_empty() => {
+                            payment.number = Lww::new(Secret::from(value), at);
+                        }
+                        "ccCvc" if payment.cvv.v.is_empty() => {
+                            payment.cvv = Lww::new(Secret::from(value), at)
+                        }
+                        "ccPin" if payment.pin.v.is_empty() => {
+                            payment.pin = Lww::new(Secret::from(value), at)
+                        }
+                        "ccExpiry" if payment.expiry.v.is_empty() => {
+                            payment.expiry = Lww::new(value, at)
+                        }
+                        "ccType" if payment.issuer.v.is_empty() => {
+                            payment.issuer = Lww::new(value, at)
+                        }
+                        _ => extra.push((text(field, "label"), value, hidden(field))),
+                    }
+                }
+                let mut entry = base_entry(&title, &text(item, "note"), at);
+                entry.kind = Kind::Card(payment);
+                entry.common.favourite = Lww::new(favourite, at);
+                entry.common.custom_fields = Lww::new(fields(extra), at);
+                out.entries.push(ImportedEntry {
+                    entry,
+                    folder: non_empty(folder),
+                    files: Vec::new(),
+                });
+                continue;
+            }
+            _ => {}
+        }
         let mut draft = Draft {
-            title: text(item, "title"),
+            title,
             notes: text(item, "note"),
+            folder,
+            favourite,
             ..Draft::default()
         };
-        for field in list(item, "fields") {
+        // The first of each kind fills the login; any more are kept as fields.
+        for field in live {
             let value = text(field, "value");
             match text(field, "type").as_str() {
-                "username" => draft.username = value,
+                "username" if draft.username.is_empty() => draft.username = value,
                 "email" if draft.username.is_empty() => draft.username = value,
-                "password" => draft.password = value,
+                "password" if draft.password.is_empty() => draft.password = value,
                 "url" => draft.urls.push(value),
-                "totp" => draft.otp = value,
-                kind => {
-                    let hidden = field.get("sensitive").and_then(Value::as_i64).unwrap_or(0) != 0
-                        || kind == "pin";
-                    draft.fields.push((text(field, "label"), value, hidden));
-                }
+                ".Android#" => draft.urls.push(if value.contains("://") {
+                    value
+                } else {
+                    format!("androidapp://{value}")
+                }),
+                "totp" if draft.otp.is_empty() => draft.otp = value,
+                _ => draft
+                    .fields
+                    .push((text(field, "label"), value, hidden(field))),
             }
-        }
-        if let Some(id) = list(item, "folders").first().and_then(Value::as_str)
-            && let Some(name) = folder_names.get(id)
-        {
-            draft.folder.clone_from(name);
         }
         let entry = draft.into_login(at, &mut out.skipped);
         out.entries.push(entry);
@@ -397,4 +490,176 @@ pub(super) fn proton(json: &str, at: Hlc) -> Result<Imported> {
         }
     }
     Ok(out)
+}
+
+/// Avast Passwords' JSON: `logins`, `notes` and `cards`.
+pub(super) fn avast(json: &str, at: Hlc) -> Result<Imported> {
+    let root = parse(json)?;
+    let mut out = Imported::default();
+    for login in list(&root, "logins") {
+        let draft = Draft {
+            title: text(login, "custName"),
+            urls: vec![text(login, "url")],
+            username: text(login, "loginName"),
+            password: text(login, "pwd"),
+            notes: text(login, "note"),
+            ..Draft::default()
+        };
+        out.entries.push(draft.into_login(at, &mut out.skipped));
+    }
+    for note in list(&root, "notes") {
+        out.entries.push(note_item(
+            &text(note, "label"),
+            &text(note, "text"),
+            Vec::new(),
+            None,
+            at,
+        ));
+    }
+    for card in list(&root, "cards") {
+        let expiry = card.get("expirationDate").cloned().unwrap_or(Value::Null);
+        let expiry = match (text(&expiry, "month"), text(&expiry, "year")) {
+            (month, year) if month.is_empty() && year.is_empty() => String::new(),
+            (month, year) => format!("{month}/{year}"),
+        };
+        let mut entry = base_entry(&text(card, "custName"), &text(card, "note"), at);
+        entry.kind = Kind::Card(Card {
+            holder: Lww::new(text(card, "holderName"), at),
+            number: Lww::new(Secret::from(text(card, "cardNumber")), at),
+            cvv: Lww::new(Secret::from(text(card, "cvv")), at),
+            expiry: Lww::new(expiry, at),
+            ..Card::default()
+        });
+        out.entries.push(ImportedEntry {
+            entry,
+            folder: None,
+            files: Vec::new(),
+        });
+    }
+    Ok(out)
+}
+
+const PSONO_TYPES: [&str; 7] = [
+    "website_password",
+    "application_password",
+    "bookmark",
+    "note",
+    "totp",
+    "environment_variables",
+    "mail_gpg_own_key",
+];
+
+/// Psono's items name every field after the item's type: `website_password_title`.
+fn is_psono(root: &Value) -> bool {
+    let mut stack = vec![root];
+    let mut seen = 0;
+    while let Some(node) = stack.pop() {
+        seen += 1;
+        if seen > 10_000 {
+            return false;
+        }
+        for item in list(node, "items") {
+            let kind = text(item, "type");
+            if PSONO_TYPES.contains(&kind.as_str()) && item.get(format!("{kind}_title")).is_some() {
+                return true;
+            }
+        }
+        stack.extend(list(node, "folders"));
+    }
+    false
+}
+
+/// Psono's JSON: items at the top and in nested folders, one shape per type.
+pub(super) fn psono(json: &str, at: Hlc) -> Result<Imported> {
+    let root = parse(json)?;
+    let mut out = Imported::default();
+    let mut stack: Vec<(&Value, String, usize)> = vec![(&root, String::new(), 0)];
+    while let Some((node, path, depth)) = stack.pop() {
+        if depth > 64 {
+            return Err(Error::Import("the folders are nested too deeply".into()));
+        }
+        for item in list(node, "items") {
+            psono_item(item, &path, at, &mut out);
+        }
+        for folder in list(node, "folders") {
+            let name = text(folder, "name");
+            let child = if path.is_empty() {
+                name
+            } else {
+                format!("{path}/{name}")
+            };
+            stack.push((folder, child, depth + 1));
+        }
+    }
+    Ok(out)
+}
+
+fn psono_item(item: &Value, folder: &str, at: Hlc, out: &mut Imported) {
+    let kind = text(item, "type");
+    let get = |field: &str| text(item, &format!("{kind}_{field}"));
+    let title = match get("title") {
+        title if title.is_empty() => text(item, "name"),
+        title => title,
+    };
+    let folder = non_empty(folder.to_owned());
+    match kind.as_str() {
+        "website_password" | "application_password" | "bookmark" => {
+            let draft = Draft {
+                title,
+                urls: vec![get("url")],
+                username: get("username"),
+                password: get("password"),
+                notes: get("notes"),
+                otp: get("totp_code"),
+                folder: folder.unwrap_or_default(),
+                ..Draft::default()
+            };
+            out.entries.push(draft.into_login(at, &mut out.skipped));
+        }
+        "totp" => {
+            let algorithm = match get("algorithm").to_ascii_uppercase().as_str() {
+                "SHA256" => OtpAlgorithm::Sha256,
+                "SHA512" => OtpAlgorithm::Sha512,
+                _ => OtpAlgorithm::Sha1,
+            };
+            let number = |field: &str, fallback: u32| get(field).parse().unwrap_or(fallback);
+            let config = OtpConfig {
+                secret: Secret::from(get("code").replace(' ', "").to_uppercase()),
+                issuer: title,
+                account: String::new(),
+                algorithm,
+                digits: number("digits", 6),
+                kind: OtpKind::Totp {
+                    period: number("period", 30),
+                },
+            };
+            let mut entry = otp_entry(config, at);
+            entry.entry.common.notes = Lww::new(Secret::from(get("notes")), at);
+            entry.folder = folder;
+            out.entries.push(entry);
+        }
+        "note" => out
+            .entries
+            .push(note_item(&title, &get("notes"), Vec::new(), folder, at)),
+        "environment_variables" => {
+            let extra = list(item, "environment_variables_variables")
+                .iter()
+                .map(|pair| (text(pair, "key"), text(pair, "value"), true))
+                .collect();
+            out.entries
+                .push(note_item(&title, &get("notes"), extra, folder, at));
+        }
+        "mail_gpg_own_key" => {
+            let extra = vec![
+                ("Email".to_owned(), get("email"), false),
+                ("Name".to_owned(), get("name"), false),
+                ("Public key".to_owned(), get("public"), false),
+                ("Private key".to_owned(), get("private"), true),
+            ];
+            out.entries.push(note_item(&title, "", extra, folder, at));
+        }
+        other => out.skipped.push(format!(
+            "{title}: Psono {other} items are not brought across"
+        )),
+    }
 }

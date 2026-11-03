@@ -8,31 +8,49 @@
   import { host } from '../engine/host';
   import type { ImportPreview } from '../engine/types';
 
-  const FORMATS = '1Password, Apple Passwords, Bitwarden, Chrome, Dashlane, Enpass, Firefox, KeePass and KeePassXC, Keeper, LastPass, NordPass, Proton Pass, RoboForm and SafeInCloud. Authenticators: Aegis, 2FAS, andOTP, Ente, FreeOTP+, Raivo, and Google’s export QR code.';
+  const FORMATS = '1Password, Apple Passwords, Avast, Avira, Bitwarden, Buttercup, Chrome and other Chromium browsers, Dashlane, Enpass, Firefox, Kaspersky, KeePass and KeePassXC, Keeper, LastPass, mSecure, NordPass, Password Safe, Proton Pass, Psono, RoboForm, SafeInCloud, Sticky Password and Zoho Vault. Authenticators: Aegis, 2FAS, andOTP, Authenticator Pro, Bitwarden Authenticator, Ente Auth, FreeOTP+, LastPass Authenticator, Proton Authenticator, Raivo, and Google’s export QR code.';
 
   // Each app's export steps, on the website, with the mark the vault would give it.
   const GUIDES = 'https://wmpass.pages.dev/guides/import/';
   const GUIDE_LIST: { page: string; name: string; brand?: string }[] = [
     { page: '1password', name: '1Password', brand: '1password' },
     { page: 'apple-passwords', name: 'Apple Passwords', brand: 'apple' },
+    { page: 'avast-passwords', name: 'Avast Passwords', brand: 'avast' },
+    { page: 'avira-password-manager', name: 'Avira Password Manager', brand: 'avira' },
     { page: 'bitwarden', name: 'Bitwarden', brand: 'bitwarden' },
-    { page: 'chrome', name: 'Google Password Manager', brand: 'googlechrome' },
+    { page: 'brave', name: 'Brave', brand: 'brave' },
+    { page: 'buttercup', name: 'Buttercup' },
     { page: 'dashlane', name: 'Dashlane', brand: 'dashlane' },
     { page: 'enpass', name: 'Enpass', brand: 'enpass' },
     { page: 'firefox', name: 'Firefox', brand: 'firefox' },
+    { page: 'chrome', name: 'Google Password Manager', brand: 'googlechrome' },
+    { page: 'kaspersky-password-manager', name: 'Kaspersky Password Manager', brand: 'kaspersky' },
     { page: 'keepass', name: 'KeePass and KeePassXC', brand: 'keepassxc' },
+    { page: 'keepass2android', name: 'Keepass2Android' },
+    { page: 'keepassdx', name: 'KeePassDX' },
     { page: 'keeper', name: 'Keeper', brand: 'keeper' },
     { page: 'lastpass', name: 'LastPass', brand: 'lastpass' },
+    { page: 'microsoft-edge', name: 'Microsoft Edge' },
+    { page: 'msecure', name: 'mSecure' },
     { page: 'nordpass', name: 'NordPass' },
+    { page: 'opera', name: 'Opera', brand: 'opera' },
+    { page: 'password-safe', name: 'Password Safe' },
     { page: 'proton-pass', name: 'Proton Pass', brand: 'proton' },
+    { page: 'psono', name: 'Psono' },
     { page: 'roboform', name: 'RoboForm' },
     { page: 'safeincloud', name: 'SafeInCloud' },
+    { page: 'sticky-password', name: 'Sticky Password' },
+    { page: 'zoho-vault', name: 'Zoho Vault', brand: 'zoho' },
     { page: 'google-authenticator', name: 'Google Authenticator', brand: 'googleauthenticator' },
     { page: '2fas', name: '2FAS', brand: '2fas' },
     { page: 'aegis', name: 'Aegis', brand: 'aegisauthenticator' },
     { page: 'andotp', name: 'andOTP' },
+    { page: 'authenticator-pro', name: 'Authenticator Pro' },
+    { page: 'bitwarden-authenticator', name: 'Bitwarden Authenticator', brand: 'bitwarden' },
     { page: 'ente-auth', name: 'Ente Auth', brand: 'ente' },
     { page: 'freeotp-plus', name: 'FreeOTP+' },
+    { page: 'lastpass-authenticator', name: 'LastPass Authenticator', brand: 'lastpass' },
+    { page: 'proton-authenticator', name: 'Proton Authenticator', brand: 'proton' },
     { page: 'raivo', name: 'Raivo' },
   ];
 

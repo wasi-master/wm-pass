@@ -4,8 +4,11 @@ use base64::Engine;
 use serde_json::Value;
 
 use super::json_formats::{list, parse, text};
+use zeroize::Zeroizing;
+
 use super::{Imported, otp_entry};
 use crate::clock::Hlc;
+use crate::model::Lww;
 use crate::otp::{OtpAlgorithm, OtpConfig, OtpKind, base32_encode, percent_decode};
 use crate::{Error, Result, Secret};
 
@@ -212,6 +215,166 @@ pub(super) fn raivo(json: &str, at: Hlc) -> Result<Imported> {
                 algorithm: algorithm(&text(item, "algorithm")),
                 digits: u32::try_from(number(item, "digits", 6)).unwrap_or(6),
                 kind,
+            },
+            at,
+        ));
+    }
+    Ok(out)
+}
+
+/// Authenticator Pro, now Stratum: an unencrypted backup. Types are numbered (1 HOTP,
+/// 2 TOTP, 3 mOTP, 4 Steam, 5 Yandex) and so are hashes (0 SHA-1, 1 SHA-256,
+/// 2 SHA-512). Categories become folders.
+pub(super) fn stratum(json: &str, at: Hlc) -> Result<Imported> {
+    let root = parse(json)?;
+    let categories: std::collections::HashMap<String, String> = list(&root, "Categories")
+        .iter()
+        .map(|c| (text(c, "Id"), text(c, "Name")))
+        .collect();
+    let mut folder_of: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for link in list(&root, "AuthenticatorCategories") {
+        if let Some(name) = categories.get(&text(link, "CategoryId")) {
+            folder_of
+                .entry(text(link, "AuthenticatorSecret"))
+                .or_insert_with(|| name.clone());
+        }
+    }
+    let mut out = Imported::default();
+    for item in list(&root, "Authenticators") {
+        let issuer = text(item, "Issuer");
+        let kind = match number(item, "Type", 2) {
+            1 => OtpKind::Hotp {
+                counter: number(item, "Counter", 0),
+            },
+            2 => OtpKind::Totp {
+                period: u32::try_from(number(item, "Period", 30)).unwrap_or(30),
+            },
+            4 => OtpKind::Steam,
+            other => {
+                let name = if other == 3 { "mOTP" } else { "Yandex" };
+                out.skipped
+                    .push(format!("{issuer}: {name} codes are not supported"));
+                continue;
+            }
+        };
+        let secret = text(item, "Secret");
+        let mut entry = otp_entry(
+            OtpConfig {
+                secret: Secret::from(secret.clone()),
+                issuer,
+                account: text(item, "Username"),
+                algorithm: match number(item, "Algorithm", 0) {
+                    1 => OtpAlgorithm::Sha256,
+                    2 => OtpAlgorithm::Sha512,
+                    _ => OtpAlgorithm::Sha1,
+                },
+                digits: u32::try_from(number(item, "Digits", 6)).unwrap_or(6),
+                kind,
+            },
+            at,
+        );
+        entry.folder = folder_of.get(&secret).cloned();
+        out.entries.push(entry);
+    }
+    Ok(out)
+}
+
+const PROTON_AAD: &[u8] = b"proton.authenticator.export.v1";
+
+/// Proton Authenticator: `{"version":1,"entries":[{"content":{"uri",…},"note"}]}`, or
+/// the same JSON sealed under a password: Argon2id (19 MiB, 2 passes, 1 lane) over the
+/// password and salt gives an AES-256-GCM key, the content is a 12-byte nonce then the
+/// ciphertext, and the associated data names the format.
+pub(super) fn proton(json: &str, password: Option<&str>, at: Hlc) -> Result<Imported> {
+    let root = parse(json)?;
+    if root.get("entries").is_none() && root.get("content").is_some() {
+        let password = password.filter(|p| !p.is_empty()).ok_or_else(|| {
+            Error::Import("this Proton Authenticator export is protected by a password".into())
+        })?;
+        let plain = open_proton(&root, password)?;
+        let inner = std::str::from_utf8(&plain)
+            .map_err(|_| Error::Import("the export could not be read".into()))?;
+        return proton(inner, None, at);
+    }
+    let mut out = Imported::default();
+    for entry in list(&root, "entries") {
+        let content = entry.get("content").cloned().unwrap_or(Value::Null);
+        let uri = text(&content, "uri");
+        let name = text(&content, "name");
+        match OtpConfig::from_uri(&uri) {
+            Ok(mut config) => {
+                if config.issuer.is_empty() && config.account.is_empty() {
+                    config.issuer = name;
+                }
+                let mut item = otp_entry(config, at);
+                item.entry.common.notes = Lww::new(Secret::from(text(entry, "note")), at);
+                out.entries.push(item);
+            }
+            Err(_) => out.skipped.push(format!(
+                "{name}: its {} code could not be read",
+                text(&content, "entry_type")
+            )),
+        }
+    }
+    Ok(out)
+}
+
+fn open_proton(root: &Value, password: &str) -> Result<Zeroizing<Vec<u8>>> {
+    use aes_gcm::aead::{Aead, KeyInit, Payload};
+    let bad = || Error::Import("the export could not be read".into());
+    let b64 = |key: &str| {
+        base64::engine::general_purpose::STANDARD
+            .decode(text(root, key))
+            .map_err(|_| bad())
+    };
+    let salt = b64("salt")?;
+    let sealed = b64("content")?;
+    if salt.len() != 16 || sealed.len() <= 12 {
+        return Err(bad());
+    }
+    let params = argon2::Params::new(19 * 1024, 2, 1, Some(32)).map_err(|_| bad())?;
+    let mut key = Zeroizing::new([0u8; 32]);
+    argon2::Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params)
+        .hash_password_into(password.as_bytes(), &salt, &mut key[..])
+        .map_err(|_| bad())?;
+    let (nonce, body) = sealed.split_at(12);
+    let cipher = aes_gcm::Aes256Gcm::new_from_slice(&key[..]).map_err(|_| bad())?;
+    let nonce = aes_gcm::Nonce::try_from(nonce).map_err(|_| bad())?;
+    cipher
+        .decrypt(
+            &nonce,
+            Payload {
+                msg: body,
+                aad: PROTON_AAD,
+            },
+        )
+        .map(Zeroizing::new)
+        .map_err(|_| Error::Import("that password does not open this export".into()))
+}
+
+/// LastPass Authenticator's JSON: `{"accounts":[{"issuerName","userName","secret",…}]}`.
+pub(super) fn lastpass(json: &str, at: Hlc) -> Result<Imported> {
+    let root = parse(json)?;
+    let mut out = Imported::default();
+    for account in list(&root, "accounts") {
+        let issuer = match text(account, "issuerName") {
+            name if name.is_empty() => text(account, "originalIssuerName"),
+            name => name,
+        };
+        let user = match text(account, "userName") {
+            name if name.is_empty() => text(account, "originalUserName"),
+            name => name,
+        };
+        out.entries.push(otp_entry(
+            OtpConfig {
+                secret: Secret::from(text(account, "secret").replace(' ', "").to_uppercase()),
+                issuer,
+                account: user,
+                algorithm: algorithm(&text(account, "algorithm")),
+                digits: u32::try_from(number(account, "digits", 6)).unwrap_or(6),
+                kind: OtpKind::Totp {
+                    period: u32::try_from(number(account, "timeStep", 30)).unwrap_or(30),
+                },
             },
             at,
         ));
