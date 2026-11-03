@@ -210,7 +210,7 @@
               <div class="detail-inner stack">
                 <h2 class="page-title">{ui.multi.length} selected</h2>
                 <div class="gap wrap">
-                  <Btn label="Add to favourites" icon="star" onclick={() => ui.bulk('favourite', { flag: true })} />
+                  <Btn label="Add to favorites" icon="star" onclick={() => ui.bulk('favourite', { flag: true })} />
                   <Btn label="Pin to the top" icon="keep" onclick={() => ui.bulk('pin', { flag: !chosen.every((e) => e.pinned) })} />
                   <Btn label="Put on the hidden shelf" icon="visibility_lock" onclick={() => ui.bulk('hide', { flag: true })} />
                   <Btn label="Move to trash" icon="delete" variant="danger" onclick={async () => { await ui.bulk(ui.section === 'trash' ? 'restore' : 'trash'); ui.multi = []; }} />

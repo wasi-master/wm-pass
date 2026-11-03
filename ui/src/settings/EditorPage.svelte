@@ -12,7 +12,7 @@
     ['notes', 'Notes', 'sticky_note_2'],
     ['custom', 'More fields', 'tag'],
     ['questions', 'Security questions', 'help'],
-    ['organise', 'Organise', 'folder'],
+    ['organise', 'Organize', 'folder'],
     ['details', 'More details', 'tune'],
   ];
   const open = $derived(prefs.listOf('editor_open'));
@@ -25,7 +25,7 @@
     </Row>
   {/each}
 </Group>
-<Group title="Behaviour">
+<Group title="Behavior">
   <Toggle title="Remember what I open" sub="A section you open or close stays that way next time." icon="history" pref="editor_remember" />
   <Toggle title="Fold less used fields" sub="Such as a card’s PIN or a database’s connection string." icon="expand_more" pref="editor_fold_details" />
   <Toggle title="Start logins with a password" sub="Fill in a generated password on every new login." icon="casino" pref="editor_generate" />

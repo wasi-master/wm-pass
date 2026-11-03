@@ -350,7 +350,7 @@ internal val QueryChips = listOf(
     Triple("Weak", "weak", PassIcons.GppMaybe),
     Triple("Reused", "reused", PassIcons.SwapHoriz),
     Triple("Has code", "has:totp", PassIcons.Pin),
-    Triple("Favourites", "favourite", PassIcons.StarFilled),
+    Triple("Favorites", "favourite", PassIcons.StarFilled),
     Triple("Pinned", "pinned", PassIcons.KeepFilled),
     Triple("Changed recently", "modified<30d", PassIcons.Schedule),
     Triple("Trash", "trashed", PassIcons.Delete),
@@ -392,7 +392,7 @@ private fun SearchStart(all: List<Summary>, top: androidx.compose.ui.unit.Dp) {
         }
         if (favourites.isNotEmpty()) {
             items(favourites, key = { "f" + it.id }) { SearchRow(it, "") }
-            item("fav-title") { Eyebrow("Favourites") }
+            item("fav-title") { Eyebrow("Favorites") }
         }
     }
 }

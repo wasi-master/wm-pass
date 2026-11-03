@@ -13,9 +13,9 @@
     ['light', 'Rounded light', 'Thin strokes and soft corners'],
   ];
   const SITE_STYLES = [
-    ['brand', 'Brand colours', 'Each site’s mark on its own colour'],
-    ['tinted', 'Coloured marks', 'Each mark in its colour, on one background'],
-    ['uniform', 'One colour', 'Every mark the same, on one background'],
+    ['brand', 'Brand colors', 'Each site’s mark on its own color'],
+    ['tinted', 'Colored marks', 'Each mark in its color, on one background'],
+    ['uniform', 'One color', 'Every mark the same, on one background'],
     ['letters', 'Letters', 'First letters only, no logos'],
   ];
   const SAMPLE: IconName[] = ['key', 'lock', 'search', 'settings', 'star', 'folder', 'delete'];
@@ -63,5 +63,5 @@
 </Group>
 
 <Group title="Settings icons">
-  <Choice title="Style" icon="palette" pref="settings_icons" options={[['coloured', 'Coloured'], ['mono', 'One colour'], ['bare', 'No background'], ['off', 'None']]} />
+  <Choice title="Style" icon="palette" pref="settings_icons" options={[['coloured', 'Colored'], ['mono', 'One color'], ['bare', 'No background'], ['off', 'None']]} />
 </Group>

@@ -540,7 +540,7 @@
         </Fold>
       {/if}
 
-      <Fold title="Organise" summary="Folder, tags, icon, colour and favourite" open={isOpen('organise', false)} ontoggle={(o) => remember('organise', false, o)}>
+      <Fold title="Organize" summary="Folder, tags, icon, color and favorite" open={isOpen('organise', false)} ontoggle={(o) => remember('organise', false, o)}>
         <div class="form-row"><span class="label">Folder</span><span><Btn label={folderName} icon="folder" onclick={() => (picker = 'folder')} /></span></div>
         <div class="form-row"><span class="label">Tags</span><span><Btn label={tags.length ? tags.join(', ') : 'None'} icon="sell" onclick={() => (picker = 'tags')} /></span></div>
         <div class="form-row"><span class="label">Icon</span><span><Btn label={icon ? 'Your choice' : 'Automatic'} icon="image" onclick={() => (picker = 'icon')} /></span></div>
@@ -552,7 +552,7 @@
             </Btn>
           </span>
         </div>
-        <div class="form-row"><span class="label">Favourite</span><span><Switch checked={favourite} label="Favourite" onchange={(v) => (favourite = v)} /></span></div>
+        <div class="form-row"><span class="label">Favorite</span><span><Switch checked={favourite} label="Favorite" onchange={(v) => (favourite = v)} /></span></div>
       </Fold>
     {/if}
 

@@ -17,6 +17,18 @@
     <uses-feature android:name="android.hardware.nfc" android:required="false" />
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />
 
+    <!-- The apps a launcher shows, so a login can be tied to one from a list. Nothing about them is sent anywhere. -->
+    <queries>
+        <!-- WM Keyboard, so its fill setting can start on when it is installed. -->
+        <package android:name="com.wasimaster.wmkeyboard" />
+        <package android:name="com.wasimaster.wmkeyboard.debug" />
+        <package android:name="com.wasimaster.wmkeyboard.fast" />
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <!-- allowBackup off: a vault leaves this phone only by the owner's hand. -->
     <application
         android:enableOnBackInvokedCallback="true"

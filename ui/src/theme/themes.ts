@@ -115,9 +115,9 @@ function checked(colors: ThemeColors | null | undefined): ThemeColors | null {
     colors.warn,
     colors.info,
   ];
-  if (!required.every((v) => typeof v === 'string' && HEX.test(v))) throw new Error('That theme has a colour that is not valid.');
+  if (!required.every((v) => typeof v === 'string' && HEX.test(v))) throw new Error('That theme has a color that is not valid.');
   const optional = [colors.onPrimary, colors.primaryContainer, colors.secondaryContainer, colors.outline, colors.digit, colors.symbol];
-  if (!optional.every((v) => !v || (typeof v === 'string' && HEX.test(v)))) throw new Error('That theme has a colour that is not valid.');
+  if (!optional.every((v) => !v || (typeof v === 'string' && HEX.test(v)))) throw new Error('That theme has a color that is not valid.');
   return readableOn({
     background: colors.background,
     surface: colors.surface,
@@ -171,7 +171,7 @@ export function readTheme(text: string): ThemeFile {
   }
   if (parsed?.format !== 'wmpass-theme') throw new Error('That is not a WM Pass theme.');
   if ((parsed.version ?? 1) > 1) throw new Error('This theme needs a newer version of WM Pass.');
-  if (!parsed.light && !parsed.dark) throw new Error('That theme has no colours.');
+  if (!parsed.light && !parsed.dark) throw new Error('That theme has no colors.');
   const name = String(parsed.name ?? '')
     .replace(/\p{Cc}/gu, '')
     .trim()

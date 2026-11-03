@@ -102,6 +102,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -259,7 +260,7 @@ private fun StandardEntry(id: String, entry: Detail?, revealed: MutableMap<Strin
                         }) {
                             Icon(
                                 if (entry.favourite) PassIcons.StarFilled else PassIcons.Star,
-                                if (entry.favourite) "Remove from favourites" else "Add to favourites",
+                                if (entry.favourite) "Remove from favorites" else "Add to favorites",
                                 tint = if (entry.favourite) colors.warn else colors.textMid,
                             )
                         }
@@ -323,7 +324,7 @@ private fun TopBar(entry: Detail?, scrolled: Int) {
             Row(Modifier.align(Alignment.CenterEnd), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 GlassCircle(
                     if (entry.favourite) PassIcons.StarFilled else PassIcons.Star,
-                    if (entry.favourite) "Remove from favourites" else "Add to favourites",
+                    if (entry.favourite) "Remove from favorites" else "Add to favorites",
                     tint = if (entry.favourite) colors.warn else colors.text,
                 ) {
                     shell.launch {
@@ -573,7 +574,7 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
     }
 
     if (entry.customFields.isNotEmpty()) {
-        Eyebrow("More fields")
+        Eyebrow("Custom fields")
         GroupCard {
             entry.customFields.forEachIndexed { index, field ->
                 if (index > 0) Hairline()
@@ -625,13 +626,40 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
 
     Attachments(entry)
 
-    if (entry.tags.isNotEmpty()) {
-        Eyebrow("Tags")
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(horizontal = 2.dp)) {
-            entry.tags.forEach { tag -> Pill(tag, false, icon = PassIcons.Sell) { sheet = "tags" } }
-            Pill("Add", false, icon = PassIcons.Add) { sheet = "tags" }
+    var managing by remember { mutableStateOf<String?>(null) }
+    var suggested by remember(entry.id) { mutableStateOf<List<String>>(emptyList()) }
+    LaunchedEffect(entry.id, entry.title, entry.sites) {
+        suggested = runCatching {
+            Pass.plainCall("categorise.suggest") { put("id", entry.id) }.obj["categories"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }
+        }.getOrNull().orEmpty()
+    }
+    fun setTags(next: List<String>) = shell.launch {
+        Pass.change("entry.common") {
+            put("id", entry.id)
+            putJsonArray("tags") { next.distinct().forEach { add(it) } }
         }
     }
+    if (!entry.trashed || entry.tags.isNotEmpty()) {
+        Eyebrow("Tags")
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(horizontal = 2.dp).animateContentSize(Springs.glide())) {
+            entry.tags.forEach { tag ->
+                TagChip(tag, true, onRemove = { setTags(entry.tags - tag) }, onLongClick = { managing = tag }) { managing = tag }
+            }
+            if (!entry.trashed) Pill(if (entry.tags.isEmpty()) "Add a tag" else "Add", false, icon = PassIcons.Add) { sheet = "tags" }
+        }
+        val offered = suggested.filter { it !in entry.tags }
+        if (offered.isNotEmpty() && !entry.trashed) {
+            Row(Modifier.padding(start = 4.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(PassIcons.AutoAwesome, null, tint = colors.textMid, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Suggested", color = colors.textMid, style = MaterialTheme.typography.labelLarge)
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(horizontal = 2.dp)) {
+                offered.forEach { tag -> Pill(tag, false, icon = PassIcons.Add) { setTags(entry.tags + tag) } }
+            }
+        }
+    }
+    managing?.let { tag -> TagManageSheet(tag) { managing = null } }
 
     Linked(entry, linking) { linking = it }
     History(entry, revealed)
@@ -644,35 +672,22 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
             remind.expiresMs != null -> "Expires ${whenText(remind.expiresMs!!)}"
             else -> "Off"
         }
-        if (entry.tags.isEmpty()) {
-            var guess by remember(entry.id) { mutableStateOf<String?>(null) }
-            LaunchedEffect(entry.id) {
-                guess = runCatching { Pass.plainCall("categorise.suggest") { put("id", entry.id) }.obj["category"]?.jsonPrimitive?.contentOrNull }.getOrNull()
-            }
-            guess?.let { category ->
-                ActionLine(PassIcons.Sell, "Tag as $category", tint = colors.primary) {
-                    shell.launch {
-                        Pass.change("entry.common") {
-                            put("id", entry.id)
-                            putJsonArray("tags") { add(category) }
-                        }
-                    }
-                }
-                Hairline(inset = 58.dp)
-            }
-            ActionLine(PassIcons.Sell, "Add a tag") { sheet = "tags" }
-            Hairline(inset = 58.dp)
-        }
         ActionLine(PassIcons.AttachFile, "Attach a file") { pickAttachment.launch(arrayOf("*/*")) }
         Hairline(inset = 58.dp)
         ActionLine(PassIcons.Link, "Link another item") { linking = true }
         Hairline(inset = 58.dp)
-        ActionLine(PassIcons.Snooze, "Change reminder", reminderText) { sheet = "reminders" }
-        Hairline(inset = 58.dp)
+        // A reminder to change a password means nothing on an item that has none.
+        if (entry.hasPassword || remind.changeEveryDays != null || remind.expiresMs != null) {
+            ActionLine(PassIcons.Snooze, "Change reminder", reminderText) { sheet = "reminders" }
+            Hairline(inset = 58.dp)
+        }
         val folderName = Pass.folders.collectAsStateWithLifecycle().value.firstOrNull { it.id == entry.folder }?.name
         ActionLine(PassIcons.Folder, "Folder", folderName ?: "None") { sheet = "folder" }
         Hairline(inset = 58.dp)
-        ActionLine(PassIcons.Palette, "Colour", if (entry.color != null) "Your choice" else "From the site") { sheet = "colour" }
+        val shown = com.wasimaster.wmpass.ui.parts.rememberFace(entry.title, entry.site, entry.kind, entry.color, entry.icon)
+        ActionLine(PassIcons.Palette, "Color", if (entry.color != null) "Your choice" else "From the site", trailing = { Swatch(shown) }) {
+            sheet = "colour"
+        }
         Hairline(inset = 58.dp)
         ActionLine(if (entry.pinned) PassIcons.KeepFilled else PassIcons.Keep, if (entry.pinned) "Unpin" else "Pin to the top") {
             shell.launch {
@@ -683,30 +698,40 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
             }
         }
         Hairline(inset = 58.dp)
-        ActionLine(PassIcons.VisibilityLock, if (entry.hidden) "Remove from hidden shelf" else "Move to hidden shelf") {
-            shell.launch {
-                Pass.change("entry.common") {
-                    put("id", entry.id)
-                    put("hidden", !entry.hidden)
-                }
-            }
-        }
-        Hairline(inset = 58.dp)
-        ActionLine(PassIcons.Timer, "Self-destruct", entry.destroyAtMs?.let { "Set" } ?: "Never") { sheet = "destruct" }
-        Hairline(inset = 58.dp)
-        ActionLine(PassIcons.Layers, "Duplicate") {
-            shell.launch {
-                val made = Pass.change("entry.duplicate") { put("id", entry.id) }
-                made.obj["id"]?.jsonPrimitive?.content?.let { copy ->
-                    shell.nav.popBackStack()
-                    shell.open(copy)
-                }
-            }
-        }
-        Hairline(inset = 58.dp)
         ActionLine(PassIcons.QrCodeScanner, "Send to a device") { sheet = "send" }
+        // The rarely used ones wait behind one line, unless one of them is already in use.
+        var rare by remember(entry.id) { mutableStateOf(entry.hidden || entry.destroyAtMs != null) }
+        Hairline(inset = 58.dp)
+        AnimatedVisibility(rare) {
+            Column {
+                ActionLine(PassIcons.VisibilityLock, if (entry.hidden) "Remove from hidden shelf" else "Move to hidden shelf") {
+                    shell.launch {
+                        Pass.change("entry.common") {
+                            put("id", entry.id)
+                            put("hidden", !entry.hidden)
+                        }
+                    }
+                }
+                Hairline(inset = 58.dp)
+                ActionLine(PassIcons.Timer, "Self-destruct", entry.destroyAtMs?.let { "Set" } ?: "Never") { sheet = "destruct" }
+                Hairline(inset = 58.dp)
+                ActionLine(PassIcons.Layers, "Duplicate") {
+                    shell.launch {
+                        val made = Pass.change("entry.duplicate") { put("id", entry.id) }
+                        made.obj["id"]?.jsonPrimitive?.content?.let { copy ->
+                            shell.nav.popBackStack()
+                            shell.open(copy)
+                        }
+                    }
+                }
+                Hairline(inset = 58.dp)
+            }
+        }
+        if (!rare) {
+            ActionLine(PassIcons.MoreHoriz, "More options", "Hidden shelf, self-destruct, duplicate") { rare = true }
+        }
         if (!entry.trashed) {
-            Hairline(inset = 58.dp)
+            if (!rare) Hairline(inset = 58.dp)
             ActionLine(PassIcons.Delete, "Move to trash", tint = colors.danger) {
                 shell.nav.popBackStack()
                 shell.trash(entry.id, entry.title)
@@ -722,7 +747,7 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
     )
 
     when (sheet) {
-        "tags" -> TagSheet(entry.tags, { sheet = null }) { tag, on ->
+        "tags" -> TagSheet(entry.tags, { sheet = null }, suggested) { tag, on ->
             val next = if (on) entry.tags + tag else entry.tags - tag
             shell.launch {
                 Pass.change("entry.common") {
@@ -739,7 +764,7 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
                 }
             }
         }
-        "colour" -> ColourSheet(entry.color, { sheet = null }) { hue ->
+        "colour" -> ColourSheet(entry.color, { sheet = null }, com.wasimaster.wmpass.ui.parts.rememberFace(entry.title, entry.site, entry.kind, null, entry.icon)) { hue ->
             shell.launch {
                 Pass.change("entry.common") {
                     put("id", entry.id)
@@ -963,7 +988,14 @@ private fun PlainRow(text: String, icon: ImageVector, onClick: (() -> Unit)?, su
 }
 
 @Composable
-private fun ActionLine(icon: ImageVector, title: String, value: String? = null, tint: Color = palette.text, onClick: () -> Unit) {
+private fun ActionLine(
+    icon: ImageVector,
+    title: String,
+    value: String? = null,
+    tint: Color = palette.text,
+    trailing: (@Composable () -> Unit)? = null,
+    onClick: () -> Unit,
+) {
     val colors = palette
     val shell = LocalShell.current
     Row(
@@ -978,9 +1010,23 @@ private fun ActionLine(icon: ImageVector, title: String, value: String? = null, 
     ) {
         Icon(icon, null, tint = if (tint == colors.text) colors.textMid else tint, modifier = Modifier.size(22.dp))
         Spacer(Modifier.width(18.dp))
-        Text(title, color = tint, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-        if (value != null) Text(value, color = colors.textMid, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+        Column(Modifier.weight(1f)) {
+            Text(title, color = tint, style = MaterialTheme.typography.bodyLarge)
+            // Long explanations go under the title; short states sit at the end.
+            if (value != null && value.length > 18) Text(value, color = colors.textMid, style = MaterialTheme.typography.bodySmall)
+        }
+        if (value != null && value.length <= 18) Text(value, color = colors.textMid, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+        if (trailing != null) {
+            Spacer(Modifier.width(12.dp))
+            trailing()
+        }
     }
+}
+
+/** The colour an item's tile is drawn in, small. */
+@Composable
+private fun Swatch(face: com.wasimaster.wmpass.ui.parts.TileFace) {
+    Box(Modifier.size(22.dp).clip(CircleShape).background(Brush.linearGradient(listOf(face.from, face.to))))
 }
 
 @Composable
@@ -1228,7 +1274,7 @@ private fun SendSheet(entry: Detail, onDismiss: () -> Unit) {
             Text("Scan this with the other device. It can be opened only there, once.", color = colors.textMid, style = MaterialTheme.typography.bodyMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth())
         } else {
             Text(
-                "On the other device, choose Sync and accounts, then Receive an item. It shows a code for you to scan. Nothing travels over a network.",
+                "Open WM Pass on the other device and go to Settings, then Sync and accounts, then Receive an item. It shows a code for you to scan. Nothing travels over a network.",
                 color = colors.textMid,
                 style = MaterialTheme.typography.bodyLarge,
             )

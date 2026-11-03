@@ -130,10 +130,19 @@ private fun CodeCard(row: OtpRow, modifier: Modifier = Modifier) {
             shownAt = 0L
         }
     }
+    // Right copies the code and left opens the editor, as rows in the vault list do.
+    SwipeRow(
+        modifier,
+        if (colors.flat) androidx.compose.ui.graphics.RectangleShape else Shapes.card,
+        onCopy = if (code != null) ({ shell.copySecret("Code") { Pass.code(row.id) } }) else null,
+        onTrash = { shell.nav.navigate("edit/${row.id}") },
+        rightIcon = PassIcons.ContentCopy,
+        leftIcon = PassIcons.Edit,
+    ) {
     Row(
-        modifier
+        Modifier
             .fillMaxWidth()
-            .then(if (colors.flat) Modifier else Modifier.clip(Shapes.card).background(colors.surface1).rim(Shapes.card, colors))
+            .then(if (colors.flat) Modifier.background(colors.ground) else Modifier.clip(Shapes.card).background(colors.surface1).rim(Shapes.card, colors))
             .inkSurface(ink, colors.primary)
             .tapAt(onLongPress = { shell.open(row.id) }) { at ->
                 if (code != null) {
@@ -181,6 +190,7 @@ private fun CodeCard(row: OtpRow, modifier: Modifier = Modifier) {
             Spacer(Modifier.width(12.dp))
             LifeRing(row.otp.period!!, size = if (colors.flat) 26.dp else 34.dp, stroke = if (colors.flat) 3.dp else 3.5.dp)
         }
+    }
     }
 }
 

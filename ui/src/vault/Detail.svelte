@@ -251,7 +251,7 @@
     {#if !detail.trashed}
       <IconBtn
         icon={detail.favourite ? 'star_fill' : 'star'}
-        label={detail.favourite ? 'Remove from favourites' : 'Add to favourites'}
+        label={detail.favourite ? 'Remove from favorites' : 'Add to favorites'}
         class={detail.favourite ? 'star-on' : ''}
         onclick={() => pass.change('entry.common', { id, favourite: !detail!.favourite })}
       />

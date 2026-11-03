@@ -11,6 +11,8 @@ description: What a duress password, a decoy and a hidden vault do, and the limi
 
 **Self-destructing entries** remove themselves at a time you set.
 
+Both are under **More options** on an item's page.
+
 ## What these cannot do
 
 They are meant to get you through a quick look under pressure. They do not defeat forensics. Flash storage does not reliably erase, and a disk image taken earlier, or a sync provider's file history, still holds what it held. An entry that has self-destructed still exists in any copy made before then.

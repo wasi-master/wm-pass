@@ -3,6 +3,7 @@ package com.wasimaster.wmpass.ui.vault
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,8 +13,10 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -50,9 +53,11 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.wasimaster.wmpass.core.Pass
 import com.wasimaster.wmpass.ui.icons.PassIcons
+import com.wasimaster.wmpass.ui.parts.GlyphChoices
 import com.wasimaster.wmpass.ui.parts.GlyphTile
 import com.wasimaster.wmpass.ui.parts.Hairline
 import com.wasimaster.wmpass.ui.parts.Pill
+import com.wasimaster.wmpass.ui.parts.glyphName
 import com.wasimaster.wmpass.ui.parts.PrimaryButton
 import com.wasimaster.wmpass.ui.parts.QuietButton
 import com.wasimaster.wmpass.ui.parts.oklch
@@ -255,10 +260,10 @@ val LabelHues = listOf(25, 55, 85, 120, 150, 180, 210, 240, 270, 300, 330, 355)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ColourSheet(current: String?, onDismiss: () -> Unit, onPick: (String?) -> Unit) {
+fun ColourSheet(current: String?, onDismiss: () -> Unit, natural: com.wasimaster.wmpass.ui.parts.TileFace? = null, onPick: (String?) -> Unit) {
     val colors = palette
     val shell = LocalShell.current
-    PassSheet(onDismiss, "Colour") {
+    PassSheet(onDismiss, "Color") {
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -275,7 +280,7 @@ fun ColourSheet(current: String?, onDismiss: () -> Unit, onPick: (String?) -> Un
                         .clip(CircleShape)
                         .background(Brush.linearGradient(listOf(oklch(0.70f, 0.14f, hue.toFloat()), oklch(0.52f, 0.15f, hue + 28f))))
                         .then(if (selected) Modifier.border(3.dp, colors.text, CircleShape) else Modifier)
-                        .clickable(source, androidx.compose.material3.ripple(), onClickLabel = "Colour") {
+                        .clickable(source, androidx.compose.material3.ripple(), onClickLabel = "Color") {
                             shell.haptics.tick()
                             onPick(hue.toString())
                             onDismiss()
@@ -284,25 +289,54 @@ fun ColourSheet(current: String?, onDismiss: () -> Unit, onPick: (String?) -> Un
             }
         }
         Spacer(Modifier.height(16.dp))
-        QuietButton("Use the site's own colour", Modifier.fillMaxWidth()) {
-            onPick(null)
-            onDismiss()
+        // What the item goes back to: its brand's colour, or one drawn from its name.
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(CircleShape)
+                .background(colors.surface2)
+                .then(if (current == null) Modifier.border(2.dp, colors.primary, CircleShape) else Modifier)
+                .clickable {
+                    shell.haptics.tick()
+                    onPick(null)
+                    onDismiss()
+                }
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (natural != null) {
+                Box(Modifier.size(36.dp).clip(CircleShape).background(Brush.linearGradient(listOf(natural.from, natural.to))))
+                Spacer(Modifier.width(12.dp))
+            }
+            Text("Use the site's own color", color = colors.text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            if (current == null) Icon(PassIcons.Check, "In use", tint = colors.primary, modifier = Modifier.padding(end = 8.dp).size(20.dp))
         }
     }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun TagSheet(present: List<String>, onDismiss: () -> Unit, onToggle: (String, Boolean) -> Unit) {
+fun TagSheet(present: List<String>, onDismiss: () -> Unit, suggested: List<String> = emptyList(), onToggle: (String, Boolean) -> Unit) {
+    val colors = palette
     val entries by Pass.entries.collectAsStateWithLifecycle()
     val all = remember(entries) { entries.flatMap { it.tags }.distinct().sorted() }
     val typed = rememberTextFieldState()
+    var managing by remember { mutableStateOf<String?>(null) }
     PassSheet(onDismiss, "Tags") {
+        val offered = suggested.filter { it !in present && it !in all }
+        if (offered.isNotEmpty()) {
+            Text("Suggested", color = colors.textMid, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 2.dp, bottom = 8.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                offered.forEach { tag -> Pill(tag, false, icon = PassIcons.Add) { onToggle(tag, true) } }
+            }
+            Spacer(Modifier.height(16.dp))
+        }
         if (all.isNotEmpty()) {
+            Text("Tap to add or take off. Hold one to rename or delete it.", color = colors.textMid, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 2.dp, bottom = 8.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 all.forEach { tag ->
                     val on = tag in present
-                    Pill(tag, on, icon = PassIcons.Sell) { onToggle(tag, !on) }
+                    TagChip(tag, on, onRemove = if (on) ({ onToggle(tag, false) }) else null, onLongClick = { managing = tag }) { onToggle(tag, !on) }
                 }
             }
             Spacer(Modifier.height(14.dp))
@@ -316,67 +350,290 @@ fun TagSheet(present: List<String>, onDismiss: () -> Unit, onToggle: (String, Bo
             }
         }
     }
+    managing?.let { tag -> TagManageSheet(tag) { managing = null } }
 }
 
-/** Automatic, one of the app's glyphs, or a known brand: for authenticators above all. */
+/**
+ * A tag as a chip. Selected, it carries a cross that takes it off; held, it opens the sheet that
+ * renames or deletes it on every item.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+fun TagChip(tag: String, selected: Boolean, onRemove: (() -> Unit)?, onLongClick: () -> Unit, onClick: () -> Unit) {
+    val colors = palette
+    val shell = LocalShell.current
+    // The standard look follows Material's input chip: 32dp, small corners, outlined until chosen.
+    val shape = if (colors.flat) androidx.compose.foundation.shape.RoundedCornerShape(8.dp) else CircleShape
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        Modifier
+            .height(if (colors.flat) 32.dp else 36.dp)
+            .clip(shape)
+            .then(
+                when {
+                    colors.flat && selected -> Modifier.background(scheme.secondaryContainer)
+                    colors.flat -> Modifier.border(1.dp, scheme.outlineVariant, shape)
+                    selected -> Modifier.background(colors.primary.copy(alpha = if (colors.dark) 0.22f else 0.15f))
+                    else -> Modifier.background(colors.surface2)
+                },
+            )
+            .combinedClickable(
+                onClick = {
+                    shell.haptics.tick()
+                    onClick()
+                },
+                onLongClick = {
+                    shell.haptics.click()
+                    onLongClick()
+                },
+                onLongClickLabel = "Rename or delete $tag",
+            )
+            .padding(start = 12.dp, end = if (onRemove != null) 4.dp else 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val picked by Pass.tagIcons.collectAsStateWithLifecycle()
+        val ink = when {
+            colors.flat && selected -> scheme.onSecondaryContainer
+            colors.flat -> scheme.onSurfaceVariant
+            selected -> colors.primary
+            else -> colors.text
+        }
+        Icon(TagIcons.of(tag, picked), null, tint = if (selected || colors.flat) ink else colors.textMid, modifier = Modifier.size(if (colors.flat) 18.dp else 16.dp))
+        Spacer(Modifier.width(if (colors.flat) 8.dp else 6.dp))
+        if (colors.flat) {
+            Text(tag, color = ink, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+        } else {
+            Text(tag, color = ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        }
+        if (onRemove != null) {
+            Spacer(Modifier.width(2.dp))
+            Box(
+                Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .clickable(onClickLabel = "Take off $tag") {
+                        shell.haptics.tick()
+                        onRemove()
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(PassIcons.Close, "Take off $tag", tint = if (colors.flat) scheme.onSurfaceVariant else colors.textMid, modifier = Modifier.size(if (colors.flat) 18.dp else 16.dp))
+            }
+        }
+    }
+}
+
+/** Renames a tag, deletes it, or gives it an icon, on every item that has it. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun IconSheet(current: String?, onDismiss: () -> Unit, onPick: (String?) -> Unit) {
+fun TagManageSheet(tag: String, onDismiss: () -> Unit) {
     val colors = palette
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val typed = rememberTextFieldState()
-    val brands = remember { com.wasimaster.wmpass.ui.parts.Brands.all(context) }
-    PassSheet(onDismiss, "Icon") {
-        QuietButton("Automatic", Modifier.fillMaxWidth(), height = 48.dp) {
-            onPick(null)
-            onDismiss()
-        }
-        Spacer(Modifier.height(16.dp))
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            maxItemsInEachRow = 6,
-        ) {
-            com.wasimaster.wmpass.ui.parts.GlyphChoices.forEach { (name, glyph) ->
-                val id = "glyph:$name"
-                Box(
-                    Modifier
-                        .size(46.dp)
-                        .clip(Shapes.tileSmall)
-                        .background(if (current == id) colors.primary.copy(alpha = 0.25f) else colors.surface2)
-                        .clickable {
-                            onPick(id)
-                            onDismiss()
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(glyph, name, tint = colors.text, modifier = Modifier.size(22.dp))
+    val shell = LocalShell.current
+    val entries by Pass.entries.collectAsStateWithLifecycle()
+    val picked by Pass.tagIcons.collectAsStateWithLifecycle()
+    val holders = remember(entries, tag) { entries.filter { tag in it.tags }.map { it.id } }
+    val name = remember { androidx.compose.foundation.text.input.TextFieldState(tag) }
+    var deleting by remember { mutableStateOf(false) }
+    suspend fun bulk(op: String, to: String? = null) = Pass.change("entries.bulk") {
+        putJsonArray("ids") { holders.forEach { add(it) } }
+        put("op", op)
+        put("tag", tag)
+        if (to != null) put("to", to)
+    }
+    PassSheet(onDismiss, tag) {
+        Text(
+            if (holders.size == 1) "On 1 item." else "On ${holders.size} items.",
+            color = colors.textMid,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(start = 2.dp, bottom = 12.dp),
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SheetField(name, "Name", Modifier.weight(1f))
+            Spacer(Modifier.width(10.dp))
+            val renamed = name.text.toString().trim()
+            QuietButton("Rename", tint = colors.primary, enabled = renamed.isNotEmpty() && renamed != tag) {
+                shell.launch {
+                    bulk("tag_rename", renamed)
+                    TagIcons.rename(tag, renamed)
+                    onDismiss()
                 }
             }
         }
-        Spacer(Modifier.height(18.dp))
-        SheetField(typed, "Search ${brands.size} brands")
-        Spacer(Modifier.height(12.dp))
-        val query = typed.text.toString().trim().lowercase()
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            maxItemsInEachRow = 6,
-        ) {
-            brands.filter { brand -> query.isEmpty() || query in brand.name.lowercase() || brand.otherNames.any { query in it.lowercase() } }.take(48).forEach { brand ->
-                com.wasimaster.wmpass.ui.parts.SiteTile(
-                    brand.name,
-                    null,
-                    "login",
-                    Modifier.clickable {
-                        onPick("brand:${brand.slug}")
-                        onDismiss()
-                    },
-                    46.dp,
-                    icon = "brand:${brand.slug}",
-                )
+        Spacer(Modifier.height(16.dp))
+        Text("Icon", color = colors.textMid, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 2.dp, bottom = 8.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            val chosen = picked[tag]
+            val glyphs = GlyphChoices
+            // Automatic first, drawn as what it would pick, then the short list.
+            (listOf<String?>(null) + TagIcons.choices).forEach { id ->
+                val glyph = if (id == null) TagIcons.automatic(tag) else glyphs[id] ?: return@forEach
+                val on = chosen == id
+                val name = if (id == null) "Automatic" else glyphName(id)
+                Box(
+                    Modifier
+                        .size(42.dp)
+                        .clip(CircleShape)
+                        .background(if (on) colors.primary.copy(alpha = 0.25f) else colors.surface2)
+                        .then(if (on) Modifier.border(2.dp, colors.primary, CircleShape) else Modifier)
+                        .clickable(onClickLabel = name) {
+                            shell.haptics.tick()
+                            shell.launch { TagIcons.set(tag, id) }
+                        },
+                    contentAlignment = Alignment.Center,
+                ) { Icon(glyph, name, tint = if (on) colors.primary else colors.text, modifier = Modifier.size(20.dp)) }
             }
         }
+        Spacer(Modifier.height(16.dp))
+        QuietButton("Delete from every item", Modifier.fillMaxWidth(), PassIcons.Delete, colors.danger) { deleting = true }
+    }
+    if (deleting) {
+        ConfirmSheet("Delete “$tag”?", "It comes off every item that has it. The items stay.", "Delete tag", onDismiss = { deleting = false }) {
+            shell.launch {
+                bulk("tag_remove")
+                if (picked[tag] != null) TagIcons.set(tag, null)
+                onDismiss()
+            }
+        }
+    }
+}
+
+/**
+ * Automatic, one of the app's glyphs, or a known brand: for authenticators above all. One grid
+ * fills the sheet's width whatever the screen, and the brands load as they scroll into view, so all
+ * of them are there without searching. Holding one says what it is and where it comes from.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+fun IconSheet(
+    current: String?,
+    onDismiss: () -> Unit,
+    title: String = "",
+    site: String? = null,
+    kind: String = "login",
+    color: String? = null,
+    onPick: (String?) -> Unit,
+) {
+    val colors = palette
+    val shell = LocalShell.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val typed = rememberTextFieldState()
+    val brands = remember { com.wasimaster.wmpass.ui.parts.Brands.all(context) }
+    var about by remember { mutableStateOf<Pair<String, String>?>(null) }
+    fun choose(id: String?) {
+        shell.haptics.tick()
+        onPick(id)
+        onDismiss()
+    }
+    PassSheet(onDismiss, "Icon") {
+        // Automatic, drawn as it would come out, so choosing it is not a guess.
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(Shapes.tile)
+                .background(colors.surface2)
+                .then(if (current == null) Modifier.border(2.dp, colors.primary, Shapes.tile) else Modifier)
+                .clickable { choose(null) }
+                .padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            com.wasimaster.wmpass.ui.parts.SiteTile(title, site, kind, size = 44.dp, label = color, icon = null)
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Automatic", color = colors.text, style = MaterialTheme.typography.bodyLarge)
+                Text("The site's own mark when it is known, or a letter", color = colors.textMid, style = MaterialTheme.typography.bodySmall)
+            }
+            if (current == null) Icon(PassIcons.Check, "In use", tint = colors.primary, modifier = Modifier.size(22.dp))
+        }
+        Spacer(Modifier.height(12.dp))
+        SheetField(typed, "Search icons and ${brands.size} brands")
+        Spacer(Modifier.height(8.dp))
+        val query = typed.text.toString().trim().lowercase()
+        val glyphs = GlyphChoices.entries.filter { (id, _) -> query.isEmpty() || query in glyphName(id).lowercase() || query in id }
+        val marks = remember(query, brands) {
+            brands.filter { brand -> query.isEmpty() || query in brand.name.lowercase() || brand.otherNames.any { query in it.lowercase() } }
+        }
+        androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+            columns = androidx.compose.foundation.lazy.grid.GridCells.Adaptive(54.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            val full: androidx.compose.foundation.lazy.grid.LazyGridItemSpanScope.() -> androidx.compose.foundation.lazy.grid.GridItemSpan =
+                { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }
+            if (glyphs.isNotEmpty()) {
+                item(span = full, key = "glyphs") { GridHeading("Symbols", glyphs.size) }
+                items(glyphs.size, key = { "g:" + glyphs[it].key }) { index ->
+                    val (name, glyph) = glyphs[index]
+                    val id = "glyph:$name"
+                    val label = glyphName(name)
+                    Box(
+                        Modifier
+                            .aspectRatio(1f)
+                            .clip(Shapes.tileSmall)
+                            .background(if (current == id) colors.primary.copy(alpha = 0.25f) else colors.surface2)
+                            .combinedClickable(
+                                onClickLabel = label,
+                                onLongClick = {
+                                    shell.haptics.click()
+                                    about = label to "Material Symbols by Google, Apache License 2.0"
+                                },
+                            ) { choose(id) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(glyph, label, tint = if (current == id) colors.primary else colors.text, modifier = Modifier.size(24.dp))
+                    }
+                }
+            }
+            if (marks.isNotEmpty()) {
+                item(span = full, key = "brands") { GridHeading("Brands", marks.size) }
+                items(marks.size, key = { "b:" + marks[it].slug }) { index ->
+                    val brand = marks[index]
+                    val id = "brand:${brand.slug}"
+                    Box(
+                        Modifier
+                            .aspectRatio(1f)
+                            .clip(Shapes.tileSmall)
+                            .then(if (current == id) Modifier.border(2.dp, colors.primary, Shapes.tileSmall) else Modifier)
+                            .combinedClickable(
+                                onClickLabel = brand.name,
+                                onLongClick = {
+                                    shell.haptics.click()
+                                    about = brand.name to "Simple Icons, CC0. The mark belongs to its owner."
+                                },
+                            ) { choose(id) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        com.wasimaster.wmpass.ui.parts.SiteTile(brand.name, null, "login", size = 46.dp, icon = id)
+                    }
+                }
+            }
+            if (glyphs.isEmpty() && marks.isEmpty()) {
+                item(span = full, key = "none") {
+                    Text("Nothing called “$query”.", color = colors.textMid, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(12.dp))
+                }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        // Held icons say their name here, where the thumb is not covering it.
+        androidx.compose.animation.AnimatedContent(about, label = "about") { shown ->
+            if (shown == null) {
+                Text("Hold an icon to see its name.", color = colors.textLow, style = MaterialTheme.typography.bodySmall, modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp))
+            } else {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
+                    Text(shown.first, color = colors.text, style = MaterialTheme.typography.titleSmall)
+                    Text(shown.second, color = colors.textMid, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GridHeading(text: String, count: Int) {
+    val colors = palette
+    Row(Modifier.fillMaxWidth().padding(start = 2.dp, top = 10.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(text, color = colors.textMid, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+        Text("$count", color = colors.textLow, style = MaterialTheme.typography.labelMedium)
     }
 }
 
@@ -405,9 +662,17 @@ fun BulkActions() {
             }
         }
     }
+    // One item held: the same as opening it and tapping Edit.
+    if (shell.selection.size == 1) {
+        BarIcon(PassIcons.Edit, "Edit") {
+            val id = shell.selection.first()
+            shell.selection.clear()
+            shell.nav.navigate("edit/$id")
+        }
+    }
     BarIcon(PassIcons.Folder, "Move to a folder") { sheet = "folder" }
     BarIcon(PassIcons.Sell, "Tag") { sheet = "tag" }
-    BarIcon(PassIcons.Palette, "Colour") { sheet = "colour" }
+    BarIcon(PassIcons.Palette, "Color") { sheet = "colour" }
     BarIcon(PassIcons.MoreHoriz, "More") { sheet = "more" }
     BarIcon(PassIcons.Delete, "Move to trash", colors.danger) {
         val count = shell.selection.size
@@ -435,7 +700,7 @@ fun BulkActions() {
             val chosen = remember(entries, shell.selection.toList()) { entries.filter { it.id in shell.selection } }
             PassSheet({ sheet = null }, "${shell.selection.size} selected") {
                 val allFav = chosen.all { it.favourite }
-                SheetRow(PassIcons.StarFilled, if (allFav) "Remove from favourites" else "Add to favourites", tint = colors.warn) {
+                SheetRow(PassIcons.StarFilled, if (allFav) "Remove from favorites" else "Add to favorites", tint = colors.warn) {
                     bulk("favourite") { put("flag", !allFav) }
                     sheet = null
                 }

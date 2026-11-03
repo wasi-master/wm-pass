@@ -156,9 +156,9 @@ private val IconStyles = listOf(
 )
 
 private val SiteStyles = listOf(
-    Triple("brand", "Brand colours", "Each site's mark on its own colour"),
-    Triple("tinted", "Coloured marks", "Each mark in its colour, on one background"),
-    Triple("uniform", "One colour", "Every mark the same, on one background"),
+    Triple("brand", "Brand colors", "Each site's mark on its own color"),
+    Triple("tinted", "Colored marks", "Each mark in its color, on one background"),
+    Triple("uniform", "One color", "Every mark the same, on one background"),
     Triple("letters", "Letters", "First letters only, no logos"),
 )
 
@@ -214,7 +214,7 @@ internal fun IconsScreen() {
                     "Style",
                     prefs.settingsIcons,
                     PassIcons.Palette,
-                    options = listOf("coloured" to "Coloured", "mono" to "One colour", "bare" to "No background", "off" to "None"),
+                    options = listOf("coloured" to "Colored", "mono" to "One color", "bare" to "No background", "off" to "None"),
                 )
             }
             item {
@@ -260,13 +260,13 @@ internal fun ListSettingsScreen() {
             item { SwitchRow("Pinned items first", "Keep pinned items above the rest.", prefs.pinnedOnTop, PassIcons.Keep) }
             item { SwitchRow("Fold logins on one site", "Show several logins for a site as one row.", prefs.groupSites, PassIcons.Layers) }
             item { SwitchRow("Section headings", null, prefs.listHeadings, PassIcons.FormatListBulleted) }
-            item { SwitchRow("Filter chips", "All, Favourites and the types you have.", prefs.filterChips, PassIcons.FilterList) }
+            item { SwitchRow("Filter chips", "All, Favorites and the types you have.", prefs.filterChips, PassIcons.FilterList) }
             item { SwitchRow("Search at the bottom", "Within reach of your thumb.", prefs.searchAtBottom, PassIcons.Search) }
         }
         SettingsGroup("Rows") {
             item { SwitchRow("Icons", null, prefs.rowIcons, PassIcons.Image) }
             item { SwitchRow("Second line", "The username or other detail under the name.", prefs.rowSubtitle, PassIcons.TextFields) }
-            item { SwitchRow("Small marks", "Favourite, one-time code, passkey and attachment.", prefs.rowBadges, PassIcons.Star) }
+            item { SwitchRow("Small marks", "Favorite, one-time code, passkey and attachment.", prefs.rowBadges, PassIcons.Star) }
             item {
                 ChoiceRow("Button on the right", prefs.rowButton, PassIcons.ContentCopy, options = RowActions + ("none" to "None"))
             }
@@ -276,14 +276,14 @@ internal fun ListSettingsScreen() {
                 ChoiceRow("Tap", prefs.tapAction, PassIcons.TouchApp, options = listOf("open" to "Open") + RowActions)
             }
             item {
-                ChoiceRow("Swipe right", prefs.swipeRight, PassIcons.Swipe, options = RowActions + listOf("favourite" to "Favourite", "none" to "Nothing"))
+                ChoiceRow("Swipe right", prefs.swipeRight, PassIcons.Swipe, options = RowActions + listOf("favourite" to "Favorite", "none" to "Nothing"))
             }
             item {
-                ChoiceRow("Swipe left", prefs.swipeLeft, PassIcons.Swipe, options = listOf("trash" to "Move to trash", "favourite" to "Favourite", "password" to "Copy password", "none" to "Nothing"))
+                ChoiceRow("Swipe left", prefs.swipeLeft, PassIcons.Swipe, options = listOf("trash" to "Move to trash", "favourite" to "Favorite", "password" to "Copy password", "none" to "Nothing"))
             }
         }
         SettingsGroup("Above the list") {
-            val all = listOf("favourites" to "Favourites", "recent" to "Recently changed", "health" to "Health", "codes" to "Codes")
+            val all = listOf("favourites" to "Favorites", "recent" to "Recently changed", "health" to "Health", "codes" to "Codes")
             val names = all.toMap()
             item {
                 ReorderableColumn(
@@ -386,23 +386,24 @@ internal fun EditorSettingsScreen() {
     val shell = LocalShell.current
     val prefs = shell.prefs
     WmScreen("Editor", route = "settings/editor", onBack = back()) {
-        SettingsGroup("Sections open at the start") {
+        SettingsGroup("Shown and open at the start") {
             listOf(
-                Triple("sites", "Websites", PassIcons.Language),
+                Triple("sites", "Websites and apps", PassIcons.Language),
                 Triple("otp", "One-time code", PassIcons.Pin),
                 Triple("notes", "Notes", PassIcons.StickyNote2),
-                Triple("custom", "More fields", PassIcons.Tag),
+                Triple("custom", "Custom fields", PassIcons.Tag),
                 Triple("questions", "Security questions", PassIcons.Help),
-                Triple("organise", "Organise", PassIcons.Folder),
-                Triple("details", "More details", PassIcons.Tune),
+                Triple("organise", "Organize", PassIcons.Folder),
+                Triple("details", "Other details", PassIcons.Tune),
             ).forEach { (key, name, icon) ->
                 item { ToggleSetting(name, null, key in prefs.editorOpen, icon = icon) { prefs.setEditorOpen(key, it) } }
             }
         }
-        SettingsGroup("Behaviour") {
+        SettingsGroup("Behavior") {
             item { SwitchRow("Remember what I open", "A section you open or close stays that way next time.", prefs.editorRemember, PassIcons.History) }
             item { SwitchRow("Fold less used fields", "Such as a card's PIN or a database's connection string.", prefs.editorFoldDetails, PassIcons.ExpandMore) }
             item { SwitchRow("Start logins with a password", "Fill in a generated password on every new login.", prefs.editorGenerate, PassIcons.Casino) }
+            item { SwitchRow("Tag new items", "A new item without tags gets the ones its site suggests, such as Banking or Social.", prefs.autoTag, PassIcons.Sell) }
         }
     }
 }
@@ -431,7 +432,7 @@ internal fun EntrySettingsScreen() {
                     icon = PassIcons.Timer,
                 ) { prefs.revealSeconds.set(it) }
             }
-            item { SwitchRow("Colour digits and symbols", "Makes a password easier to read aloud or retype.", prefs.colourSecrets, PassIcons.Palette) }
+            item { SwitchRow("Color digits and symbols", "Makes a password easier to read aloud or retype.", prefs.colourSecrets, PassIcons.Palette) }
         }
         SettingsGroup("History") {
             limit?.let { current ->
@@ -567,7 +568,7 @@ internal fun SettingsFileScreen() {
                 }
             }
             item { NavRow("Import", icon = PassIcons.Upload) { importing = true } }
-            item { NavRow("Reset all customisation", "Keeps your own themes and protection settings", icon = PassIcons.Refresh) { resetting = true } }
+            item { NavRow("Reset all customization", "Keeps your own themes and protection settings", icon = PassIcons.Refresh) { resetting = true } }
         }
     }
     if (importing) {
@@ -595,7 +596,7 @@ internal fun SettingsFileScreen() {
         }
     }
     if (resetting) {
-        ConfirmSheet("Reset all customisation?", "Style, icons, layout and gestures go back to how they started.", "Reset", onDismiss = { resetting = false }) {
+        ConfirmSheet("Reset all customization?", "Style, icons, layout and gestures go back to how they started.", "Reset", onDismiss = { resetting = false }) {
             prefs.resetCustomisations()
             result = "Everything is back to how it started."
         }
@@ -608,14 +609,14 @@ private class Found(val title: String, val where: String, val route: String, val
 
 private val SearchIndex = listOf(
     Found("Style", "Appearance › Style and theme", "settings/look", "standard glass interface"),
-    Found("Theme", "Appearance › Style and theme", "settings/look", "dracula catppuccin nord solarized gruvbox colours colors dark"),
+    Found("Theme", "Appearance › Style and theme", "settings/look", "dracula catppuccin nord solarized gruvbox colours colors dark colors colors"),
     Found("Dark mode", "Appearance › Style and theme", "settings/look", "light black amoled system"),
     Found("Animations", "Appearance › Style and theme", "settings/look", "motion reduce"),
     Found("Vibration", "Appearance › Style and theme", "settings/look", "haptics feedback"),
     Found("App icons", "Appearance › Icons", "settings/icons", "material symbols rounded sharp light glyphs"),
     Found("Site icons", "Appearance › Icons", "settings/icons", "brand logo simple icons favicon letters"),
     Found("Shape", "Appearance › Icons", "settings/icons", "circle square rounded"),
-    Found("Settings icons", "Appearance › Icons", "settings/icons", "tile coloured background"),
+    Found("Settings icons", "Appearance › Icons", "settings/icons", "tile coloured background colored colored"),
     Found("Cards", "Appearance › Icons", "settings/icons", "settings groups"),
     Found("Layout", "Appearance › Vault list", "settings/list", "grid compact list density"),
     Found("Grouping", "Appearance › Vault list", "settings/list", "folder site"),
@@ -631,7 +632,7 @@ private val SearchIndex = listOf(
     Found("Tap", "Appearance › Vault list", "settings/list", "gesture click"),
     Found("Swipe right", "Appearance › Vault list", "settings/list", "gesture"),
     Found("Swipe left", "Appearance › Vault list", "settings/list", "gesture"),
-    Found("Above the list", "Appearance › Vault list", "settings/list", "dashboard widgets favourites recent"),
+    Found("Above the list", "Appearance › Vault list", "settings/list", "dashboard widgets favourites recent favorites favorites"),
     Found("Navigation bar", "Appearance › Navigation", "settings/navigation", "tabs dock order"),
     Found("Labels", "Appearance › Navigation", "settings/navigation", "tab text"),
     Found("Open on", "Appearance › Navigation", "settings/navigation", "start page last"),
@@ -640,13 +641,14 @@ private val SearchIndex = listOf(
     Found("Lock button", "Appearance › Navigation", "settings/navigation", "padlock"),
     Found("Left-handed", "Appearance › Navigation", "settings/navigation"),
     Found("Add menu", "Adding and editing › Add menu", "settings/add", "types kinds new item order hide"),
-    Found("Sections open at the start", "Adding and editing › Editor", "settings/editor", "fold collapse minimise"),
+    Found("Shown and open at the start", "Adding and editing › Editor", "settings/editor", "fold collapse minimise minimize minimize"),
     Found("Remember what I open", "Adding and editing › Editor", "settings/editor"),
     Found("Fold less used fields", "Adding and editing › Editor", "settings/editor", "details"),
     Found("Start logins with a password", "Adding and editing › Editor", "settings/editor", "generate"),
+    Found("Tag new items", "Adding and editing › Editor", "settings/editor", "auto tag category"),
     Found("Tap a field to copy it", "Appearance › Item page", "settings/entry"),
     Found("Hide shown secrets after", "Appearance › Item page", "settings/entry", "reveal timeout"),
-    Found("Colour digits and symbols", "Appearance › Item page", "settings/entry", "password colors"),
+    Found("Color digits and symbols", "Appearance › Item page", "settings/entry", "password colors"),
     Found("Old passwords to keep", "Appearance › Item page", "settings/entry", "history"),
     Found("Size", "Appearance › Codes", "settings/codes", "totp digits big"),
     Found("Split in two groups", "Appearance › Codes", "settings/codes", "totp"),
@@ -681,7 +683,7 @@ private val SearchIndex = listOf(
     Found("Import", "Your vault", "settings/import", "1password bitwarden chrome keepass csv"),
     Found("Export", "Your vault", "settings/export", "csv json kdbx"),
     Found("Keep deleted items for", "Trash", "settings/trash", "retention"),
-    Found("Appearance", "Settings", "settings/appearance", "look theme icons list customise"),
+    Found("Appearance", "Settings", "settings/appearance", "look theme icons list customise customize customize"),
     Found("Disposable inbox", "Tools › Disposable inbox", "settings/inbox", "throwaway email temporary"),
     Found("Username checker", "Tools › Username checker", "settings/usernames", "handle available"),
     Found("Compare two passwords", "Tools › Compare two passwords", "settings/compare", "same match"),

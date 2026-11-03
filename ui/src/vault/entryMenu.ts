@@ -23,7 +23,7 @@ export function entryMenu(entry: Summary): MenuItem[] {
   items.push(
     { id: 'edit', label: 'Edit' },
     { id: 'duplicate', label: 'Duplicate' },
-    { id: 'favourite', label: entry.favourite ? 'Remove from favourites' : 'Add to favourites' },
+    { id: 'favourite', label: entry.favourite ? 'Remove from favorites' : 'Add to favorites' },
     { id: 'pin', label: entry.pinned ? 'Unpin' : 'Pin to the top' },
     { id: 'hide', label: entry.hidden ? 'Remove from hidden shelf' : 'Move to hidden shelf' },
     { separator: true },

@@ -21,7 +21,7 @@
 <Group title="Rows">
   <Toggle title="Icons" icon="image" pref="row_icons" />
   <Toggle title="Second line" sub="The username or other detail under the name." icon="text_fields" pref="row_subtitle" />
-  <Toggle title="Small marks" sub="Favourite, one-time code, passkey and attachment." icon="star" pref="row_badges" />
+  <Toggle title="Small marks" sub="Favorite, one-time code, passkey and attachment." icon="star" pref="row_badges" />
   <Choice title="Button on the row" sub="Shows when the pointer is over a row." icon="content_copy" pref="row_button" options={[...ACTIONS, ['none', 'None']]} />
 </Group>
 <Group title="Clicks">

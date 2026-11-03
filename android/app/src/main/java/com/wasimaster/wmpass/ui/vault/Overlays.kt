@@ -180,13 +180,17 @@ fun UndoBar(modifier: Modifier = Modifier) {
     if (colors.flat) {
         AnimatedVisibility(offer != null, modifier.padding(horizontal = 16.dp), enter = fadeIn(tween(120)), exit = fadeOut(tween(120))) {
             val shown = remembered ?: return@AnimatedVisibility
+            val action = shown.action
             androidx.compose.material3.Snackbar(
-                action = {
-                    androidx.compose.material3.TextButton(onClick = {
-                        val action = shown.action
-                        shell.undo = null
-                        scope.launch { action() }
-                    }) { Text("Undo") }
+                action = if (action != null) {
+                    {
+                        androidx.compose.material3.TextButton(onClick = {
+                            shell.undo = null
+                            scope.launch { action() }
+                        }) { Text("Undo") }
+                    }
+                } else {
+                    null
                 },
             ) { Text(shown.message, maxLines = 2) }
         }
@@ -214,19 +218,23 @@ fun UndoBar(modifier: Modifier = Modifier) {
                 maxLines = 1,
                 modifier = Modifier.weight(1f),
             )
-            Box(
-                Modifier
-                    .height(40.dp)
-                    .clickable {
-                        shell.haptics.click()
-                        val action = shown.action
-                        shell.undo = null
-                        scope.launch { action() }
-                    }
-                    .padding(horizontal = 16.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("Undo", color = colors.primary, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
+            val action = shown.action
+            if (action != null) {
+                Box(
+                    Modifier
+                        .height(40.dp)
+                        .clickable {
+                            shell.haptics.click()
+                            shell.undo = null
+                            scope.launch { action() }
+                        }
+                        .padding(horizontal = 16.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("Undo", color = colors.primary, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
+                }
+            } else {
+                Spacer(Modifier.width(14.dp))
             }
         }
     }

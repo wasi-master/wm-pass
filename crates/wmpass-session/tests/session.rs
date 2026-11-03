@@ -407,3 +407,68 @@ fn a_shared_vault_opens_for_members_and_stops_opening_for_someone_removed() {
     assert_eq!(json_of(&open(&mut s, owner, &manifest, &sealed).unwrap())["name"], "Family");
     assert!(open(&mut s, sibling, &manifest, &sealed).is_err());
 }
+
+#[test]
+fn a_tag_icon_is_kept_in_the_vault_and_can_be_cleared() {
+    let mut s = Service::new(1);
+    let h = new_vault(&mut s);
+    call(&mut s, "tags.set_icon", h, json!({"tag": "Work", "icon": "badge"}));
+    call(&mut s, "tags.set_icon", h, json!({"tag": "Home", "icon": "home_storage"}));
+    let icons = json_of(&call(&mut s, "tags.icons", h, json!({})));
+    assert_eq!(icons, json!({"Home": "home_storage", "Work": "badge"}));
+    call(&mut s, "tags.set_icon", h, json!({"tag": "Work", "icon": null}));
+    assert_eq!(json_of(&call(&mut s, "tags.icons", h, json!({}))), json!({"Home": "home_storage"}));
+}
+
+#[test]
+fn a_tag_renamed_keeps_its_place_and_merges_with_a_twin() {
+    let mut s = Service::new(1);
+    let h = new_vault(&mut s);
+    let id = login(&mut s, h);
+    call(&mut s, "entry.common", h, json!({"id": id, "tags": ["Work", "Mail", "Office"]}));
+    call(&mut s, "entries.bulk", h, json!({"ids": [id], "op": "tag_rename", "tag": "Work", "to": "Job"}));
+    assert_eq!(json_of(&call(&mut s, "entry.get", h, json!({"id": id})))["tags"], json!(["Job", "Mail", "Office"]));
+    call(&mut s, "entries.bulk", h, json!({"ids": [id], "op": "tag_rename", "tag": "Office", "to": "Job"}));
+    assert_eq!(json_of(&call(&mut s, "entry.get", h, json!({"id": id})))["tags"], json!(["Job", "Mail"]));
+}
+
+#[test]
+fn a_colour_icon_or_folder_can_be_cleared_with_null() {
+    let mut s = Service::new(1);
+    let h = new_vault(&mut s);
+    let id = login(&mut s, h);
+    call(&mut s, "entry.common", h, json!({"id": id, "color": "120", "icon": "glyph:key", "destroy_at_ms": 2_000_000_000_000u64}));
+    let set = json_of(&call(&mut s, "entry.get", h, json!({"id": id})));
+    assert_eq!(set["color"], "120");
+    call(&mut s, "entry.common", h, json!({"id": id, "color": null, "icon": null, "destroy_at_ms": null}));
+    let cleared = json_of(&call(&mut s, "entry.get", h, json!({"id": id})));
+    assert!(cleared["color"].is_null(), "{cleared}");
+    assert!(cleared["icon"].is_null(), "{cleared}");
+    assert!(cleared["destroy_at_ms"].is_null(), "{cleared}");
+    // Left out, a field stays as it was.
+    call(&mut s, "entry.common", h, json!({"id": id, "color": "200"}));
+    call(&mut s, "entry.common", h, json!({"id": id, "pinned": true}));
+    assert_eq!(json_of(&call(&mut s, "entry.get", h, json!({"id": id})))["color"], "200");
+}
+
+#[test]
+fn a_code_becomes_a_login_and_keeps_its_code() {
+    let mut s = Service::new(1);
+    let h = new_vault(&mut s);
+    let reply = call(&mut s, "entry.create", h, json!({"kind": "otp", "title": "GitHub"}));
+    let id = json_of(&reply)["id"].as_str().unwrap().to_owned();
+    secret_call(&mut s, "entry.otp_set", h, json!({"id": id, "issuer": "GitHub"}), b"JBSWY3DPEHPK3PXP");
+    let suggested = json_of(&call(&mut s, "categorise.suggest", h, json!({"id": id})));
+    assert_eq!(suggested["categories"], json!(["Developer", "Authenticator"]));
+
+    call(&mut s, "entry.convert", h, json!({"id": id, "kind": "login"}));
+    call(&mut s, "entry.set", h, json!({"id": id, "fields": {"username": "me@example.com"}}));
+    let entry = json_of(&call(&mut s, "entry.get", h, json!({"id": id})));
+    assert_eq!(entry["kind"], "login");
+    assert!(!entry["otp"].is_null(), "{entry}");
+    assert_eq!(entry["title"], "GitHub");
+    let code = call(&mut s, "otp.code", h, json!({"id": id}));
+    assert_eq!(code.secret.as_ref().map(|s| s.len()), Some(6));
+    let args = json!({"id": id, "kind": "login"}).to_string();
+    assert!(s.call("entry.convert", Call { handle: h, args: &args, ..Call::default() }).is_err(), "a login is not converted again");
+}

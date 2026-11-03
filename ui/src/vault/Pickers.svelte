@@ -88,7 +88,7 @@
   const titles: Record<PickerKind, string> = {
     folder: 'Move to',
     tags: 'Tags',
-    colour: 'Colour',
+    colour: 'Color',
     icon: 'Icon',
     reminder: 'Remind me to change it',
     destruct: 'Destroy itself',
@@ -134,13 +134,13 @@
         {#each HUES as hue}
           <button
             type="button"
-            aria-label="Colour {hue}"
+            aria-label="Color {hue}"
             style="width:30px;height:30px;border-radius:50%;padding:0;border:{colour === String(hue) ? '2px solid var(--text)' : '0'};background:{oklch(0.58, 0.11, hue)}"
             onclick={() => choose('color', String(hue))}
           ></button>
         {/each}
       </div>
-      <div><Btn label="Use the site's own colour" onclick={() => choose('color', null)} /></div>
+      <div><Btn label="Use the site's own color" onclick={() => choose('color', null)} /></div>
     </div>
   {:else if kind === 'icon'}
     <div class="stack">

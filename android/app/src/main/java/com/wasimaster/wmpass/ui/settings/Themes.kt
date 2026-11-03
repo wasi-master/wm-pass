@@ -132,7 +132,7 @@ fun ThemesScreen() {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text("Device colours", color = colors.text, style = MaterialTheme.typography.bodyLarge)
+                            Text("Device colors", color = colors.text, style = MaterialTheme.typography.bodyLarge)
                             Text("Follows your wallpaper", color = colors.textMid, style = MaterialTheme.typography.bodySmall)
                         }
                         if (prefs.themeId == BuiltInThemes.SYSTEM) Icon(PassIcons.Check, "In use", tint = colors.primary)
@@ -174,7 +174,7 @@ fun ThemesScreen() {
                     shell.nav.navigate("settings/theme_edit/${theme.id}")
                 }
             } else {
-                SheetRow(PassIcons.Layers, "Customise a copy") {
+                SheetRow(PassIcons.Layers, "Customize a copy") {
                     acting = null
                     shell.nav.navigate("settings/theme_edit/${theme.id}")
                 }
@@ -210,7 +210,7 @@ private fun ShareThemeSheet(theme: ThemeFile, onDismiss: () -> Unit) {
         if (uri != null) context.contentResolver.openOutputStream(uri)?.use { it.write(ThemeCodec.toText(theme).toByteArray()) }
     }
     PassSheet(onDismiss, "Share ${theme.name}") {
-        Text("A theme holds colours and a few settings. Nothing from your vault is in it.", color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
+        Text("A theme holds colors and a few settings. Nothing from your vault is in it.", color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(14.dp))
         if (qrFits(code)) {
             QrCode(code, Modifier.padding(horizontal = 40.dp))
@@ -406,7 +406,7 @@ fun ThemeEditor(id: String) {
             }
             Spacer(Modifier.height(12.dp))
             current?.let { ThemePreview(it, editingDark, corners) }
-            Eyebrow("Colours")
+            Eyebrow("Colors")
             GroupCard {
                 Slots.forEach { item ->
                     val hex = current?.let(item.get).orEmpty()
