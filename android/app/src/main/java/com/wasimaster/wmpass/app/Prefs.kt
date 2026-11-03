@@ -95,7 +95,7 @@ class Prefs(context: Context) {
     // ---- icons ----
 
     /** The app's own glyphs: `outlined`, `rounded`, `sharp` or `light`. */
-    val iconStyle = word("icon_style", "outlined", "outlined", "rounded", "sharp", "light")
+    val iconStyle = word("icon_style", "rounded", "outlined", "rounded", "sharp", "light")
 
     /** Entries: `brand`, `tinted`, `uniform` or `letters`. */
     val siteIconStyle = word("site_icon_style", if (store.getBoolean("coloured_icons", true)) "brand" else "uniform", "brand", "tinted", "uniform", "letters")
@@ -103,7 +103,7 @@ class Prefs(context: Context) {
 
     /** Settings rows: `coloured`, `mono`, `bare` or `off`. */
     val settingsIcons = word("settings_icons", "coloured", "coloured", "mono", "bare", "off")
-    val settingsCards = flag("settings_cards", false)
+    val settingsCards = flag("settings_cards", true)
 
     // ---- vault list ----
 

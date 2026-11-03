@@ -48,7 +48,7 @@ const DEFS = {
   density: { value: 'comfortable', allowed: ['compact', 'comfortable', 'spacious'] },
 
   // ---- icons ----
-  icon_style: { value: 'outlined', allowed: ['outlined', 'rounded', 'sharp', 'light'] },
+  icon_style: { value: 'rounded', allowed: ['outlined', 'rounded', 'sharp', 'light'] },
   site_icon_style: { value: 'brand', allowed: ['brand', 'tinted', 'uniform', 'letters'] },
   site_icon_shape: { value: 'circle', allowed: ['circle', 'rounded', 'square', 'none'] },
   settings_icons: { value: 'coloured', allowed: ['coloured', 'mono', 'bare', 'off'] },
