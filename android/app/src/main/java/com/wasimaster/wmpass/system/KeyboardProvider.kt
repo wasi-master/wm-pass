@@ -188,12 +188,19 @@ class KeyboardProvider : ContentProvider() {
         )
 
         /** Whether the real WM Keyboard is on this phone: one of its packages, signed by one of its keys. */
-        fun installed(context: android.content.Context): Boolean {
-            val own = Trust.certOf(context, context.packageName)
-            return KEYBOARD_PACKAGES.any { name ->
-                val cert = Trust.certOf(context, name) ?: return@any false
-                cert in KEYBOARD_CERTS || cert == own
-            }
+        fun installed(context: android.content.Context): Boolean = installedPackage(context) != null
+
+        /** The real WM Keyboard's package on this phone, or null. */
+        fun installedPackage(context: android.content.Context): String? = KEYBOARD_PACKAGES.firstOrNull { isKeyboard(context, it) }
+
+        /**
+         * Whether [packageName], say an app that started one of WM Pass's screens for a result, is the
+         * real WM Keyboard: one of its packages, signed by one of its keys.
+         */
+        fun isKeyboard(context: android.content.Context, packageName: String?): Boolean {
+            if (packageName == null || packageName !in KEYBOARD_PACKAGES) return false
+            val cert = Trust.certOf(context, packageName) ?: return false
+            return cert in KEYBOARD_CERTS || cert == Trust.certOf(context, context.packageName)
         }
     }
 }

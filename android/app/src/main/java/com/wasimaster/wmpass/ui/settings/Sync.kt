@@ -88,7 +88,7 @@ import kotlinx.serialization.json.put
 
 /** Keeps multicast working on Wi-Fi for as long as this is on screen. */
 @Composable
-private fun HoldMulticast() {
+internal fun HoldMulticast() {
     val context = LocalContext.current
     DisposableEffect(Unit) {
         val wifi = context.applicationContext.getSystemService(WifiManager::class.java)
@@ -107,7 +107,7 @@ private fun scopeStop() {
     }
 }
 
-private fun localAddress(context: Context): String? {
+internal fun localAddress(context: Context): String? {
     val net = context.getSystemService(ConnectivityManager::class.java) ?: return null
     val active = net.activeNetwork ?: return null
     val address = net.getLinkProperties(active)?.linkAddresses?.map { it.address }?.firstOrNull { it is java.net.Inet4Address && !it.isLoopbackAddress }
@@ -413,7 +413,16 @@ private fun LanSection() {
     var codeText by remember { mutableStateOf<String?>(null) }
     var codePeer by remember { mutableStateOf<String?>(null) }
     var forgetting by remember { mutableStateOf<LanPeer?>(null) }
+    var joining by remember { mutableStateOf(false) }
+    /** Set while the digits on show are for sending this vault, not for pairing. */
+    var sendingVault by remember { mutableStateOf(false) }
     val name = remember { Build.MODEL }
+
+    fun sentTo(peer: LanPeer) {
+        peers = Lan.peers(context)
+        message = "Sent to ${peer.name}. Unlock it there with this vault's master password. The two are paired, so Sync now keeps them together."
+        shell.haptics.confirm()
+    }
 
     fun failed(failure: Throwable) {
         mode = LanMode.IDLE
@@ -465,6 +474,10 @@ private fun LanSection() {
                                 }
                             }
                             if (peers.isNotEmpty()) Hairline()
+                            if (Pass.isFolderVault) {
+                                NavRow("Add a new device", "Send this vault to a phone or computer that has none yet", icon = PassIcons.Devices, help = "action.lan_join") { joining = true }
+                                Hairline()
+                            }
                             NavRow("Pair a device", "This phone and a desktop, or two phones", icon = PassIcons.Add, help = "action.lan_pair") { adding = true }
                         }
                         if (peers.isNotEmpty()) {
@@ -520,6 +533,19 @@ private fun LanSection() {
                         Spacer(Modifier.height(18.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             fun finish(accepted: Boolean) {
+                                if (sendingVault) {
+                                    sendingVault = false
+                                    scope.launch {
+                                        try {
+                                            sentTo(Lan.joinSend(context, accepted))
+                                        } catch (failure: NativeFailure) {
+                                            failed(failure)
+                                        }
+                                        mode = LanMode.IDLE
+                                        scopeStop()
+                                    }
+                                    return
+                                }
                                 scope.launch {
                                     try {
                                         val reply = Engine.net("lan.code_finish", online = false) { put("accepted", accepted) }
@@ -634,6 +660,46 @@ private fun LanSection() {
                         identity.fill(0)
                         codeText = reply.obj["code"]!!.jsonPrimitive.content
                         codePeer = reply.obj["peer"]!!.jsonObject["name"]!!.jsonPrimitive.content
+                        mode = LanMode.CODE_COMPARE
+                    } catch (failure: NativeFailure) {
+                        failed(failure)
+                    }
+                }
+            }
+        }
+    }
+    if (joining) {
+        PassSheet({ joining = false }, "Add a new device") {
+            Text(
+                "On the new device, tap I already have a vault, then Get it from another device. It shows a code and waits. Both need to be on the same Wi-Fi.",
+                color = colors.textMid,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 10.dp),
+            )
+            SheetRow(PassIcons.QrCodeScanner, "Scan its code", "From a computer, a phone or the terminal app") {
+                joining = false
+                shell.scanTarget = { text ->
+                    scope.launch {
+                        try {
+                            sentTo(Lan.joinScan(context, text, name))
+                        } catch (failure: NativeFailure) {
+                            failed(failure)
+                        }
+                    }
+                }
+            }
+            SheetRow(PassIcons.Pin, "Find it on this network", "Then compare six digits on both screens") {
+                joining = false
+                message = null
+                scope.launch {
+                    try {
+                        mode = LanMode.CODE_WAIT
+                        val address = Lan.joinFind().firstOrNull()
+                            ?: throw NativeFailure("lan\nNo new device is waiting on this network. On it, tap I already have a vault, then Get it from another device.")
+                        val reply = Lan.joinConnect(context, address, name)
+                        codeText = reply.obj["code"]!!.jsonPrimitive.content
+                        codePeer = reply.obj["peer"]!!.jsonObject["name"]!!.jsonPrimitive.content
+                        sendingVault = true
                         mode = LanMode.CODE_COMPARE
                     } catch (failure: NativeFailure) {
                         failed(failure)

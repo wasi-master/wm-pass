@@ -22,7 +22,7 @@ If you have accounts or KeePass files, they show as choices above the password: 
 
 A vault that needs a security key asks you to plug it in and touch it. If you turned on [Unlock from the system keyring](/guide/settings/security/#action-keyring-unlock), **Unlock from the system keyring** opens the vault without the password.
 
-**Add another vault or account**, or **I already have a vault** on a new device, offers three ways in: **Restore from a file**, for a .wmvault file from a backup or another device; **Open a KeePass file or sign in**; and **Recover with emergency shares**.
+**Add another vault or account**, or **I already have a vault** on a new device, offers four ways in: Get it from another device, over this network; **Restore from a file**, for a .wmvault or .wmbackup file; **Open a KeePass file or sign in**; and **Recover with emergency shares**.
 
 #### When to use it
 
@@ -46,7 +46,7 @@ If you have accounts or KeePass files, they show as chips above the password: on
 
 A vault that needs a security key asks you to hold it to the back of the phone, or plug it in and touch it.
 
-For a vault you already have, the door offers **Restore from a file**, **Restore from a backup location**, **Open a KeePass file or sign in**, and **Recover with emergency shares**.
+For a vault you already have, the door offers Get it from another device, **Restore from a file**, **Restore from a backup location**, **Open a KeePass file or sign in**, and **Recover with emergency shares**.
 
 See also [The master password](/guide/how-it-works/#concept-master-password), [Unlock methods](/guide/settings/security/#group-security-methods), [Bitwarden and KeePass accounts](/guide/how-it-works/#feature-accounts), [Emergency access](/guide/how-it-works/#feature-emergency-kit), [Locking](/guide/how-it-works/#feature-locking).
 

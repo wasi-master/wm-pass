@@ -14,6 +14,8 @@ workspace = true
 [dependencies]
 wmpass-core.workspace = true
 wmpass-session = { path = "../wmpass-session" }
+wmpass-lan = { path = "../wmpass-lan" }
+qrcode = { version = "0.14", default-features = false }
 serde.workspace = true
 serde_json.workspace = true
 zeroize.workspace = true

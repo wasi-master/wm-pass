@@ -41,6 +41,23 @@ enum Command {
         /// Vault file. The last one opened if left out.
         vault: Option<PathBuf>,
     },
+    /// Get a vault you already have from another device on this network. Shows a QR code for a
+    /// phone to scan, or compares six digits with a computer.
+    #[cfg(feature = "tui")]
+    Join {
+        /// Where to keep it. Must not exist yet.
+        vault: PathBuf,
+    },
+    /// Send a vault to a new device on this network that is waiting to join.
+    #[cfg(feature = "tui")]
+    AddDevice {
+        /// Vault file.
+        vault: PathBuf,
+        /// The text under the new device's QR code. Without it, the device is found on the
+        /// network and six digits are compared.
+        #[arg(long)]
+        code: Option<String>,
+    },
     /// Create a vault file.
     Create {
         /// Path of the new file.
@@ -362,6 +379,10 @@ fn run(cli: Cli) -> Result<(), String> {
     match command {
         #[cfg(feature = "tui")]
         Command::Tui { vault } => wmpass_tui::run(vault)?,
+        #[cfg(feature = "tui")]
+        Command::Join { vault } => wmpass_tui::join::receive(&vault)?,
+        #[cfg(feature = "tui")]
+        Command::AddDevice { vault, code } => wmpass_tui::join::send(&vault, code.as_deref())?,
         Command::Create { vault, name } => {
             if vault.exists() {
                 return Err(format!("{} already exists", vault.display()));
@@ -549,8 +570,8 @@ fn run(cli: Cli) -> Result<(), String> {
             let mut opened = open(&vault)?;
             let data = read_file(&file)?;
             let format = io::detect(&data).ok_or("the format was not recognised")?;
-            let source_password = if format == io::Format::Kdbx {
-                Some(password("Database password: ")?)
+            let source_password = if io::needs_password(&data) {
+                Some(password("Password of the file being imported: ")?)
             } else {
                 None
             };

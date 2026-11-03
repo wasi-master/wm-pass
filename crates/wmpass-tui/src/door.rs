@@ -54,6 +54,8 @@ pub enum Ask {
     Unlock,
     Create,
     Quit,
+    /// Bring the vault over from another device.
+    Join,
 }
 
 impl Door {
@@ -162,6 +164,7 @@ impl Door {
             KeyCode::Esc if self.mode == Mode::Create => self.toggle_mode(),
             KeyCode::Esc => return Ask::Quit,
             KeyCode::Char('n') if ctrl => self.toggle_mode(),
+            KeyCode::Char('g') if ctrl => return Ask::Join,
             KeyCode::Char('r') if ctrl && !recent.is_empty() && self.mode == Mode::Unlock => self.recent = Some(0),
             KeyCode::Char('f') if ctrl && self.mode == Mode::Unlock => {
                 self.wants_key = !self.wants_key;

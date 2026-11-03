@@ -1023,7 +1023,7 @@ fun NameSheet(title: String, initial: String, onDismiss: () -> Unit, onDone: (St
 
 // ---- import and export ----
 
-private val ImportFormats = "1Password, Apple Passwords, Bitwarden, Chrome, Dashlane, Enpass, Firefox, KeePass and KeePassXC, Keeper, LastPass, NordPass, Proton Pass, RoboForm and SafeInCloud. Authenticators: Aegis, 2FAS, andOTP, Ente, FreeOTP+ and Raivo files, and Google Authenticator's export codes, scanned or from a screenshot."
+private val ImportFormats = "1Password, Apple Passwords, Avast, Avira, Bitwarden, Buttercup, Chrome and other Chromium browsers, Dashlane, Enpass, Firefox, Kaspersky, KeePass and KeePassXC, Keeper, LastPass, mSecure, NordPass, Password Safe, Proton Pass, Psono, RoboForm, SafeInCloud, Sticky Password and Zoho Vault. Authenticators: Aegis, 2FAS, andOTP, Authenticator Pro, Bitwarden Authenticator, Ente, FreeOTP+, LastPass Authenticator, Proton Authenticator and Raivo files, and Google Authenticator's export codes, scanned or from a screenshot."
 
 /** Each app's export steps, on the website, with the mark the vault would give it. */
 private class ExportGuide(val page: String, val name: String, val brand: String? = null)
@@ -1033,24 +1033,42 @@ private const val ExportGuides = "https://wmpass.pages.dev/guides/import/"
 private val ExportGuideList = listOf(
     ExportGuide("1password", "1Password", "1password"),
     ExportGuide("apple-passwords", "Apple Passwords", "apple"),
+    ExportGuide("avast-passwords", "Avast Passwords", "avast"),
+    ExportGuide("avira-password-manager", "Avira Password Manager", "avira"),
     ExportGuide("bitwarden", "Bitwarden", "bitwarden"),
-    ExportGuide("chrome", "Google Password Manager", "googlechrome"),
+    ExportGuide("brave", "Brave", "brave"),
+    ExportGuide("buttercup", "Buttercup"),
     ExportGuide("dashlane", "Dashlane", "dashlane"),
     ExportGuide("enpass", "Enpass", "enpass"),
     ExportGuide("firefox", "Firefox", "firefox"),
+    ExportGuide("chrome", "Google Password Manager", "googlechrome"),
+    ExportGuide("kaspersky-password-manager", "Kaspersky Password Manager", "kaspersky"),
     ExportGuide("keepass", "KeePass and KeePassXC", "keepassxc"),
+    ExportGuide("keepass2android", "Keepass2Android"),
+    ExportGuide("keepassdx", "KeePassDX"),
     ExportGuide("keeper", "Keeper", "keeper"),
     ExportGuide("lastpass", "LastPass", "lastpass"),
+    ExportGuide("microsoft-edge", "Microsoft Edge"),
+    ExportGuide("msecure", "mSecure"),
     ExportGuide("nordpass", "NordPass"),
+    ExportGuide("opera", "Opera", "opera"),
+    ExportGuide("password-safe", "Password Safe"),
     ExportGuide("proton-pass", "Proton Pass", "proton"),
+    ExportGuide("psono", "Psono"),
     ExportGuide("roboform", "RoboForm"),
     ExportGuide("safeincloud", "SafeInCloud"),
+    ExportGuide("sticky-password", "Sticky Password"),
+    ExportGuide("zoho-vault", "Zoho Vault", "zoho"),
     ExportGuide("google-authenticator", "Google Authenticator", "googleauthenticator"),
     ExportGuide("2fas", "2FAS", "2fas"),
     ExportGuide("aegis", "Aegis", "aegisauthenticator"),
     ExportGuide("andotp", "andOTP"),
+    ExportGuide("authenticator-pro", "Authenticator Pro"),
+    ExportGuide("bitwarden-authenticator", "Bitwarden Authenticator", "bitwarden"),
     ExportGuide("ente-auth", "Ente Auth", "ente"),
     ExportGuide("freeotp-plus", "FreeOTP+"),
+    ExportGuide("lastpass-authenticator", "LastPass Authenticator", "lastpass"),
+    ExportGuide("proton-authenticator", "Proton Authenticator", "proton"),
     ExportGuide("raivo", "Raivo"),
 )
 

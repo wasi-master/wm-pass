@@ -1,0 +1,61 @@
+---
+title: Moving from KeePassDX
+description: How to bring your KeePassDX database into WM Pass.
+sidebar:
+  label: "KeePassDX"
+source:
+  name: "KeePassDX"
+  kind: manager
+  exportOn: ["Android"]
+  choose: "The .kdbx database itself"
+---
+
+import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+import Shot from '../../../../components/Shot.astro';
+
+<Aside type="tip" title="Which file">
+No export needed. WM Pass opens the `.kdbx` database itself, with its password, and its key file if it has one.
+</Aside>
+
+<Tabs syncKey="device">
+<TabItem label="Android" icon="mobile-android">
+
+KeePassDX keeps the database as one .kdbx file that you manage yourself, so there is nothing to export; WM Pass opens that file.
+
+<Steps>
+
+1. Find the .kdbx file. If you remember where you saved it, open it in your file manager.
+2. If you do not remember, search your phone for a file ending in **.kdbx**.
+3. If you keep the file in cloud storage, open your cloud app and select the database file there.
+4. In WM Pass, choose that .kdbx file and enter its master password.
+5. If the database also uses a key file, choose that file too.
+
+</Steps>
+
+Steps from [KeePassDX FAQ](https://github.com/Kunzisoft/KeePassDX/wiki/FAQ).
+
+</TabItem>
+<TabItem label="iPhone" icon="phone">
+
+<Aside>
+KeePassDX is an Android app. If you used it, take the .kdbx file from your Android phone.
+</Aside>
+
+</TabItem>
+</Tabs>
+
+## Good to know
+
+- KeePassDX relies on your phone's file manager, so the default one may not reach your cloud storage. Use your cloud app if the file is not listed.
+- The database stays encrypted. Keep the key file safe if one is used, because losing the master password or key file locks the database for good.
+- Uninstalling KeePassDX leaves the .kdbx file in place.
+
+## Then, in WM Pass
+
+Open Settings, Import, choose the `.kdbx` file and enter its password. The [import steps](/guides/import-export/#importing-into-wm-pass) cover every WM Pass app. The database stays encrypted, so there is nothing to delete afterwards.
+
+## Sources
+
+These steps follow KeePassDX's own help pages, read on 4 November 2026. Menus move between versions; if a step does not match what you see, the page it came from may be newer.
+
+- [KeePassDX FAQ](https://github.com/Kunzisoft/KeePassDX/wiki/FAQ), Kunzisoft (KeePassDX)

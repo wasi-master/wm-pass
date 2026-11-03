@@ -467,6 +467,16 @@ class PassStore {
     return `${BLOBS}/${file.split('/').pop()}`;
   }
 
+  /** A name for a vault file that is about to arrive, so its attachments can arrive first. */
+  freshVaultName() {
+    return randomHex(16);
+  }
+
+  /** Where the attachments of the vault file `name` live. */
+  blobFolderFor(name: string) {
+    return this.blobFolderOf(name);
+  }
+
   blobFolder() {
     return this.file ? this.blobFolderOf(this.file) : null;
   }
@@ -506,8 +516,8 @@ class PassStore {
   }
 
   /** Takes a vault file from elsewhere as this device's vault. */
-  async adoptFile(bytes: Uint8Array) {
-    await host().writeFile(`${VAULTS}/${randomHex(16)}`, bytes);
+  async adoptFile(bytes: Uint8Array, name = randomHex(16)) {
+    await host().writeFile(`${VAULTS}/${name}`, bytes);
     // A chaff file of its own, or a lone file would say which one is the vault.
     const chaff = await this.engine('vault.chaff', { file_len: bytes.length, kdf: { m_kib: await this.kdfMemoryKib() } });
     await host().writeFile(`${VAULTS}/${randomHex(16)}`, chaff.blobs[0]);

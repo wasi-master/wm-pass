@@ -1,0 +1,56 @@
+---
+title: Moving from Psono
+description: How to export your passwords from Psono on each device, and bring them into WM Pass.
+sidebar:
+  label: "Psono"
+source:
+  name: "Psono"
+  kind: manager
+  exportOn: ["Web"]
+  choose: "JSON"
+---
+
+import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+import Shot from '../../../../components/Shot.astro';
+
+<Aside type="tip" title="Which file">
+Export as **JSON**. The file is plain text and holds your passwords unencrypted.
+</Aside>
+
+<Tabs syncKey="device">
+<TabItem label="Web" icon="external">
+
+Psono's own page names the menu but not the file format. The JSON choice comes from Keeper's import guide.
+
+<Steps>
+
+1. Log in to Psono.
+2. Click your email address, then **Other**.
+3. Click **Export**.
+4. Select **JSON** and save the file.
+
+</Steps>
+
+Steps from [Export Passwords](https://doc.psono.com/user/other/export.html) and [Import from Psono](https://docs.keeper.io/user-guides/import-records-1/import-from-psono).
+
+</TabItem>
+</Tabs>
+
+## Good to know
+
+- Psono says files in your file repository are not part of the export. Back those up separately.
+
+## Then, in WM Pass
+
+Open Settings, Import, and choose the file. The [import steps](/guides/import-export/#importing-into-wm-pass) cover every WM Pass app.
+
+Delete the export once WM Pass has read it.
+
+If you exported on a computer and use WM Pass on your phone, import the file in WM Pass on that computer and [sync](/guides/backup-sync/), or copy the file to the phone over a USB cable. Email and cloud drives keep copies of what passes through them.
+
+## Sources
+
+These steps follow Psono's own help page and a third-party guide, read on 4 November 2026. Menus move between versions; if a step does not match what you see, the page it came from may be newer.
+
+- [Export Passwords](https://doc.psono.com/user/other/export.html), Psono
+- [Import from Psono](https://docs.keeper.io/user-guides/import-records-1/import-from-psono), Keeper (third party)
