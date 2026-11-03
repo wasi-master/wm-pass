@@ -37,6 +37,6 @@ export default defineConfig({
   root: here('.'),
   publicDir: part === 'pages' ? here('../ui/public') : false,
   plugins: [svelte()],
-  resolve: { alias: { $ui: here('../ui/src') } },
+  resolve: { alias: { $ui: here('../ui/src'), $help: here('../help') } },
   build: builds[part],
 });

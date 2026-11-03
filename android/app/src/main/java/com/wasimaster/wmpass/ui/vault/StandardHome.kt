@@ -31,6 +31,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import com.wasimaster.wmpass.ui.help.HelpAction
+import com.wasimaster.wmpass.ui.help.helpAnchor
 import com.wasimaster.wmpass.ui.icons.PassIcons
 import com.wasimaster.wmpass.ui.theme.palette
 
@@ -65,8 +67,10 @@ fun StandardHome() {
                     else -> TopAppBar(
                         title = { Text(AllTabs.firstOrNull { it.id == shell.tab }?.label.orEmpty()) },
                         actions = {
-                            if (prefs.showLock.value) IconButton(onClick = { shell.lockNow() }) { Icon(PassIcons.Lock, "Lock") }
-                            IconButton(onClick = { shell.nav.navigate("settings") }) { Icon(PassIcons.Settings, "Settings") }
+                            val label = AllTabs.firstOrNull { it.id == shell.tab }?.label.orEmpty()
+                            HelpAction(tabTopic(shell.tab), label, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (prefs.showLock.value) IconButton(onClick = { shell.lockNow() }, modifier = Modifier.helpAnchor("sidebar.lock")) { Icon(PassIcons.Lock, "Lock") }
+                            IconButton(onClick = { shell.nav.navigate("settings") }, modifier = Modifier.helpAnchor("sidebar.settings")) { Icon(PassIcons.Settings, "Settings") }
                         },
                         colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.ground),
                     )
@@ -76,7 +80,7 @@ fun StandardHome() {
                 androidx.compose.foundation.layout.Column {
                 if (shell.tab == "vault" && prefs.searchAtBottom.value && !shell.selecting) VaultSearchBar()
                 if (tabs.size > 1 && !shell.selecting) {
-                    NavigationBar {
+                    NavigationBar(Modifier.helpAnchor("narrow.tabs")) {
                         tabs.forEach { tab ->
                             val selected = shell.tab == tab.id
                             NavigationBarItem(
@@ -96,7 +100,7 @@ fun StandardHome() {
             },
             floatingActionButton = {
                 if (prefs.showFab.value && !shell.selecting && (shell.tab == "vault" || shell.tab == "codes")) {
-                    FloatingActionButton(onClick = {
+                    FloatingActionButton(modifier = Modifier.helpAnchor(if (shell.tab == "codes") "codes.add" else "list.add"), onClick = {
                         shell.haptics.click()
                         val direct = prefs.fabAction.value.takeIf { it in KindOrder }
                         when {
@@ -140,6 +144,7 @@ private fun VaultSearchBar(modifier: Modifier = Modifier) {
         modifier
             .fillMaxWidth()
             .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)
+            .helpAnchor("list.search")
             .height(56.dp)
             .clip(CircleShape)
             .clickable { shell.searching = true },
@@ -150,8 +155,16 @@ private fun VaultSearchBar(modifier: Modifier = Modifier) {
             Icon(PassIcons.Search, null, tint = colors.textMid)
             Spacer(Modifier.width(12.dp))
             Text("Search vault", color = colors.textMid, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f), maxLines = 1)
-            if (shell.prefs.showLock.value) IconButton(onClick = { shell.lockNow() }) { Icon(PassIcons.Lock, "Lock", tint = colors.textMid) }
-            IconButton(onClick = { shell.nav.navigate("settings") }) { Icon(PassIcons.Settings, "Settings", tint = colors.textMid) }
+            HelpAction("screen.window", "the vault", tint = colors.textMid)
+            if (shell.prefs.showLock.value) IconButton(onClick = { shell.lockNow() }, modifier = Modifier.helpAnchor("sidebar.lock")) { Icon(PassIcons.Lock, "Lock", tint = colors.textMid) }
+            IconButton(onClick = { shell.nav.navigate("settings") }, modifier = Modifier.helpAnchor("sidebar.settings")) { Icon(PassIcons.Settings, "Settings", tint = colors.textMid) }
         }
     }
+}
+
+/** The guide's topic for a page of the navigation bar. */
+internal fun tabTopic(tab: String): String = when (tab) {
+    "vault" -> "screen.window"
+    "tools" -> "page.tools"
+    else -> "screen.$tab"
 }

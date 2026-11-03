@@ -136,6 +136,19 @@ fun DoorScreen(state: LockState, prefs: Prefs) {
             }
         }
     }
+    // The guide's sheet, for the door's own question. Nothing it says can open a page from here.
+    com.wasimaster.wmpass.ui.help.Help.attach(LocalContext.current)
+    if (com.wasimaster.wmpass.ui.help.Guide.stack.isNotEmpty()) com.wasimaster.wmpass.ui.help.HelpSheet(prefs, null)
+}
+
+/** The door's link into the guide: what a master password is, and what makes a good one. */
+@Composable
+private fun MasterPasswordLink(modifier: Modifier = Modifier) {
+    com.wasimaster.wmpass.ui.help.Help.attach(LocalContext.current)
+    if (com.wasimaster.wmpass.ui.help.Help.topic("concept.master_password") == null) return
+    androidx.compose.material3.TextButton(onClick = { com.wasimaster.wmpass.ui.help.Guide.open("concept.master_password") }, modifier = modifier) {
+        Text("What is a master password?")
+    }
 }
 
 @Composable
@@ -803,7 +816,8 @@ private fun StandardWelcome(onBack: (() -> Unit)?) {
             color = colors.textMid,
             style = MaterialTheme.typography.bodyMedium,
         )
-        Spacer(Modifier.height(24.dp))
+        MasterPasswordLink(Modifier.offset(x = (-12).dp))
+        Spacer(Modifier.height(12.dp))
         PasswordPill(first, "Master password", imeAction = ImeAction.Next, enabled = !making)
         Spacer(Modifier.height(8.dp))
         StrengthBar(strength.score, Modifier.fillMaxWidth(), active = first.text.isNotEmpty())
@@ -943,6 +957,7 @@ private fun Hello(onCreate: () -> Unit) {
     PrimaryButton("Create your vault", Modifier.fillMaxWidth(), onClick = onCreate)
     Spacer(Modifier.height(10.dp))
     QuietButton("I already have one", Modifier.fillMaxWidth()) { returning = true }
+    MasterPasswordLink(Modifier.fillMaxWidth().padding(top = 4.dp))
     if (returning) ComingBack { returning = false }
 }
 

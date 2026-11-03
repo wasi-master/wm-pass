@@ -1,4 +1,6 @@
 <script lang="ts">
+  import HelpSheet from '../../ui/src/help/HelpSheet.svelte';
+  import { help } from '../../ui/src/help/help.svelte';
   import Btn from '../../ui/src/parts/Btn.svelte';
   import Field from '../../ui/src/parts/Field.svelte';
   import IconBtn from '../../ui/src/parts/IconBtn.svelte';
@@ -83,6 +85,7 @@
         <strong>{hostname || 'WM Pass'}</strong>
         {#if fromDesktop && !unlocked}<span class="dim small">From the desktop app</span>{/if}
       </div>
+      <IconBtn icon="help" label="About this window" onclick={() => help.open('screen.popup')} />
       <IconBtn icon="open_in_new" label="Open WM Pass in a tab" onclick={openFull} />
       {#if unlocked}<IconBtn icon="lock" label="Lock" onclick={() => pass.lock()} />{/if}
     </header>
@@ -120,6 +123,7 @@
     <Door />
   {/if}
 </div>
+<HelpSheet simple />
 
 <style>
   .popup { width: 380px; min-height: 440px; max-height: 600px; display: flex; flex-direction: column; background: var(--bg); }

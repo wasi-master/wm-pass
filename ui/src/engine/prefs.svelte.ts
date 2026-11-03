@@ -35,6 +35,7 @@ export const DEFAULT_SHORTCUTS: Record<string, string> = {
   open_site: 'Mod+Shift+L',
   toggle_sidebar: 'Mod+Backslash',
   palette: 'Mod+K',
+  help: 'F1',
 };
 
 const DEFS = {
@@ -118,6 +119,14 @@ const DEFS = {
   folds_open: { value: '' },
   shortcuts_desktop: { value: '' },
 
+  // ---- the guide ----
+  help_buttons: { value: 'hover', allowed: ['always', 'hover', 'off'] },
+  help_hints: { value: true },
+  // What this install has already been shown. Not a customisation, so not in a settings file.
+  help_welcome_seen: { value: false, portable: false },
+  help_seen: { value: '', portable: false },
+  help_tours_done: { value: '', portable: false },
+
   // ---- protection: never taken from a settings file, never reset with the look ----
   lock_after: { value: 300, portable: false },
   lock_on_sleep: { value: true, portable: false },
@@ -150,6 +159,8 @@ class Prefs {
   v = $state<PrefValues>(defaults());
   /** Rises after a theme reaches the page, for what reads its colours back. */
   themeApplied = $state(0);
+  /** True when this install had settings from before the guide existed. */
+  readonly upgraded: boolean = false;
   private loaded = false;
 
   async load() {
@@ -161,11 +172,26 @@ class Prefs {
           const value = parsed[key];
           if (this.fits(def, value)) (this.v as any)[key] = value;
         }
+        // Someone who has used the app for months does not need a welcome. They get one pointer
+        // to the Guide instead.
+        if (!('help_welcome_seen' in parsed)) {
+          this.v.help_welcome_seen = true;
+          (this as { upgraded: boolean }).upgraded = true;
+        }
       } catch {
         // Defaults stand in for a damaged file.
       }
     }
     this.loaded = true;
+  }
+
+  /** The value a setting has until someone changes it. */
+  defaultOf(key: PrefKey): Value {
+    return DEFS[key].value;
+  }
+
+  has(key: string): key is PrefKey {
+    return key in DEFS;
   }
 
   private fits(def: Def, value: unknown): value is Value {

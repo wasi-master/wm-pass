@@ -18,6 +18,7 @@
   import Settings from '../settings/Settings.svelte';
   import { TAB_INFO } from './tabs';
   import { ui } from './ui.svelte';
+  import { help } from '../help/help.svelte';
 
   let editor = $state<Editor>();
   let shelfPassword = $state('');
@@ -94,6 +95,15 @@
         break;
       case 'palette':
         ui.searchFocus += 1;
+        break;
+      case 'help':
+        help.openHere();
+        break;
+      case 'guide':
+        void ui.guard(() => ui.go('settings/guide'));
+        break;
+      case 'tour':
+        void ui.guard(() => help.startWindowTour());
         break;
       case 'reload':
         void pass.reload();
@@ -243,7 +253,7 @@
   </div>
 
   {#if ui.narrow && !ui.editing && !ui.showDetail}
-    <nav class="narrow-tabs" aria-label="Sections">
+    <nav class="narrow-tabs" aria-label="Sections" data-help-anchor="narrow.tabs">
       {#each NARROW_TABS as tab}
         {@const info = tab === 'settings' ? { label: 'Settings', icon: 'settings' as const } : TAB_INFO[tab]}
         <button type="button" aria-current={tab === 'settings' ? ui.section.startsWith('settings') : ui.section === tab} onclick={() => ui.go(tab)}>

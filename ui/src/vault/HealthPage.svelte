@@ -1,4 +1,6 @@
 <script lang="ts">
+  import HelpButton from '../help/HelpButton.svelte';
+  import Hint from '../help/Hint.svelte';
   import Btn from '../parts/Btn.svelte';
   import Dialog from '../parts/Dialog.svelte';
   import Fold from '../parts/Fold.svelte';
@@ -71,9 +73,13 @@
 
 <div class="settings-pane scroll">
   <div class="settings-inner stack" style="gap:6px">
-    <h1 class="page-title">Health</h1>
+    <div class="page-title-row">
+      <h1 class="page-title">Health</h1>
+      <HelpButton id="screen.health" title="Health" />
+    </div>
+    <Hint id="health" topic="screen.health" tour="tour.health" />
     {#if prefs.v.health_score}
-      <div class="gap" style="align-items:baseline">
+      <div class="gap" style="align-items:baseline" data-help-anchor="health.score">
         <span class="tnum" style="font-size:34px;font-weight:500;line-height:1.1">{health?.score ?? '-'}</span>
         <span class="dim">out of 100</span>
       </div>
@@ -81,6 +87,7 @@
     {/if}
     <p class="dim" style="padding:8px 0 4px">{line}</p>
 
+    <div class="stack" style="gap:6px" data-help-anchor="health.groups">
     {#each issues as issue (issue.key)}
       {@const ids = [...new Set(issue.ids)]}
       <Fold title="{issue.title}, {ids.length}" summary={issue.why}>
@@ -102,6 +109,7 @@
         {/if}
       </Fold>
     {/each}
+    </div>
 
     <div class="gap wrap" style="padding-top:14px">
       <Btn label="Check for breaches" icon="local_fire_department" onclick={() => ui.go('settings/breaches')} />

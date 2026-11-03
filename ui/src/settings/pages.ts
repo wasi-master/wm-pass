@@ -54,6 +54,7 @@ export const PAGES: PageInfo[] = [
   { id: 'ssh', title: 'SSH agent', group: 'This computer', icon: 'terminal', desktop: true },
   { id: 'updates', title: 'Updates', group: 'This computer', icon: 'update', desktop: true },
   { id: 'file', title: 'Settings file', group: 'This app', icon: 'import_export' },
+  { id: 'guide', title: 'Guide', group: 'This app', icon: 'help' },
   { id: 'about', title: 'About', group: 'This app', icon: 'info' },
 ];
 
@@ -125,6 +126,10 @@ export const SEARCH_INDEX: Found[] = [
   { title: 'Nested and shared vaults', where: 'Sync', route: 'vaults', words: 'family share vault inside' },
   { title: 'Keyboard shortcuts', where: 'Shortcuts', route: 'shortcuts', words: 'hotkey chord' },
   { title: 'Settings file', where: 'Settings file', route: 'file', words: 'export import reset backup' },
+  { title: 'Guide', where: 'Guide', route: 'guide', words: 'help manual tour tutorial explain how what is' },
+  { title: 'Help buttons', where: 'Guide', route: 'guide', words: 'question mark explain' },
+  { title: 'Tips on new pages', where: 'Guide', route: 'guide', words: 'hints first time' },
+  { title: 'Show the welcome again', where: 'Guide', route: 'guide', words: 'tour start onboarding' },
   { title: 'Email aliases', where: 'Tools', route: 'aliases', words: 'simplelogin addy relay duckduckgo' },
   { title: 'Breaches', where: 'Tools', route: 'breaches', words: 'hibp leak' },
   { title: 'Import', where: 'Your vault', route: 'import', words: '1password bitwarden chrome keepass csv' },

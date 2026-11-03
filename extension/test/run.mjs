@@ -71,6 +71,18 @@ await vault.getByRole('button', { name: 'Create vault' }).click();
 await vault.waitForFunction(() => !document.querySelector('.door-card'), null, { timeout: 90_000 });
 check('a vault can be made in a tab', true);
 
+// The guide: the welcome comes once after the first vault, and a topic opens from Settings, Guide.
+const welcome = vault.getByRole('button', { name: 'Not now' });
+check('the welcome shows after the first vault', await welcome.waitFor({ timeout: 5000 }).then(() => true, () => false));
+await welcome.click();
+await vault.getByRole('button', { name: 'Settings', exact: true }).click();
+await vault.getByRole('button', { name: 'Guide', exact: true }).click();
+await vault.getByRole('button', { name: 'Main window' }).click();
+check('a guide topic opens from Settings, Guide', await vault.locator('dialog.help-sheet[open]').getByText('three panes').first().waitFor({ timeout: 5000 }).then(() => true, () => false));
+if (shots) await vault.screenshot({ path: join(shots, 'guide-topic.png') });
+await vault.keyboard.press('Escape');
+check('the help sheet closes with Escape', await vault.locator('dialog.help-sheet').waitFor({ state: 'detached', timeout: 3000 }).then(() => true, () => false));
+
 // Calls the background the way the pages do.
 const call = async (page, method, args, secret) =>
   page.evaluate(

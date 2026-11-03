@@ -9,7 +9,7 @@
   const hidden = $derived(DEFAULT_ADD.filter((k) => !shown.includes(k)));
 </script>
 
-<Group title="Shown">
+<Group title="Shown" help="setting.add_kinds">
   <Reorder items={shown} label={kindName} onchange={(next) => prefs.setList('add_kinds', next)} />
 </Group>
 {#if hidden.length > 0}
@@ -20,5 +20,5 @@
   </Group>
 {/if}
 <Group>
-  <Row title="Show all in the usual order" icon="refresh" onclick={() => prefs.setList('add_kinds', DEFAULT_ADD)} />
+  <Row title="Show all in the usual order" help="action.add_show_all" icon="refresh" onclick={() => prefs.setList('add_kinds', DEFAULT_ADD)} />
 </Group>

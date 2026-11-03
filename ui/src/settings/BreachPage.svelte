@@ -99,7 +99,7 @@
     </div>
   {/if}
   {#if emails.length > 0}
-    <Group title="Your email addresses">
+    <Group title="Your email addresses" help="group.breaches.emails">
       <div class="set-body stack">
         <p class="dim">{WHAT_EMAIL}</p>
         <Segmented value={source} options={[['leakcheck', 'LeakCheck'], ['hibp', 'Have I Been Pwned'], ['comb', 'Passwords in COMB']]} onchange={(v) => (source = v)} />

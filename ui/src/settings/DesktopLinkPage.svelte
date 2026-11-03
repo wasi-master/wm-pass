@@ -56,7 +56,7 @@
 {/if}
 
 <Group title="Saving">
-  <Row title="Offer to save logins" sub="After you sign in somewhere new, or with a changed password." icon="edit">
+  <Row title="Offer to save logins" help="action.offer_save" sub="After you sign in somewhere new, or with a changed password." icon="edit">
     <input type="checkbox" checked={offerSave} onchange={(e) => { offerSave = e.currentTarget.checked; void link.setOption('offerSave', offerSave); }} aria-label="Offer to save logins" />
   </Row>
 </Group>

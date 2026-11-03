@@ -1,10 +1,18 @@
 package com.wasimaster.wmpass
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.navigation.compose.rememberNavController
@@ -16,6 +24,7 @@ import com.wasimaster.wmpass.ui.door.DoorScreen
 import com.wasimaster.wmpass.ui.fx.FxSupport
 import com.wasimaster.wmpass.ui.theme.Look
 import com.wasimaster.wmpass.ui.theme.PassTheme
+import com.wasimaster.wmpass.ui.theme.palette
 import com.wasimaster.wmpass.ui.theme.rememberHaptics
 import com.wasimaster.wmpass.ui.vault.EditorScreen
 import com.wasimaster.wmpass.ui.vault.EntryScreen
@@ -340,6 +349,45 @@ class Shots {
         org.junit.Assert.assertEquals("grid", prefs.layout)
         org.junit.Assert.assertTrue(prefs.screenProtection)
         prefs.updateLayout("list")
+    }
+
+    /** The guide's sheet as it opens over a page, its body alone since a sheet is a window of its own. */
+    @Composable
+    private fun HelpPage(id: String) {
+        val shell = LocalShell.current
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(palette.surface1)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 18.dp, vertical = 16.dp),
+        ) { com.wasimaster.wmpass.ui.help.HelpSheetContent(id, prefs, shell) }
+    }
+
+    @Test
+    fun helpSheet() {
+        seed()
+        com.wasimaster.wmpass.ui.help.Help.attach(RuntimeEnvironment.getApplication())
+        shot("help-sheet") { WithShell { HelpPage("setting.layout") } }
+    }
+
+    @Test
+    fun helpSheetGlass() {
+        seed()
+        com.wasimaster.wmpass.ui.help.Help.attach(RuntimeEnvironment.getApplication())
+        shot("help-sheet-glass", style = "glass") { WithShell { HelpPage("action.emergency_kit") } }
+    }
+
+    @Test
+    fun guide() {
+        seed()
+        shot("settings-guide") { WithShell { com.wasimaster.wmpass.ui.help.GuideScreen() } }
+    }
+
+    @Test
+    fun guideGlass() {
+        seed()
+        shot("settings-guide-glass", style = "glass") { WithShell { com.wasimaster.wmpass.ui.help.GuideScreen() } }
     }
 
     @Test

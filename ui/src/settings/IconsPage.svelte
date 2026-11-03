@@ -26,7 +26,7 @@
   });
 </script>
 
-<Group title="App icons">
+<Group title="App icons" help="setting.icon_style">
   {#each ICON_STYLES as [id, name, about] (id)}
     <button type="button" class="set-row" style="align-items:flex-start" onclick={() => prefs.set('icon_style', id as never)}>
       <span class="text stack" style="gap:8px">
@@ -42,7 +42,7 @@
   {/each}
 </Group>
 
-<Group title="Site icons">
+<Group title="Site icons" help="setting.site_icon_style">
   {#each SITE_STYLES as [id, name, about] (id)}
     <button type="button" class="set-row" style="align-items:flex-start" onclick={() => prefs.set('site_icon_style', id as never)}>
       <span class="text stack" style="gap:8px">

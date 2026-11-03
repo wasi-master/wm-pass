@@ -61,6 +61,8 @@ import com.wasimaster.wmpass.core.Pass
 import com.wasimaster.wmpass.core.Summary
 import com.wasimaster.wmpass.ui.fx.Aurora
 import com.wasimaster.wmpass.ui.fx.rim
+import com.wasimaster.wmpass.ui.help.HelpAction
+import com.wasimaster.wmpass.ui.help.helpAnchor
 import com.wasimaster.wmpass.ui.icons.PassIcons
 import com.wasimaster.wmpass.ui.parts.Eyebrow
 import com.wasimaster.wmpass.ui.parts.GlassCircle
@@ -282,7 +284,7 @@ fun VaultTab() {
             }
             if (prefs.layout == "grid") {
                 item("grid") {
-                    EntryGrid(shown, arrived)
+                    EntryGrid(shown, arrived, Modifier.helpAnchor("list.rows"))
                 }
             } else {
                 itemsIndexedStable(items, arrived, openSites, prefs.layout == "compact")
@@ -300,10 +302,13 @@ private fun androidx.compose.foundation.lazy.LazyListScope.itemsIndexedStable(
     openSites: MutableList<String>,
     compact: Boolean,
 ) {
+    // The first row stands for the list when a tour points at it.
+    val firstRow = items.indexOfFirst { it is Item.One || it is Item.Stack }
     items.forEachIndexed { index, item ->
         item(item.key) {
             val shell = LocalShell.current
-            val modifier = Modifier.animateItem(fadeInSpec = tween(180), fadeOutSpec = tween(120)).arrive(index, !arrived)
+            val placed = Modifier.animateItem(fadeInSpec = tween(180), fadeOutSpec = tween(120)).arrive(index, !arrived)
+            val modifier = if (index == firstRow) placed.helpAnchor("list.rows") else placed
             when (item) {
                 is Item.Heading -> Eyebrow(item.text, if (palette.flat) modifier.padding(horizontal = 16.dp) else modifier)
                 Item.Gap -> Spacer(modifier.height(12.dp))
@@ -340,10 +345,10 @@ private fun androidx.compose.foundation.lazy.LazyListScope.itemsIndexedStable(
 }
 
 @Composable
-private fun EntryGrid(entries: List<Summary>, arrived: Boolean) {
+private fun EntryGrid(entries: List<Summary>, arrived: Boolean, modifier: Modifier = Modifier) {
     val shell = LocalShell.current
     // A plain two-column flow, because this already sits inside the page's own list.
-    Column(if (palette.flat) Modifier.padding(horizontal = 16.dp) else Modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(modifier.then(if (palette.flat) Modifier.padding(horizontal = 16.dp) else Modifier), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         entries.chunked(2).forEachIndexed { rowIndex, row ->
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 row.forEachIndexed { index, entry ->
@@ -375,9 +380,10 @@ private fun Header(name: String, count: Int) {
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
-        GlassCircle(PassIcons.Settings, "Settings") { shell.nav.navigate("settings") }
+        HelpAction("screen.window", "the vault", Modifier.padding(end = 10.dp), tint = colors.text)
+        GlassCircle(PassIcons.Settings, "Settings", Modifier.helpAnchor("sidebar.settings")) { shell.nav.navigate("settings") }
         Spacer(Modifier.width(10.dp))
-        GlassCircle(PassIcons.LockFilled, "Lock now", tint = colors.primary) { shell.lockNow() }
+        GlassCircle(PassIcons.LockFilled, "Lock now", Modifier.helpAnchor("sidebar.lock"), tint = colors.primary) { shell.lockNow() }
     }
 }
 

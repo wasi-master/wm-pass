@@ -1,4 +1,6 @@
 <script lang="ts">
+  import HelpButton from '../help/HelpButton.svelte';
+  import Hint from '../help/Hint.svelte';
   import Btn from '../parts/Btn.svelte';
   import Ring from '../parts/Ring.svelte';
   import Tile from '../parts/Tile.svelte';
@@ -58,17 +60,23 @@
 
 <div class="settings-pane scroll">
   <div class="settings-inner" style="max-width:none">
-    <h1 class="page-title">Codes</h1>
+    <div class="page-title-row" style="padding-bottom:10px">
+      <h1 class="page-title">Codes</h1>
+      <HelpButton id="screen.codes" title="Codes" />
+      <span class="grow"></span>
+      {#if list && list.length > 0}<span data-help-anchor="codes.add" style="display:flex"><Btn label="Add a code" icon="add" variant="quiet" onclick={() => ui.add('otp')} /></span>{/if}
+    </div>
+    <Hint id="codes" topic="screen.codes" tour="tour.codes" />
     {#if list && list.length === 0}
       <div class="stack" style="max-width:420px">
         <p class="dim">No codes yet. When a site offers two-factor sign-in, enter its setup key here.</p>
-        <div class="gap">
+        <div class="gap" data-help-anchor="codes.add">
           <Btn label="Add a code" variant="primary" onclick={() => ui.add('otp')} />
           <Btn label="Bring them from another app" onclick={() => ui.go('settings/import')} />
         </div>
       </div>
     {:else if list}
-      <div class="codes-grid">
+      <div class="codes-grid" data-help-anchor="codes.list">
         {#each list as row (row.id)}
           {@const code = row.code ?? hotp[row.id]}
           {@const hidden = prefs.v.code_hidden && (shownUntil[row.id] ?? 0) < now}

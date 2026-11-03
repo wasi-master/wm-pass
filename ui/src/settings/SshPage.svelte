@@ -37,14 +37,14 @@
   <Toggle title="Run the SSH agent" icon="terminal" pref="ssh_agent" onchange={apply} />
   <Toggle title="Ask before each use" sub="Recommended. A window asks each time a program wants a key to sign something." icon="rule" pref="ssh_confirm" onchange={apply} />
   {#if shown.running && line}
-    <Row title="Point your shell at it" sub={line}>
+    <Row title="Point your shell at it" help="action.ssh_shell" sub={line}>
       <IconBtn icon="content_copy" label="Copy" onclick={() => copyPlainLine('Line', line)} />
     </Row>
   {/if}
   {#if shown.last}<Row title="Last used" sub={shown.last} />{/if}
 </Group>
 
-<Group title="Keys in this vault">
+<Group title="Keys in this vault" help="group.ssh.keys">
   {#if keys.length === 0}
     <div class="set-body"><p class="dim">No SSH keys yet. Add one from the New item menu. Only ed25519 keys are generated here; others can be pasted in.</p></div>
   {/if}

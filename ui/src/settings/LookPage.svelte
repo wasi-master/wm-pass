@@ -8,10 +8,10 @@
 </script>
 
 <Group title="Interface">
-  <Row title="Theme" sub="Dracula, Catppuccin, Nord, Solarized and more, or your own" icon="palette" value={prefs.theme.name} chevron onclick={() => ui.go('settings/themes')} />
+  <Row title="Theme" help="action.theme_choose" sub="Dracula, Catppuccin, Nord, Solarized and more, or your own" icon="palette" value={prefs.theme.name} chevron onclick={() => ui.go('settings/themes')} />
   <Choice title="Dark mode" icon="contrast" pref="look" options={[['SYSTEM', 'System'], ['LIGHT', 'Light'], ['DARK', 'Dark'], ['OBSIDIAN', 'Black']]} />
   <Choice title="Row height" icon="density_medium" pref="density" options={[['compact', 'Compact'], ['comfortable', 'Comfortable'], ['spacious', 'Spacious']]} />
-  <Row title="Text size" icon="text_increase" value="{prefs.v.text_scale}%">
+  <Row title="Text size" help="setting.text_scale" icon="text_increase" value="{prefs.v.text_scale}%">
     <span style="width:160px;display:flex">
       <input type="range" min="85" max="130" step="5" value={prefs.v.text_scale} aria-label="Text size" oninput={(e) => prefs.set('text_scale', Number(e.currentTarget.value))} />
     </span>

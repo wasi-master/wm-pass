@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { help } from '../help/help.svelte';
   import Btn from '../parts/Btn.svelte';
   import Dialog from '../parts/Dialog.svelte';
   import Field from '../parts/Field.svelte';
@@ -245,7 +246,7 @@
     <form class="door-card" onsubmit={(e) => { e.preventDefault(); void create(); }}>
       <Shield size={52} />
       <h1>Create your vault</h1>
-      <p class="dim">Your master password encrypts everything on this device. It cannot be reset, so keep a copy somewhere safe.</p>
+      <p class="dim">Your master password encrypts everything on this device. It cannot be reset, so keep a copy somewhere safe. <button type="button" class="link" onclick={() => help.open('concept.master_password')}>What makes a good one?</button></p>
       <div style="height:6px"></div>
       <PasswordField bind:value={password} placeholder="Master password" autofocus disabled={busy} oninput={rate} />
       <Strength score={strength?.score ?? 0} active={password.length > 0} />
@@ -322,6 +323,7 @@
         />
       {/if}
       <Btn label="Add another vault or account" variant="quiet" wide onclick={() => (returning = true)} />
+      <p class="small" style="text-align:center"><button type="button" class="link" onclick={() => help.open('screen.door')}>Help with unlocking</button></p>
     </form>
   {/if}
 </div>

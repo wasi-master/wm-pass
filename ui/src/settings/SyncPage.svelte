@@ -42,7 +42,7 @@
 </script>
 
 {#if pass.account && current?.kind !== 'kdbx'}
-  <Group title="This account">
+  <Group title="This account" help="group.sync.account">
     <Row
       title={current?.label ?? 'Server'}
       sub={accounts.syncProblem ?? 'Changes go up after each edit. If the server cannot be reached they wait here.'}
@@ -56,7 +56,7 @@
 {#if host().lan}<LanSection />{/if}
 
 {#if places.available}
-  <Group title="Through a folder or server">
+  <Group title="Through a folder or server" help="group.sync.files" anchor="group:sync.places">
     <div class="set-body"><p class="dim">Each device leaves its own encrypted copy there and merges the others. Pick any place you set up for backups.</p></div>
     {#each places.list as place (place.id)}
       <Row title={place.label} icon={place.kind === 'folder' ? 'folder' : 'cloud_sync'}>
@@ -73,12 +73,12 @@
   </Group>
 {/if}
 
-<Group title="Accounts held elsewhere">
+<Group title="Accounts held elsewhere" help="group.sync.accounts" anchor="group:sync.accounts">
   <div class="set-body"><p class="dim">Open a KeePass file where it is, or sign in to Bitwarden, Vaultwarden or a WM Pass server. They appear on the door beside this vault.</p></div>
   {#each accounts.list as item (item.id)}
     <Row title={item.label} sub={item.kind === 'kdbx' ? 'KeePass file' : item.server || 'bitwarden.com'} icon={item.kind === 'kdbx' ? 'key' : 'sync'} onclick={() => remove(item)} />
   {/each}
-  <Row title="Add an account" icon="add" chevron onclick={() => (addingAccount = true)} />
+  <Row title="Add an account" help="action.add_account" icon="add" chevron onclick={() => (addingAccount = true)} />
 </Group>
 
 <Group title="Vaults inside this one">

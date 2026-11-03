@@ -1,4 +1,5 @@
 <script lang="ts">
+  import HelpButton from '../help/HelpButton.svelte';
   import Btn from '../parts/Btn.svelte';
   import Dialog from '../parts/Dialog.svelte';
   import Field from '../parts/Field.svelte';
@@ -193,7 +194,7 @@
       <Field bind:value={place.access_key} placeholder="Access key" />
       <PasswordField bind:value={place.secret_key} placeholder="Secret key" />
       {#if !s3}
-        <label class="line"><span>Path-style addresses, for MinIO, Garage or an IP address</span><Switch checked={!!x.path_style} label="Path-style addresses" onchange={(v) => (x.path_style = v)} /></label>
+        <label class="line"><span>Path-style addresses, for MinIO, Garage or an IP address</span><Switch checked={!!x.path_style} label="Path-style addresses" onchange={(v) => (x.path_style = v)} /><HelpButton id="action.place_path_style" title="Path-style addresses" /></label>
       {/if}
     {:else if ['sftp', 'ftp', 'smb', 'imap'].includes(place.kind)}
       <Field bind:value={x.host} placeholder="Host" />
@@ -219,9 +220,9 @@
       {#if place.kind === 'sftp'}
         <p class="dim small">The server’s key is remembered on the first connection. If it ever changes, WM Pass refuses to connect.</p>
       {:else if place.kind === 'ftp'}
-        <label class="line"><span>Encrypt the connection. Plain FTP sends the password as text.</span><Switch checked={x.secure !== false} label="Encrypt the connection" onchange={(v) => (x.secure = v)} /></label>
+        <label class="line"><span>Encrypt the connection. Plain FTP sends the password as text.</span><Switch checked={x.secure !== false} label="Encrypt the connection" onchange={(v) => (x.secure = v)} /><HelpButton id="action.place_ftp_encrypt" title="Encrypt the connection" /></label>
       {:else if place.kind === 'smb'}
-        <label class="line"><span>Require encryption. Off lets an older server sign without encrypting.</span><Switch checked={x.encrypt !== false} label="Require encryption" onchange={(v) => (x.encrypt = v)} /></label>
+        <label class="line"><span>Require encryption. Off lets an older server sign without encrypting.</span><Switch checked={x.encrypt !== false} label="Require encryption" onchange={(v) => (x.encrypt = v)} /><HelpButton id="action.place_smb_encrypt" title="Require encryption" /></label>
       {:else if x.security === 'none'}
         <p class="dim small">Without TLS the password crosses the network as text.</p>
       {/if}
@@ -240,6 +241,7 @@
       <label class="line">
         <span>Accept the NAS’s own certificate. The first one seen is remembered; a different one later is refused.</span>
         <Switch checked={!!x.own_certificate} label="Accept the NAS’s own certificate" onchange={(v) => { x.own_certificate = v; x.cert_pin = ''; }} />
+        <HelpButton id="action.place_nas_certificate" title="Accept the NAS’s own certificate" />
       </label>
     {:else if place.kind === 'git'}
       <Segmented value={x.provider ?? 'github'} options={[['github', 'GitHub'], ['gitlab', 'GitLab'], ['gitea', 'Gitea']]} onchange={(v) => (x.provider = v)} />
@@ -248,7 +250,7 @@
       <Field bind:value={x.branch} placeholder="Branch, the default one if empty" />
       <Field bind:value={place.path} placeholder="Folder in the repository, if any" />
       <PasswordField bind:value={x.token} placeholder="Access token" />
-      <label class="line"><span>Allow a public repository. Anyone could download the encrypted file.</span><Switch checked={!!x.allow_public} label="Allow a public repository" onchange={(v) => (x.allow_public = v)} /></label>
+      <label class="line"><span>Allow a public repository. Anyone could download the encrypted file.</span><Switch checked={!!x.allow_public} label="Allow a public repository" onchange={(v) => (x.allow_public = v)} /><HelpButton id="action.place_git_public" title="Allow a public repository" /></label>
     {:else if place.kind === 'drive'}
       <Segmented value={x.drive_space ?? 'appdata'} options={[['appdata', 'Hidden app folder'], ['folder', 'A folder you can see']]} onchange={(v) => (x.drive_space = v)} />
       {#if x.drive_space === 'folder'}<Field bind:value={x.folder} placeholder={`Folder in My Drive, ${DEFAULT_FOLDER} if empty`} />{/if}

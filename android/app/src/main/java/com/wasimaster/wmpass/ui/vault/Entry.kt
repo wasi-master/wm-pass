@@ -70,6 +70,8 @@ import com.wasimaster.wmpass.core.OtpRow
 import com.wasimaster.wmpass.core.Pass
 import com.wasimaster.wmpass.core.SecretBytes
 import com.wasimaster.wmpass.ui.fx.glass
+import com.wasimaster.wmpass.ui.help.HelpAction
+import com.wasimaster.wmpass.ui.help.helpAnchor
 import com.wasimaster.wmpass.ui.icons.PassIcons
 import com.wasimaster.wmpass.ui.parts.Eyebrow
 import com.wasimaster.wmpass.ui.parts.GlassCircle
@@ -212,7 +214,7 @@ fun EntryScreen(id: String) {
                 if (entry.trashed) {
                     TrashedActions(entry)
                 } else {
-                    QuickActions(entry)
+                    Box(Modifier.helpAnchor("detail.actions")) { QuickActions(entry) }
                 }
                 AnimatedVisibility(
                     visible = true,
@@ -249,6 +251,7 @@ private fun StandardEntry(id: String, entry: Detail?, revealed: MutableMap<Strin
                     androidx.compose.material3.IconButton(onClick = { shell.nav.popBackStack() }) { Icon(PassIcons.ArrowBack, "Back") }
                 },
                 actions = {
+                    HelpAction("screen.item", "the item page")
                     if (entry != null) {
                         androidx.compose.material3.IconButton(onClick = {
                             shell.launch {
@@ -290,7 +293,7 @@ private fun StandardEntry(id: String, entry: Detail?, revealed: MutableMap<Strin
                         Text(entry.subtitle.ifEmpty { kindName(entry.kind) }, color = colors.textMid, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.sharedEntry("subtitle-$id", inSearch))
                     }
                 }
-                if (entry.trashed) TrashedActions(entry) else QuickActions(entry)
+                if (entry.trashed) TrashedActions(entry) else Box(Modifier.helpAnchor("detail.actions")) { QuickActions(entry) }
                 entry.destroyAtMs?.let { at -> DestructBanner(at) }
                 Sections(entry, revealed)
                 Spacer(Modifier.height(32.dp))
@@ -322,6 +325,7 @@ private fun TopBar(entry: Detail?, scrolled: Int) {
                     },
             )
             Row(Modifier.align(Alignment.CenterEnd), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                HelpAction("screen.item", "the item page", tint = colors.text)
                 GlassCircle(
                     if (entry.favourite) PassIcons.StarFilled else PassIcons.Star,
                     if (entry.favourite) "Remove from favorites" else "Add to favorites",

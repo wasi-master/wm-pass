@@ -140,7 +140,7 @@ fun ThemesScreen() {
                 }
             }
             if (prefs.customThemes.isNotEmpty()) {
-                Eyebrow("Yours")
+                Eyebrow("Yours") { com.wasimaster.wmpass.ui.help.HelpMark("group.themes.yours", "your themes") }
                 GroupCard {
                     prefs.customThemes.forEach { theme ->
                         ThemeRow(theme, prefs.themeId == theme.id, dark, { prefs.updateTheme(theme.id) }) {

@@ -53,6 +53,8 @@ import com.wasimaster.wmpass.core.QuickUnlock
 import com.wasimaster.wmpass.core.SlotView
 import com.wasimaster.wmpass.core.Summary
 import com.wasimaster.wmpass.ui.door.PasswordPill
+import com.wasimaster.wmpass.ui.help.Help
+import com.wasimaster.wmpass.ui.help.helpAnchor
 import com.wasimaster.wmpass.ui.icons.PassIcons
 import com.wasimaster.wmpass.ui.parts.GlyphTile
 import com.wasimaster.wmpass.ui.parts.PrimaryButton
@@ -116,6 +118,7 @@ fun NavGraphBuilder.settingsGraph() {
     composable("settings/health") { HealthSettingsScreen() }
     composable("settings/file") { SettingsFileScreen() }
     composable("settings/search") { SettingsSearchScreen() }
+    composable("settings/guide") { com.wasimaster.wmpass.ui.help.GuideScreen() }
     composable("settings/theme_edit/{id}") { entry -> ThemeEditor(entry.arguments?.getString("id").orEmpty()) }
 }
 
@@ -189,6 +192,9 @@ fun SettingsRoot() {
         SettingsGroup("This app") {
             item {
                 NavRow("Settings file", "Export, import or reset", route = "settings/file", accent = routeAccent("settings/file"), icon = PassIcons.ImportExport) { nav.navigate("settings/file") }
+            }
+            item {
+                NavRow("Guide", "What every setting and screen does, and tours", route = "settings/guide", accent = routeAccent("settings/guide"), icon = PassIcons.Help) { nav.navigate("settings/guide") }
             }
             item {
                 NavRow("About", route = "settings/about", accent = routeAccent("settings/about"), icon = PassIcons.Info) { nav.navigate("settings/about") }
@@ -327,13 +333,15 @@ private fun SecurityScreen() {
         }
     }
     WmScreen("Security", route = "settings/security", onBack = back()) {
-        SettingsGroup("Locking") {
+        SettingsGroup("Locking", modifier = Modifier.helpAnchor("group:security.locking")) {
             item {
                 ChoiceSetting(
                     "Lock after leaving the app",
+                    info = infoFor("lock_after"),
                     options = listOf(0 to "At once", 60 to "1 min", 300 to "5 min", 1800 to "30 min", -1 to "Never"),
                     selected = prefs.lockAfter,
                     icon = PassIcons.LockClock,
+                    detail = choiceDetail("lock_after"),
                 ) { prefs.updateLockAfter(it) }
             }
             item {
@@ -341,6 +349,7 @@ private fun SecurityScreen() {
                     "Unlock with fingerprint",
                     "Your phone's secure hardware holds the key. A new fingerprint added to the phone turns this off.",
                     quickOn,
+                    info = Help.info("action.fingerprint_unlock"),
                     icon = PassIcons.Fingerprint,
                     enabled = quick != null,
                 ) { on ->
@@ -380,68 +389,72 @@ private fun SecurityScreen() {
                     "Block screenshots",
                     "Also hides the app in the recent apps list.",
                     prefs.screenProtection,
+                    info = infoFor("screen_protection"),
                     icon = PassIcons.ScreenLockPortrait,
                 ) { prefs.updateScreenProtection(it) }
             }
             item {
                 ChoiceSetting(
                     "Clear the clipboard after",
+                    info = infoFor("clipboard_seconds"),
                     options = listOf(15 to "15 s", 30 to "30 s", 60 to "1 min", 120 to "2 min"),
                     selected = prefs.clipboardSeconds,
                     icon = PassIcons.ContentPaste,
+                    detail = choiceDetail("clipboard_seconds"),
                 ) { prefs.updateClipboard(it) }
             }
             item {
-                ToggleSetting("Lock when the screen goes off", null, prefs.lockScreenOff.value, icon = PassIcons.ScreenLockPortrait) { prefs.lockScreenOff.set(it) }
+                ToggleSetting("Lock when the screen goes off", null, prefs.lockScreenOff.value, info = infoFor("lock_screen_off"), icon = PassIcons.ScreenLockPortrait) { prefs.lockScreenOff.set(it) }
             }
         }
-        SettingsGroup("Master password") {
+        SettingsGroup("Master password", modifier = Modifier.helpAnchor("group:security.master")) {
             item {
-                NavRow("Change it", "Old backups still open with the old password", icon = PassIcons.Password) { sheet = "change" }
+                NavRow("Change it", "Old backups still open with the old password", icon = PassIcons.Password, info = Help.info("action.change_password")) { sheet = "change" }
             }
             item {
-                NavRow("Change it and rekey", "A new vault key too, so old copies of the file cannot follow new changes", icon = PassIcons.LockReset) { sheet = "rekey" }
+                NavRow("Change it and rekey", "A new vault key too, so old copies of the file cannot follow new changes", icon = PassIcons.LockReset, info = Help.info("action.rekey")) { sheet = "rekey" }
             }
         }
-        SettingsGroup("Unlock methods") {
+        SettingsGroup("Unlock methods", info = Help.info("group.security.methods"), modifier = Modifier.helpAnchor("group:security.methods")) {
             slots.forEach { slot ->
                 item {
                     NavRow(slot.label.ifEmpty { "Password ${slot.index + 1}" }, icon = PassIcons.Key) { sheet = "slot:${slot.index}" }
                 }
             }
             item {
-                NavRow("Add a password", icon = PassIcons.Add) { sheet = "add" }
+                NavRow("Add a password", icon = PassIcons.Add, info = Help.info("action.add_password")) { sheet = "add" }
             }
             item {
-                NavRow("Add a key file", "Both the password and the file will be needed", icon = PassIcons.FileOpen) { keyFile.launch(arrayOf("*/*")) }
+                NavRow("Add a key file", "Both the password and the file will be needed", icon = PassIcons.FileOpen, info = Help.info("action.add_key_file")) { keyFile.launch(arrayOf("*/*")) }
             }
             item {
-                NavRow("Add a security key", "YubiKey or another FIDO2 key, by USB or NFC", icon = PassIcons.SecurityKey) { shell.nav.navigate("settings/hardware") }
-            }
-        }
-        SettingsGroup("Duress") {
-            item {
-                NavRow("Wipe password", "Erases the vault on this device. Looks like a wrong password.", icon = PassIcons.Dangerous) { sheet = "duress:wipe" }
-            }
-            item {
-                NavRow("Lockout password", "Refuses every attempt for an hour.", icon = PassIcons.Lock) { sheet = "duress:lock" }
-            }
-            item {
-                NavRow("Decoy vault", "A separate vault with its own password.", icon = PassIcons.Layers) { sheet = "decoy" }
+                NavRow("Add a security key", "YubiKey or another FIDO2 key, by USB or NFC", icon = PassIcons.SecurityKey, info = Help.info("action.add_security_key")) { shell.nav.navigate("settings/hardware") }
             }
         }
-        SettingsGroup("Autofill and panic") {
+        SettingsGroup("Duress", modifier = Modifier.helpAnchor("group:security.duress")) {
             item {
-                ToggleSetting("Inline suggestions", "Show saved logins in the keyboard's suggestion row.", prefs.autofillInline.value, icon = PassIcons.Keyboard) { prefs.autofillInline.set(it) }
+                NavRow("Wipe password", "Erases the vault on this device. Looks like a wrong password.", icon = PassIcons.Dangerous, info = Help.info("action.wipe_password")) { sheet = "duress:wipe" }
             }
             item {
-                ToggleSetting("Offer to save passwords", "Ask after you sign in with a new or changed password.", prefs.autofillSave.value, icon = PassIcons.Key) { prefs.autofillSave.set(it) }
+                NavRow("Lockout password", "Refuses every attempt for an hour.", icon = PassIcons.Lock, info = Help.info("action.lockout_password")) { sheet = "duress:lock" }
+            }
+            item {
+                NavRow("Decoy vault", "A separate vault with its own password.", icon = PassIcons.Layers, info = Help.info("action.decoy_vault")) { sheet = "decoy" }
+            }
+        }
+        SettingsGroup("Autofill and panic", info = Help.info("group.security.autofill")) {
+            item {
+                ToggleSetting("Inline suggestions", "Show saved logins in the keyboard's suggestion row.", prefs.autofillInline.value, info = infoFor("autofill_inline"), icon = PassIcons.Keyboard) { prefs.autofillInline.set(it) }
+            }
+            item {
+                ToggleSetting("Offer to save passwords", "Ask after you sign in with a new or changed password.", prefs.autofillSave.value, info = infoFor("autofill_save"), icon = PassIcons.Key) { prefs.autofillSave.set(it) }
             }
             item {
                 ToggleSetting(
                     "Let WM Keyboard fill",
                     "Its WM Pass tool can list your logins and type them while the vault is open, and its settings can fill API keys from here or save new ones. A password it types passes through the keyboard. On by default when WM Keyboard is installed.",
                     prefs.keyboardAccess.value,
+                    info = infoFor("keyboard_access"),
                     icon = PassIcons.Keyboard,
                 ) { prefs.keyboardAccess.set(it) }
             }
@@ -451,12 +464,13 @@ private fun SecurityScreen() {
                         "Show on my watch",
                         "While the vault is open here, your paired watch can show one-time codes and favorites. The watch keeps nothing. On once a watch with WM Pass asks.",
                         prefs.wearAccess.value,
+                        info = infoFor("wear_access"),
                         icon = PassIcons.Key,
                     ) { prefs.wearAccess.set(it) }
                 }
             }
             item {
-                NavRow("Autofill service", "Set WM Pass as this device's autofill service", icon = PassIcons.TextFields) {
+                NavRow("Autofill service", "Set WM Pass as this device's autofill service", icon = PassIcons.TextFields, info = Help.info("action.autofill_service")) {
                     runCatching {
                         context.startActivity(
                             android.content.Intent(android.provider.Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
@@ -468,16 +482,18 @@ private fun SecurityScreen() {
             item {
                 ChoiceSetting(
                     "When a panic app signals",
+                    info = infoFor("panic_action"),
                     subtitle = if (prefs.panicAction == "wipe") "Wipes only for ${prefs.panicTrustedApp ?: "the app you name"}. Others just lock." else "Locks and refuses passwords for an hour.",
                     options = listOf("lock" to "Lock", "wipe" to "Wipe"),
                     selected = prefs.panicAction,
                     icon = PassIcons.Dangerous,
+                    detail = choiceDetail("panic_action"),
                 ) { action -> if (action == "wipe") sheet = "panic" else prefs.updatePanic("lock", null) }
             }
         }
-        SettingsGroup("Emergency access") {
+        SettingsGroup("Emergency access", modifier = Modifier.helpAnchor("group:security.emergency")) {
             item {
-                NavRow("Emergency kit", "Split your key between trusted people", icon = PassIcons.FamilyRestroom) { sheet = "kit" }
+                NavRow("Emergency kit", "Split your key between trusted people", icon = PassIcons.FamilyRestroom, info = Help.info("action.emergency_kit")) { sheet = "kit" }
             }
         }
     }
@@ -729,20 +745,24 @@ internal fun LookScreen() {
                 ChoiceSetting(
                     "Style",
                     subtitle = if (prefs.uiStyle == "glass") "Blur, glow and larger animations." else "Plain surfaces and the usual Android layout.",
+                    info = infoFor("ui_style"),
                     options = listOf("standard" to "Standard", "glass" to "Glass"),
                     selected = prefs.uiStyle,
                     icon = PassIcons.Layers,
+                    detail = choiceDetail("ui_style"),
                 ) { prefs.updateUiStyle(it) }
             }
             item {
-                NavRow("Theme", "Dracula, Catppuccin, Nord, Solarized and more, or your own", icon = PassIcons.Palette) { shell.nav.navigate("settings/themes") }
+                NavRow("Theme", "Dracula, Catppuccin, Nord, Solarized and more, or your own", icon = PassIcons.Palette, info = Help.info("action.theme_choose")) { shell.nav.navigate("settings/themes") }
             }
             item {
                 ChoiceSetting(
                     "Dark mode",
+                    info = infoFor("look"),
                     options = listOf(Look.SYSTEM to "System", Look.LIGHT to "Light", Look.DARK to "Dark", Look.OBSIDIAN to "Black"),
                     selected = prefs.look,
                     icon = PassIcons.Contrast,
+                    detail = { look: Look -> Help.effectDetail("look", look.name)?.let { com.wasimaster.wmsuite.settings.ChoiceDetail(description = it) } },
                 ) { prefs.updateLook(it) }
             }
             if (prefs.uiStyle == "glass") item {
@@ -769,10 +789,10 @@ internal fun LookScreen() {
         }
         SettingsGroup("Motion and touch") {
             item {
-                ToggleSetting("Animations", "Turn off for shorter transitions.", prefs.richMotion.value, icon = PassIcons.Animation) { prefs.updateRichMotion(it) }
+                ToggleSetting("Animations", "Turn off for shorter transitions.", prefs.richMotion.value, info = infoFor("rich_motion"), icon = PassIcons.Animation) { prefs.updateRichMotion(it) }
             }
             item {
-                ToggleSetting("Vibration", "A small tap when something happens.", prefs.haptics.value, icon = PassIcons.Vibration) { prefs.haptics.set(it) }
+                ToggleSetting("Vibration", "A small tap when something happens.", prefs.haptics.value, info = infoFor("haptics"), icon = PassIcons.Vibration) { prefs.haptics.set(it) }
             }
         }
     }
@@ -813,6 +833,7 @@ private fun TrashScreen() {
             item {
                 ChoiceSetting(
                     "Keep deleted items for",
+                    info = Help.info("action.trash_keep"),
                     options = (listOf(7, 30, 90, 365) + days).distinct().sorted().map { it to "$it days" },
                     selected = days,
                     icon = PassIcons.Timer,
@@ -862,6 +883,7 @@ private fun ShelfScreen() {
         if (open) items = runCatching { Pass.search("hidden") }.getOrDefault(emptyList())
     }
     WmScreen("Hidden shelf", route = "settings/shelf", onBack = back()) {
+        com.wasimaster.wmpass.ui.help.Hint(shell.prefs, "shelf", "screen.shelf", Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
         if (!open) {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                 Text(
@@ -933,7 +955,7 @@ private fun FoldersScreen() {
                 }
             }
             item {
-                NavRow("New folder", icon = PassIcons.Add) { adding = true }
+                NavRow("New folder", icon = PassIcons.Add, info = Help.info("action.new_folder")) { adding = true }
             }
         }
     }
@@ -1239,25 +1261,25 @@ private fun ExportScreen() {
     WmScreen("Export", route = "settings/export", onBack = back()) {
         SettingsGroup("Stays encrypted") {
             item {
-                NavRow("WM Pass vault", "The vault file itself, sealed. Opens with your password.", icon = PassIcons.Encrypted) {
+                NavRow("WM Pass vault", "The vault file itself, sealed. Opens with your password.", icon = PassIcons.Encrypted, info = Help.info("action.export_wmvault")) {
                     sealed.launch("vault.wmvault")
                 }
             }
             item {
-                NavRow("KeePass database", "A new .kdbx file with a password you choose.", icon = PassIcons.Database) {
+                NavRow("KeePass database", "A new .kdbx file with a password you choose.", icon = PassIcons.Database, info = Help.info("action.export_kdbx")) {
                     format = "kdbx"
                     askingPassword = true
                 }
             }
         }
-        SettingsGroup("Plain text") {
+        SettingsGroup("Plain text", info = Help.info("group.export.plain")) {
             listOf(
                 Triple("bitwarden", "Bitwarden JSON", "wm-pass-bitwarden.json"),
                 Triple("csv", "CSV", "wm-pass.csv"),
                 Triple("html", "Printable page", "wm-pass.html"),
             ).forEach { (id, label, name) ->
                 item {
-                    NavRow(label, "Anyone who opens this file can read every password.", icon = PassIcons.Warning) {
+                    NavRow(label, "Anyone who opens this file can read every password.", icon = PassIcons.Warning, info = Help.info("action.export_$id")) {
                         format = id
                         pendingName = name
                         warned = label

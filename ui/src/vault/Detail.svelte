@@ -1,4 +1,5 @@
 <script lang="ts">
+  import HelpButton from '../help/HelpButton.svelte';
   import Btn from '../parts/Btn.svelte';
   import Icon from '../parts/Icon.svelte';
   import IconBtn from '../parts/IconBtn.svelte';
@@ -248,6 +249,7 @@
   <div class="detail-bar" data-tauri-drag-region>
     {#if ui.narrow}<IconBtn icon="arrow_back" label="Back" onclick={() => { ui.selected = null; ui.showDetail = false; }} />{/if}
     <span class="grow" data-tauri-drag-region></span>
+    <HelpButton id="screen.item" title="the item page" />
     {#if !detail.trashed}
       <IconBtn
         icon={detail.favourite ? 'star_fill' : 'star'}
@@ -256,7 +258,7 @@
         onclick={() => pass.change('entry.common', { id, favourite: !detail!.favourite })}
       />
       <IconBtn icon="edit" label="Edit" onclick={() => ui.edit(id, detail!.kind)} />
-      <IconBtn icon="more_horiz" label="More" onclick={moreMenu} />
+      <span data-help-anchor="detail.more" style="display:flex"><IconBtn icon="more_horiz" label="More" onclick={moreMenu} /></span>
     {/if}
   </div>
   <div class="detail-body scroll">
@@ -277,7 +279,7 @@
           <Btn label="Delete for good" variant="danger" icon="delete" onclick={() => runEntryMenu('purge', detail!)} />
         </div>
       {:else if prefs.v.entry_actions && (detail.has_password || username || url)}
-        <div class="actions">
+        <div class="actions" data-help-anchor="detail.actions">
           {#if detail.has_password}<Btn label="Copy password" variant="primary" icon="content_copy" onclick={() => ui.copyPassword(id)} />{/if}
           {#if username && prefs.v.entry_action_username}<Btn label="Copy username" icon="person" variant={detail.has_password ? '' : 'primary'} onclick={() => ui.copyPlain('Username', username!)} />{/if}
           {#if url && prefs.v.entry_action_open}<Btn label="Open site" icon="open_in_new" onclick={() => openUrl(url!)} />{/if}
@@ -292,7 +294,7 @@
         </div>
       {/if}
 
-      <div class="fields">
+      <div class="fields" data-help-anchor="detail.fields">
         {#each detail.fields.filter((f) => f.has_value || f.value === true) as field (field.key)}
           {#if field.input === 'toggle'}
             <div class="field"><span class="label">{field.label}</span><span class="value">{field.value ? 'On' : 'Off'}</span><span></span></div>

@@ -94,7 +94,7 @@
 {/snippet}
 
 {#if prefs.customThemes.length > 0}
-  <Group title="Yours" />
+  <Group title="Yours" help="group.themes.yours" />
   <div class="theme-grid" style="margin:-12px 0 18px">{#each prefs.customThemes as theme (theme.id)}{@render card(theme)}{/each}</div>
 {/if}
 <p class="section-title" style="padding-top:0">Themes</p>

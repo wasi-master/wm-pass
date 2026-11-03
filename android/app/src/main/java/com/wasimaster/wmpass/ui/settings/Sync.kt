@@ -56,6 +56,8 @@ import com.wasimaster.wmpass.system.Destinations
 import com.wasimaster.wmpass.system.FileSync
 import com.wasimaster.wmpass.system.Lan
 import com.wasimaster.wmpass.system.LanPeer
+import com.wasimaster.wmpass.ui.help.HelpMark
+import com.wasimaster.wmpass.ui.help.helpAnchor
 import com.wasimaster.wmpass.ui.icons.PassIcons
 import com.wasimaster.wmpass.ui.parts.Eyebrow
 import com.wasimaster.wmpass.ui.parts.GlyphTile
@@ -134,7 +136,7 @@ fun SyncScreen() {
             account?.let { id ->
                 val current = accounts.firstOrNull { it.id == id }
                 if (current?.kind != "kdbx") {
-                    Eyebrow("This account")
+                    Eyebrow("This account") { HelpMark("group.sync.account", "this account") }
                     GroupCard {
                         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                             GlyphTile(PassIcons.Sync, if (problem != null) colors.danger else colors.primary, size = 40.dp)
@@ -160,7 +162,8 @@ fun SyncScreen() {
                 }
             }
             LanSection()
-            Eyebrow("Through a folder or server")
+            Column(Modifier.helpAnchor("group:sync.places")) {
+            Eyebrow("Through a folder or server") { HelpMark("group.sync.files", "syncing through a folder or server") }
             Text(
                 "Each device leaves its own encrypted copy there and merges the others. Pick any place you set up for backups.",
                 color = colors.textMid,
@@ -176,7 +179,8 @@ fun SyncScreen() {
                     }
                 }
                 if (places.isNotEmpty()) Hairline()
-                NavRow("Add a place", icon = PassIcons.Add) { addingPlace = true }
+                NavRow("Add a place", icon = PassIcons.Add, help = "action.add_place") { addingPlace = true }
+            }
             }
             if (places.any { it.sync }) {
                 Spacer(Modifier.height(10.dp))
@@ -190,7 +194,8 @@ fun SyncScreen() {
                 }
                 fileMessage?.let { Text(it, color = colors.textMid, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 6.dp, top = 10.dp)) }
             }
-            Eyebrow("Accounts held elsewhere")
+            Column(Modifier.helpAnchor("group:sync.accounts")) {
+            Eyebrow("Accounts held elsewhere") { HelpMark("group.sync.accounts", "accounts held elsewhere") }
             Text(
                 "Open a KeePass file where it is, or sign in to Bitwarden, Vaultwarden or a WM Pass server. They appear on the door beside this vault.",
                 color = colors.textMid,
@@ -204,7 +209,8 @@ fun SyncScreen() {
                     NavRow(item.label, if (item.kind == "kdbx") where else listOf(item.email, where).filter { it.isNotEmpty() }.joinToString(" on "), icon = if (item.kind == "kdbx") PassIcons.Key else PassIcons.Sync) { removing = item }
                 }
                 if (accounts.isNotEmpty()) Hairline()
-                NavRow("Add an account", icon = PassIcons.Add) { addingAccount = true }
+                NavRow("Add an account", icon = PassIcons.Add, help = "action.add_account") { addingAccount = true }
+            }
             }
             Eyebrow("Vaults inside this one")
             GroupCard {
@@ -387,7 +393,8 @@ private fun LanSection() {
         }
     }
 
-    Eyebrow("Your devices, on this network")
+    Column(Modifier.helpAnchor("group:sync.lan")) {
+    Eyebrow("Your devices, on this network") { HelpMark("group.sync.lan", "syncing on this network") }
     NetGate("Sync talks directly to your own devices on this Wi-Fi network, encrypted end to end, with nothing in between. Android files this under internet access, so it needs your yes like the rest.") {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             HoldMulticast()
@@ -407,7 +414,7 @@ private fun LanSection() {
                                 }
                             }
                             if (peers.isNotEmpty()) Hairline()
-                            NavRow("Pair a device", "This phone and a desktop, or two phones", icon = PassIcons.Add) { adding = true }
+                            NavRow("Pair a device", "This phone and a desktop, or two phones", icon = PassIcons.Add, help = "action.lan_pair") { adding = true }
                         }
                         if (peers.isNotEmpty()) {
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -486,6 +493,7 @@ private fun LanSection() {
             }
             message?.let { Text(it, color = colors.textMid, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 6.dp)) }
         }
+    }
     }
     if (adding) {
         PassSheet({ adding = false }, "Pair a device") {

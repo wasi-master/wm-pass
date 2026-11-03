@@ -443,6 +443,8 @@ fun VaultShell(prefs: Prefs) {
                     onClose = { shell.cardTarget = null },
                 )
             }
+            // The guide: its sheet, the first-time welcome and a tour's spotlight, over everything.
+            com.wasimaster.wmpass.ui.help.HelpHost(prefs)
         }
     }
 }

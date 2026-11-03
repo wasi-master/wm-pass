@@ -10,7 +10,7 @@
   const tabs = $derived(prefs.listOf('tabs'));
 </script>
 
-<Group title="Sidebar">
+<Group title="Sidebar" help="setting.tabs">
   <Reorder items={tabs} label={(id) => TAB_INFO[id]?.label ?? id} locked={['all']} onchange={(next) => prefs.setList('tabs', next)} />
   {#each ALL_TABS.filter((t) => !tabs.includes(t)) as tab}
     <Row title="Add {TAB_INFO[tab].label}" icon={TAB_INFO[tab].icon} onclick={() => prefs.setList('tabs', [...tabs, tab])} />

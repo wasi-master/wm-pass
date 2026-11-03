@@ -173,7 +173,7 @@
   ];
 </script>
 
-<Group title="Locking">
+<Group title="Locking" anchor="group:security.locking">
   <Choice title="Lock after no activity" icon="lock_clock" pref="lock_after" options={LOCK_OPTIONS} />
   <Toggle title="Lock when the computer sleeps" icon="dark_mode" pref="lock_on_sleep" />
   <Toggle title="Lock when the window is hidden" sub="Also when it is closed to the tray." icon="visibility_off" pref="lock_on_hide" />
@@ -185,48 +185,48 @@
     options={[[15, '15 seconds'], [30, '30 seconds'], [60, '1 minute'], [120, '2 minutes'], [0, 'Never']] as [number, string][]}
   />
   {#if host().desktop && quickReady}
-    <Row title="Unlock from the system keyring" sub="A convenience, not protection: any program in your session can ask the keyring for the key." icon="key">
+    <Row title="Unlock from the system keyring" help="action.keyring_unlock" sub="A convenience, not protection: any program in your session can ask the keyring for the key." icon="key">
       <Switch checked={quickOn} label="Unlock from the system keyring" onchange={setQuick} />
     </Row>
   {/if}
 </Group>
 
 {#if !inside}
-  <Group title="Master password">
-    <Row title="Change it" sub="Old backups still open with the old password" icon="password" chevron onclick={() => openSheet('change')} />
-    <Row title="Change it and rekey" sub="A new vault key too, so old copies of the file cannot follow new changes" icon="lock_reset" chevron onclick={() => openSheet('rekey')} />
+  <Group title="Master password" anchor="group:security.master">
+    <Row title="Change it" help="action.change_password" sub="Old backups still open with the old password" icon="password" chevron onclick={() => openSheet('change')} />
+    <Row title="Change it and rekey" help="action.rekey" sub="A new vault key too, so old copies of the file cannot follow new changes" icon="lock_reset" chevron onclick={() => openSheet('rekey')} />
   </Group>
 
-  <Group title="Unlock methods">
+  <Group title="Unlock methods" anchor="group:security.methods" help="group.security.methods">
     {#each slots as slot (slot.index)}
       <Row title={slot.label || `Password ${slot.index + 1}`} icon="key" onclick={() => removeSlot(slot)} chevron />
     {/each}
-    <Row title="Add a password" icon="add" chevron onclick={() => openSheet({ action: 'open', title: 'Add a password', body: 'Opens the same vault.' })} />
-    <Row title="Add a key file" sub="Both the password and the file will be needed" icon="file_open" chevron onclick={chooseKeyFile} />
+    <Row title="Add a password" help="action.add_password" icon="add" chevron onclick={() => openSheet({ action: 'open', title: 'Add a password', body: 'Opens the same vault.' })} />
+    <Row title="Add a key file" help="action.add_key_file" sub="Both the password and the file will be needed" icon="file_open" chevron onclick={chooseKeyFile} />
     {#if hardwareAvailable()}
-      <Row title="Add a security key" sub="YubiKey or another FIDO2 key, by USB" icon="security_key" chevron onclick={() => ui.go('settings/hardware')} />
+      <Row title="Add a security key" help="action.add_security_key" sub="YubiKey or another FIDO2 key, by USB" icon="security_key" chevron onclick={() => ui.go('settings/hardware')} />
     {/if}
   </Group>
 
-  <Group title="Duress">
+  <Group title="Duress" anchor="group:security.duress" help="feature.duress">
     <Row
-      title="Wipe password"
+      title="Wipe password" help="action.wipe_password"
       sub="Erases the vault on this device. Looks like a wrong password."
       icon="dangerous"
       chevron
       onclick={() => openSheet({ action: 'wipe', title: 'Wipe password', body: 'Entering this erases the vault on this device. Disks may keep traces, and backups and synced copies are not affected.' })}
     />
-    <Row title="Lockout password" sub="Refuses every attempt for an hour." icon="lock" chevron onclick={() => openSheet({ action: 'lock', title: 'Lockout password', body: 'Refuses every attempt for an hour.' })} />
-    <Row title="Decoy vault" sub="A separate vault with its own password." icon="layers" chevron onclick={() => openSheet('decoy')} />
-    <Row title="Lock and refuse passwords now" sub="Every password is refused for an hour." icon="block" chevron onclick={panicNow} />
+    <Row title="Lockout password" help="action.lockout_password" sub="Refuses every attempt for an hour." icon="lock" chevron onclick={() => openSheet({ action: 'lock', title: 'Lockout password', body: 'Refuses every attempt for an hour.' })} />
+    <Row title="Decoy vault" help="action.decoy_vault" sub="A separate vault with its own password." icon="layers" chevron onclick={() => openSheet('decoy')} />
+    <Row title="Lock and refuse passwords now" help="action.panic_now" sub="Every password is refused for an hour." icon="block" chevron onclick={panicNow} />
   </Group>
 
-  <Group title="Emergency access">
-    <Row title="Emergency kit" sub="Split your key between trusted people" icon="family_restroom" chevron onclick={() => openSheet('kit')} />
+  <Group title="Emergency access" anchor="group:security.emergency">
+    <Row title="Emergency kit" help="action.emergency_kit" sub="Split your key between trusted people" icon="family_restroom" chevron onclick={() => openSheet('kit')} />
   </Group>
 {/if}
 
-<Group title="Network">
+<Group title="Network" anchor="group:security.network">
   <Toggle title="Allow network features" sub="Breach checks, aliases, syncing and accounts. Off means nothing leaves this device." icon="language" pref="network_allowed" />
 </Group>
 

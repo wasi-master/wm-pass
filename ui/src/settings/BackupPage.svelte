@@ -88,21 +88,21 @@
 <p class="dim" style="padding-bottom:14px">A backup is the encrypted file itself, so it can sit anywhere and only your password opens it. It includes every vault on this computer, without showing how many there are.</p>
 
 {#if places.available}
-  <Group title="Where they go">
+  <Group title="Where they go" help="group.backup.places" anchor="group:backup.places">
     {#each places.list as place (place.id)}
       <Row title={place.label} sub={subOf(place)} icon={place.kind === 'folder' ? 'folder' : place.kind === 'webdav' ? 'language' : 'database'} onclick={() => (acting = place)}>
         <IconBtn icon="backup" label="Back up to {place.label} now" disabled={busy === place.id} onclick={(event) => { event.stopPropagation(); void backUp(place); }} />
       </Row>
     {/each}
-    <Row title="Add a place" icon="add" chevron onclick={() => (adding = true)} />
+    <Row title="Add a place" help="action.add_place" icon="add" chevron onclick={() => (adding = true)} />
   </Group>
-  <Group title="Schedule">
-    <Choice title="How often" sub={places.everyDays > 0 ? 'Runs while the vault is locked, since it only moves ciphertext. The newest copy is read back and checked before any older one is removed. The app has to be running.' : null} icon="schedule" value={places.everyDays} options={[[0, 'By hand'], [1, 'Every day'], [7, 'Every week']] as [number, string][]} onchange={(d) => places.setSchedule(d)} />
-    <Choice title="How many to keep" icon="layers" value={places.keep} options={[[3, '3'], [7, '7'], [14, '14'], [30, '30']] as [number, string][]} onchange={(n) => places.setKeep(n)} />
+  <Group title="Schedule" anchor="group:backup.schedule">
+    <Choice title="How often" help="action.backup_schedule" sub={places.everyDays > 0 ? 'Runs while the vault is locked, since it only moves ciphertext. The newest copy is read back and checked before any older one is removed. The app has to be running.' : null} icon="schedule" value={places.everyDays} options={[[0, 'By hand'], [1, 'Every day'], [7, 'Every week']] as [number, string][]} onchange={(d) => places.setSchedule(d)} />
+    <Choice title="How many to keep" help="action.backup_keep" icon="layers" value={places.keep} options={[[3, '3'], [7, '7'], [14, '14'], [30, '30']] as [number, string][]} onchange={(n) => places.setKeep(n)} />
   </Group>
 {/if}
 
-<Group title="By hand">
+<Group title="By hand" anchor="group:backup.manual">
   <div class="set-body gap wrap">
     <Btn label="Save a file" icon="upload" onclick={saveFile} />
     <Btn label="Merge a file" icon="download" onclick={mergeFile} />
@@ -120,9 +120,9 @@
   {@const place = acting}
   <Dialog title={place.label} onclose={() => (acting = null)}>
     <div style="border:1px solid var(--hair);border-radius:var(--r-m);overflow:hidden">
-      <Row title="Bring back a copy" sub="Merge an older copy into this vault" icon="history" chevron onclick={() => openCopies(place)} />
+      <Row title="Bring back a copy" help="action.restore_copy" sub="Merge an older copy into this vault" icon="history" chevron onclick={() => openCopies(place)} />
       <Row title="Change the details" icon="edit" chevron onclick={() => { editing = place; acting = null; }} />
-      <Row title="Stop using it" icon="delete" danger chevron onclick={() => stopUsing(place)} />
+      <Row title="Stop using it" help="action.place_stop" icon="delete" danger chevron onclick={() => stopUsing(place)} />
     </div>
   </Dialog>
 {/if}

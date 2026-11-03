@@ -70,6 +70,8 @@ import com.wasimaster.wmpass.core.SecretBytes
 import com.wasimaster.wmpass.core.StrengthView
 import com.wasimaster.wmpass.ui.fx.Aurora
 import com.wasimaster.wmpass.ui.fx.rim
+import com.wasimaster.wmpass.ui.help.HelpAction
+import com.wasimaster.wmpass.ui.help.helpAnchor
 import com.wasimaster.wmpass.ui.icons.PassIcons
 import com.wasimaster.wmpass.ui.parts.Eyebrow
 import com.wasimaster.wmpass.ui.parts.Pill
@@ -496,12 +498,12 @@ fun StepDial(label: String, value: Int, range: IntRange, modifier: Modifier = Mo
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun GeneratorControls(state: GenState) {
+fun GeneratorControls(state: GenState, modesModifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
     fun reroll() { scope.launch { state.roll() } }
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         LazyRow(
-            if (palette.flat) Modifier.bleed(16.dp) else Modifier.bleed(16.dp).fadeEdges(16.dp),
+            modesModifier.then(if (palette.flat) Modifier.bleed(16.dp) else Modifier.bleed(16.dp).fadeEdges(16.dp)),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(horizontal = 16.dp),
         ) {
@@ -620,14 +622,17 @@ fun GeneratorTab() {
                 .padding(horizontal = 16.dp),
         ) {
             if (!colors.flat) {
-                Text(
-                    "Generate",
-                    color = colors.text,
-                    style = MaterialTheme.typography.headlineLarge.copy(fontSize = 32.sp),
-                    modifier = Modifier.padding(start = 6.dp, top = 20.dp, bottom = 6.dp),
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Generate",
+                        color = colors.text,
+                        style = MaterialTheme.typography.headlineLarge.copy(fontSize = 32.sp),
+                        modifier = Modifier.weight(1f).padding(start = 6.dp, top = 20.dp, bottom = 6.dp),
+                    )
+                    HelpAction("screen.generator", "the generator", Modifier.padding(top = 14.dp), tint = colors.text)
+                }
             }
-            GeneratedValue(state, Modifier.padding(vertical = if (colors.flat) 8.dp else 18.dp))
+            GeneratedValue(state, Modifier.padding(vertical = if (colors.flat) 8.dp else 18.dp).helpAnchor("generator.value"))
             GeneratedStrength(state, Modifier.padding(horizontal = if (colors.flat) 0.dp else 6.dp))
             Spacer(Modifier.height(20.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -638,12 +643,13 @@ fun GeneratorTab() {
                 if (!colors.flat) RollButton({ scope.launch { state.roll() } })
                 val source = remember { MutableInteractionSource() }
                 if (colors.flat) {
-                    com.wasimaster.wmpass.ui.parts.QuietButton("Save as login", Modifier.weight(1f), PassIcons.Add, height = 48.dp) {
+                    com.wasimaster.wmpass.ui.parts.QuietButton("Save as login", Modifier.weight(1f).helpAnchor("generator.save"), PassIcons.Add, height = 48.dp) {
                         shell.pendingPassword = state.value
                         shell.nav.navigate("new/login")
                     }
                 } else Box(
                     Modifier
+                        .helpAnchor("generator.save")
                         .pressScale(source, 0.9f)
                         .size(56.dp)
                         .clip(CircleShape)
@@ -662,9 +668,10 @@ fun GeneratorTab() {
             Eyebrow(if (colors.flat) "Options" else "Shape")
             Column(
                 if (colors.flat) {
-                    Modifier.fillMaxWidth()
+                    Modifier.fillMaxWidth().helpAnchor("generator.controls")
                 } else {
                     Modifier
+                        .helpAnchor("generator.controls")
                         .fillMaxWidth()
                         .clip(Shapes.card)
                         .background(colors.surface1)
@@ -672,7 +679,7 @@ fun GeneratorTab() {
                         .padding(16.dp)
                 },
             ) {
-                GeneratorControls(state)
+                GeneratorControls(state, Modifier.helpAnchor("generator.modes"))
             }
             if (presets.isNotEmpty()) {
                 Eyebrow("Presets")

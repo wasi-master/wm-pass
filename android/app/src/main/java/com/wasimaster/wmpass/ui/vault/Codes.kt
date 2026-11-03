@@ -39,6 +39,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.wasimaster.wmpass.core.OtpRow
 import com.wasimaster.wmpass.core.Pass
 import com.wasimaster.wmpass.ui.fx.rim
+import com.wasimaster.wmpass.ui.help.HelpAction
+import com.wasimaster.wmpass.ui.help.Hint
+import com.wasimaster.wmpass.ui.help.helpAnchor
 import com.wasimaster.wmpass.ui.icons.PassIcons
 import com.wasimaster.wmpass.ui.parts.InkState
 import com.wasimaster.wmpass.ui.parts.LifeRing
@@ -82,13 +85,19 @@ fun CodesTab() {
     ) {
         if (!colors.flat) {
             item("title") {
-                Text(
-                    "Codes",
-                    color = colors.text,
-                    style = MaterialTheme.typography.headlineLarge.copy(fontSize = 32.sp),
-                    modifier = Modifier.padding(start = 6.dp, top = 12.dp, bottom = 10.dp),
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Codes",
+                        color = colors.text,
+                        style = MaterialTheme.typography.headlineLarge.copy(fontSize = 32.sp),
+                        modifier = Modifier.weight(1f).padding(start = 6.dp, top = 12.dp, bottom = 10.dp),
+                    )
+                    HelpAction("screen.codes", "Codes", tint = colors.text)
+                }
             }
+        }
+        item("hint") {
+            Hint(shell.prefs, "codes", "screen.codes", Modifier.padding(horizontal = if (colors.flat) 16.dp else 0.dp, vertical = 4.dp))
         }
         if (list != null && list.isEmpty()) {
             item("empty") {
@@ -106,7 +115,9 @@ fun CodesTab() {
         }
         if (list != null) {
             itemsIndexed(list, key = { _, row -> row.id }) { index, row ->
-                CodeCard(row, Modifier.animateItem().arrive(index))
+                val placed = Modifier.animateItem().arrive(index)
+                // The first code stands for the list when a tour points at it.
+                CodeCard(row, if (index == 0) placed.helpAnchor("codes.list") else placed)
             }
         }
     }

@@ -1,0 +1,43 @@
+/* Diagrams on the Guide pages, written by scripts/build-help.mjs. Plain boxes in the site's own
+   colours, as in the app. */
+.guide-figure { margin: 1.5rem 0; }
+.guide-frame {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 1rem;
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 0.5rem;
+  background: var(--sl-color-gray-7, var(--sl-color-black));
+}
+.guide-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.5rem; }
+.guide-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  min-width: 6rem;
+  max-width: 11rem;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--sl-color-gray-4);
+  border-radius: 0.35rem;
+  background: var(--sl-color-bg);
+  text-align: center;
+  font-size: var(--sl-text-sm);
+  line-height: 1.3;
+}
+.guide-box strong { font-weight: 600; }
+.guide-box span { color: var(--sl-color-gray-3); font-size: var(--sl-text-xs); }
+.guide-box.good { border-color: var(--sl-color-accent); }
+.guide-box.warn { border-color: var(--sl-color-orange); }
+.guide-box.danger { border-color: var(--sl-color-red); }
+.guide-box.danger strong { color: var(--sl-color-red); }
+.guide-box.muted { border-style: dashed; background: transparent; }
+.guide-icon { color: var(--sl-color-gray-3); }
+.guide-side, .guide-down { display: flex; flex-direction: column; align-items: center; color: var(--sl-color-gray-3); line-height: 1.1; }
+.guide-down { padding: 0.15rem 0; }
+.guide-side small, .guide-down small { font-size: var(--sl-text-xs); }
+.guide-side.dashed, .guide-down.dashed { opacity: 0.6; }
+.guide-figure figcaption { margin-top: 0.5rem; color: var(--sl-color-gray-3); font-size: var(--sl-text-sm); }
+.guide-frame * { margin-top: 0; }

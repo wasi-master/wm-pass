@@ -44,10 +44,10 @@
 <p class="dim" style="padding-bottom:10px">Carry your look and layout to another device, or share them. Nothing from your vault is in this file, and neither are lock timers, screenshot blocking or other protection settings.</p>
 {#if result}<p style="padding-bottom:10px">{result}</p>{/if}
 <Group>
-  <Row title="Save to a file" icon="download" chevron onclick={() => host().saveFile('Save settings', 'wm-pass-settings.json', bytesOf(prefs.exportText()))} />
-  <Row title="Copy as text" icon="content_copy" chevron onclick={() => copyPlainLine('Settings', prefs.exportText())} />
-  <Row title="Import" icon="upload" chevron onclick={() => (importing = true)} />
-  <Row title="Reset all customization" sub="Keeps your own themes and protection settings" icon="refresh" chevron onclick={reset} />
+  <Row title="Save to a file" help="action.settings_save_file" icon="download" chevron onclick={() => host().saveFile('Save settings', 'wm-pass-settings.json', bytesOf(prefs.exportText()))} />
+  <Row title="Copy as text" help="action.settings_copy_text" icon="content_copy" chevron onclick={() => copyPlainLine('Settings', prefs.exportText())} />
+  <Row title="Import" help="action.settings_import" icon="upload" chevron onclick={() => (importing = true)} />
+  <Row title="Reset all customization" help="action.settings_reset" sub="Keeps your own themes and protection settings" icon="refresh" chevron onclick={reset} />
 </Group>
 
 {#if importing}

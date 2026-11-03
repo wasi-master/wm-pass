@@ -6,6 +6,7 @@
   "scripts": {
     "wasm": "sh scripts/build-wasm.sh",
     "assets": "sh scripts/copy-assets.sh",
+    "help": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/build-help.mjs",
     "dev": "npm run assets && vite --config ui/dev/vite.config.ts",
     "check": "svelte-check --tsconfig ./tsconfig.json --threshold error",
     "desktop:dev": "npm run assets && vite --config desktop/vite.config.ts",
