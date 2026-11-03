@@ -335,12 +335,7 @@ async fn check_username_page(app: AppHandle, site: String, name: String, online:
     }
     let site = probe::site(&site)?;
     let answer = blocking(move || probe::check(&app, site, &name)).await??;
-    Ok(match answer {
-        wmpass_net::usernames::Availability::Available => "free",
-        wmpass_net::usernames::Availability::Taken => "taken",
-        wmpass_net::usernames::Availability::Unknown => "unknown",
-    }
-    .to_owned())
+    Ok(probe::word(answer).to_owned())
 }
 
 #[tauri::command]
@@ -906,7 +901,7 @@ fn main() {
             app.manage(engine);
             app.manage(store);
             app.manage(Agent::new());
-            app.manage(Bridge::new(app.state::<Store>().inner().clone()));
+            app.manage(Bridge::new(app.state::<Store>().inner().clone(), app.handle().clone()));
             app.manage(Shell {
                 close_to_tray: Mutex::new(true),
                 shortcuts: Mutex::new(HashMap::new()),

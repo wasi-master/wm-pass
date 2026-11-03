@@ -13,6 +13,8 @@ export interface PageInfo {
   /** Only in the browser extension. */
   extension?: boolean;
   needsNetwork?: boolean;
+  /** Shown without a network of its own where the shell has the desktop app make the calls. */
+  viaDesktop?: boolean;
 }
 
 export const GROUPS = ['Protection', 'Your vault', 'Backup and sync', 'Tools', 'Customise', 'This computer', 'This app'];
@@ -32,7 +34,7 @@ export const PAGES: PageInfo[] = [
   { id: 'receive', title: 'Receive an item', group: 'Backup and sync', icon: 'qr_code_scanner', parent: 'sync' },
   { id: 'aliases', title: 'Email aliases', group: 'Tools', icon: 'alternate_email' },
   { id: 'inbox', title: 'Disposable inbox', group: 'Tools', icon: 'inbox', needsNetwork: true },
-  { id: 'usernames', title: 'Username checker', group: 'Tools', icon: 'person_search', needsNetwork: true },
+  { id: 'usernames', title: 'Username checker', group: 'Tools', icon: 'person_search', needsNetwork: true, viaDesktop: true },
   { id: 'compare', title: 'Compare two passwords', group: 'Tools', icon: 'balance' },
   { id: 'look', title: 'Appearance', group: 'Customise', icon: 'palette' },
   { id: 'themes', title: 'Theme', group: 'Customise', icon: 'palette', parent: 'look' },

@@ -38,6 +38,15 @@ const AGENT: Option<&str> = None;
 static ONE: Mutex<()> = Mutex::new(());
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
+/// How an answer is said to a page.
+pub fn word(answer: Availability) -> &'static str {
+    match answer {
+        Availability::Available => "free",
+        Availability::Taken => "taken",
+        Availability::Unknown => "unknown",
+    }
+}
+
 pub fn site(name: &str) -> Result<&'static PageSite, String> {
     usernames::PAGE_SITES.iter().find(|s| s.name == name).ok_or_else(|| "unknown site".to_owned())
 }

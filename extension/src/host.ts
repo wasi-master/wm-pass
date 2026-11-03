@@ -58,6 +58,11 @@ export async function extensionHost(): Promise<Host> {
     loadSealed: (name) => unseal(name),
     saveSealed: (name, text) => seal(name, text),
     places: extensionPlaces,
+    usernames: {
+      sites: () => send({ type: 'usernames', what: 'sites' }),
+      check: async (site, name) => (await send<{ answer: string }>({ type: 'usernames', what: 'check', site, name })).answer,
+      links: async (name) => (await send<{ links: { site: string; url: string }[] }>({ type: 'usernames', what: 'links', name })).links,
+    },
     link: {
       state: () => send({ type: 'link.state' }),
       connect: () => send({ type: 'link.connect' }),
