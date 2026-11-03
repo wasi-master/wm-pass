@@ -115,6 +115,15 @@ const DEFS = {
   health_hidden: { value: '' },
   health_score: { value: true },
 
+  // ---- widgets on a Mac: what they show stays on this computer ----
+  widget_buttons: { value: 'search,add,codes,lock' },
+  // A settings file from someone else must not turn the widget's lock into an hour's lockout.
+  widget_lock: { value: 'lock', allowed: ['lock', 'panic'], portable: false },
+  widget_access: { value: false, portable: false },
+  widget_codes: { value: '', portable: false },
+  widget_codes_mode: { value: 'upcoming', allowed: ['upcoming', 'current'], portable: false },
+  desktop_widgets: { value: true, portable: false },
+
   // ---- settings pages ----
   folds_open: { value: '' },
   shortcuts_desktop: { value: '' },
@@ -155,7 +164,7 @@ export type PrefKey = keyof typeof DEFS;
  * Customisations that describe this window rather than the person, or mean something different
  * on the phone under the same name. They never travel with the vault.
  */
-const DEVICE_ONLY: ReadonlySet<string> = new Set(['tabs', 'last_tab', 'folds_open', 'editor_open', 'sidebar_open', 'sidebar_width', 'list_width']);
+const DEVICE_ONLY: ReadonlySet<string> = new Set(['tabs', 'last_tab', 'folds_open', 'editor_open', 'sidebar_open', 'sidebar_width', 'list_width', 'widget_buttons']);
 type Widen<T> = T extends boolean ? boolean : T extends number ? number : string;
 type PrefValues = { [K in PrefKey]: Widen<(typeof DEFS)[K]['value']> };
 

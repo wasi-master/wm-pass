@@ -2796,7 +2796,15 @@
      "runs": [
       {
        "t": "text",
-       "s": "A home screen widget, and a paired watch if you allow it under "
+       "s": "The Codes widget, if you turn on "
+      },
+      {
+       "t": "link",
+       "id": "setting.widget_access"
+      },
+      {
+       "t": "text",
+       "s": ", and a paired watch, if you allow it under "
       },
       {
        "t": "link",
@@ -2804,7 +2812,7 @@
       },
       {
        "t": "text",
-       "s": ", can show codes too."
+       "s": ", can show codes too. Both only while the vault is open."
       }
      ]
     },
@@ -19764,50 +19772,6 @@
    "plain": "A Quick Settings tile that locks the vault at once and refuses every password for an hour."
   },
   {
-   "id": "feature.home_widget",
-   "kind": "feature",
-   "title": "Home screen widget",
-   "what": [
-    {
-     "t": "p",
-     "runs": [
-      {
-       "t": "text",
-       "s": "A row of four buttons for the home screen: search, add, codes and lock. It shows nothing from your vault."
-      }
-     ]
-    }
-   ],
-   "why": [
-    {
-     "t": "p",
-     "runs": [
-      {
-       "t": "text",
-       "s": "Anyone holding the phone can see the home screen, so the widget names no site and shows no code, whether the vault is open or not."
-      }
-     ]
-    }
-   ],
-   "how": [
-    {
-     "t": "p",
-     "runs": [
-      {
-       "t": "text",
-       "s": "Search, add and codes open WM Pass on that page, after the door if the vault is locked. Add opens the add menu. Lock locks the vault without opening the app."
-      }
-     ]
-    }
-   ],
-   "related": [
-    "feature.app_shortcuts",
-    "feature.lock_tile"
-   ],
-   "words": "widget home screen launcher",
-   "plain": "A row of four buttons for the home screen: search, add, codes and lock. It shows nothing from your vault."
-  },
-  {
    "id": "feature.app_shortcuts",
    "kind": "feature",
    "title": "App shortcuts",
@@ -20002,6 +19966,610 @@
    "docs": "/apps/android/",
    "words": "crash crashing closes reset safe mode storage",
    "plain": "If WM Pass closes by itself within a few seconds of opening, twice in a row, the next launch puts Appearance back to the standard style."
+  },
+  {
+   "id": "feature.home_widget",
+   "kind": "feature",
+   "title": "Widgets",
+   "what": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Widgets for the home screen on a phone, and for the desktop and Notification Centre on a Mac."
+      }
+     ]
+    }
+   ],
+   "why": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Anyone who can see the screen can see a widget. So no widget names a site or shows a code unless you turn on "
+      },
+      {
+       "t": "link",
+       "id": "setting.widget_access"
+      },
+      {
+       "t": "text",
+       "s": ", and even then only while the vault is open."
+      }
+     ]
+    }
+   ],
+   "how": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Touch and hold an empty spot on the home screen, choose "
+      },
+      {
+       "t": "strong",
+       "s": "Widgets"
+      },
+      {
+       "t": "text",
+       "s": ", then WM Pass."
+      }
+     ]
+    },
+    {
+     "t": "ul",
+     "items": [
+      [
+       {
+        "t": "em",
+        "s": "Quick bar"
+       },
+       {
+        "t": "text",
+        "s": ": the buttons you choose under "
+       },
+       {
+        "t": "link",
+        "id": "setting.widget_buttons"
+       },
+       {
+        "t": "text",
+        "s": ". Search, add, codes, generator and health open WM Pass on that page, after the door if the vault is locked. Lock locks the vault without opening WM Pass."
+       }
+      ],
+      [
+       {
+        "t": "em",
+        "s": "Lock status"
+       },
+       {
+        "t": "text",
+        "s": ": whether the vault is open, and its name while it is. A tap locks it, or opens the door."
+       }
+      ],
+      [
+       {
+        "t": "em",
+        "s": "Health"
+       },
+       {
+        "t": "text",
+        "s": ": your score and how many passwords are weak, reused or in a known breach. The counts are kept from the last time the vault was open, with when that was."
+       }
+      ],
+      [
+       {
+        "t": "em",
+        "s": "Backups"
+       },
+       {
+        "t": "text",
+        "s": ": when each backup place last ran, and whether that failed or the next run is late."
+       }
+      ],
+      [
+       {
+        "t": "em",
+        "s": "Generator"
+       },
+       {
+        "t": "text",
+        "s": ": a tap copies a new password made the way the generator is set up. Nothing is shown, and the clipboard is cleared as usual."
+       }
+      ],
+      [
+       {
+        "t": "em",
+        "s": "Codes"
+       },
+       {
+        "t": "text",
+        "s": " and "
+       },
+       {
+        "t": "em",
+        "s": "Favorites"
+       },
+       {
+        "t": "text",
+        "s": ": only with "
+       },
+       {
+        "t": "link",
+        "id": "setting.widget_access"
+       },
+       {
+        "t": "text",
+        "s": " on, and only while the vault is open. Codes shows the codes chosen under "
+       },
+       {
+        "t": "link",
+        "id": "setting.widget_codes"
+       },
+       {
+        "t": "text",
+        "s": ", and a tap copies one. Favorites shows a letter and a name for each favorite, and a tap opens it."
+       }
+      ]
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "If Android ends WM Pass while a widget shows codes or names, the widgets are drawn locked again within a few minutes."
+      }
+     ]
+    }
+   ],
+   "caveats": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "The Health counts are those of the vault opened last. A wipe password erases them along with the vault."
+      }
+     ]
+    }
+   ],
+   "related": [
+    "feature.app_shortcuts",
+    "feature.lock_tile",
+    "feature.panic_tile",
+    "page.widgets"
+   ],
+   "words": "widget home screen launcher desktop notification centre center",
+   "plain": "Widgets for the home screen on a phone, and for the desktop and Notification Centre on a Mac."
+  },
+  {
+   "id": "page.widgets",
+   "kind": "page",
+   "title": "Widgets",
+   "page": "widgets",
+   "what": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "How the widgets look, which buttons the quick bar has, what its lock button does, and which codes the Codes widget shows."
+      }
+     ]
+    }
+   ],
+   "how": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Which widget shows what is under "
+      },
+      {
+       "t": "link",
+       "id": "feature.home_widget"
+      },
+      {
+       "t": "text",
+       "s": ". Whether any widget may show codes or favorites is decided under Security, by "
+      },
+      {
+       "t": "link",
+       "id": "setting.widget_access"
+      },
+      {
+       "t": "text",
+       "s": "."
+      }
+     ]
+    }
+   ],
+   "related": [
+    "feature.home_widget",
+    "setting.widget_access"
+   ],
+   "words": "widget home screen desktop notification centre center",
+   "plain": "How the widgets look, which buttons the quick bar has, what its lock button does, and which codes the Codes widget shows."
+  },
+  {
+   "id": "setting.widget_colours",
+   "kind": "setting",
+   "title": "Colors",
+   "page": "widgets",
+   "pref": "widget_colours",
+   "what": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "The colours the widgets draw in."
+      }
+     ]
+    }
+   ],
+   "effects": [
+    {
+     "value": "app",
+     "label": "App theme",
+     "text": [
+      {
+       "t": "p",
+       "runs": [
+        {
+         "t": "text",
+         "s": "The theme, accent and dark mode you chose for WM Pass."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "value": "system",
+     "label": "Wallpaper colors",
+     "text": [
+      {
+       "t": "p",
+       "runs": [
+        {
+         "t": "text",
+         "s": "The colours Android takes from your wallpaper, as other apps' widgets use. Before Android 12 this is the app theme."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "value": "dark",
+     "label": "Dark",
+     "text": [
+      {
+       "t": "p",
+       "runs": [
+        {
+         "t": "text",
+         "s": "Dark at all times, in the dark side of the app theme."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "related": [
+    "setting.widget_background"
+   ],
+   "words": "colours colors theme dynamic material you wallpaper",
+   "plain": "The colours the widgets draw in."
+  },
+  {
+   "id": "setting.widget_background",
+   "kind": "setting",
+   "title": "Background",
+   "page": "widgets",
+   "pref": "widget_background",
+   "what": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "What is behind a widget's buttons and text."
+      }
+     ]
+    }
+   ],
+   "effects": [
+    {
+     "value": "solid",
+     "label": "Solid",
+     "text": [
+      {
+       "t": "p",
+       "runs": [
+        {
+         "t": "text",
+         "s": "A solid card."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "value": "translucent",
+     "label": "See-through",
+     "text": [
+      {
+       "t": "p",
+       "runs": [
+        {
+         "t": "text",
+         "s": "A card the wallpaper shows through a little."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "value": "none",
+     "label": "None",
+     "text": [
+      {
+       "t": "p",
+       "runs": [
+        {
+         "t": "text",
+         "s": "No card: the buttons sit on the wallpaper. Text on a busy wallpaper can be hard to read."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "related": [
+    "setting.widget_colours"
+   ],
+   "words": "transparent opacity see-through card",
+   "plain": "What is behind a widget's buttons and text."
+  },
+  {
+   "id": "setting.widget_buttons",
+   "kind": "setting",
+   "title": "Quick bar",
+   "page": "widgets",
+   "pref": "widget_buttons",
+   "what": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "The buttons on the quick bar widget, in order."
+      }
+     ]
+    }
+   ],
+   "how": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Drag a row by its handle to move it. The bin removes it, and its "
+      },
+      {
+       "t": "strong",
+       "s": "Add"
+      },
+      {
+       "t": "text",
+       "s": " row brings it back."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "A quick bar too narrow for all of them shows the first ones that fit."
+      }
+     ]
+    }
+   ],
+   "related": [
+    "feature.home_widget",
+    "setting.widget_lock"
+   ],
+   "words": "widget buttons order search add codes generator health lock",
+   "plain": "The buttons on the quick bar widget, in order."
+  },
+  {
+   "id": "setting.widget_lock",
+   "kind": "setting",
+   "title": "Lock button",
+   "page": "widgets",
+   "pref": "widget_lock",
+   "what": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "What the lock button on the quick bar and a tap on the Lock status widget do while the vault is open."
+      }
+     ]
+    }
+   ],
+   "when": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Panic lock suits a phone or computer that may be taken from you while the vault is open. Nothing is erased, and after the hour your password works again."
+      }
+     ]
+    }
+   ],
+   "effects": [
+    {
+     "value": "lock",
+     "label": "Lock",
+     "text": [
+      {
+       "t": "p",
+       "runs": [
+        {
+         "t": "text",
+         "s": "Locks the vault."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "value": "panic",
+     "label": "Panic lock",
+     "text": [
+      {
+       "t": "p",
+       "runs": [
+        {
+         "t": "text",
+         "s": "Locks the vault and refuses every password for an hour, even the right one."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "related": [
+    "feature.home_widget"
+   ],
+   "words": "panic lockout hour widget lock",
+   "plain": "What the lock button on the quick bar and a tap on the Lock status widget do while the vault is open."
+  },
+  {
+   "id": "setting.widget_access",
+   "kind": "setting",
+   "title": "Show on widgets",
+   "page": "security",
+   "pref": "widget_access",
+   "what": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Lets the Codes and Favorites widgets show one-time codes and the names of favorites, while the vault is open."
+      }
+     ]
+    }
+   ],
+   "how": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Off, those two widgets say only that they are turned off. With the vault locked, they say only that it is locked, and name nothing."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Locking, from anywhere, empties them at once. If Android ends WM Pass while they show something, they are drawn locked again within a few minutes."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "No other widget shows anything from inside the vault, whether this is on or not."
+      }
+     ]
+    }
+   ],
+   "caveats": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Anyone who can see your screen can see these codes and names while the vault is open."
+      }
+     ]
+    }
+   ],
+   "related": [
+    "feature.home_widget",
+    "setting.widget_codes"
+   ],
+   "words": "widget codes favorites totp home screen desktop",
+   "plain": "Lets the Codes and Favorites widgets show one-time codes and the names of favorites, while the vault is open."
+  },
+  {
+   "id": "setting.widget_codes",
+   "kind": "setting",
+   "title": "Codes on widgets",
+   "page": "widgets",
+   "pref": "widget_codes",
+   "what": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Which items' codes the Codes widget shows, up to eight, in the order of your list. With none chosen, it shows your favorites that have a code."
+      }
+     ]
+    }
+   ],
+   "how": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Counter-based codes are never shown there, since showing one uses it up."
+      }
+     ]
+    }
+   ],
+   "caveats": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Only while "
+      },
+      {
+       "t": "link",
+       "id": "setting.widget_access"
+      },
+      {
+       "t": "text",
+       "s": " is on and the vault is open."
+      }
+     ]
+    }
+   ],
+   "related": [
+    "setting.widget_access"
+   ],
+   "words": "widget totp pick choose codes",
+   "plain": "Which items' codes the Codes widget shows, up to eight, in the order of your list. With none chosen, it shows your favorites that have a code."
   }
  ],
  "tours": [

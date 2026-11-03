@@ -309,6 +309,7 @@ object Destinations {
     fun noteRun(context: Context, id: String, result: RunResult) {
         context.getSharedPreferences("runs", Context.MODE_PRIVATE).edit()
             .putString(id, Json.encodeToString(RunResult.serializer(), result)).apply()
+        com.wasimaster.wmpass.system.widgets.WidgetFeed.backupsChanged(context)
     }
 }
 
@@ -355,6 +356,7 @@ object Backups {
     /** Turns scheduled backups on, off, or to a new interval. */
     fun schedule(context: Context, days: Int) {
         prefs(context).edit().putInt("every_days", days).apply()
+        com.wasimaster.wmpass.system.widgets.WidgetFeed.backupsChanged(context)
         val work = WorkManager.getInstance(context)
         if (days <= 0) {
             work.cancelUniqueWork(WORK)

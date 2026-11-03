@@ -114,6 +114,7 @@ fun NavGraphBuilder.settingsGraph() {
     composable("settings/editor") { EditorSettingsScreen() }
     composable("settings/entry") { EntrySettingsScreen() }
     composable("settings/codes") { CodesSettingsScreen() }
+    composable("settings/widgets") { WidgetSettingsScreen() }
     composable("settings/generator") { GeneratorSettingsScreen() }
     composable("settings/health") { HealthSettingsScreen() }
     composable("settings/file") { SettingsFileScreen() }
@@ -233,6 +234,9 @@ private fun AppearanceHub() {
             }
             item {
                 NavRow("Codes", "Size, grouping and privacy", route = "settings/codes", accent = routeAccent("settings/codes"), icon = PassIcons.Pin) { nav.navigate("settings/codes") }
+            }
+            item {
+                NavRow("Widgets", "Colors, the quick bar and the lock button", route = "settings/widgets", accent = routeAccent("settings/widgets"), icon = PassIcons.Widgets) { nav.navigate("settings/widgets") }
             }
         }
     }
@@ -457,6 +461,18 @@ private fun SecurityScreen() {
                     info = infoFor("keyboard_access"),
                     icon = PassIcons.Keyboard,
                 ) { prefs.keyboardAccess.set(it) }
+            }
+            item {
+                ToggleSetting(
+                    "Show on widgets",
+                    "While the vault is open, the Codes and Favorites widgets on your home screen show codes and the names of favorites. Locked, they show nothing.",
+                    prefs.widgetAccess.value,
+                    info = infoFor("widget_access"),
+                    icon = PassIcons.Widgets,
+                ) {
+                    prefs.widgetAccess.set(it)
+                    com.wasimaster.wmpass.system.widgets.WidgetFeed.redraw(context)
+                }
             }
             if (com.wasimaster.wmpass.BuildConfig.WATCH) {
                 item {

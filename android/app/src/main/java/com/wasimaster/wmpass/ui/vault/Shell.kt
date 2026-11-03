@@ -259,9 +259,13 @@ private fun ReceiveIncoming() {
         val what = incoming ?: return@LaunchedEffect
         Inbox.pending.value = null
         when (what) {
-            is Incoming.Route -> when (what.name) {
-                "search" -> shell.searching = true
-                "add" -> shell.adding = true
+            is Incoming.Route -> when {
+                what.name == "search" -> shell.searching = true
+                what.name == "add" -> shell.adding = true
+                // From the Backups widget.
+                what.name == "backups" -> shell.nav.navigate("settings/backup")
+                // From the Favorites widget: an item id, which names nothing by itself.
+                what.name.startsWith("item:") -> shell.open(what.name.removePrefix("item:"))
                 else -> shell.tab = what.name
             }
             is Incoming.OtpLink -> {

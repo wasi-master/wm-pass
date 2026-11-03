@@ -755,3 +755,33 @@ Choosing **Wipe** under [When a panic app signals](/guide/settings/security/#set
 WM Pass compares the name with the app Android says sent the signal. Name only an app you trust to erase your vault.
 
 See also [When a panic app signals](/guide/settings/security/#setting-panic-action).
+
+<a id="setting-widget-access"></a>
+
+## Show on widgets
+
+*Only in Android and the desktop app.*
+
+Lets the Codes and Favorites widgets show one-time codes and the names of favorites, while the vault is open.
+
+#### How it works
+
+Off, those two widgets say only that they are turned off. With the vault locked, they say only that it is locked, and name nothing.
+
+Locking, from anywhere, empties them at once.
+
+No other widget shows anything from inside the vault, whether this is on or not.
+
+#### Limits
+
+Anyone who can see your screen can see these codes and names while the vault is open.
+
+#### On Android
+
+Off, those two widgets say only that they are turned off. With the vault locked, they say only that it is locked, and name nothing.
+
+Locking, from anywhere, empties them at once. If Android ends WM Pass while they show something, they are drawn locked again within a few minutes.
+
+No other widget shows anything from inside the vault, whether this is on or not.
+
+See also [Widgets](/guide/how-it-works/#feature-home-widget), [Codes on widgets](/guide/settings/widgets/#setting-widget-codes).

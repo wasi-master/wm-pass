@@ -18,6 +18,7 @@ import { editing } from './topics/editing.ts';
 import { computer } from './topics/computer.ts';
 import { app } from './topics/app.ts';
 import { android } from './topics/android.ts';
+import { widgets } from './topics/widgets.ts';
 
 export * from './schema.ts';
 export * from './rich.ts';
@@ -37,6 +38,7 @@ export const TOPICS = [
   ...computer,
   ...app,
   ...android,
+  ...widgets,
 ] as const;
 
 export type TopicId = (typeof TOPICS)[number]['id'];

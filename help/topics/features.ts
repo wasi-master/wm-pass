@@ -710,7 +710,7 @@ export const features = [
         how: [
           ...CODES_HOW,
           'The Codes tab lists them all. Tap one to copy it, and hold it to open its item. The add button there can scan a site\'s QR code.',
-          'A home screen widget, and a paired watch if you allow it under [[setting.wear_access]], can show codes too.',
+          'The Codes widget, if you turn on [[setting.widget_access]], and a paired watch, if you allow it under [[setting.wear_access]], can show codes too. Both only while the vault is open.',
           'Bring codes over from Aegis, 2FAS, andOTP, Ente Auth, FreeOTP+, Raivo or Google Authenticator under Settings, Import.',
         ],
         caveats: [

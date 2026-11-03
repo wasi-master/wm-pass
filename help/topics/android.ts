@@ -252,17 +252,6 @@ export const android = [
     words: 'quick settings tile panic lockout hour',
   },
   {
-    id: 'feature.home_widget',
-    kind: 'feature',
-    title: 'Home screen widget',
-    shells: ['android'],
-    what: 'A row of four buttons for the home screen: search, add, codes and lock. It shows nothing from your vault.',
-    why: 'Anyone holding the phone can see the home screen, so the widget names no site and shows no code, whether the vault is open or not.',
-    how: 'Search, add and codes open WM Pass on that page, after the door if the vault is locked. Add opens the add menu. Lock locks the vault without opening the app.',
-    related: ['feature.app_shortcuts', 'feature.lock_tile'],
-    words: 'widget home screen launcher',
-  },
-  {
     id: 'feature.app_shortcuts',
     kind: 'feature',
     title: 'App shortcuts',

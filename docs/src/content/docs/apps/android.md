@@ -53,7 +53,7 @@ On Android 14 and up, WM Pass can be your passkey provider. Apps other than know
 ## Other ways in
 
 - A Quick Settings tile that locks everything at once.
-- A home screen widget for one-tap codes.
+- Home screen widgets: a quick bar, lock status, health, backups and a generator, plus codes and favorites if you turn on Show on widgets. See [Widgets](/guide/how-it-works/#feature-home-widget).
 - App shortcuts, and a share target for adding things to your vault.
 - Panic support, so Ripple and similar apps can lock or wipe it.
 
