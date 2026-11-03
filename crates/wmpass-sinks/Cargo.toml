@@ -30,6 +30,13 @@ aes = "0.9"
 pbkdf2 = { version = "0.13", default-features = false, features = ["hmac"] }
 num-bigint = { version = "0.5", default-features = false, features = ["std"] }
 subtle = "2.6"
+# Proton Drive's OpenPGP and SRP, and iCloud's SRP, by hand over these.
+sha1.workspace = true
+x25519-dalek.workspace = true
+ed25519-dalek = "3"
+blowfish = { version = "0.10", features = ["bcrypt"] }
+miniz_oxide = "0.9"
+unicode-normalization = "0.1"
 
 # Native only, like the sinks that need them (raw sockets).
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -44,14 +51,9 @@ ctr = "0.10"
 chacha20 = { version = "0.10", features = ["legacy"] }
 poly1305 = "0.9"
 bcrypt-pbkdf = "0.11"
-ed25519-dalek = "3"
 p256 = { version = "0.14", default-features = false, features = ["ecdsa", "std"] }
-x25519-dalek.workspace = true
-sha1.workspace = true
 zeroize.workspace = true
-
-# TLS for the raw-socket destinations (FTPS, IMAP). The same rustls ureq already brings in.
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# TLS for FTPS and IMAP: the same rustls ureq already brings in.
 rustls = { version = "0.23", default-features = false, features = ["std", "tls12", "ring"] }
 webpki-roots = "1"
 
