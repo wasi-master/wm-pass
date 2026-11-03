@@ -327,6 +327,15 @@ class Prefs(context: Context) {
         return changed
     }
 
+    /**
+     * Puts back how the app is drawn: style, theme, motion, icons and the list layout, for a
+     * launch that keeps crashing as soon as it draws. Dark mode, accent and the rest stay.
+     */
+    fun resetLook() {
+        listOf(uiStyleOpt, themeIdOpt, richMotion, iconStyle, siteIconStyle, siteIconShape, settingsIcons, settingsCards, layoutOpt).forEach { it.reset() }
+        PassIcons.style = iconStyle.value
+    }
+
     /** Puts every customisation back. The theme stays on device colours where that is the default. */
     fun resetCustomisations() {
         all.filter { it.portable && it !== customThemesOpt }.forEach { it.reset() }

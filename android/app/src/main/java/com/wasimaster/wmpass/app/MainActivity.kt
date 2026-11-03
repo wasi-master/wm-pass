@@ -50,6 +50,19 @@ class MainActivity : SecureActivity() {
         }
     }
 
+    // The door, or a vault left open, draws once the app is back on screen.
+    override fun onStart() {
+        super.onStart()
+        LaunchGuard.arm()
+    }
+
+    // Off screen, nothing drawn here can take the process down, so whatever ends it now
+    // (a swipe from recents, the system freeing memory) is not a crash.
+    override fun onStop() {
+        LaunchGuard.settle()
+        super.onStop()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)

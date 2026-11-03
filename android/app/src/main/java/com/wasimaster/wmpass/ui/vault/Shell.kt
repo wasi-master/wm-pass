@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.compositionLocalOf
@@ -52,6 +53,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.wasimaster.wmpass.app.Inbox
 import com.wasimaster.wmpass.app.Incoming
+import com.wasimaster.wmpass.app.LaunchGuard
 import com.wasimaster.wmpass.app.Prefs
 import com.wasimaster.wmpass.core.Pass
 import com.wasimaster.wmpass.core.SecretBytes
@@ -280,6 +282,11 @@ fun VaultShell(prefs: Prefs) {
     val shell = remember(nav) { Shell(nav, prefs, scope, context, haptics) }
     val backdrop = rememberBackdrop()
     val axisTravel = with(androidx.compose.ui.platform.LocalDensity.current) { 30.dp.roundToPx() }
+    // Runs as the vault's first frame is put together, before the render thread gets it.
+    DisposableEffect(Unit) {
+        LaunchGuard.arm()
+        onDispose {}
+    }
     CompositionLocalProvider(LocalShell provides shell, LocalBackdrop provides backdrop) {
         Box(
             Modifier
