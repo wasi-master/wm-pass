@@ -81,6 +81,15 @@ pub(crate) fn handshake(config: &Arc<ClientConfig>, host: &str, mut socket: TcpS
     Ok(StreamOwned::new(connection, socket))
 }
 
+/// Reads and discards what the server still sends until it closes its side. A TLS 1.3
+/// server sends session tickets on the data connection that an upload never reads, and
+/// closing a socket with unread bytes makes the kernel reset the connection, which can
+/// throw away the end of the upload before the server has read it.
+fn drain(socket: &mut TcpStream) {
+    let mut scratch = [0u8; 4096];
+    while matches!(socket.read(&mut scratch), Ok(read) if read > 0) {}
+}
+
 /// A connection, encrypted or not.
 pub(crate) enum Conn {
     Plain(TcpStream),
@@ -667,16 +676,16 @@ impl<'a> Session<'a> {
         let mut data = self.start(&format!("STOR {name}"))?;
         data.write_all(bytes).map_err(|error| io_fault(&error))?;
         data.flush().map_err(|error| io_fault(&error))?;
-        match &mut data {
+        let socket = match &mut data {
             Conn::Tls(stream) => {
                 stream.conn.send_close_notify();
                 stream.flush().map_err(|error| io_fault(&error))?;
-                let _ = stream.sock.shutdown(Shutdown::Write);
+                &mut stream.sock
             }
-            Conn::Plain(socket) => {
-                let _ = socket.shutdown(Shutdown::Write);
-            }
-        }
+            Conn::Plain(socket) => socket,
+        };
+        let _ = socket.shutdown(Shutdown::Write);
+        drain(socket);
         drop(data);
         self.finish()
     }
