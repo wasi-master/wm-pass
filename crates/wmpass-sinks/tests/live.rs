@@ -82,6 +82,7 @@ fn s3_against_rclone() {
         bucket: "bucket".into(),
         prefix: "wm".into(),
         access_key: "AKIAIOSFODNN7EXAMPLE".into(),
+        virtual_host: false,
     };
     exercise(&S3::new(Client::new(Blocking(&http), NetPolicy::Any), config.clone(), "wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY".into(), now));
     let wrong = S3::new(Client::new(Blocking(&http), NetPolicy::Any), config, "WRONG".into(), now);
