@@ -20,13 +20,14 @@ Pick the file with **Choose a file**. WM Pass works out the format itself and sh
 
 It reads these files:
 
-- 1Password (1PUX), Bitwarden (JSON or CSV), and KeePass or KeePassXC (the .kdbx database itself, or KeePassXC's CSV).
-- CSV from Apple Passwords, Chrome, Dashlane, Firefox, LastPass, NordPass and RoboForm.
-- JSON from Enpass and Keeper, Proton Pass's JSON or unencrypted ZIP, and SafeInCloud's XML.
-- Authenticators: Aegis, 2FAS, andOTP, FreeOTP+ and Raivo files, and a text file of otpauth links, one per line, which is what Ente Auth's plain-text export is.
+- 1Password (1PUX), Bitwarden (JSON or CSV), and KeePass or KeePassXC (the .kdbx database itself, KeePass's XML export, or KeePassXC's CSV).
+- SafeInCloud's own database file (SafeInCloud.db, or a backup its app made), or its XML export.
+- CSV from Apple Passwords, Avast, Avira, Buttercup, Chrome and other Chromium browsers, Dashlane, Firefox, LastPass, mSecure, NordPass, RoboForm and Zoho Vault.
+- JSON from Avast, Enpass, Keeper and Psono, Proton Pass's JSON or unencrypted ZIP, XML from Password Safe and Sticky Password, and Kaspersky Password Manager's text file.
+- Authenticators: Aegis, 2FAS, andOTP, Authenticator Pro (Stratum), Bitwarden Authenticator, FreeOTP+, LastPass Authenticator, Proton Authenticator and Raivo files, and a text file of otpauth links, one per line, which is what Ente Auth's plain-text export is.
 - A CSV that WM Pass exported.
 
-Folders in the file become folders here, matched by name. Attachments in a KeePass database come along. A KeePass database asks for its password.
+Folders in the file become folders here, matched by name. Attachments come along from KeePass, SafeInCloud and 1Password files. A KeePass or SafeInCloud database, or a password-protected Proton Authenticator export, asks for its password.
 
 A login with the same site, username and password as one already in the vault is skipped, so importing the same file twice adds nothing.
 
@@ -42,7 +43,7 @@ Once, when you move to WM Pass, or to bring in one-time codes from an authentica
 
 Most export files hold your passwords in plain text. Delete the file once WM Pass has read it, and empty the recycle bin.
 
-Encrypted exports from Bitwarden, Proton Pass, Aegis and 2FAS cannot be read. Export them again without encryption. A KeePass database that also needs a key file cannot be opened here.
+Encrypted exports from Bitwarden, Proton Pass, Aegis, 2FAS and Authenticator Pro cannot be read. Export them again without encryption. A KeePass database that also needs a key file cannot be opened here.
 
 There is no scanner here, so Google Authenticator's export codes come in only as a text file holding the otpauth-migration links inside them, one per line. The phone can scan them.
 
@@ -54,14 +55,15 @@ Tap **Choose a file**. WM Pass works out the format itself and shows how many it
 
 It reads these files:
 
-- 1Password (1PUX), Bitwarden (JSON or CSV), and KeePass or KeePassXC (the .kdbx database itself, or KeePassXC's CSV).
-- CSV from Apple Passwords, Chrome, Dashlane, Firefox, LastPass, NordPass and RoboForm.
-- JSON from Enpass and Keeper, Proton Pass's JSON or unencrypted ZIP, and SafeInCloud's XML.
-- Authenticators: Aegis, 2FAS, andOTP, FreeOTP+ and Raivo files, and a text file of otpauth links, one per line, which is what Ente Auth's plain-text export is.
+- 1Password (1PUX), Bitwarden (JSON or CSV), and KeePass or KeePassXC (the .kdbx database itself, KeePass's XML export, or KeePassXC's CSV).
+- SafeInCloud's own database file (SafeInCloud.db, or a backup its app made), or its XML export.
+- CSV from Apple Passwords, Avast, Avira, Buttercup, Chrome and other Chromium browsers, Dashlane, Firefox, LastPass, mSecure, NordPass, RoboForm and Zoho Vault.
+- JSON from Avast, Enpass, Keeper and Psono, Proton Pass's JSON or unencrypted ZIP, XML from Password Safe and Sticky Password, and Kaspersky Password Manager's text file.
+- Authenticators: Aegis, 2FAS, andOTP, Authenticator Pro (Stratum), Bitwarden Authenticator, FreeOTP+, LastPass Authenticator, Proton Authenticator and Raivo files, and a text file of otpauth links, one per line, which is what Ente Auth's plain-text export is.
 - Google Authenticator's export codes, with [Scan Google Authenticator's code](/guide/settings/import/#action-import-scan-google), or a screenshot of a code chosen as the file.
 - A CSV that WM Pass exported.
 
-Folders in the file become folders here, matched by name. Attachments in a KeePass database come along. A KeePass database asks for its password.
+Folders in the file become folders here, matched by name. Attachments come along from KeePass, SafeInCloud and 1Password files. A KeePass or SafeInCloud database, or a password-protected Proton Authenticator export, asks for its password.
 
 A login with the same site, username and password as one already in the vault is skipped, so importing the same file twice adds nothing.
 
@@ -71,7 +73,7 @@ The file is read on the phone. Nothing is sent anywhere.
 
 Most export files hold your passwords in plain text. Delete the file once WM Pass has read it.
 
-Encrypted exports from Bitwarden, Proton Pass, Aegis and 2FAS cannot be read. Export them again without encryption. A KeePass database that also needs a key file cannot be opened here.
+Encrypted exports from Bitwarden, Proton Pass, Aegis, 2FAS and Authenticator Pro cannot be read. Export them again without encryption. A KeePass database that also needs a key file cannot be opened here.
 
 The importers were tested against sample files written from each format's published or observed layout, not against exports from every real app. Compare the count afterwards.
 

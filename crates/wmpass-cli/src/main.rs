@@ -549,8 +549,8 @@ fn run(cli: Cli) -> Result<(), String> {
             let mut opened = open(&vault)?;
             let data = read_file(&file)?;
             let format = io::detect(&data).ok_or("the format was not recognised")?;
-            let source_password = if format == io::Format::Kdbx {
-                Some(password("Database password: ")?)
+            let source_password = if io::needs_password(&data) {
+                Some(password("Password of the file being imported: ")?)
             } else {
                 None
             };

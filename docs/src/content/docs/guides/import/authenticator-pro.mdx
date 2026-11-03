@@ -1,0 +1,68 @@
+---
+title: Moving from Authenticator Pro (Stratum)
+description: How to export your codes from Authenticator Pro, now called Stratum, on each device, and bring them into WM Pass.
+sidebar:
+  label: "Authenticator Pro (Stratum)"
+source:
+  name: "Authenticator Pro (Stratum)"
+  kind: authenticator
+  exportOn: ["Android"]
+  choose: "Backup with no password"
+---
+
+import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+import Shot from '../../../../components/Shot.astro';
+
+<Aside type="tip" title="Which file">
+Make a backup with no password, which is a plain JSON file. WM Pass can't open a password-protected backup.
+</Aside>
+
+<Tabs syncKey="device">
+<TabItem label="Android" icon="mobile-android">
+
+The app names this option **Back up to encrypted file**, but it encrypts the file only if you set a password. These steps follow the app's own menus and code, because its documentation does not walk through the backup screens.
+
+<Steps>
+
+1. Open Authenticator Pro (Stratum).
+2. Open the **Main menu** and tap **Back up**.
+3. Tap **Back up to encrypted file (recommended)**.
+4. Choose where to save the file and give it a name. The app suggests the `.stratum` extension.
+5. When it asks for a password, leave the field empty and tap **OK**.
+6. Read the warning that the backup will not be encrypted, then tap **OK** to confirm.
+
+</Steps>
+
+Steps from [Stratum's backup menu code](https://github.com/stratumauth/app/blob/master/Stratum.Droid/src/Interface/Fragment/BackupBottomSheet.cs) and [its strings file](https://github.com/stratumauth/app/blob/master/Stratum.Droid/Resources/values/strings.xml).
+
+</TabItem>
+<TabItem label="iPhone" icon="phone">
+
+<Aside>
+Authenticator Pro is an Android app. If you used it, export from your Android phone.
+</Aside>
+
+</TabItem>
+</Tabs>
+
+## Good to know
+
+- The other two backup choices, HTML and URI list, are unencrypted too, but they leave out categories and icons and the HTML file cannot be restored in the app. Use the first one.
+- A backup with a password uses Stratum's encryption. WM Pass can't read it, so export again with the password left empty.
+
+## Then, in WM Pass
+
+Open Settings, Import, and choose the file. The [import steps](/guides/import-export/#importing-into-wm-pass) cover every WM Pass app.
+
+Delete the export once WM Pass has read it. The file holds every secret key in readable form.
+
+## Sources
+
+These steps follow Stratum's own source code and wiki, read on 4 November 2026. Menus move between versions; if a step does not match what you see, the page it came from may be newer.
+
+- [BackupBottomSheet.cs](https://github.com/stratumauth/app/blob/master/Stratum.Droid/src/Interface/Fragment/BackupBottomSheet.cs), Stratum (GitHub)
+- [MainMenuBottomSheet.cs](https://github.com/stratumauth/app/blob/master/Stratum.Droid/src/Interface/Fragment/MainMenuBottomSheet.cs), Stratum (GitHub)
+- [BackupPasswordBottomSheet.cs](https://github.com/stratumauth/app/blob/master/Stratum.Droid/src/Interface/Fragment/BackupPasswordBottomSheet.cs), Stratum (GitHub)
+- [strings.xml](https://github.com/stratumauth/app/blob/master/Stratum.Droid/Resources/values/strings.xml), Stratum (GitHub)
+- [Backup.cs](https://github.com/stratumauth/app/blob/master/Stratum.Core/src/Backup/Backup.cs), Stratum (GitHub)
+- [Backup Format](https://stratumauth.com/wiki/backup-format), Stratum wiki

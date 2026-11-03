@@ -659,8 +659,8 @@ export const features = [
     why: 'Your passwords should never be stuck in one app, this one included.',
     how: [
       'Under Settings, Import, choose your old app\'s export file. WM Pass shows how many items it found, a few of their names, and any it could not read, before anything is added.',
-      'Password managers: 1Password, Apple Passwords, Bitwarden, Chrome, Dashlane, Enpass, Firefox, KeePass and KeePassXC, Keeper, LastPass, NordPass, Proton Pass, RoboForm and SafeInCloud. Authenticators: Aegis, 2FAS, andOTP, Ente Auth, FreeOTP+, Raivo, and Google Authenticator, whose export QR code you can choose as a screenshot.',
-      'A file with a password, such as a KeePass database, asks for it first. Items already in the vault are skipped, and the result says how many.',
+      'Password managers: 1Password, Apple Passwords, Avast, Avira, Bitwarden, Buttercup, Chrome and other Chromium browsers, Dashlane, Enpass, Firefox, Kaspersky, KeePass and KeePassXC, Keeper, LastPass, mSecure, NordPass, Password Safe, Proton Pass, Psono, RoboForm, SafeInCloud, Sticky Password and Zoho Vault. Authenticators: Aegis, 2FAS, andOTP, Authenticator Pro, Bitwarden Authenticator, Ente Auth, FreeOTP+, LastPass Authenticator, Proton Authenticator, Raivo, and Google Authenticator, whose export QR code you can choose as a screenshot.',
+      'A file with a password, such as a KeePass or SafeInCloud database, asks for it first. Items already in the vault are skipped, and the result says how many.',
       'Under Settings, Export, a **WM Pass vault** or a **KeePass database** stays encrypted. **Bitwarden JSON**, **CSV** and a **Printable page** are plain text that anyone who opens them can read.',
     ],
     when: 'Import once when you move to WM Pass, then compare the count with your old app. Export when you leave, or for a printed copy kept somewhere safe.',
@@ -677,8 +677,8 @@ export const features = [
       android: {
         how: [
           'Under Settings, Import, choose your old app\'s export file. WM Pass shows how many items it found, a few of their names, and any it could not read, before anything is added.',
-          'Password managers: 1Password, Apple Passwords, Bitwarden, Chrome, Dashlane, Enpass, Firefox, KeePass and KeePassXC, Keeper, LastPass, NordPass, Proton Pass, RoboForm and SafeInCloud. Authenticators: Aegis, 2FAS, andOTP, Ente Auth, FreeOTP+ and Raivo. For Google Authenticator, tap **Scan Google Authenticator\'s code** and scan each of its export codes in turn.',
-          'A file with a password, such as a KeePass database, asks for it first. Items already in the vault are skipped, and the result says how many.',
+          'Password managers: 1Password, Apple Passwords, Avast, Avira, Bitwarden, Buttercup, Chrome and other Chromium browsers, Dashlane, Enpass, Firefox, Kaspersky, KeePass and KeePassXC, Keeper, LastPass, mSecure, NordPass, Password Safe, Proton Pass, Psono, RoboForm, SafeInCloud, Sticky Password and Zoho Vault. Authenticators: Aegis, 2FAS, andOTP, Authenticator Pro, Bitwarden Authenticator, Ente Auth, FreeOTP+, LastPass Authenticator, Proton Authenticator and Raivo. For Google Authenticator, tap **Scan Google Authenticator\'s code** and scan each of its export codes in turn.',
+          'A file with a password, such as a KeePass or SafeInCloud database, asks for it first. Items already in the vault are skipped, and the result says how many.',
           'Under Settings, Export, a **WM Pass vault** or a **KeePass database** stays encrypted. **Bitwarden JSON**, **CSV** and a **Printable page** are plain text that anyone who opens them can read.',
         ],
       },

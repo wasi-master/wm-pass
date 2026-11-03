@@ -1502,9 +1502,8 @@ impl App {
                     Ok(data) => Zeroizing::new(data),
                     Err(e) => return self.say(Level::Bad, e),
                 };
-                let kdbx = wmpass_core::io::detect(&data) == Some(wmpass_core::io::Format::Kdbx);
-                if kdbx {
-                    return self.prompt("KeePass password", "The password of the database being imported", true, PromptFor::ImportPassword(path));
+                if wmpass_core::io::needs_password(&data) {
+                    return self.prompt("File password", "The password of the file being imported", true, PromptFor::ImportPassword(path));
                 }
                 match ui.engine.import_read(&data, &[]) {
                     Ok(preview) => self.overlay = Some(Overlay::Import(preview)),

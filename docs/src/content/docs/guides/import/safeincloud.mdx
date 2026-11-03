@@ -6,23 +6,45 @@ sidebar:
 source:
   name: "SafeInCloud"
   kind: manager
-  exportOn: ["Computer"]
-  choose: "XML"
+  exportOn: ["Android", "Computer"]
+  choose: "XML, or the .db database file"
 ---
 
 import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
 import Shot from '../../../../components/Shot.astro';
 
 <Aside type="tip" title="Which file">
-Choose **XML**. SafeInCloud also exports CSV and plain text.
+On a computer, choose **XML**. SafeInCloud also exports CSV and plain text. On Android, use the database file itself, a `.db` file; WM Pass opens it and asks for your SafeInCloud password.
 </Aside>
 
 <Tabs syncKey="device">
 <TabItem label="Android" icon="mobile-android">
 
-<Aside>
-SafeInCloud's Android app can't export. Use the desktop app on a computer.
-</Aside>
+SafeInCloud's Android app can't export XML, CSV or text, but it keeps its own encrypted database file, and WM Pass opens that. SafeInCloud's newer help pages call the app Safe, so your menus may use that name. There are two ways to get the file.
+
+The first way is the app's own backup. SafeInCloud's help does not name the format of the file it writes, so if WM Pass will not open that file, use the cloud copy described after the steps.
+
+<Steps>
+
+1. Open the app and unlock it.
+2. Tap the Safe icon at the top right, then **Manage databases**.
+3. Tap your database, then **backup to a local file**.
+4. Or, for a scheduled copy, go to **Settings**, then **Auto Backup**, and tap **Backup now**. Tap **Backup location**, choose a file, and pick an app to open or share it with.
+5. Move the file to a place you can pick it from inside WM Pass.
+
+</Steps>
+
+The second way is your cloud storage. If cloud sync is on, SafeInCloud keeps its database there as `SafeInCloud.db`. An extra database is `SafeInCloud(name).db`.
+
+<Steps>
+
+1. Open your cloud app: Google Drive, Dropbox, OneDrive or the one you chose when you set up sync.
+2. Find the file. Dropbox keeps it in `/Apps/Safe In Cloud/` and OneDrive in `/Apps/SafeInCloud/`. Google Drive usually uses the app's own folder, which you can manage under **Settings**, then **Manage Apps** in Drive.
+3. Download a copy to your phone. Do not move, rename or delete the original, or the app will not find its cloud database.
+
+</Steps>
+
+Steps from [Auto Backup](https://kb.safe-in-cloud.com/en/features-advanced/how-to-backup-restore.html), [How Databases Work](https://kb.safe-in-cloud.com/en/faq/how-databases-work.html) and [Cloud Database Location](https://kb.safe-in-cloud.com/en/faq/cloud-database-location.html).
 
 </TabItem>
 <TabItem label="Computer" icon="laptop">
@@ -39,14 +61,22 @@ SafeInCloud's own guide names the formats but not the menu. The File, Export pat
 
 Steps from [Import from SafeInCloud](https://help.enpass.io/personal/latest/all/import-from-safeincloud).
 
+You can also skip the export. On a Mac the database sits at `/Users/USERNAME/Library/Containers/com.safeincloud.Safe-In-Cloud.OSX/Data/Documents/SafeInCloud.db`. On Windows 10 and 11 it is `SafeInCloud.db` under `AppData\Local\Packages`, in a folder whose name starts with `51041SafeInCloud`. These folders are hidden, so turn on hidden files first. SafeInCloud's help lists these paths.
+
 </TabItem>
 </Tabs>
 
+## Good to know
+
+- WM Pass asks for the SafeInCloud password when it opens a `.db` file. The main database uses your master password; an extra database has its own password.
+- SafeInCloud's help says the XML, CSV and text exports are not encrypted.
+- Uninstalling the app on a phone deletes its auto backups, so copy the file out before you remove it.
+
 ## Then, in WM Pass
 
-Open Settings, Import, and choose the file. The [import steps](/guides/import-export/#importing-into-wm-pass) cover every WM Pass app.
+Open Settings, Import, and choose the file. For a `.db` file, enter your SafeInCloud password when WM Pass asks. The [import steps](/guides/import-export/#importing-into-wm-pass) cover every WM Pass app.
 
-Delete the export once WM Pass has read it.
+Delete an XML export once WM Pass has read it. A `.db` file stays encrypted, but the copy you made can go once the import has finished.
 
 If you exported on a computer and use WM Pass on your phone, import the file in WM Pass on that computer and [sync](/guides/backup-sync/), or copy the file to the phone over a USB cable. Email and cloud drives keep copies of what passes through them.
 
@@ -55,4 +85,7 @@ If you exported on a computer and use WM Pass on your phone, import the file in 
 These steps follow SafeInCloud's own help pages, read on 4 November 2026. Menus move between versions; if a step does not match what you see, the page it came from may be newer.
 
 - [Import & Export Issues](https://kb.safe-in-cloud.com/en/troubleshooting/import-export-issues.html), SafeInCloud
+- [Auto Backup](https://kb.safe-in-cloud.com/en/features-advanced/how-to-backup-restore.html), SafeInCloud
+- [How Databases Work](https://kb.safe-in-cloud.com/en/faq/how-databases-work.html), SafeInCloud
+- [Cloud Database Location](https://kb.safe-in-cloud.com/en/faq/cloud-database-location.html), SafeInCloud
 - [Import from SafeInCloud](https://help.enpass.io/personal/latest/all/import-from-safeincloud), Enpass (third party)
