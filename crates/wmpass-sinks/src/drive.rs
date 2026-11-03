@@ -1,5 +1,8 @@
-//! Google Drive's app data folder, which nothing else can see, including the owner in
-//! Drive's own interface. Restoring therefore always goes through WM Pass.
+//! Google Drive, in one of two places. The app data folder (scope `drive.appdata`) is seen by
+//! nothing else, including the owner in Drive's own interface, so restoring always goes
+//! through WM Pass. A folder in My Drive (scope `drive.file`) is one the owner can open, and
+//! the app sees only the files it made there, so it makes its own folder rather than use one
+//! of the same name made by hand.
 
 use serde_json::{Value, json};
 use wmpass_core::Secret;
@@ -11,30 +14,113 @@ use crate::{Fault, Result, Sink, Stored};
 const FILES: &str = "https://www.googleapis.com/drive/v3/files";
 const UPLOAD: &str = "https://www.googleapis.com/upload/drive/v3/files";
 const BOUNDARY: &str = "wmpass-part-boundary-7f3a";
+const FOLDER_MIME: &str = "application/vnd.google-apps.folder";
 
-/// A Drive app data folder.
+/// Scope for the hidden app folder.
+pub const SCOPE_APP_DATA: &str = "https://www.googleapis.com/auth/drive.appdata";
+/// Scope for a visible folder: the files this app made, and nothing else.
+pub const SCOPE_FILE: &str = "https://www.googleapis.com/auth/drive.file";
+
+/// Where in Drive the copies go.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Space {
+    /// The hidden app data folder.
+    AppData,
+    /// A folder by path from the top of My Drive, made on first use.
+    Folder(String),
+}
+
+impl Space {
+    /// The scope a sign-in must ask for to reach this space.
+    pub fn scope(&self) -> &'static str {
+        match self {
+            Self::AppData => SCOPE_APP_DATA,
+            Self::Folder(_) => SCOPE_FILE,
+        }
+    }
+}
+
+/// A Drive folder.
 #[derive(Debug)]
 pub struct Drive<H> {
     client: Client<H>,
     token: Secret,
+    space: Space,
+    /// The visible folder's id once found or made.
+    folder_id: std::sync::Mutex<Option<String>>,
+}
+
+fn escape(name: &str) -> String {
+    name.replace('\\', "\\\\").replace('\'', "\\'")
 }
 
 impl<H: AsyncHttp> Drive<H> {
-    /// With a current access token.
+    /// The app data folder, with a current access token.
     pub fn new(client: Client<H>, token: Secret) -> Self {
-        Self { client, token }
+        Self::in_space(client, token, Space::AppData)
+    }
+
+    /// Either space.
+    pub fn in_space(client: Client<H>, token: Secret, space: Space) -> Self {
+        Self { client, token, space, folder_id: std::sync::Mutex::new(None) }
     }
 
     fn auth(&self, request: Request) -> Request {
         request.header("Authorization", format!("Bearer {}", self.token.expose()))
     }
 
+    fn spaces(&self) -> &'static str {
+        match self.space {
+            Space::AppData => "appDataFolder",
+            Space::Folder(_) => "drive",
+        }
+    }
+
+    /// `appDataFolder`, or the visible folder's id, found or made segment by segment.
+    async fn parent(&self) -> Result<String> {
+        let path = match &self.space {
+            Space::AppData => return Ok("appDataFolder".to_owned()),
+            Space::Folder(path) => path,
+        };
+        if let Some(id) = self.folder_id.lock().map_err(|_| Fault::Io)?.clone() {
+            return Ok(id);
+        }
+        let mut parent = "root".to_owned();
+        let segments: Vec<&str> = path.split('/').map(str::trim).filter(|s| !s.is_empty()).collect();
+        for segment in if segments.is_empty() { vec!["WM Pass"] } else { segments } {
+            parent = match self.find_folder(segment, &parent).await? {
+                Some(id) => id,
+                None => self.make_folder(segment, &parent).await?,
+            };
+        }
+        *self.folder_id.lock().map_err(|_| Fault::Io)? = Some(parent.clone());
+        Ok(parent)
+    }
+
+    async fn find_folder(&self, name: &str, parent: &str) -> Result<Option<String>> {
+        let query = wmpass_core::otp::percent_encode(&format!(
+            "name = '{}' and mimeType = '{FOLDER_MIME}' and '{}' in parents and trashed = false",
+            escape(name),
+            escape(parent),
+        ));
+        let url = format!("{FILES}?spaces=drive&pageSize=1&fields=files(id)&q={query}");
+        let root = self.client.ok(self.auth(Request::get(url))).await?.json().map_err(|_| Fault::Io)?;
+        Ok(root.pointer("/files/0/id").and_then(Value::as_str).map(str::to_owned))
+    }
+
+    async fn make_folder(&self, name: &str, parent: &str) -> Result<String> {
+        let body = json!({"name": name, "mimeType": FOLDER_MIME, "parents": [parent]});
+        let response = self.client.ok(self.auth(Request::json("POST", format!("{FILES}?fields=id"), &body))).await?;
+        let root = response.json().map_err(|_| Fault::Io)?;
+        root.get("id").and_then(Value::as_str).map(str::to_owned).ok_or(Fault::Io)
+    }
+
     /// Drive allows several files of one name, so an existing one must be found to
     /// replace it.
     async fn find(&self, name: &str) -> Result<Option<String>> {
-        let escaped = name.replace('\\', "\\\\").replace('\'', "\\'");
-        let query = wmpass_core::otp::percent_encode(&format!("name = '{escaped}' and trashed = false"));
-        let url = format!("{FILES}?spaces=appDataFolder&fields=files(id)&q={query}");
+        let parent = self.parent().await?;
+        let query = wmpass_core::otp::percent_encode(&format!("name = '{}' and '{}' in parents and trashed = false", escape(name), escape(&parent)));
+        let url = format!("{FILES}?spaces={}&fields=files(id)&q={query}", self.spaces());
         let response = self.client.ok(self.auth(Request::get(url))).await?;
         let root = response.json().map_err(|_| Fault::Io)?;
         Ok(root.pointer("/files/0/id").and_then(Value::as_str).map(str::to_owned))
@@ -52,6 +138,11 @@ fn multipart(metadata: &Value, bytes: &[u8]) -> Vec<u8> {
 
 impl<H: AsyncHttp> Sink for Drive<H> {
     async fn readiness(&self) -> Result<()> {
+        if let Space::Folder(_) = self.space {
+            // Finding or making the folder proves the token and the network, and gives a
+            // first backup somewhere to go.
+            return self.parent().await.map(|_| ());
+        }
         let url = format!("{FILES}?spaces=appDataFolder&pageSize=1&fields=files(id)");
         self.client.ok(self.auth(Request::get(url))).await.map(|_| ())
     }
@@ -63,7 +154,7 @@ impl<H: AsyncHttp> Sink for Drive<H> {
             None => (
                 "POST",
                 format!("{UPLOAD}?uploadType=multipart&fields=id"),
-                json!({"name": name, "parents": ["appDataFolder"]}),
+                json!({"name": name, "parents": [self.parent().await?]}),
             ),
         };
         let mut request = self.auth(Request::verb(method, url));
@@ -78,8 +169,12 @@ impl<H: AsyncHttp> Sink for Drive<H> {
     async fn list(&self) -> Result<Vec<Stored>> {
         let mut out = Vec::new();
         let mut token: Option<String> = None;
+        let within = match self.space {
+            Space::AppData => String::new(),
+            Space::Folder(_) => format!("&q={}", wmpass_core::otp::percent_encode(&format!("'{}' in parents and trashed = false", escape(&self.parent().await?)))),
+        };
         loop {
-            let mut url = format!("{FILES}?spaces=appDataFolder&pageSize=200&fields=nextPageToken,files(id,name,size)");
+            let mut url = format!("{FILES}?spaces={}&pageSize=200&fields=nextPageToken,files(id,name,size){within}", self.spaces());
             if let Some(token) = &token {
                 url.push_str("&pageToken=");
                 url.push_str(&wmpass_core::otp::percent_encode(token));
@@ -150,6 +245,25 @@ mod tests {
         block_on(sink(&http).write("a' or name != 'b", b"x")).unwrap();
         let first = http.asked.lock().unwrap()[0].url.clone();
         assert!(first.contains("a%5C%27%20or"), "{first}");
+    }
+
+    #[test]
+    fn a_visible_folder_is_made_once_and_holds_the_files() {
+        let http = FakeHttp::new()
+            .answer(UPLOAD, 200, r#"{"id":"file"}"#)
+            .answer(&format!("{FILES}?fields=id"), 200, r#"{"id":"made"}"#)
+            .answer(FILES, 200, r#"{"files":[]}"#);
+        let drive = Drive::in_space(Client::new(Blocking(&http), NetPolicy::Any), "tok".into(), Space::Folder("Backups/WM Pass".into()));
+        block_on(drive.write("v", b"x")).unwrap();
+        let asked = http.asked.lock().unwrap().clone();
+        let made: Vec<_> = asked.iter().filter(|r| r.url.ends_with("?fields=id")).collect();
+        assert_eq!(made.len(), 2, "one folder per segment");
+        let upload = asked.last().unwrap();
+        assert!(String::from_utf8(upload.body.clone().unwrap().1).unwrap().contains(r#""parents":["made"]"#));
+        block_on(drive.list()).unwrap();
+        let listed = http.last().unwrap();
+        assert!(listed.url.contains("spaces=drive") && listed.url.contains("%27made%27%20in%20parents"), "{}", listed.url);
+        assert_eq!(http.asked.lock().unwrap().iter().filter(|r| r.url.ends_with("?fields=id")).count(), 2, "the folder id is kept");
     }
 
     #[test]
