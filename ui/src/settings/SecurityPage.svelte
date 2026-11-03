@@ -226,6 +226,11 @@
   </Group>
 {/if}
 
+{#if host().kind === 'desktop' && host().os === 'mac'}
+  <Group title="Widgets">
+    <Toggle title="Show on widgets" sub="While the vault is open, the Codes and Favorites widgets show codes and the names of favorites. Locked, they show nothing." icon="widgets" pref="widget_access" />
+  </Group>
+{/if}
 <Group title="Network" anchor="group:security.network">
   <Toggle title="Allow network features" sub="Breach checks, aliases, syncing and accounts. Off means nothing leaves this device." icon="language" pref="network_allowed" />
 </Group>

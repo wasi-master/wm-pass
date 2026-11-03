@@ -111,8 +111,16 @@
       case 'window-hidden':
         if (prefs.v.lock_on_hide) void pass.lock();
         break;
+      case 'backups':
+        void ui.guard(() => ui.go('settings/backup'));
+        break;
       default:
         if (name.startsWith('add:')) ui.add(name.slice(4));
+        // From the Favorites widget: an item id, which names nothing by itself.
+        else if (name.startsWith('item:')) {
+          const id = name.slice(5);
+          void ui.guard(() => ui.open(id));
+        }
     }
   }
 

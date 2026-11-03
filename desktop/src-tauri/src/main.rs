@@ -16,10 +16,11 @@ mod signin;
 mod probe;
 mod sealed;
 mod store;
+mod widgets;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::Ordering;
 
 use serde::Deserialize;
@@ -39,6 +40,7 @@ use agent::Agent;
 use bridge::Bridge;
 use engine::{Engine, now_ms};
 use store::Store;
+use widgets::{Link, Widgets};
 
 struct Shell {
     close_to_tray: Mutex<bool>,
@@ -120,14 +122,16 @@ fn clear_clipboard() -> Result<(), String> {
 }
 
 #[tauri::command]
-fn lock_all(engine: State<'_, Engine>) {
+fn lock_all(engine: State<'_, Engine>, widgets: State<'_, Arc<Widgets>>) {
     engine.lock_all();
+    widgets.nudge();
 }
 
 #[tauri::command]
-fn state_changed(app: AppHandle, engine: State<'_, Engine>, shell: State<'_, Shell>, unlocked: bool, handle: u64) -> Result<(), String> {
+fn state_changed(app: AppHandle, engine: State<'_, Engine>, shell: State<'_, Shell>, widgets: State<'_, Arc<Widgets>>, unlocked: bool, handle: u64) -> Result<(), String> {
     engine.current.store(if unlocked { handle } else { 0 }, Ordering::SeqCst);
     engine.guard.active();
+    widgets.nudge();
     let shortcuts = shell.shortcuts.lock().map_err(fail)?.clone();
     app.set_menu(menu::build(&app, &shortcuts, unlocked).map_err(fail)?).map_err(fail)?;
     Ok(())
@@ -154,6 +158,71 @@ fn set_shortcuts(app: AppHandle, engine: State<'_, Engine>, shell: State<'_, She
     app.set_menu(menu::build(&app, &shortcuts, unlocked).map_err(fail)?).map_err(fail)?;
     *shell.shortcuts.lock().map_err(fail)? = shortcuts;
     Ok(())
+}
+
+// ---- widgets on a Mac ----
+
+/// What the widgets may show, from the page. Nothing in it is secret; codes are fetched here.
+#[tauri::command]
+fn widgets_feed(widgets: State<'_, Arc<Widgets>>, feed: widgets::Feed) {
+    widgets.feed(feed);
+}
+
+/// A wipe: what the widgets kept goes with the vault.
+#[tauri::command]
+fn widgets_forget(widgets: State<'_, Arc<Widgets>>) {
+    widgets.forget();
+}
+
+/// A `wmpass://widget/...` link: from a click on a widget, or from anything else that can open a
+/// link, so a panic lock and a copied password need the widgets' token.
+fn open_link(app: &AppHandle, url: &str) {
+    let widgets = app.state::<Arc<Widgets>>();
+    let Some(link) = widgets::parse_link(url, &widgets.token) else { return };
+    let shown = app.get_webview_window("main").is_some_and(|w| w.is_visible().unwrap_or(false));
+    match link {
+        Link::Page(command) => {
+            show(app, "main");
+            let _ = app.emit("command", command);
+        }
+        Link::Item(id) => {
+            show(app, "main");
+            let _ = app.emit("command", format!("item:{id}"));
+        }
+        Link::Open => show(app, "main"),
+        Link::Lock { token } => {
+            let panic = token && widgets.current_feed().lock_action == "panic";
+            app.state::<Engine>().lock_all();
+            widgets.nudge();
+            let _ = app.emit("command", if panic { "panic" } else { "lock" });
+            if !shown {
+                hide_app(app);
+            }
+        }
+        Link::Generate { token } => {
+            if token {
+                let feed = widgets.current_feed();
+                let engine = app.state::<Engine>().inner().clone();
+                std::thread::spawn(move || {
+                    let Ok(reply) = engine.call("gen.generate", 0, &feed.recipe.to_string(), &[], &[], now_ms()) else { return };
+                    let Some(secret) = reply.secret else { return };
+                    let text = Zeroizing::new(String::from_utf8_lossy(&secret).into_owned());
+                    let _ = clip::copy(&text, true, feed.clipboard_seconds);
+                });
+            }
+            if !shown {
+                hide_app(app);
+            }
+        }
+    }
+}
+
+/// Gives the front back to whatever had it, after a widget brought WM Pass forward to act.
+fn hide_app(app: &AppHandle) {
+    #[cfg(target_os = "macos")]
+    let _ = app.hide();
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
 }
 
 // ---- files in the app's folder ----
@@ -870,6 +939,8 @@ fn main() {
             auto_type,
             check_update,
             install_update,
+            widgets_feed,
+            widgets_forget,
         ])
         .on_menu_event(|app, event| menu::handle(app, event.id().as_ref()))
         .on_window_event(|window, event| {
@@ -886,6 +957,14 @@ fn main() {
                 tauri::WindowEvent::Focused(false) if window.label() == "palette" => {
                     let _ = window.hide();
                 }
+                // In front, a widget's redraw costs nothing, so codes can follow each step.
+                tauri::WindowEvent::Focused(focused) if window.label() == "main" => {
+                    let widgets = app.state::<Arc<Widgets>>();
+                    widgets.front.store(*focused, Ordering::SeqCst);
+                    if *focused {
+                        widgets.nudge();
+                    }
+                }
                 _ => {}
             }
         })
@@ -894,10 +973,15 @@ fn main() {
             let store = Store::new(data_dir(&handle)?).map_err(std::io::Error::other)?;
             let outside = store.read("settings/outside.json").ok().and_then(|raw| serde_json::from_slice(&raw).ok()).unwrap_or_default();
             let engine = Engine::new(device_number(&store));
+            let widgets = Arc::new(Widgets::new(store.clone()));
             let watcher = handle.clone();
+            let locked = Arc::clone(&widgets);
             engine.watch(move || {
                 let _ = watcher.emit("command", "lock");
+                locked.nudge();
             });
+            widgets.start(engine.clone());
+            app.manage(widgets);
             app.manage(engine);
             app.manage(store);
             app.manage(Agent::new());
@@ -914,10 +998,20 @@ fn main() {
         })
         .build(tauri::generate_context!())
         .expect("WM Pass could not start")
-        .run(|_app, _event| {
+        .run(|app, event| {
             #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Reopen { .. } = &_event {
-                show(_app, "main");
+            if let tauri::RunEvent::Reopen { .. } = &event {
+                show(app, "main");
+            }
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Opened { urls } = &event {
+                for url in urls {
+                    open_link(app, url.as_str());
+                }
+            }
+            // Quitting is a lock too: the widgets are left with nothing from the vault.
+            if let tauri::RunEvent::Exit = &event {
+                app.state::<Arc<Widgets>>().write_locked_now();
             }
         });
 }

@@ -185,6 +185,34 @@ export interface DesktopHost {
   checkUpdate(): Promise<{ version: string; notes: string } | null>;
   installUpdate(): Promise<void>;
   version(): Promise<string>;
+  /** What the Mac's widgets may show. Only the desktop app on a Mac has these. */
+  widgetsFeed?(feed: WidgetFeed): Promise<void>;
+  /** A wipe: what the widgets kept goes with the vault. */
+  widgetsForget?(): Promise<void>;
+}
+
+/**
+ * What the page tells the desktop app for its widgets. Nothing in it is secret: the app fetches
+ * codes from the session itself, and drops codes, favorites and the vault's name unless the vault
+ * is open and Show on widgets is on (desktop/src-tauri/src/widgets.rs).
+ */
+export interface WidgetFeed {
+  enabled: boolean;
+  state: 'none' | 'locked' | 'open';
+  vault: string | null;
+  health: { score: number; weak: number; reused: number; breached: number; at: number } | null;
+  show_score: boolean;
+  backups: { label: string; last: number | null; failed: boolean }[];
+  every_days: number;
+  buttons: string[];
+  lock_action: string;
+  access: boolean;
+  codes_mode: string;
+  code_ids: string[];
+  favorites: { id: string; title: string; color: string }[];
+  generator: string;
+  recipe: unknown;
+  clipboard_seconds: number;
 }
 
 let current: Host | null = null;

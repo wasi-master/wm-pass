@@ -17,3 +17,5 @@ desktop/src-tauri/binaries/
 docs/node_modules/
 docs/dist/
 docs/.astro/
+# The Mac widget extension, built by packaging/macos/widgets/build.sh before bundling.
+desktop/src-tauri/widgets-out/

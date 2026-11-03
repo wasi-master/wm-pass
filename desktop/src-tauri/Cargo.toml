@@ -45,3 +45,7 @@ base64 = "0.23.1"
 
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "1", features = ["process"] }
+
+# The widgets' reload library, opened from the bundle at run time (src/widgets.rs).
+[target.'cfg(target_os = "macos")'.dependencies]
+libloading = "0.8"

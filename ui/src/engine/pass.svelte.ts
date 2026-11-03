@@ -312,9 +312,10 @@ class PassStore {
 
   /** A panic: locked at once, and every password refused for an hour. */
   async panic() {
-    await this.lock();
+    // The wait first, so the door that opens on locking already shows it.
     this.door.retry_at = Date.now() + 3_600_000;
     await this.writeDoor();
+    await this.lock();
   }
 
   async wipe() {

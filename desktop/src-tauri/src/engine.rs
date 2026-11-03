@@ -35,6 +35,12 @@ impl LockGuard {
         self.on_sleep.store(on_sleep, Ordering::SeqCst);
     }
 
+    /// When the vault will lock by itself if nothing happens before then, or `None` for never.
+    pub fn deadline_ms(&self) -> Option<u64> {
+        let after = u64::try_from(self.after_seconds.load(Ordering::SeqCst)).ok()?;
+        Some(self.last_active_ms.load(Ordering::SeqCst).saturating_add(after * 1000))
+    }
+
     /// Whether the time is up, given when this last looked.
     fn due(&self, now: u64, last_tick: u64) -> bool {
         // The clock jumping far ahead of this loop's own pace means the machine was asleep.
