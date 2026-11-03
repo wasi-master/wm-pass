@@ -540,6 +540,8 @@ pub fn call(
                 cache: String,
                 code: Option<String>,
                 provider: Option<u32>,
+                /// The code Bitwarden emailed to confirm this device.
+                device_code: Option<String>,
                 region: Option<String>,
             }
             use wmpass_bw::account::Account;
@@ -556,6 +558,8 @@ pub fn call(
             // wait, so a dropped connection or a server fault must not look like one.
             let bw_error = |e: wmpass_bw::BwError| match e {
                 wmpass_bw::BwError::TwoFactor(providers) => failed("two_factor", format!("{providers:?}")),
+                wmpass_bw::BwError::NewDevice => failed("new_device", e.to_string()),
+                wmpass_bw::BwError::BadCode => failed("bad_code", e.to_string()),
                 wmpass_bw::BwError::Net(error) => net_error(error),
                 wmpass_bw::BwError::BadLogin | wmpass_bw::BwError::Crypto => failed("wrong_password", e.to_string()),
                 other => failed("bitwarden", other.to_string()),
@@ -575,7 +579,11 @@ pub fn call(
             }
             let account = if method == "bitwarden.login" {
                 let device = Device { identifier: a.device.clone(), name: "WM Pass".to_owned(), kind: 0 };
-                let factor = a.code.map(|code| SecondFactor { provider: a.provider.unwrap_or(0), code });
+                let factor = match (a.code, a.device_code) {
+                    (Some(code), _) => Some(SecondFactor::Code { provider: a.provider.unwrap_or(0), code }),
+                    (None, Some(code)) => Some(SecondFactor::NewDevice(code)),
+                    (None, None) => None,
+                };
                 Account::login(&http, policy, endpoints, &a.email, secret, &device, factor.as_ref()).map_err(bw_error)?
             } else {
                 let cached = crate::service::base64_decode(&a.cache)?;

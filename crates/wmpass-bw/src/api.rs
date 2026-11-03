@@ -149,13 +149,52 @@ fn read_tokens(root: &Value) -> std::result::Result<Tokens, NetError> {
     })
 }
 
-/// A second factor to send along.
+/// What a login sends besides the password, once the server has asked for it.
 #[derive(Clone, Debug)]
-pub struct SecondFactor {
-    /// Provider number.
-    pub provider: u32,
-    /// The code.
-    pub code: String,
+pub enum SecondFactor {
+    /// A two-step login code.
+    Code {
+        /// Provider number.
+        provider: u32,
+        /// The code.
+        code: String,
+    },
+    /// The code Bitwarden emails when a device it has not seen before signs in to an account
+    /// without two-step login.
+    NewDevice(String),
+}
+
+/// Why the login service said no. Bitwarden refuses a device it does not know yet with the
+/// same status as a wrong password, and only a wrong password may count as a guess.
+fn refusal(root: &Value) -> BwError {
+    if let Some(providers) = prop(root, "TwoFactorProviders").and_then(Value::as_array) {
+        let numbers = providers
+            .iter()
+            .filter_map(|p| p.as_u64().or_else(|| p.as_str().and_then(|s| s.parse().ok())))
+            .filter_map(|p| u32::try_from(p).ok())
+            .collect();
+        return BwError::TwoFactor(numbers);
+    }
+    // The message is what Bitwarden's own clients act on. A failed two-step code carries the
+    // same description as a failed password, so the message is read first.
+    let message = prop(root, "ErrorModel").and_then(|model| text(model, "Message")).unwrap_or_default();
+    let description = text(root, "error_description").unwrap_or_default();
+    let says = |start: &str| {
+        message.to_lowercase().starts_with(start) || description.to_lowercase().starts_with(start)
+    };
+    if says("two-step token is invalid") || says("invalid new device otp") {
+        BwError::BadCode
+    } else if says("new device verification required") {
+        BwError::NewDevice
+    } else if says("username or password is incorrect") || description == "invalid_username_or_password" {
+        BwError::BadLogin
+    } else if !message.is_empty() {
+        BwError::Refused(message.to_owned())
+    } else if !description.is_empty() {
+        BwError::Refused(description.to_owned())
+    } else {
+        BwError::BadLogin
+    }
 }
 
 /// Logs in, or reports what is needed instead.
@@ -178,26 +217,24 @@ pub fn login(
         ("deviceIdentifier", device.identifier.as_str()),
         ("deviceName", device.name.as_str()),
     ];
-    let provider = factor.map(|f| f.provider.to_string());
-    if let (Some(factor), Some(provider)) = (factor, provider.as_deref()) {
-        fields.push(("twoFactorToken", factor.code.as_str()));
-        fields.push(("twoFactorProvider", provider));
-        fields.push(("twoFactorRemember", "0"));
+    let provider = match factor {
+        Some(SecondFactor::Code { provider, .. }) => provider.to_string(),
+        _ => String::new(),
+    };
+    match factor {
+        Some(SecondFactor::Code { code, .. }) => {
+            fields.push(("twoFactorToken", code.as_str()));
+            fields.push(("twoFactorProvider", provider.as_str()));
+            fields.push(("twoFactorRemember", "0"));
+        }
+        Some(SecondFactor::NewDevice(code)) => fields.push(("newDeviceOtp", code.as_str())),
+        None => {}
     }
     let mut request = Request::verb("POST", format!("{}/connect/token", endpoints.identity));
     request.body = Some(("application/x-www-form-urlencoded; charset=utf-8", form(&fields)));
     Call::new(request, |response| {
         if response.status == 400 || response.status == 401 {
-            let root = response.json().unwrap_or(Value::Null);
-            if let Some(providers) = prop(&root, "TwoFactorProviders").and_then(Value::as_array) {
-                let numbers = providers
-                    .iter()
-                    .filter_map(|p| p.as_u64().or_else(|| p.as_str().and_then(|s| s.parse().ok())))
-                    .filter_map(|p| u32::try_from(p).ok())
-                    .collect();
-                return Ok(Err(BwError::TwoFactor(numbers)));
-            }
-            return Ok(Err(BwError::BadLogin));
+            return Ok(Err(refusal(&response.json().unwrap_or(Value::Null))));
         }
         Ok(Ok(read_tokens(&response.ok()?.json()?)?))
     })
@@ -292,4 +329,58 @@ pub fn create_folder(endpoints: &Endpoints, access: &wmpass_core::Secret, encryp
 /// Treats a call's outcome as this crate's error.
 pub fn run<T>(call: Call<T>, http: &dyn wmpass_net::Http, policy: wmpass_net::NetPolicy) -> Result<T> {
     Ok(call.run(http, policy)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_refused_password_reads_as_one() {
+        let wrong = json!({
+            "error": "invalid_grant",
+            "error_description": "invalid_username_or_password",
+            "ErrorModel": {"Message": "Username or password is incorrect. Try again.", "Object": "error"},
+        });
+        assert_eq!(refusal(&wrong), BwError::BadLogin);
+        // Vaultwarden leaves the description empty and the full stop off.
+        let vaultwarden = json!({"error": "", "error_description": "", "ErrorModel": {"Message": "Username or password is incorrect. Try again"}});
+        assert_eq!(refusal(&vaultwarden), BwError::BadLogin);
+
+        let new_device = json!({
+            "error": "device_error",
+            "error_description": "New device verification required",
+            "ErrorModel": {"Message": "new device verification required", "Object": "error"},
+        });
+        assert_eq!(refusal(&new_device), BwError::NewDevice);
+        let wrong_device_code = json!({"error": "device_error", "error_description": "Invalid New Device OTP", "ErrorModel": {"Message": "invalid new device otp"}});
+        assert_eq!(refusal(&wrong_device_code), BwError::BadCode);
+        let wrong_two_step = json!({
+            "error": "invalid_grant",
+            "error_description": "invalid_username_or_password",
+            "ErrorModel": {"Message": "Two-step token is invalid. Try again."},
+        });
+        assert_eq!(refusal(&wrong_two_step), BwError::BadCode);
+
+        let two_factor = json!({"error": "invalid_grant", "error_description": "Two factor required.", "TwoFactorProviders": ["0", 1]});
+        assert_eq!(refusal(&two_factor), BwError::TwoFactor(vec![0, 1]));
+        let other = json!({"error": "invalid_grant", "ErrorModel": {"Message": "Something else entirely."}});
+        assert_eq!(refusal(&other), BwError::Refused("Something else entirely.".into()));
+    }
+
+    #[test]
+    fn the_emailed_device_code_goes_with_the_password() {
+        let device = Device { identifier: "d".into(), name: "WM Pass".into(), kind: 0 };
+        let code = SecondFactor::NewDevice("123456".into());
+        let call = login(&Endpoints::official(), "Me@Example.com", "hash", &device, Some(&code));
+        let body = String::from_utf8(call.request.body.unwrap().1).unwrap();
+        assert!(body.contains("newDeviceOtp=123456"), "{body}");
+        assert!(!body.contains("twoFactor"), "{body}");
+
+        let code = SecondFactor::Code { provider: 0, code: "654321".into() };
+        let call = login(&Endpoints::official(), "me@example.com", "hash", &device, Some(&code));
+        let body = String::from_utf8(call.request.body.unwrap().1).unwrap();
+        assert!(body.contains("twoFactorToken=654321&twoFactorProvider=0"), "{body}");
+        assert!(!body.contains("newDeviceOtp"), "{body}");
+    }
 }

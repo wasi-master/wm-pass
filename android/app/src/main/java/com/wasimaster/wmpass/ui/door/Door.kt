@@ -307,6 +307,8 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
     val notice = remember { LaunchGuard.takeNotice() }
     val codeField = rememberTextFieldState()
     var asksCode by remember { mutableStateOf(false) }
+    // Bitwarden's check on a phone it has not seen before, rather than a two-step code.
+    var emailedCode by remember { mutableStateOf(false) }
     var keyFile by remember { mutableStateOf<ByteArray?>(null) }
     val pickAccountKey = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) keyFile = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
@@ -339,7 +341,7 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
                 if (ref.kind == "kdbx") {
                     Accounts.openKdbx(context, ref, password, keyFile)
                 } else {
-                    Accounts.openBitwarden(context, ref, password, codeField.text.toString().trim().ifEmpty { null })
+                    Accounts.openBitwarden(context, ref, password, codeField.text.toString().trim().ifEmpty { null }, deviceCode = emailedCode)
                 }
                 field.clearText()
                 keyboard?.hide()
@@ -348,15 +350,25 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
             } catch (failure: NativeFailure) {
                 haptics.reject()
                 when (failure.code) {
-                    "two_factor" -> {
+                    "two_factor", "new_device" -> {
                         asksCode = true
+                        emailedCode = failure.code == "new_device"
+                        codeField.clearText()
                         shield = ShieldState.IDLE
-                        message = "This account also needs a code from your authenticator."
+                        message = if (emailedCode) {
+                            "Bitwarden has emailed you a code to confirm this phone. Enter it with your password."
+                        } else {
+                            "This account also needs a code from your authenticator."
+                        }
                     }
-                    // Not a guess at the password, so neither counts towards the wait.
+                    // Not a guess at the password, so none of these counts towards the wait.
+                    "bad_code" -> {
+                        shield = ShieldState.IDLE
+                        message = "That code was not accepted."
+                    }
                     "network", "bitwarden" -> {
                         shield = ShieldState.IDLE
-                        message = failure.message?.let { it.replaceFirstChar(Char::uppercase) + "." } ?: "The server could not be reached."
+                        message = failure.message?.let { it.replaceFirstChar(Char::uppercase).trimEnd('.') + "." } ?: "The server could not be reached."
                     }
                     else -> {
                         shield = ShieldState.REFUSED
@@ -529,7 +541,7 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
                 FactorEntry(factors, enabled = !busy) { kind, output -> submit(listOf(kind to output)) }
             }
             AnimatedVisibility(asksCode) {
-                Box(Modifier.padding(bottom = 10.dp)) { com.wasimaster.wmpass.ui.vault.SheetField(codeField, "Two-factor code") }
+                Box(Modifier.padding(bottom = 10.dp)) { com.wasimaster.wmpass.ui.vault.SheetField(codeField, if (emailedCode) "Code from the email" else "Two-factor code") }
             }
             PasswordPill(
                 field,
@@ -617,7 +629,7 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
                 FactorEntry(factors, enabled = shield != ShieldState.WORKING) { kind, output -> submit(listOf(kind to output)) }
             }
             AnimatedVisibility(asksCode) {
-                Box(Modifier.padding(bottom = 10.dp)) { com.wasimaster.wmpass.ui.vault.SheetField(codeField, "Six-digit code") }
+                Box(Modifier.padding(bottom = 10.dp)) { com.wasimaster.wmpass.ui.vault.SheetField(codeField, if (emailedCode) "Code from the email" else "Six-digit code") }
             }
             PasswordPill(
                 field,
