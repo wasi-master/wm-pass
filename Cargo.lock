@@ -9638,9 +9638,11 @@ dependencies = [
 name = "wmpass-net"
 version = "0.1.0"
 dependencies = [
+ "rustls",
  "serde",
  "serde_json",
  "sha1 0.11.0",
+ "sha2 0.11.1",
  "thiserror 2.0.21",
  "ureq",
  "url",
@@ -9713,12 +9715,14 @@ dependencies = [
  "pbkdf2 0.13.0",
  "poly1305 0.9.1",
  "quick-xml 0.42.0",
+ "rustls",
  "serde_json",
  "sha1 0.11.0",
  "sha2 0.11.1",
  "subtle",
  "tempfile",
  "url",
+ "webpki-roots",
  "wmpass-core",
  "wmpass-net",
  "x25519-dalek",

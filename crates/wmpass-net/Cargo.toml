@@ -14,7 +14,7 @@ workspace = true
 [features]
 default = []
 # A blocking client for desktop, CLI and JNI. The extension supplies fetch instead.
-native = ["dep:ureq"]
+native = ["dep:ureq", "dep:rustls", "dep:sha2"]
 
 [dependencies]
 wmpass-core.workspace = true
@@ -24,4 +24,8 @@ thiserror.workspace = true
 sha1.workspace = true
 zeroize.workspace = true
 url = "2.5.8"
-ureq = { version = "3", optional = true }
+# The pinned client builds on ureq's `unversioned` transport API, which may change in a minor release.
+ureq = { version = "~3.5", optional = true }
+# The same rustls ureq uses, for the pinned client's own certificate check.
+rustls = { version = "0.23", optional = true, default-features = false, features = ["std", "tls12", "ring"] }
+sha2 = { workspace = true, optional = true }

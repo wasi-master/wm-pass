@@ -27,6 +27,10 @@ pub enum NetError {
     /// The answer was not what the service documents.
     #[error("the service's answer could not be read")]
     BadAnswer,
+    /// The TLS certificate was refused: none trusted vouches for it, or it is not the
+    /// one pinned for this server. Not transient, and not a password problem.
+    #[error("the service's certificate is not the trusted one")]
+    Untrusted,
     /// Input that must not be sent.
     #[error("{0}")]
     Invalid(String),
@@ -267,14 +271,8 @@ pub struct NativeHttp {
 #[cfg(feature = "native")]
 impl Default for NativeHttp {
     fn default() -> Self {
-        let config = ureq::Agent::config_builder()
-            .max_redirects(0)
-            .allow_non_standard_methods(true)
-            .http_status_as_error(false)
-            .user_agent("WM-Pass")
-            .build();
         Self {
-            agent: config.into(),
+            agent: agent_config().into(),
         }
     }
 }
@@ -282,56 +280,315 @@ impl Default for NativeHttp {
 #[cfg(feature = "native")]
 impl Http for NativeHttp {
     fn send(&self, request: &Request) -> Result<Response, NetError> {
-        const MAX_BODY: u64 = 16 * 1024 * 1024;
-        let mut builder = ureq::http::Request::builder()
-            .method(request.method)
-            .uri(&request.url);
-        for (name, value) in &request.headers {
-            builder = builder.header(*name, value.as_str());
+        send_with(&self.agent, request)
+    }
+}
+
+/// The agent settings both native clients share: no redirects, any verb, statuses as answers.
+#[cfg(feature = "native")]
+fn agent_config() -> ureq::config::Config {
+    ureq::Agent::config_builder()
+        .max_redirects(0)
+        .allow_non_standard_methods(true)
+        .http_status_as_error(false)
+        .user_agent("WM-Pass")
+        .build()
+}
+
+/// Whether a failure was the certificate being refused, wherever in the chain rustls
+/// reported it: directly, or inside the I/O error a handshake returns.
+#[cfg(feature = "native")]
+fn is_certificate_refusal(error: &ureq::Error) -> bool {
+    let refused = |inner: &rustls::Error| matches!(inner, rustls::Error::InvalidCertificate(_));
+    match error {
+        ureq::Error::Rustls(inner) => refused(inner),
+        ureq::Error::Io(io) => io
+            .get_ref()
+            .and_then(|inner| inner.downcast_ref::<rustls::Error>())
+            .is_some_and(refused),
+        _ => false,
+    }
+}
+
+#[cfg(feature = "native")]
+fn send_with(agent: &ureq::Agent, request: &Request) -> Result<Response, NetError> {
+    const MAX_BODY: u64 = 16 * 1024 * 1024;
+    let mut builder = ureq::http::Request::builder()
+        .method(request.method)
+        .uri(&request.url);
+    for (name, value) in &request.headers {
+        builder = builder.header(*name, value.as_str());
+    }
+    if let Some((kind, _)) = &request.body {
+        builder = builder.header("content-type", *kind);
+    }
+    let body = request
+        .body
+        .as_ref()
+        .map_or(&[][..], |(_, bytes)| bytes.as_slice());
+    let built = builder
+        .body(body)
+        .map_err(|_| NetError::Invalid("that request is not valid".into()))?;
+    let timeout = std::time::Duration::from_millis(request.timeout_ms);
+    let configured = agent
+        .configure_request(built)
+        .timeout_global(Some(timeout))
+        .build();
+    let mut answer = agent.run(configured).map_err(|error| {
+        if is_certificate_refusal(&error) {
+            NetError::Untrusted
+        } else {
+            NetError::Unreachable
         }
-        if let Some((kind, _)) = &request.body {
-            builder = builder.header("content-type", *kind);
+    })?;
+    let status = answer.status().as_u16();
+    let headers = answer
+        .headers()
+        .iter()
+        .filter_map(|(name, value)| Some((name.as_str().to_ascii_lowercase(), value.to_str().ok()?.to_owned())))
+        .collect();
+    let retry_after = answer
+        .headers()
+        .get("retry-after")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.trim().parse().ok());
+    let body = answer
+        .body_mut()
+        .with_config()
+        .limit(MAX_BODY)
+        .read_to_vec()
+        .map_err(|_| NetError::Unreachable)?;
+    Ok(Response {
+        status,
+        retry_after,
+        body,
+        headers,
+    })
+}
+
+#[cfg(feature = "native")]
+pub use pinned::{PinSeen, PinnedHttp, certificate_pin};
+
+/// Trust on first use for a server's own certificate, the kind almost every NAS on a
+/// home network makes for itself and no authority vouches for.
+#[cfg(feature = "native")]
+mod pinned {
+    use std::io::{Read, Write};
+    use std::sync::{Arc, Mutex};
+
+    use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+    use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
+    use rustls::{CertificateError, ClientConfig, ClientConnection, DigitallySignedStruct, SignatureScheme, StreamOwned};
+    use sha2::{Digest, Sha256};
+    use ureq::unversioned::resolver::DefaultResolver;
+    use ureq::unversioned::transport::{
+        Buffers, ConnectionDetails, Connector, Either, LazyBuffers, NextTimeout, TcpConnector, Transport,
+        TransportAdapter,
+    };
+
+    use super::{Http, NetError, Request, Response};
+
+    /// Called once, with the SHA-256 of the certificate the first connection saw.
+    pub type PinSeen = Box<dyn Fn([u8; 32]) + Send + Sync>;
+
+    /// SHA-256 of a certificate's DER encoding: what a pin holds.
+    pub fn certificate_pin(der: &[u8]) -> [u8; 32] {
+        Sha256::digest(der).into()
+    }
+
+    struct Pin {
+        /// None until a connection has seen one.
+        expected: Mutex<Option<[u8; 32]>>,
+        on_first_seen: PinSeen,
+    }
+
+    impl std::fmt::Debug for Pin {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("Pin").finish_non_exhaustive()
         }
-        let body = request
-            .body
-            .as_ref()
-            .map_or(&[][..], |(_, bytes)| bytes.as_slice());
-        let built = builder
-            .body(body)
-            .map_err(|_| NetError::Invalid("that request is not valid".into()))?;
-        let timeout = std::time::Duration::from_millis(request.timeout_ms);
-        let configured = self
-            .agent
-            .configure_request(built)
-            .timeout_global(Some(timeout))
-            .build();
-        let mut answer = self
-            .agent
-            .run(configured)
-            .map_err(|_| NetError::Unreachable)?;
-        let status = answer.status().as_u16();
-        let headers = answer
-            .headers()
-            .iter()
-            .filter_map(|(name, value)| Some((name.as_str().to_ascii_lowercase(), value.to_str().ok()?.to_owned())))
-            .collect();
-        let retry_after = answer
-            .headers()
-            .get("retry-after")
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.trim().parse().ok());
-        let body = answer
-            .body_mut()
-            .with_config()
-            .limit(MAX_BODY)
-            .read_to_vec()
-            .map_err(|_| NetError::Unreachable)?;
-        Ok(Response {
-            status,
-            retry_after,
-            body,
-            headers,
-        })
+    }
+
+    /// Accepts exactly one certificate. The name on it is not checked: the pin is the
+    /// whole certificate, and a NAS's own one names whatever the box was called the day
+    /// it made it, rarely the address typed in. The signature over the handshake still
+    /// is, so only whoever holds that certificate's key can answer.
+    #[derive(Debug)]
+    struct PinVerifier {
+        pin: Arc<Pin>,
+        algorithms: rustls::crypto::WebPkiSupportedAlgorithms,
+    }
+
+    impl ServerCertVerifier for PinVerifier {
+        fn verify_server_cert(
+            &self,
+            end_entity: &CertificateDer<'_>,
+            _intermediates: &[CertificateDer<'_>],
+            _server_name: &ServerName<'_>,
+            _ocsp_response: &[u8],
+            _now: UnixTime,
+        ) -> Result<ServerCertVerified, rustls::Error> {
+            let digest = certificate_pin(end_entity.as_ref());
+            let mut expected = self
+                .pin
+                .expected
+                .lock()
+                .map_err(|_| rustls::Error::General("pin lock".into()))?;
+            match *expected {
+                None => {
+                    *expected = Some(digest);
+                    (self.pin.on_first_seen)(digest);
+                    Ok(ServerCertVerified::assertion())
+                }
+                Some(pinned) if pinned == digest => Ok(ServerCertVerified::assertion()),
+                Some(_) => Err(rustls::Error::InvalidCertificate(CertificateError::ApplicationVerificationFailure)),
+            }
+        }
+
+        fn verify_tls12_signature(
+            &self,
+            message: &[u8],
+            cert: &CertificateDer<'_>,
+            dss: &DigitallySignedStruct,
+        ) -> Result<HandshakeSignatureValid, rustls::Error> {
+            rustls::crypto::verify_tls12_signature(message, cert, dss, &self.algorithms)
+        }
+
+        fn verify_tls13_signature(
+            &self,
+            message: &[u8],
+            cert: &CertificateDer<'_>,
+            dss: &DigitallySignedStruct,
+        ) -> Result<HandshakeSignatureValid, rustls::Error> {
+            rustls::crypto::verify_tls13_signature(message, cert, dss, &self.algorithms)
+        }
+
+        fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+            self.algorithms.supported_schemes()
+        }
+    }
+
+    /// Wraps the TCP connection in TLS checked against the pin.
+    #[derive(Debug)]
+    struct PinnedConnector {
+        config: Arc<ClientConfig>,
+    }
+
+    impl<In: Transport> Connector<In> for PinnedConnector {
+        type Out = Either<In, PinnedTransport>;
+
+        fn connect(&self, details: &ConnectionDetails, chained: Option<In>) -> Result<Option<Self::Out>, ureq::Error> {
+            let Some(transport) = chained else {
+                return Err(ureq::Error::Tls("no connection to wrap"));
+            };
+            if !details.needs_tls() || transport.is_tls() {
+                return Ok(Some(Either::A(transport)));
+            }
+            let host = details
+                .uri
+                .host()
+                .ok_or(ureq::Error::Tls("no host"))?
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .to_owned();
+            let name = ServerName::try_from(host).map_err(|_| ureq::Error::Tls("not a host name"))?;
+            let mut connection = ClientConnection::new(self.config.clone(), name)?;
+            let mut socket = TransportAdapter::new(transport.boxed(), details.current_time.clone());
+            socket.set_timeout(details.timeout);
+            connection.complete_io(&mut socket)?;
+            let buffers = LazyBuffers::new(details.config.input_buffer_size(), details.config.output_buffer_size());
+            Ok(Some(Either::B(PinnedTransport {
+                buffers,
+                stream: StreamOwned { conn: connection, sock: socket },
+            })))
+        }
+    }
+
+    struct PinnedTransport {
+        buffers: LazyBuffers,
+        stream: StreamOwned<ClientConnection, TransportAdapter>,
+    }
+
+    impl std::fmt::Debug for PinnedTransport {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("PinnedTransport").finish_non_exhaustive()
+        }
+    }
+
+    impl Transport for PinnedTransport {
+        fn buffers(&mut self) -> &mut dyn Buffers {
+            &mut self.buffers
+        }
+
+        fn transmit_output(&mut self, amount: usize, timeout: NextTimeout) -> Result<(), ureq::Error> {
+            self.stream.get_mut().set_timeout(timeout);
+            let output = &self.buffers.output()[..amount];
+            self.stream.write_all(output)?;
+            Ok(())
+        }
+
+        fn await_input(&mut self, timeout: NextTimeout) -> Result<bool, ureq::Error> {
+            self.stream.get_mut().set_timeout(timeout);
+            let input = self.buffers.input_append_buf();
+            let amount = self.stream.read(input)?;
+            self.buffers.input_appended(amount);
+            Ok(amount > 0)
+        }
+
+        fn is_open(&mut self) -> bool {
+            self.stream.get_mut().get_mut().is_open()
+        }
+
+        fn is_tls(&self) -> bool {
+            true
+        }
+    }
+
+    /// A blocking client that trusts one certificate, recorded the first time one is seen
+    /// when there is no pin yet. Otherwise the same as [`super::NativeHttp`]: no redirects,
+    /// and the same policy check by whoever holds it.
+    pub struct PinnedHttp {
+        agent: ureq::Agent,
+    }
+
+    impl std::fmt::Debug for PinnedHttp {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("PinnedHttp").finish_non_exhaustive()
+        }
+    }
+
+    impl PinnedHttp {
+        /// Trusts `expected`, or the first certificate seen when it is None, which
+        /// `on_first_seen` is then told about to store. Fails only when the TLS library
+        /// offers no protocol version, which is a build problem.
+        pub fn new(expected: Option<[u8; 32]>, on_first_seen: PinSeen) -> Result<Self, NetError> {
+            let provider = Arc::new(rustls::crypto::ring::default_provider());
+            let verifier = PinVerifier {
+                pin: Arc::new(Pin {
+                    expected: Mutex::new(expected),
+                    on_first_seen,
+                }),
+                algorithms: provider.signature_verification_algorithms,
+            };
+            let config = ClientConfig::builder_with_provider(provider)
+                .with_safe_default_protocol_versions()
+                .map_err(|_| NetError::Invalid("no TLS version is available".into()))?
+                .dangerous()
+                .with_custom_certificate_verifier(Arc::new(verifier))
+                .with_no_client_auth();
+            let connector = PinnedConnector { config: Arc::new(config) };
+            let agent = ureq::Agent::with_parts(
+                super::agent_config(),
+                TcpConnector::default().chain(connector),
+                DefaultResolver::default(),
+            );
+            Ok(Self { agent })
+        }
+    }
+
+    impl Http for PinnedHttp {
+        fn send(&self, request: &Request) -> Result<Response, NetError> {
+            super::send_with(&self.agent, request)
+        }
     }
 }
 
@@ -341,10 +598,19 @@ pub mod fake {
 
     use super::{Http, NetError, Request, Response};
 
+    #[derive(Debug)]
+    struct Canned {
+        prefix: String,
+        response: Response,
+        /// Answers one request, then is gone, so a flow can see a different answer the
+        /// second time it asks the same address.
+        once: bool,
+    }
+
     /// Answers by address prefix and records what was asked.
     #[derive(Debug, Default)]
     pub struct FakeHttp {
-        answers: Vec<(String, u16, Vec<u8>)>,
+        answers: Mutex<Vec<Canned>>,
         /// Every request made.
         pub asked: Mutex<Vec<Request>>,
     }
@@ -355,12 +621,39 @@ pub mod fake {
             Self::default()
         }
 
+        fn push(self, prefix: &str, status: u16, body: &[u8], headers: &[(&str, &str)], once: bool) -> Self {
+            let response = Response {
+                status,
+                retry_after: None,
+                body: body.to_vec(),
+                headers: headers
+                    .iter()
+                    .map(|(name, value)| (name.to_ascii_lowercase(), (*value).to_owned()))
+                    .collect(),
+            };
+            if let Ok(mut answers) = self.answers.lock() {
+                answers.push(Canned { prefix: prefix.to_owned(), response, once });
+            }
+            self
+        }
+
         /// Adds an answer. The first matching prefix wins.
         #[must_use]
-        pub fn answer(mut self, prefix: &str, status: u16, body: &str) -> Self {
-            self.answers
-                .push((prefix.to_owned(), status, body.as_bytes().to_vec()));
-            self
+        pub fn answer(self, prefix: &str, status: u16, body: &str) -> Self {
+            self.push(prefix, status, body.as_bytes(), &[], false)
+        }
+
+        /// Adds an answer with headers, such as a `Location` or a `Content-Type`.
+        #[must_use]
+        pub fn answer_with(self, prefix: &str, status: u16, body: &[u8], headers: &[(&str, &str)]) -> Self {
+            self.push(prefix, status, body, headers, false)
+        }
+
+        /// Adds an answer that is used for one request and then dropped. Put it before
+        /// the lasting answer for the same prefix.
+        #[must_use]
+        pub fn answer_once(self, prefix: &str, status: u16, body: &str) -> Self {
+            self.push(prefix, status, body.as_bytes(), &[], true)
         }
 
         /// The most recent request.
@@ -377,16 +670,16 @@ pub mod fake {
             if let Ok(mut asked) = self.asked.lock() {
                 asked.push(request.clone());
             }
-            self.answers
+            let mut answers = self.answers.lock().map_err(|_| NetError::Unreachable)?;
+            let index = answers
                 .iter()
-                .find(|(prefix, _, _)| request.url.starts_with(prefix.as_str()))
-                .map(|(_, status, body)| Response {
-                    status: *status,
-                    retry_after: None,
-                    body: body.clone(),
-                    headers: Vec::new(),
-                })
-                .ok_or(NetError::Unreachable)
+                .position(|canned| request.url.starts_with(canned.prefix.as_str()))
+                .ok_or(NetError::Unreachable)?;
+            if answers[index].once {
+                Ok(answers.remove(index).response)
+            } else {
+                Ok(answers[index].response.clone())
+            }
         }
     }
 }
@@ -498,5 +791,84 @@ mod tests {
             ..Response::default()
         };
         assert_eq!(limited.ok().err(), Some(NetError::RateLimited(Some(6))));
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "native")]
+mod pinned_tests {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::{Arc, Mutex};
+
+    use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
+
+    use super::*;
+
+    const CERT_A: &[u8] = include_bytes!("../testdata/cert-a.der");
+    const KEY_A: &[u8] = include_bytes!("../testdata/key-a.der");
+    const CERT_B: &[u8] = include_bytes!("../testdata/cert-b.der");
+    const KEY_B: &[u8] = include_bytes!("../testdata/key-b.der");
+
+    /// A TLS server on this device that answers every request with `ok`.
+    fn serve(cert: &'static [u8], key: &'static [u8]) -> String {
+        let provider = Arc::new(rustls::crypto::ring::default_provider());
+        let config = rustls::ServerConfig::builder_with_provider(provider)
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_no_client_auth()
+            .with_single_cert(
+                vec![CertificateDer::from(cert)],
+                PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key)),
+            )
+            .unwrap();
+        let config = Arc::new(config);
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for socket in listener.incoming().flatten() {
+                let Ok(connection) = rustls::ServerConnection::new(config.clone()) else { continue };
+                let mut tls = rustls::StreamOwned::new(connection, socket);
+                let mut seen = Vec::new();
+                let mut buffer = [0u8; 1024];
+                while !seen.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match tls.read(&mut buffer) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => seen.extend_from_slice(&buffer[..n]),
+                    }
+                }
+                let _ = tls.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok");
+                tls.conn.send_close_notify();
+                let _ = tls.flush();
+            }
+        });
+        format!("https://127.0.0.1:{port}/")
+    }
+
+    #[test]
+    fn the_first_certificate_is_recorded_and_then_only_it_is_trusted() {
+        let url = serve(CERT_A, KEY_A);
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let record = seen.clone();
+        let http = PinnedHttp::new(None, Box::new(move |pin| record.lock().unwrap().push(pin))).unwrap();
+        assert_eq!(http.send(&Request::get(&url)).unwrap().body, b"ok");
+        assert_eq!(http.send(&Request::get(&url)).unwrap().status, 200);
+        assert_eq!(*seen.lock().unwrap(), vec![certificate_pin(CERT_A)], "recorded once, on first use");
+
+        let pinned = PinnedHttp::new(Some(certificate_pin(CERT_A)), Box::new(|_| panic!("already pinned"))).unwrap();
+        assert_eq!(pinned.send(&Request::get(&url)).unwrap().body, b"ok");
+    }
+
+    #[test]
+    fn a_changed_certificate_is_refused_as_untrusted() {
+        let url = serve(CERT_B, KEY_B);
+        let pinned = PinnedHttp::new(Some(certificate_pin(CERT_A)), Box::new(|_| panic!("already pinned"))).unwrap();
+        assert_eq!(pinned.send(&Request::get(&url)).err(), Some(NetError::Untrusted));
+    }
+
+    #[test]
+    fn the_ordinary_client_refuses_a_self_made_certificate_as_untrusted() {
+        let url = serve(CERT_A, KEY_A);
+        assert_eq!(NativeHttp::default().send(&Request::get(&url)).err(), Some(NetError::Untrusted));
     }
 }
