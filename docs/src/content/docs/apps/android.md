@@ -21,6 +21,8 @@ For Wi-Fi, tap **Fill in from a QR code** and scan the code Android's Wi-Fi sett
 
 **Pick a network saved on this phone** fills the item from a network Android already knows, password included, and Import has **Wi-Fi saved on this phone** to add several at once. Android keeps those passwords from apps, so this goes through [Shizuku](https://shizuku.rikka.app/), which you install and start yourself and which asks once whether WM Pass may use it. WM Pass uses it only to read saved networks, and only when you open one of these. The way of asking comes from [wifi-password-manager](https://github.com/Khh-vu/wifi-password-manager).
 
+For a payment card, tap **Scan the card** and hold the card inside the frame. The number fills in once two camera frames agree on it and it passes the checksum every card number carries, and it stays visible so you can compare it with the card. Type the expiry date and the name on the card yourself: the reader is Stripe's CardScan digit model (MIT), trained on card numbers alone. It runs on the phone in every build, including F-Droid's, and no frame is kept or sent anywhere.
+
 ## Tags
 
 Tags show as chips on the item's page. The cross on a chip takes the tag off that item. Holding a chip renames the tag, gives it an icon or deletes it, on every item that has it. Below them, WM Pass suggests tags from the site, such as Banking or Social, and for a code also Authenticator.

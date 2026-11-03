@@ -30,6 +30,27 @@ internal object Native {
     /** A hardware key operation, over [device]. Blocks until the key has answered. */
     external fun hardware(method: String, factor: String, device: HwDevice): Array<Any?>
 
+    /** Loads the card reader from its model's bytes. False when it will not load. */
+    external fun cardOpen(model: ByteArray): Boolean
+
+    /**
+     * One RGBA camera frame for the card reader. Null until two frames agree on a number, then
+     * `{ByteArray number, String? expiry}`. [crop] is the card's left, top, right and bottom as
+     * fractions of the upright frame.
+     */
+    external fun cardFrame(
+        pixels: ByteArray,
+        width: Int,
+        height: Int,
+        rowStride: Int,
+        rotation: Int,
+        crop: FloatArray,
+        nowMs: Long,
+    ): Array<Any?>?
+
+    /** Drops the card reader and every number it read. */
+    external fun cardClose()
+
     /** Returns `{String json, ByteArray? secret, Array<ByteArray> blobs}`. */
     external fun call(
         method: String,

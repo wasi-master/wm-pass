@@ -208,9 +208,9 @@ private fun CameraFeed(onCode: (String) -> Unit) {
     )
 }
 
-/** A window cut out of a dimmed picture, with a line sweeping it. */
+/** A window cut out of a dimmed picture, with a line sweeping it. Square, or [aspect] wide to one tall. */
 @Composable
-private fun Viewfinder() {
+internal fun Viewfinder(aspect: Float = 1f) {
     val colors = palette
     val sweep by rememberInfiniteTransition(label = "sweep").animateFloat(
         0f,
@@ -219,15 +219,22 @@ private fun Viewfinder() {
         label = "line",
     )
     Canvas(Modifier.fillMaxSize().graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }) {
-        val side = size.minDimension * 0.68f
-        val at = Offset((size.width - side) / 2, (size.height - side) / 2)
-        val radius = CornerRadius(30.dp.toPx())
+        val window = finderSize(size.width, size.height, aspect)
+        val at = Offset((size.width - window.width) / 2, (size.height - window.height) / 2)
+        val radius = CornerRadius((if (aspect == 1f) 30.dp else 18.dp).toPx())
         drawRect(Color.Black.copy(alpha = 0.58f))
-        drawRoundRect(Color.Black, at, Size(side, side), radius, blendMode = BlendMode.Clear)
-        drawRoundRect(colors.primary, at, Size(side, side), radius, style = Stroke(3.dp.toPx()))
-        val y = at.y + 18.dp.toPx() + (side - 36.dp.toPx()) * sweep
-        drawLine(colors.primary, Offset(at.x + 18.dp.toPx(), y), Offset(at.x + side - 18.dp.toPx(), y), 2.dp.toPx(), StrokeCap.Round)
+        drawRoundRect(Color.Black, at, window, radius, blendMode = BlendMode.Clear)
+        drawRoundRect(colors.primary, at, window, radius, style = Stroke(3.dp.toPx()))
+        val y = at.y + 18.dp.toPx() + (window.height - 36.dp.toPx()) * sweep
+        drawLine(colors.primary, Offset(at.x + 18.dp.toPx(), y), Offset(at.x + window.width - 18.dp.toPx(), y), 2.dp.toPx(), StrokeCap.Round)
     }
+}
+
+/** The window [Viewfinder] cuts, centered in a [width] by [height] view. */
+internal fun finderSize(width: Float, height: Float, aspect: Float): Size {
+    if (aspect == 1f) return (minOf(width, height) * 0.68f).let { Size(it, it) }
+    val wide = minOf(width * 0.9f, height * 0.6f * aspect)
+    return Size(wide, wide / aspect)
 }
 
 /** Every QR code in a picture, such as a screenshot of another app's export. Empty when there is none. */

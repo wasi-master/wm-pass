@@ -64,6 +64,8 @@ android {
     androidResources { ignoreAssetsPatterns += "*.md" }
     sourceSets["main"].assets.directories.add("../../data/brands")
     sourceSets["main"].assets.directories.add("../../data/passkeys")
+    // The card scanner's digit detector and its license.
+    sourceSets["main"].assets.directories.add("../../data/cardscan")
     // The offline build drops the permission, so no line of code can reach a network.
     if (providers.gradleProperty("wmpass.offline").orNull == "true") {
         sourceSets["main"].manifest.srcFile("src/offline/AndroidManifest.xml")

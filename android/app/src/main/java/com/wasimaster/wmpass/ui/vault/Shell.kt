@@ -129,6 +129,9 @@ class Shell(
 
     /** Who gets the next QR code scanned. Setting it opens the scanner over whatever is showing. */
     var scanTarget by mutableStateOf<((String) -> Unit)?>(null)
+
+    /** Who gets the next payment card read. Setting it opens the card scanner the same way. */
+    var cardTarget by mutableStateOf<((com.wasimaster.wmpass.core.CardReader.Read) -> Unit)?>(null)
     val selection = mutableStateListOf<String>()
 
     /** The label of the last plain value copied, for the capsule. */
@@ -429,6 +432,15 @@ fun VaultShell(prefs: Prefs) {
                         target(text)
                     },
                     onClose = { shell.scanTarget = null },
+                )
+            }
+            shell.cardTarget?.let { target ->
+                CardScanDialog(
+                    onCard = { read ->
+                        shell.cardTarget = null
+                        target(read)
+                    },
+                    onClose = { shell.cardTarget = null },
                 )
             }
         }

@@ -21,6 +21,7 @@ all = { level = "deny", priority = -1 }
 [dependencies]
 wmpass-session = { path = "../wmpass-session", features = ["net"] }
 wmpass-hwkey = { path = "../wmpass-hwkey" }
+wmpass-cardscan = { path = "../wmpass-cardscan" }
 wmpass-core.workspace = true
 serde_json.workspace = true
 jni = { version = "0.21", default-features = false }
