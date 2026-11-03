@@ -115,6 +115,10 @@ dependencies {
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
     implementation(libs.zxing.core)
+    // Saved Wi-Fi passwords, read through Shizuku only when asked. Both Apache-2.0.
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
+    implementation("org.lsposed.hiddenapibypass:hiddenapibypass:6.2")
     implementation("androidx.work:work-runtime-ktx:2.12.0")
 
     testImplementation(libs.junit)

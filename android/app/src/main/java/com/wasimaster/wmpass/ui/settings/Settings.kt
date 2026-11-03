@@ -1051,6 +1051,37 @@ private fun ImportScreen() {
         }
     }
     val browser = androidx.compose.ui.platform.LocalUriHandler.current
+    var savedWifi by remember { mutableStateOf(false) }
+    if (savedWifi) {
+        com.wasimaster.wmpass.ui.vault.SavedWifiSheet({ savedWifi = false }, onAddAll = { networks ->
+            shell.launch {
+                networks.forEach { network ->
+                    val id = Pass.change("entry.create") {
+                        put("kind", "wifi")
+                        put("title", network.ssid)
+                        put(
+                            "fields",
+                            kotlinx.serialization.json.buildJsonObject {
+                                put("ssid", network.ssid)
+                                put("security", network.security)
+                                put("hidden_ssid", network.hidden)
+                            },
+                        )
+                    }.obj["id"]!!.jsonPrimitive.content
+                    if (network.password.isNotEmpty()) {
+                        val bytes = network.password.toByteArray()
+                        Pass.change("entry.set_secret", secret = bytes) {
+                            put("id", id)
+                            put("field", "password")
+                        }
+                        bytes.fill(0)
+                    }
+                }
+                shell.haptics.confirm()
+                result = if (networks.size == 1) "Added 1 Wi-Fi network." else "Added ${networks.size} Wi-Fi networks."
+            }
+        })
+    }
     WmScreen("Import", route = "settings/import", onBack = back()) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val shown = preview
@@ -1109,6 +1140,7 @@ private fun ImportScreen() {
                     error?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
                     PrimaryButton("Choose a file", Modifier.fillMaxWidth(), icon = PassIcons.FileOpen) { pick.launch(arrayOf("*/*")) }
                     QuietButton("Scan Google Authenticator's code", Modifier.fillMaxWidth(), PassIcons.QrCodeScanner, colors.primary) { scanCode() }
+                    QuietButton("Wi-Fi saved on this phone", Modifier.fillMaxWidth(), PassIcons.Wifi, colors.primary) { savedWifi = true }
                     Text("Delete the exported file afterwards. It holds your passwords in plain text.", color = colors.textLow, style = MaterialTheme.typography.bodySmall)
                     QuietButton("How to export from your old app", Modifier.fillMaxWidth(), PassIcons.OpenInNew) {
                         runCatching { browser.openUri(ExportGuide) }

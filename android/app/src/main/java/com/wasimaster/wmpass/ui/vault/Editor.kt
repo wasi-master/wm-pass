@@ -180,7 +180,6 @@ private fun applyWifi(text: String, fields: List<EditField>, title: TextFieldSta
             else -> (if (inValue) value else key).append(c)
         }
     }
-    val ssid = parts["S"].orEmpty()
     val security = when (parts["T"]?.uppercase()) {
         "WPA", "WPA2" -> "wpa"
         "SAE", "WPA3" -> "sae"
@@ -188,15 +187,19 @@ private fun applyWifi(text: String, fields: List<EditField>, title: TextFieldSta
         "WPA2-EAP", "EAP" -> "eap"
         else -> if (parts["P"].isNullOrEmpty()) "open" else "wpa"
     }
+    fillWifi(fields, title, parts["S"].orEmpty(), security, parts["P"].orEmpty(), parts["H"].equals("true", ignoreCase = true))
+    return true
+}
+
+private fun fillWifi(fields: List<EditField>, title: TextFieldState, ssid: String, security: String, password: String, hidden: Boolean) {
     fields.firstOrNull { it.spec.key == "ssid" }?.text?.setTextAndPlaceCursorAtEnd(ssid)
     fields.firstOrNull { it.spec.key == "security" }?.text?.setTextAndPlaceCursorAtEnd(security)
     fields.firstOrNull { it.spec.key == "password" }?.let { field ->
-        field.text.setTextAndPlaceCursorAtEnd(parts["P"].orEmpty())
+        field.text.setTextAndPlaceCursorAtEnd(password)
         field.loaded = true
     }
-    fields.firstOrNull { it.spec.key == "hidden_ssid" }?.let { it.flag = parts["H"].equals("true", ignoreCase = true) }
+    fields.firstOrNull { it.spec.key == "hidden_ssid" }?.let { it.flag = hidden }
     if (title.text.isEmpty() && ssid.isNotEmpty()) title.setTextAndPlaceCursorAtEnd(ssid)
-    return true
 }
 
 /** Values people type often, offered under the field as it is filled. */
@@ -639,6 +642,8 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                                         if (!applyWifi(text, fields, title)) shell.notice("That code is not a Wi-Fi network")
                                     }
                                 }
+                                Hairline()
+                                AddLine("Pick a network saved on this phone", PassIcons.Wifi) { sheet = "savedwifi" }
                             }
                         }
                     }
@@ -1015,6 +1020,9 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                 }
             }
         }
+        "savedwifi" -> SavedWifiSheet({ sheet = null }, onPick = { network ->
+            fillWifi(fields, title, network.ssid, network.security, network.password, network.hidden)
+        })
         "folder" -> FolderSheet(folder, { sheet = null }) { folder = it }
         "colour" -> ColourSheet(color, { sheet = null }) { color = it }
         "icon" -> {

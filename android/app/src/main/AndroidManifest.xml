@@ -23,6 +23,8 @@
         <package android:name="com.wasimaster.wmkeyboard" />
         <package android:name="com.wasimaster.wmkeyboard.debug" />
         <package android:name="com.wasimaster.wmkeyboard.fast" />
+        <!-- Shizuku, to say whether it needs installing or only starting. -->
+        <package android:name="moe.shizuku.privileged.api" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
@@ -181,5 +183,13 @@
             </intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/quick_widget" />
         </receiver>
+        <!-- Where Shizuku hands over its binder. Only the system may call it. -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:enabled="true"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
     </application>
 </manifest>

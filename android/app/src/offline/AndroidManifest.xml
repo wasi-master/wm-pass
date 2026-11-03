@@ -16,6 +16,20 @@
     <uses-feature android:name="android.hardware.nfc" android:required="false" />
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />
 
+    <!-- The apps a launcher shows, so a login can be tied to one from a list. Nothing about them is sent anywhere. -->
+    <queries>
+        <!-- WM Keyboard, so its fill setting can start on when it is installed. -->
+        <package android:name="com.wasimaster.wmkeyboard" />
+        <package android:name="com.wasimaster.wmkeyboard.debug" />
+        <package android:name="com.wasimaster.wmkeyboard.fast" />
+        <!-- Shizuku, to say whether it needs installing or only starting. -->
+        <package android:name="moe.shizuku.privileged.api" />
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <!-- allowBackup off: a vault leaves this phone only by the owner's hand. -->
     <application
         android:name=".app.PassApplication"
@@ -139,5 +153,13 @@
             </intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/quick_widget" />
         </receiver>
+        <!-- Where Shizuku hands over its binder. Only the system may call it. -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:enabled="true"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
     </application>
 </manifest>
