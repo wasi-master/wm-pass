@@ -2,7 +2,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import type { Host, MenuItem, PlaceFile } from '$ui/engine/host';
+import type { Host, MenuItem, PlaceFile, PlacesHost } from '$ui/engine/host';
 import { prefs } from '$ui/engine/prefs.svelte';
 
 const encoder = new TextEncoder();
@@ -33,7 +33,6 @@ export async function desktopHost(): Promise<Host> {
     pendingMenu?.(event.payload);
     pendingMenu = null;
   });
-  const online = () => prefs.v.network_allowed;
 
   return {
     kind: 'desktop',
@@ -82,14 +81,7 @@ export async function desktopHost(): Promise<Host> {
       void invoke('state_changed', { unlocked, handle: handle ?? 0 });
     },
     setScreenProtection: (on) => invoke('set_screen_protection', { on }),
-    places: {
-      kinds: ['folder', 'webdav', 's3'],
-      list: (place) => invoke('places_list', { place, online: online() }),
-      read: (place, file: PlaceFile) => rawCall('places_read', { place, online: online(), file }),
-      write: (place, name, bytes) => invoke('places_write', packed({ place, online: online(), name }, bytes)),
-      remove: (place, file) => invoke('places_remove', { place, online: online(), file }),
-      chooseFolder: () => invoke('places_choose_folder'),
-    },
+    places,
     hardware: {
       async tap(kind, factor) {
         const { decodeReply } = await import('$ui/engine/frame');
@@ -138,3 +130,26 @@ export async function desktopHost(): Promise<Host> {
     },
   };
 }
+
+// Places outside this computer. A run can change a place (a rotated token, a first host key);
+// the shell holds those changes until they are collected here and saved with the place.
+async function collected<T>(run: Promise<T>): Promise<T> {
+  try {
+    return await run;
+  } finally {
+    const updates: [string, Record<string, unknown>][] = await invoke('places_updates');
+    for (const [id, extra] of updates) places.onUpdate?.(id, extra);
+  }
+}
+
+const places: PlacesHost = {
+  kinds: ['folder', 'webdav', 's3'],
+  list: (place) => collected(invoke('places_list', { place, online: prefs.v.network_allowed })),
+  read: (place, file: PlaceFile) => collected(rawCall('places_read', { place, online: prefs.v.network_allowed, file })),
+  write: (place, name, bytes) => collected(invoke('places_write', packed({ place, online: prefs.v.network_allowed, name }, bytes))),
+  remove: (place, file) => collected(invoke('places_remove', { place, online: prefs.v.network_allowed, file })),
+  chooseFolder: () => invoke('places_choose_folder'),
+  signIn: (place, step) => invoke('places_sign_in', { place, step, online: prefs.v.network_allowed }),
+};
+
+void invoke<string[]>('places_kinds').then((kinds) => (places.kinds = kinds));

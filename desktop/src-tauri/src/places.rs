@@ -1,29 +1,28 @@
 //! Places outside this computer, through the shared sink code. The page says what to do; the
 //! order backups and syncs do things in lives on its side, so every platform does the same.
+//!
+//! Which kind does what is `wmpass_sinks::places`, shared with the browser extension. What a
+//! run changes about a place (a rotated token, a first host key or certificate) waits here
+//! until the page collects it with `places_updates` and saves it with the place.
+
+use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
-use wmpass_core::Secret;
+use serde_json::{Map, Value};
 use wmpass_net::http::{NativeHttp, NetPolicy};
-use wmpass_sinks::folder::Folder;
+use wmpass_sinks::Stored;
 use wmpass_sinks::http::{Blocking, Client, block_on};
-use wmpass_sinks::s3::{S3, S3Config};
-use wmpass_sinks::webdav::WebDav;
-use wmpass_sinks::{Sink, Stored};
+use wmpass_sinks::places::{self, App, Apps, Done, Op};
 
-#[derive(Deserialize, Default, Clone)]
-#[serde(default)]
-pub struct Place {
-    pub kind: String,
-    pub path: String,
-    pub url: String,
-    pub user: String,
-    pub password: String,
-    pub endpoint: String,
-    pub region: String,
-    pub bucket: String,
-    pub prefix: String,
-    pub access_key: String,
-    pub secret_key: String,
+/// A place as the page stores it. Kept as JSON: each kind reads its own fields.
+#[derive(Deserialize, Clone)]
+#[serde(transparent)]
+pub struct Place(Value);
+
+impl Place {
+    fn id(&self) -> String {
+        self.0.get("id").and_then(Value::as_str).unwrap_or_default().to_owned()
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -46,52 +45,86 @@ impl From<&PlaceFile> for Stored {
     }
 }
 
-/// Runs one operation against whichever kind of place this is.
-macro_rules! on_sink {
-    ($place:expr, $online:expr, |$sink:ident| $body:expr) => {{
-        let place: &Place = $place;
-        let policy = if $online { NetPolicy::Any } else { NetPolicy::Offline };
-        let http = NativeHttp::default();
-        let client = Client::new(Blocking(&http), policy);
-        match place.kind.as_str() {
-            "folder" => {
-                let $sink = Folder::new(&place.path);
-                block_on(async { $body.await }).map_err(|fault| fault.to_string())
-            }
-            "webdav" => {
-                let $sink = WebDav::new(client, &place.url, &place.user, &Secret::new(place.password.as_str()));
-                block_on(async { $body.await }).map_err(|fault| fault.to_string())
-            }
-            "s3" => {
-                let config = S3Config {
-                    endpoint: place.endpoint.clone(),
-                    region: place.region.clone(),
-                    bucket: place.bucket.clone(),
-                    prefix: place.prefix.clone(),
-                    access_key: place.access_key.clone(),
-                };
-                let $sink = S3::new(client, config, Secret::new(place.secret_key.as_str()), crate::engine::now_ms());
-                block_on(async { $body.await }).map_err(|fault| fault.to_string())
-            }
-            _ => Err("this kind of place is not available here".to_owned()),
-        }
-    }};
+fn app(id: Option<&'static str>, secret: Option<&'static str>) -> App {
+    App { id: id.unwrap_or_default(), secret: secret.unwrap_or_default() }
+}
+
+/// The ids this build was given (see build.rs). Google's desktop clients come with a secret
+/// that Google requires even alongside PKCE.
+pub fn apps() -> Apps {
+    Apps {
+        drive: app(option_env!("WMPASS_DRIVE_DESKTOP_CLIENT_ID"), option_env!("WMPASS_DRIVE_DESKTOP_SECRET")),
+        dropbox: app(option_env!("WMPASS_DROPBOX_APP_KEY"), None),
+        onedrive: app(option_env!("WMPASS_ONEDRIVE_CLIENT_ID"), None),
+        boxcloud: app(option_env!("WMPASS_BOX_CLIENT_ID"), option_env!("WMPASS_BOX_CLIENT_SECRET")),
+    }
+}
+
+static UPDATES: Mutex<Vec<(String, Map<String, Value>)>> = Mutex::new(Vec::new());
+
+fn run(place: &Place, online: bool, op: Op<'_>) -> Result<Done, String> {
+    let policy = if online { NetPolicy::Any } else { NetPolicy::Offline };
+    let http = NativeHttp::default();
+    let parsed = places::Place::from_json(&place.0);
+    let ran = block_on(places::run(|| Client::new(Blocking(&http), policy), &apps(), &parsed, op, crate::engine::now_ms()));
+    if !ran.update.is_empty()
+        && let Ok(mut pending) = UPDATES.lock()
+    {
+        pending.push((place.id(), ran.update));
+    }
+    ran.done.map_err(|fault| fault.to_string())
 }
 
 pub fn list(place: &Place, online: bool) -> Result<Vec<PlaceFile>, String> {
-    on_sink!(place, online, |sink| sink.list()).map(|files| files.into_iter().map(PlaceFile::from).collect())
+    match run(place, online, Op::List)? {
+        Done::Files(files) => Ok(files.into_iter().map(PlaceFile::from).collect()),
+        _ => Ok(Vec::new()),
+    }
 }
 
 pub fn read(place: &Place, online: bool, file: &PlaceFile) -> Result<Vec<u8>, String> {
     let stored = Stored::from(file);
-    on_sink!(place, online, |sink| sink.read(&stored))
+    match run(place, online, Op::Read(&stored))? {
+        Done::Bytes(bytes) => Ok(bytes),
+        _ => Err("the place answered with no file".to_owned()),
+    }
 }
 
 pub fn write(place: &Place, online: bool, name: &str, bytes: &[u8]) -> Result<(), String> {
-    on_sink!(place, online, |sink| sink.write(name, bytes)).map(|_| ())
+    run(place, online, Op::Write(name, bytes)).map(|_| ())
 }
 
 pub fn remove(place: &Place, online: bool, file: &PlaceFile) -> Result<(), String> {
     let stored = Stored::from(file);
-    on_sink!(place, online, |sink| sink.delete(&stored))
+    run(place, online, Op::Delete(&stored)).map(|_| ())
+}
+
+/// What runs changed about places since the page last asked: `[[id, fields of extra]]`.
+#[tauri::command]
+pub fn places_updates() -> Vec<(String, Map<String, Value>)> {
+    UPDATES.lock().map(|mut pending| std::mem::take(&mut *pending)).unwrap_or_default()
+}
+
+/// The kinds this build can reach. A browser sign-in needs an app id it was built with.
+#[tauri::command]
+pub fn places_kinds() -> Vec<&'static str> {
+    let apps = apps();
+    places::kinds()
+        .into_iter()
+        .filter(|kind| match *kind {
+            "drive" => !apps.drive.id.is_empty(),
+            "dropbox" => !apps.dropbox.id.is_empty(),
+            "onedrive" => !apps.onedrive.id.is_empty(),
+            "box" => !apps.boxcloud.id.is_empty(),
+            _ => true,
+        })
+        .collect()
+}
+
+/// One step of signing in to an account place. See `signin`.
+#[tauri::command]
+pub async fn places_sign_in(place: Value, step: Value, online: bool) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::signin::step(&place, &step, online))
+        .await
+        .map_err(|error| error.to_string())?
 }

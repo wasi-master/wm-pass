@@ -18,5 +18,16 @@ fn main() {
         "the relay program is missing: run `node scripts/build-host.mjs`"
     );
     println!("cargo:rerun-if-changed=binaries");
+    // App ids for the cloud places' browser sign-in, read with option_env! in signin.rs.
+    for name in [
+        "WMPASS_DROPBOX_APP_KEY",
+        "WMPASS_ONEDRIVE_CLIENT_ID",
+        "WMPASS_BOX_CLIENT_ID",
+        "WMPASS_BOX_CLIENT_SECRET",
+        "WMPASS_DRIVE_DESKTOP_CLIENT_ID",
+        "WMPASS_DRIVE_DESKTOP_SECRET",
+    ] {
+        println!("cargo:rerun-if-env-changed={name}");
+    }
     tauri_build::build();
 }

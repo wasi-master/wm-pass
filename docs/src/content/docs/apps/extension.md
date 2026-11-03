@@ -29,6 +29,6 @@ From then on the extension uses the vault open in the app, so you unlock once. T
 
 ## What it cannot do
 
-Breach checks, aliases and other network features are in the desktop and phone apps only. Hardware keys are not available in the extension's own vault; connect to the desktop app to use one. Backups and sync work with WebDAV and S3 destinations.
+Breach checks, aliases and other network features are in the desktop and phone apps only. Hardware keys are not available in the extension's own vault; connect to the desktop app to use one. Backups and sync work with WebDAV, S3, Google Drive, Dropbox, OneDrive and Box; a browser cannot open the raw connections SFTP, SMB or NFS need, so those stay with the desktop and phone apps.
 
 The browser can stop the extension's background at any quiet moment. Your main vault comes back open, since its key stays in the browser's memory until you lock or close the browser, but a nested vault locks.

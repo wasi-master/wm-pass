@@ -12,6 +12,7 @@ mod engine;
 mod hardware;
 mod menu;
 mod places;
+mod signin;
 mod sealed;
 mod store;
 
@@ -821,6 +822,9 @@ fn main() {
             places_write,
             places_remove,
             places_choose_folder,
+            places::places_updates,
+            places::places_kinds,
+            places::places_sign_in,
             hardware_tap,
             device_name,
             local_address,

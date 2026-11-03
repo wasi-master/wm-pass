@@ -23,6 +23,7 @@ pub mod nfs;
 pub mod oauth;
 pub mod onedrive;
 pub mod pcloud;
+pub mod places;
 pub mod proton;
 pub mod routines;
 pub mod s3;

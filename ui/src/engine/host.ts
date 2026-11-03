@@ -104,7 +104,25 @@ export interface PlacesHost {
   write(place: unknown, name: string, bytes: Uint8Array): Promise<void>;
   remove(place: unknown, file: PlaceFile): Promise<void>;
   chooseFolder(): Promise<string | null>;
+  /**
+   * One step of signing in to an account place: through the service's page in the browser, or
+   * with the place's password and then any code asked for. Answers what to keep with the place,
+   * or what to ask for next and the opaque state to send back with it.
+   */
+  signIn?(place: unknown, step: SignInStep): Promise<SignInAnswer>;
+  /** Set by the places store: where a run reports a rotated token, a first host key or certificate. */
+  onUpdate?: (id: string, extra: Record<string, unknown>) => void;
 }
+
+export interface SignInStep {
+  code?: string;
+  mailbox_password?: string;
+  pending?: string;
+}
+
+export type SignInAnswer =
+  | { extra: Record<string, unknown> }
+  | { needs: 'code' | 'mailbox_password' | 'approval' | 'captcha'; pending?: string; by_sms?: boolean };
 
 /** Security keys, where the shell can reach them. */
 export interface HardwareHost {
