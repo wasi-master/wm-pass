@@ -108,8 +108,11 @@ class Accounts {
     });
   }
 
-  /** Signs in to a Bitwarden-compatible server, or opens the offline copy if there is one. */
-  private async openBitwarden(ref: AccountRef, password: Uint8Array, code: string | null) {
+  /**
+   * Signs in to a Bitwarden-compatible server, or opens the offline copy if there is one. `code` is
+   * a two-step code, or with `deviceCode` the one Bitwarden emails to confirm a new device.
+   */
+  private async openBitwarden(ref: AccountRef, password: Uint8Array, code: string | null, deviceCode: boolean) {
     if (!host().network) throw Object.assign(new Error('This shell cannot reach a server.'), { code: 'network' });
     const cachePath = `${FOLDER}/${ref.id}.cache`;
     const hasCache = (await host().listFiles(FOLDER)).some((f) => f.name === `${ref.id}.cache`);
@@ -122,7 +125,7 @@ class Accounts {
           )
         : await pass.engine(
             'bitwarden.login',
-            { server: ref.server, region: ref.region, email: ref.email, device: this.deviceId(), ...(code ? { code } : {}) },
+            { server: ref.server, region: ref.region, email: ref.email, device: this.deviceId(), ...(code ? { [deviceCode ? 'device_code' : 'code']: code } : {}) },
             { secret: password, online: online() },
           );
     await pass.adoptAccount(ref.id, reply, (bytes) => host().writeFile(cachePath, bytes));
@@ -142,8 +145,10 @@ class Accounts {
     }
   }
 
-  open(ref: AccountRef, password: Uint8Array, options: { keyFile?: Uint8Array | null; code?: string | null } = {}) {
-    return ref.kind === 'kdbx' ? this.openKdbx(ref, password, options.keyFile ?? null) : this.openBitwarden(ref, password, options.code ?? null);
+  open(ref: AccountRef, password: Uint8Array, options: { keyFile?: Uint8Array | null; code?: string | null; deviceCode?: boolean } = {}) {
+    return ref.kind === 'kdbx'
+      ? this.openKdbx(ref, password, options.keyFile ?? null)
+      : this.openBitwarden(ref, password, options.code ?? null, options.deviceCode ?? false);
   }
 }
 

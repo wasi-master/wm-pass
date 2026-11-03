@@ -31,6 +31,15 @@ pub enum BwError {
     /// The email or password was refused.
     #[error("the email or password was not accepted")]
     BadLogin,
+    /// Bitwarden has emailed a code to confirm a device it has not seen before.
+    #[error("Bitwarden has emailed you a code to confirm this device")]
+    NewDevice,
+    /// A two-step or new-device code was refused.
+    #[error("that code was not accepted")]
+    BadCode,
+    /// The login service refused for a reason of its own. Holds its message.
+    #[error("{0}")]
+    Refused(String),
     /// Something this client cannot do yet.
     #[error("{0}")]
     Unsupported(&'static str),

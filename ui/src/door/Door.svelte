@@ -26,6 +26,8 @@
   let accountKeyFile = $state<Uint8Array | null>(null);
   let code = $state('');
   let asksCode = $state(false);
+  // Bitwarden's check on a device it has not seen before, rather than a two-step code.
+  let emailedCode = $state(false);
   let returning = $state(false);
   let sheet = $state<'account' | 'shares' | null>(null);
   let problem = $state<string | null>(null);
@@ -116,14 +118,23 @@
     message = null;
     const bytes = bytesOf(password);
     try {
-      await accounts.open(ref, bytes, { keyFile: accountKeyFile, code: code.trim() || null });
+      await accounts.open(ref, bytes, { keyFile: accountKeyFile, code: code.trim() || null, deviceCode: emailedCode });
       password = '';
     } catch (failure: any) {
-      if (failure.code === 'two_factor') {
+      if (failure.code === 'two_factor' || failure.code === 'new_device') {
         asksCode = true;
-        message = 'This account also needs a code from your authenticator.';
+        emailedCode = failure.code === 'new_device';
+        code = '';
+        message = emailedCode
+          ? 'Bitwarden has emailed you a code to confirm this device. Enter it with your password.'
+          : 'This account also needs a code from your authenticator.';
+      } else if (failure.code === 'bad_code') {
+        // Not a guess at the password, and neither are the two below.
+        message = 'That code was not accepted.';
       } else if (failure.code === 'network') {
         message = 'The server could not be reached.';
+      } else if (failure.code === 'bitwarden') {
+        message = failure.message ?? 'The server refused the sign-in.';
       } else {
         refuse(failure.message ?? 'Wrong password.');
         retryAt = await pass.noteWrongAccountPassword();
@@ -285,7 +296,7 @@
         </p>
         {#if hardwareAvailable()}<Btn label="Try the key again" icon="security_key" wide onclick={tapHardware} disabled={busy} />{/if}
       {/if}
-      {#if asksCode}<Field bind:value={code} placeholder="Two-factor code" mono />{/if}
+      {#if asksCode}<Field bind:value={code} placeholder={emailedCode ? 'Code from the email' : 'Two-factor code'} mono />{/if}
       <PasswordField
         bind:value={password}
         placeholder={source ? 'Password' : 'Master password'}

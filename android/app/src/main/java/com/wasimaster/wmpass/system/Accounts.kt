@@ -102,8 +102,11 @@ object Accounts {
         }
     }
 
-    /** Signs in to a Bitwarden-compatible server, or opens the offline copy if there is one. */
-    suspend fun openBitwarden(context: Context, ref: AccountRef, password: ByteArray, code: String? = null) {
+    /**
+     * Signs in to a Bitwarden-compatible server, or opens the offline copy if there is one. [code]
+     * is a two-step code, or with [deviceCode] the one Bitwarden emails to confirm a new device.
+     */
+    suspend fun openBitwarden(context: Context, ref: AccountRef, password: ByteArray, code: String? = null, deviceCode: Boolean = false) {
         val cache = cacheFile(context, ref.id)
         val reply = if (cache.exists() && code == null) {
             Engine.net("bitwarden.open_cached", online = online(context), secret = password) {
@@ -117,7 +120,7 @@ object Accounts {
                 put("region", ref.region)
                 put("email", ref.email)
                 put("device", deviceId(context))
-                code?.let { put("code", it) }
+                code?.let { put(if (deviceCode) "device_code" else "code", it) }
             }
         }
         val scope = CoroutineScope(Dispatchers.IO)
