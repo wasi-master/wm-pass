@@ -23,6 +23,54 @@ export interface Place {
   secret_key: string;
   backup: boolean;
   sync: boolean;
+  /**
+   * What each kind needs beyond the fields above: hosts and ports, folders inside an account,
+   * and the tokens and sessions a sign-in hands back. The shell keeps these current when they
+   * change during a run (see `PlacesHost.onUpdate`).
+   */
+  extra?: Record<string, any>;
+}
+
+/** Whether a place has everything a run needs. An account is not ready until it is signed in. */
+export function placeReady(place: Place): boolean {
+  const x = place.extra ?? {};
+  switch (place.kind) {
+    case 'folder':
+      return !!place.path;
+    case 'webdav':
+      return !!place.url.trim();
+    case 's3':
+      return !!place.bucket.trim() && !!place.access_key.trim() && !!place.secret_key;
+    case 'sftp':
+    case 'ftp':
+      return !!x.host && !!place.user;
+    case 'smb':
+      return !!x.host && !!x.share && !!place.user;
+    case 'nfs':
+      return !!x.host && !!x.export;
+    case 'git':
+      return String(x.repository ?? '').includes('/') && !!x.token;
+    case 'imap':
+      return !!x.host && !!place.user && !!place.password;
+    case 'drive':
+    case 'dropbox':
+    case 'onedrive':
+    case 'box':
+      return !!x.refresh_token;
+    case 'pcloud':
+      return !!x.auth;
+    case 'mega':
+      return !!x.session_id && !!x.master_key;
+    case 'proton':
+      return !!x.uid && !!x.refresh_token && !!x.salted_key_pass;
+    case 'icloud':
+      return !!x.trust_token && !!place.password;
+    case 'synology':
+    case 'qnap':
+      return !!x.server && !!place.user && !!place.password;
+    default:
+      return false;
+  }
 }
 
 export function blankPlace(kind: string): Place {
@@ -42,6 +90,7 @@ export function blankPlace(kind: string): Place {
     secret_key: '',
     backup: true,
     sync: false,
+    extra: {},
   };
 }
 
@@ -99,8 +148,16 @@ class Places {
     return !!host().places;
   }
 
+  /** A token, session, host key or certificate that changed during a run, kept with its place. */
+  private async absorbUpdate(id: string, extra: Record<string, unknown>) {
+    const place = this.list.find((p) => p.id === id);
+    if (!place) return;
+    await this.put({ ...place, extra: { ...(place.extra ?? {}), ...extra } });
+  }
+
   async load() {
     if (!host().places) return;
+    host().places!.onUpdate = (id, extra) => void this.absorbUpdate(id, extra);
     try {
       const text = await host().loadSealed?.('places');
       this.list = text ? JSON.parse(text) : [];

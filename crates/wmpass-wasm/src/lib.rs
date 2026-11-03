@@ -5,6 +5,8 @@
 
 use std::cell::RefCell;
 
+mod places;
+
 use wasm_bindgen::prelude::*;
 use wmpass_bridge::{Client, Keys};
 use wmpass_session::{Service, wire};
