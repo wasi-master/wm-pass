@@ -146,7 +146,7 @@ export const vault = [
           'Folders in the file become folders here, matched by name. Attachments in a KeePass database come along. A KeePass database asks for its password.',
           'A login with the same site, username and password as one already in the vault is skipped, so importing the same file twice adds nothing.',
           'The file is read on the phone. Nothing is sent anywhere.',
-          '**How to export from your old app** lists the apps WM Pass reads. Tap one to open its export steps on the WM Pass website, in your browser.',
+          '**How to export from your old app** lists the apps WM Pass reads. Tap one to read its export steps here, with a tab for each device; **Open on the website** has the same page with its pictures.',
         ],
         caveats: [
           'Most export files hold your passwords in plain text. Delete the file once WM Pass has read it.',
@@ -232,7 +232,7 @@ export const vault = [
       'Keep the file off shared drives, and out of folders that sync to the cloud, where old versions can be kept.',
       'Delete it as soon as you are done, and empty the recycle bin. A deleted file can stay readable on the disk for a while.',
     ],
-    related: ['action.export_bitwarden', 'action.export_csv', 'action.export_html', 'page.shelf'],
+    related: ['action.export_bitwarden', 'action.export_csv', 'action.export_html', 'action.export_pdf', 'page.shelf'],
     words: 'unencrypted plaintext readable warning',
   },
   {
@@ -270,5 +270,20 @@ export const vault = [
     ],
     related: ['group.export.plain', 'action.emergency_kit'],
     words: 'print paper html offline copy',
+  },
+  {
+    id: 'action.export_pdf',
+    kind: 'action',
+    title: 'PDF or printer',
+    page: 'export',
+    shells: ['android'],
+    what: 'Hands the printable page to Android\'s print screen, which saves it as a PDF or sends it to a printer.',
+    how: 'Choose **Save as PDF** there and pick where the file goes, or choose a printer. The page carries a warning at the top that anyone holding it can read everything on it.',
+    caveats: [
+      'One-time codes appear as their setup links, which hold the secret.',
+      'Like the other [[group.export.plain|plain-text]] exports, the PDF is not encrypted: anyone who opens it can read everything until you delete it, and the paper can be read by anyone who finds it.',
+    ],
+    related: ['group.export.plain', 'action.export_html'],
+    words: 'pdf print paper printer save',
   },
 ] as const satisfies readonly Topic[];

@@ -38,6 +38,10 @@ A name can only be letters, digits, dots, dashes and underscores, up to 64 chara
 
 Needs [Allow network features](/guide/settings/security/#setting-network-allowed).
 
+#### On Android
+
+Asks a list of sites, all at once, whether a username is taken there.
+
 See also [Check](/guide/settings/usernames/#action-username-check), [Look for yourself](/guide/settings/usernames/#group-usernames-links), [Checking usernames](/guide/how-it-works/#feature-usernames).
 
 <a id="action-username-check"></a>
@@ -57,6 +61,16 @@ Asks every site in turn about the name in the box. The answers fill in as they c
 Free means no profile was found today. Signing up is the only way to be sure you can have the name.
 
 A site that limits how often it can be asked gives no clear answer until you try again later.
+
+#### On Android
+
+Asks every site about the name in the box at once. A bar shows how many have answered, and each row fills in as its answer comes.
+
+- *Free* means the site showed no profile under that name.
+- *Taken* means somebody has it.
+- *No clear answer* means the site said something WM Pass could not read.
+
+A site that refused or took too long says why on its own row, with a button to ask it again. Tap any site to open that name's page there.
 
 See also [Username checker](/guide/settings/usernames/), [Look for yourself](/guide/settings/usernames/#group-usernames-links).
 

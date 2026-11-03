@@ -394,7 +394,7 @@ export const screens = [
         what: 'Settings, Hidden shelf shows the items on the shelf, once you open it with your master password.',
         how: [
           'While the shelf is closed, the page asks for your master password, even though the vault is open. Type it and tap **Open the shelf**.',
-          'Once open, its items list here and open like any other. **Close the shelf** puts them out of sight again, and so does locking.',
+          'Once open, its items list here and open like any other. **Close the shelf** puts them out of sight again, and so do leaving the page and locking.',
           'To take an item off the shelf, choose **Remove from hidden shelf** under **More** on the item.',
         ],
         related: ['feature.shelf', 'page.shelf'],

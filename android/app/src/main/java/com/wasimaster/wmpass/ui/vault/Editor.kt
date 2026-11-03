@@ -99,6 +99,7 @@ import com.wasimaster.wmpass.ui.theme.Springs
 import com.wasimaster.wmpass.ui.theme.palette
 import java.net.URI
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -351,6 +352,10 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                 fields.firstOrNull { it.spec.key == "body" }?.text?.setTextAndPlaceCursorAtEnd(text)
                 shell.pendingNote = null
             }
+            shell.pendingTitle?.let { text ->
+                title.setTextAndPlaceCursorAtEnd(text)
+                shell.pendingTitle = null
+            }
             shell.pendingPassword?.let { generated ->
                 fields.firstOrNull { it.spec.input == "password" }?.text?.setTextAndPlaceCursorAtEnd(generated)
                 shell.pendingPassword = null
@@ -371,9 +376,12 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
         if (!ready || kind != "wifi") return@LaunchedEffect
         val password = fields.firstOrNull { it.spec.key == "password" } ?: return@LaunchedEffect
         val security = fields.firstOrNull { it.spec.key == "security" } ?: return@LaunchedEffect
-        androidx.compose.runtime.snapshotFlow { password.text.text.isNotEmpty() }.collect { typed ->
+        // Follows the password both ways: typing one means a key is needed, clearing it means none is.
+        // The first value is what was saved, so an item opened for editing keeps what it had.
+        androidx.compose.runtime.snapshotFlow { password.text.text.isNotEmpty() }.drop(1).collect { typed ->
             val now = security.text.text.toString()
             if (typed && now == "open") security.text.setTextAndPlaceCursorAtEnd("wpa")
+            if (!typed && now in setOf("wpa", "sae", "wep")) security.text.setTextAndPlaceCursorAtEnd("open")
         }
     }
 

@@ -1,8 +1,8 @@
 //! Is a username taken? Each check tells that site the name being looked at, so this is
-//! opt-in and runs one site at a time. Sites that block anonymous lookups or answer the
-//! same for every name, including X, Instagram, Reddit, Twitch, npm and PyPI, are left
-//! out: a guess is worse than no answer here. `tests/live.rs` checks that each listed
-//! signal still holds.
+//! opt-in. Each site is asked once, so asking them side by side trips no site's limit.
+//! Sites that block anonymous lookups or answer the same for every name, including X,
+//! Reddit, Twitch, npm and PyPI, are left out: a guess is worse than no answer here.
+//! `tests/live.rs` checks that each listed signal still holds.
 //!
 //! Some sites only show their answer once their own scripts have run. [`PAGE_SITES`]
 //! are read by an app that can load them in a private, hidden browser view, and
@@ -43,6 +43,10 @@ pub struct Site {
     pub url: &'static str,
     /// How to read the answer.
     pub signal: Signal,
+    /// The page a person would open for that name, with `{}` for the name.
+    pub profile: &'static str,
+    /// The mark to draw beside it: `brand:` a Simple Icons slug, or `glyph:` one of the app's.
+    pub icon: &'static str,
 }
 
 /// Every supported site.
@@ -51,161 +55,228 @@ pub const SITES: &[Site] = &[
         name: "GitHub",
         url: "https://api.github.com/users/{}",
         signal: Signal::Status,
+        profile: "https://github.com/{}",
+        icon: "brand:github",
     },
     Site {
         name: "GitLab",
         url: "https://gitlab.com/api/v4/users?username={}",
         signal: Signal::BodyMeansFree("[]"),
+        profile: "https://gitlab.com/{}",
+        icon: "brand:gitlab",
     },
     Site {
         name: "Codeberg",
         url: "https://codeberg.org/api/v1/users/{}",
         signal: Signal::Status,
+        profile: "https://codeberg.org/{}",
+        icon: "brand:codeberg",
     },
     Site {
         name: "Docker Hub",
         url: "https://hub.docker.com/v2/users/{}/",
         signal: Signal::Status,
+        profile: "https://hub.docker.com/u/{}",
+        icon: "brand:docker",
     },
     Site {
         name: "crates.io",
         url: "https://crates.io/api/v1/users/{}",
         signal: Signal::Status,
+        profile: "https://crates.io/users/{}",
+        // Simple Icons has no crates.io mark, and Rust's logo is not CC0.
+        icon: "glyph:inventory_2",
     },
     Site {
         name: "Mastodon",
         url: "https://mastodon.social/api/v1/accounts/lookup?acct={}",
         signal: Signal::Status,
+        profile: "https://mastodon.social/@{}",
+        icon: "brand:mastodon",
     },
     Site {
         name: "Hacker News",
         url: "https://hacker-news.firebaseio.com/v0/user/{}.json",
         signal: Signal::BodyMeansFree("null"),
+        profile: "https://news.ycombinator.com/user?id={}",
+        // Hacker News wears Y Combinator's Y.
+        icon: "brand:ycombinator",
     },
     Site {
         name: "Steam",
-        url: "https://steamcommunity.com/id/{}",
+        // The XML view is a few hundred bytes where the page is hundreds of kilobytes.
+        url: "https://steamcommunity.com/id/{}/?xml=1",
         signal: Signal::BodyMeansFree("The specified profile could not be found"),
+        profile: "https://steamcommunity.com/id/{}",
+        icon: "brand:steam",
     },
     Site {
         name: "Bitbucket",
         url: "https://api.bitbucket.org/2.0/workspaces/{}",
         signal: Signal::Status,
+        profile: "https://bitbucket.org/{}/",
+        icon: "brand:bitbucket",
     },
     Site {
         name: "SourceHut",
         url: "https://sr.ht/~{}/",
         signal: Signal::Status,
+        profile: "https://sr.ht/~{}/",
+        icon: "brand:sourcehut",
     },
     Site {
         name: "SourceForge",
         url: "https://sourceforge.net/u/{}/profile",
         signal: Signal::Status,
+        profile: "https://sourceforge.net/u/{}/profile",
+        icon: "brand:sourceforge",
     },
     Site {
         name: "Launchpad",
         url: "https://api.launchpad.net/devel/~{}",
         signal: Signal::Status,
+        profile: "https://launchpad.net/~{}",
+        icon: "brand:launchpad",
     },
     Site {
         name: "Hugging Face",
         url: "https://huggingface.co/api/users/{}/overview",
         signal: Signal::Status,
+        profile: "https://huggingface.co/{}",
+        icon: "brand:huggingface",
     },
     Site {
         name: "RubyGems",
         url: "https://rubygems.org/api/v1/profiles/{}.json",
         signal: Signal::Status,
+        profile: "https://rubygems.org/profiles/{}",
+        icon: "brand:rubygems",
     },
     Site {
         name: "DEV",
         url: "https://dev.to/api/users/by_username?url={}",
         signal: Signal::Status,
+        profile: "https://dev.to/{}",
+        icon: "brand:devdotto",
     },
     Site {
         name: "Lobsters",
         url: "https://lobste.rs/~{}.json",
         signal: Signal::Status,
+        profile: "https://lobste.rs/~{}",
+        icon: "glyph:chat",
     },
     Site {
         name: "Codewars",
         url: "https://www.codewars.com/api/v1/users/{}",
         signal: Signal::Status,
+        profile: "https://www.codewars.com/users/{}",
+        icon: "brand:codewars",
     },
     Site {
         name: "HackerOne",
         url: "https://hackerone.com/{}",
         signal: Signal::Status,
+        profile: "https://hackerone.com/{}",
+        icon: "brand:hackerone",
     },
     Site {
         name: "Pastebin",
         url: "https://pastebin.com/u/{}",
         signal: Signal::Status,
+        profile: "https://pastebin.com/u/{}",
+        icon: "brand:pastebin",
     },
     Site {
         name: "Bluesky",
         url: "https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor={}.bsky.social",
         signal: Signal::ErrorMeansFree(400, "Profile not found"),
+        profile: "https://bsky.app/profile/{}.bsky.social",
+        icon: "brand:bluesky",
     },
     Site {
         name: "Wikipedia",
         url: "https://en.wikipedia.org/w/api.php?action=query&list=users&format=json&ususers={}",
         signal: Signal::BodyMeansFree(r#""missing":""#),
+        profile: "https://en.wikipedia.org/wiki/User:{}",
+        icon: "brand:wikipedia",
     },
     Site {
         name: "Linktree",
         url: "https://linktr.ee/{}",
         signal: Signal::Status,
+        profile: "https://linktr.ee/{}",
+        icon: "brand:linktree",
     },
     Site {
         name: "Vimeo",
         url: "https://vimeo.com/{}",
         signal: Signal::Status,
+        profile: "https://vimeo.com/{}",
+        icon: "brand:vimeo",
     },
     Site {
         name: "Dribbble",
         url: "https://dribbble.com/{}/about",
         signal: Signal::Status,
+        profile: "https://dribbble.com/{}",
+        icon: "brand:dribbble",
     },
     Site {
         name: "Unsplash",
         url: "https://unsplash.com/@{}/collections",
         signal: Signal::Status,
+        profile: "https://unsplash.com/@{}",
+        icon: "brand:unsplash",
     },
     Site {
         name: "Lichess",
         url: "https://lichess.org/api/user/{}",
         signal: Signal::Status,
+        profile: "https://lichess.org/@/{}",
+        icon: "brand:lichess",
     },
     Site {
         name: "Chess.com",
         url: "https://api.chess.com/pub/player/{}",
         signal: Signal::Status,
+        profile: "https://www.chess.com/member/{}",
+        icon: "brand:chessdotcom",
     },
     Site {
         name: "Minecraft",
         url: "https://api.mojang.com/users/profiles/minecraft/{}",
         signal: Signal::Status,
+        profile: "https://namemc.com/profile/{}",
+        icon: "glyph:sports_esports",
     },
     Site {
         name: "Duolingo",
         url: "https://www.duolingo.com/2017-06-30/users?username={}",
         signal: Signal::BodyMeansFree(r#"{"users":[]}"#),
+        profile: "https://www.duolingo.com/profile/{}",
+        icon: "brand:duolingo",
     },
     Site {
         name: "MyAnimeList",
         url: "https://myanimelist.net/profile/{}",
         signal: Signal::Status,
+        profile: "https://myanimelist.net/profile/{}",
+        icon: "brand:myanimelist",
     },
     Site {
         name: "YouTube",
         url: "https://www.youtube.com/@{}",
         signal: Signal::Status,
+        profile: "https://www.youtube.com/@{}",
+        icon: "brand:youtube",
     },
     Site {
         name: "Snapchat",
         url: "https://www.snapchat.com/@{}",
         signal: Signal::Status,
+        profile: "https://www.snapchat.com/add/{}",
+        icon: "brand:snapchat",
     },
 ];
 
@@ -222,6 +293,10 @@ pub struct PageSite {
     pub free: &'static str,
     /// Lowercase text on the page that means somebody has it.
     pub taken: &'static str,
+    /// The page a person would open for that name, with `{}` for the name.
+    pub profile: &'static str,
+    /// The mark to draw beside it, as for [`Site`].
+    pub icon: &'static str,
 }
 
 /// Every site read from its page. A login wall shows neither marker, so it reads as no
@@ -233,6 +308,8 @@ pub const PAGE_SITES: &[PageSite] = &[
         domain: "tiktok.com",
         free: "find this account",
         taken: "followers",
+        profile: "https://www.tiktok.com/@{}",
+        icon: "brand:tiktok",
     },
     PageSite {
         name: "Instagram",
@@ -240,6 +317,8 @@ pub const PAGE_SITES: &[PageSite] = &[
         domain: "instagram.com",
         free: "the link may be broken",
         taken: "followers",
+        profile: "https://www.instagram.com/{}/",
+        icon: "brand:instagram",
     },
 ];
 
@@ -251,6 +330,8 @@ pub struct LinkSite {
     pub name: &'static str,
     /// The profile's address, with `{}` for the name.
     pub url: &'static str,
+    /// The mark to draw beside it, as for [`Site`].
+    pub icon: &'static str,
 }
 
 /// Every site that is only opened for a person to look at.
@@ -258,30 +339,37 @@ pub const LINK_SITES: &[LinkSite] = &[
     LinkSite {
         name: "X",
         url: "https://x.com/{}",
+        icon: "brand:x",
     },
     LinkSite {
         name: "Threads",
         url: "https://www.threads.com/@{}",
+        icon: "brand:threads",
     },
     LinkSite {
         name: "Reddit",
         url: "https://www.reddit.com/user/{}",
+        icon: "brand:reddit",
     },
     LinkSite {
         name: "Facebook",
         url: "https://www.facebook.com/{}",
+        icon: "brand:facebook",
     },
     LinkSite {
         name: "Pinterest",
         url: "https://www.pinterest.com/{}/",
+        icon: "brand:pinterest",
     },
     LinkSite {
         name: "Twitch",
         url: "https://www.twitch.tv/{}",
+        icon: "brand:twitch",
     },
     LinkSite {
         name: "Telegram",
         url: "https://t.me/{}",
+        icon: "brand:telegram",
     },
 ];
 
@@ -583,10 +671,20 @@ mod tests {
         let urls = SITES
             .iter()
             .map(|s| s.url)
+            .chain(SITES.iter().map(|s| s.profile))
             .chain(PAGE_SITES.iter().map(|s| s.url))
+            .chain(PAGE_SITES.iter().map(|s| s.profile))
             .chain(LINK_SITES.iter().map(|s| s.url));
         for url in urls {
             assert!(url.starts_with("https://") && url.contains("{}"), "{url}");
+        }
+        let icons = SITES
+            .iter()
+            .map(|s| s.icon)
+            .chain(PAGE_SITES.iter().map(|s| s.icon))
+            .chain(LINK_SITES.iter().map(|s| s.icon));
+        for icon in icons {
+            assert!(icon.starts_with("brand:") || icon.starts_with("glyph:"), "{icon}");
         }
         for site in PAGE_SITES {
             assert!(

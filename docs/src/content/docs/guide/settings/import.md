@@ -67,7 +67,7 @@ A login with the same site, username and password as one already in the vault is
 
 The file is read on the phone. Nothing is sent anywhere.
 
-**How to export from your old app** lists the apps WM Pass reads. Tap one to open its export steps on the WM Pass website, in your browser.
+**How to export from your old app** lists the apps WM Pass reads. Tap one to read its export steps here, with a tab for each device; **Open on the website** has the same page with its pictures.
 
 Most export files hold your passwords in plain text. Delete the file once WM Pass has read it.
 

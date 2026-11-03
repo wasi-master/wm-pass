@@ -68,6 +68,8 @@ android {
         jniLibs.useLegacyPackaging = false
     }
     androidResources { ignoreAssetsPatterns += "*.md" }
+    // Each app's export guide from the website, shown on the import screen.
+    sourceSets["main"].assets.directories.add("../../docs/src/content/docs/guides/import")
     sourceSets["main"].assets.directories.add("../../data/brands")
     // The in-app guide, written by scripts/build-help.mjs from help/ at the root.
     sourceSets["main"].assets.directories.add("../../data/help")

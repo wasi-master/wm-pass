@@ -726,10 +726,12 @@ pub struct VaultPrefs {
     /// text. Inside the vault so any sync carries them and the file says nothing about them. An
     /// empty value is a setting some device took back out.
     pub app: BTreeMap<String, Lww<String>>,
+    /// Disposable mailboxes kept between visits, by id. `None` is one that was closed.
+    pub inboxes: BTreeMap<String, Lww<Option<Inbox>>>,
 }
 
 /// Merges two maps of values set one key at a time: for each key the later write wins.
-fn merge_keyed(mine: &mut BTreeMap<String, Lww<String>>, theirs: &BTreeMap<String, Lww<String>>) {
+fn merge_keyed<T: Clone>(mine: &mut BTreeMap<String, Lww<T>>, theirs: &BTreeMap<String, Lww<T>>) {
     for (key, value) in theirs {
         match mine.get_mut(key) {
             Some(held) if value.at > held.at => *held = value.clone(),
@@ -739,6 +741,28 @@ fn merge_keyed(mine: &mut BTreeMap<String, Lww<String>>, theirs: &BTreeMap<Strin
             }
         }
     }
+}
+
+/// A disposable mailbox: where it lives and how to get back in.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Inbox {
+    /// `mailtm`, `mailgw`, `custom` (a server with the Mail.tm API), `guerrilla` or `inbucket`.
+    pub provider: String,
+    /// The server, for the kinds that need one.
+    pub base: String,
+    /// The address.
+    pub address: String,
+    /// What the owner calls it.
+    pub label: String,
+    /// The service's session token.
+    pub token: Secret,
+    /// The mailbox's own password, where tokens run out and it has to sign in again.
+    pub password: Secret,
+    /// The service's id for the mailbox, for deleting it.
+    pub account: String,
+    /// When it was made.
+    pub created_ms: u64,
 }
 
 /// The encrypted contents of a vault file.
@@ -819,6 +843,7 @@ impl VaultDoc {
         }
         merge_keyed(&mut self.prefs.tag_icons, &other.prefs.tag_icons);
         merge_keyed(&mut self.prefs.app, &other.prefs.app);
+        merge_keyed(&mut self.prefs.inboxes, &other.prefs.inboxes);
         self.generation = self.generation.max(other.generation);
         self.minor = self.minor.max(other.minor);
     }

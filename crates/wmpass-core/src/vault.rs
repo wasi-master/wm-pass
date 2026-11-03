@@ -87,6 +87,8 @@ pub struct Digests {
     pub tag_icons: BTreeMap<String, Hlc>,
     /// When each synced app setting last changed.
     pub app_prefs: BTreeMap<String, Hlc>,
+    /// When each kept disposable mailbox last changed.
+    pub inboxes: BTreeMap<String, Hlc>,
     /// Save counter.
     pub generation: u64,
     /// Layout version.
@@ -109,6 +111,8 @@ pub struct Delta {
     pub tag_icons: BTreeMap<String, Lww<String>>,
     /// Synced app settings the peer has not seen.
     pub app_prefs: BTreeMap<String, Lww<String>>,
+    /// Kept disposable mailboxes the peer has not seen.
+    pub inboxes: BTreeMap<String, Lww<Option<crate::model::Inbox>>>,
     /// Sender's save counter.
     pub generation: u64,
     /// Sender's layout version.
@@ -466,6 +470,7 @@ impl Vault {
             slots_at: self.doc.slots_at,
             tag_icons: self.doc.prefs.tag_icons.iter().map(|(k, v)| (k.clone(), v.at)).collect(),
             app_prefs: self.doc.prefs.app.iter().map(|(k, v)| (k.clone(), v.at)).collect(),
+            inboxes: self.doc.prefs.inboxes.iter().map(|(k, v)| (k.clone(), v.at)).collect(),
             generation: self.doc.generation,
             minor: self.doc.minor,
             ..Digests::default()
@@ -509,14 +514,9 @@ impl Vault {
             .filter(|link| theirs.linked.get(&link.file).is_none_or(|known| *known < link.at))
             .cloned()
             .collect();
-        let newer = |mine: &BTreeMap<String, Lww<String>>, theirs: &BTreeMap<String, Hlc>| {
-            mine.iter()
-                .filter(|(key, value)| theirs.get(*key).is_none_or(|known| *known < value.at))
-                .map(|(key, value)| (key.clone(), value.clone()))
-                .collect()
-        };
         let tag_icons = newer(&self.doc.prefs.tag_icons, &theirs.tag_icons);
         let app_prefs = newer(&self.doc.prefs.app, &theirs.app_prefs);
+        let inboxes = newer(&self.doc.prefs.inboxes, &theirs.inboxes);
         let file = if mine.slots_at > theirs.slots_at {
             Some(self.save()?)
         } else {
@@ -529,6 +529,7 @@ impl Vault {
             linked,
             tag_icons,
             app_prefs,
+            inboxes,
             generation: mine.generation,
             minor: mine.minor,
             file,
@@ -550,6 +551,7 @@ impl Vault {
             prefs: crate::model::VaultPrefs {
                 tag_icons: delta.tag_icons,
                 app: delta.app_prefs,
+                inboxes: delta.inboxes,
                 ..crate::model::VaultPrefs::default()
             },
             ..VaultDoc::default()
@@ -774,6 +776,17 @@ fn observe_doc(clock: &mut Clock, doc: &VaultDoc) {
     for value in doc.prefs.tag_icons.values().chain(doc.prefs.app.values()) {
         clock.observe(value.at);
     }
+    for inbox in doc.prefs.inboxes.values() {
+        clock.observe(inbox.at);
+    }
+}
+
+/// The values set one key at a time that a peer holding those write times has not seen.
+fn newer<T: Clone>(mine: &BTreeMap<String, Lww<T>>, theirs: &BTreeMap<String, Hlc>) -> BTreeMap<String, Lww<T>> {
+    mine.iter()
+        .filter(|(key, value)| theirs.get(*key).is_none_or(|known| *known < value.at))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect()
 }
 
 /// Builds a kind's default body.

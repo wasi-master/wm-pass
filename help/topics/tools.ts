@@ -213,6 +213,22 @@ export const tools = [
     ],
     related: ['concept.inbox_mailtm', 'concept.inbox_guerrilla', 'page.aliases'],
     words: 'temporary throwaway burner email disposable',
+    on: {
+      android: {
+        what: 'Makes throwaway addresses on a mail service and keeps each one, with its mail, until you close it. For sign-ups that only need a confirmation mail.',
+        how: [
+          'Tap **New address** and choose where it comes from: mail.tm, mail.gw or Guerrilla Mail, your own server running the mail.tm API, or an Inbucket server you run. Give it a name if you like, so you know what it was for.',
+          'Each address stays in the list, saved inside the encrypted vault, like a chat in a chat app. Open one to copy the address and read what arrived.',
+          'Tap a mail to read it as a mail app shows it, with its layout and links. Pictures stay unloaded until you tap **Load**. A code in it gets its own copy button, and the note button at the top saves the mail to the vault.',
+          'The bin button closes the address. Where the service allows, it can delete the mailbox there too; Guerrilla Mail clears its own within the hour.',
+        ],
+        caveats: [
+          'The service, and possibly others, can read what arrives. Treat anything sent there as public.',
+          'Plain http works only for this phone and Tailscale addresses, so a server of your own needs https anywhere else.',
+          'Needs [[setting.network_allowed]].',
+        ],
+      },
+    },
   },
   {
     id: 'concept.inbox_mailtm',
@@ -254,6 +270,15 @@ export const tools = [
       'Mail is shown as plain text only, so no picture, tracking pixel or script in it ever loads or runs here.',
     ],
     related: ['page.inbox'],
+    on: {
+      android: {
+        what: 'The mail sent to this address, newest first. A dot marks what came in since you opened the page. Tap one to read it.',
+        how: [
+          'The page asks the service for new mail every 8 seconds while it is open, and the refresh button asks now.',
+          'A mail opens with its own layout, but no script in it runs, it cannot reach anything on the phone, and pictures load only when you tap **Load**, so the sender cannot tell you opened it. Links open in your browser.',
+        ],
+      },
+    },
   },
 
   // ---- usernames ----
@@ -279,6 +304,9 @@ export const tools = [
     related: ['action.username_check', 'group.usernames.links', 'feature.usernames'],
     words: 'handle availability taken free name',
     on: {
+      android: {
+        what: 'Asks a list of sites, all at once, whether a username is taken there.',
+      },
       extension: {
         caveats: [
           'The extension has no network of its own. While it is connected to the desktop app, the app makes every check for it, and only while network features are allowed there.',
@@ -304,6 +332,17 @@ export const tools = [
       'A site that limits how often it can be asked gives no clear answer until you try again later.',
     ],
     related: ['page.usernames', 'group.usernames.links'],
+    on: {
+      android: {
+        what: 'Asks every site about the name in the box at once. A bar shows how many have answered, and each row fills in as its answer comes.',
+        how: [
+          '- *Free* means the site showed no profile under that name.',
+          '- *Taken* means somebody has it.',
+          '- *No clear answer* means the site said something WM Pass could not read.',
+          'A site that refused or took too long says why on its own row, with a button to ask it again. Tap any site to open that name\'s page there.',
+        ],
+      },
+    },
   },
   {
     id: 'group.usernames.links',

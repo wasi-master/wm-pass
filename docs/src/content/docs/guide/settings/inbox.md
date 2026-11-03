@@ -38,6 +38,24 @@ WM Pass does not delete the mailbox when you leave. It stays at the service, und
 
 Needs [Allow network features](/guide/settings/security/#setting-network-allowed).
 
+#### On Android
+
+Makes throwaway addresses on a mail service and keeps each one, with its mail, until you close it. For sign-ups that only need a confirmation mail.
+
+Tap **New address** and choose where it comes from: mail.tm, mail.gw or Guerrilla Mail, your own server running the mail.tm API, or an Inbucket server you run. Give it a name if you like, so you know what it was for.
+
+Each address stays in the list, saved inside the encrypted vault, like a chat in a chat app. Open one to copy the address and read what arrived.
+
+Tap a mail to read it as a mail app shows it, with its layout and links. Pictures stay unloaded until you tap **Load**. A code in it gets its own copy button, and the note button at the top saves the mail to the vault.
+
+The bin button closes the address. Where the service allows, it can delete the mailbox there too; Guerrilla Mail clears its own within the hour.
+
+The service, and possibly others, can read what arrives. Treat anything sent there as public.
+
+Plain http works only for this phone and Tailscale addresses, so a server of your own needs https anywhere else.
+
+Needs [Allow network features](/guide/settings/security/#setting-network-allowed).
+
 See also [mail.tm](/guide/settings/inbox/#concept-inbox-mailtm), [Guerrilla Mail](/guide/settings/inbox/#concept-inbox-guerrilla), [Email aliases](/guide/settings/aliases/).
 
 <a id="concept-inbox-mailtm"></a>
@@ -91,5 +109,13 @@ The mail sent to the address so far. Click one to read it below the list.
 The page asks the service for new mail every 8 seconds while it is open.
 
 Mail is shown as plain text only, so no picture, tracking pixel or script in it ever loads or runs here.
+
+#### On Android
+
+The mail sent to this address, newest first. A dot marks what came in since you opened the page. Tap one to read it.
+
+The page asks the service for new mail every 8 seconds while it is open, and the refresh button asks now.
+
+A mail opens with its own layout, but no script in it runs, it cannot reach anything on the phone, and pictures load only when you tap **Load**, so the sender cannot tell you opened it. Links open in your browser.
 
 See also [Disposable inbox](/guide/settings/inbox/).

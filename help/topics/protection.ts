@@ -33,7 +33,7 @@ export const protection = [
         how: [
           'To put an item on the shelf, choose **Move to hidden shelf** on the item. To move several at once, select them and choose **Put on the hidden shelf**.',
           'Type your master password here and tap **Open the shelf** to see what is on it. Open an item to change it, or choose **Remove from hidden shelf** to put it back in the list.',
-          'The shelf closes when you tap **Close the shelf**, and whenever the vault locks. Every unlock starts with it closed. Autofill never offers shelf items, even while the shelf is open.',
+          'The shelf closes when you tap **Close the shelf**, when you leave this page, and whenever the vault locks. Every unlock starts with it closed. Autofill never offers shelf items, even while the shelf is open.',
         ],
       },
     },

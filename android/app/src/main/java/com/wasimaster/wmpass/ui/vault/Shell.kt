@@ -123,6 +123,7 @@ class Shell(
     /** An otpauth link or note waiting for the editor it was meant for. */
     var pendingOtp: String? = null
     var pendingNote: String? = null
+    var pendingTitle: String? = null
 
     /** A shared `WIFI:` network waiting for the Wi-Fi editor. */
     var pendingWifi: String? = null

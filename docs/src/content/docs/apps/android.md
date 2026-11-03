@@ -7,7 +7,7 @@ The Android app is the fullest version of WM Pass.
 
 ## Moving from another app
 
-Settings, Import reads exports from other password managers and authenticators, and scans Google Authenticator's transfer codes. **How to export from your old app** lists each app's own steps, which are also [on this site](/guides/import-export/#exporting-from-your-old-app), Android first.
+Settings, Import reads exports from other password managers and authenticators, and scans Google Authenticator's transfer codes. **How to export from your old app** lists each app and opens its steps in WM Pass, with a tab for each device, Android first. The same pages are [on this site](/guides/import-export/#exporting-from-your-old-app), with their pictures.
 
 ## Autofill
 
@@ -21,7 +21,7 @@ A new item starts with the fields its kind needs. Everything else waits behind *
 
 Some fields offer common values as you type, such as a database's engine or an API key's provider.
 
-For Wi-Fi, tap **Fill in from a QR code** and scan the code Android's Wi-Fi settings show when you share a network, or share that code's text to WM Pass. Typing a password on an open network switches its security to WPA.
+For Wi-Fi, tap **Fill in from a QR code** and scan the code Android's Wi-Fi settings show when you share a network, or share that code's text to WM Pass. Typing a password on an open network switches its security to WPA, and clearing the password switches it back to open.
 
 **Pick a network saved on this phone** fills the item from a network Android already knows, password included, and Import has **Wi-Fi saved on this phone** to add several at once. Android keeps those passwords from apps, so this goes through [Shizuku](https://shizuku.rikka.app/), which you install and start yourself and which asks once whether WM Pass may use it. WM Pass uses it only to read saved networks, and only when you open one of these. The way of asking comes from [wifi-password-manager](https://github.com/Khh-vu/wifi-password-manager).
 
@@ -45,6 +45,14 @@ Tag names and their icons are stored inside the encrypted vault.
 ## Icons
 
 The icon picker shows what Automatic would draw, then every symbol and every brand in one grid that fills the screen's width. Search narrows both. Hold an icon to see its name and where it comes from: symbols are Material Symbols (Apache License 2.0), and brand marks come from Simple Icons (CC0) and belong to their owners.
+
+## Throwaway addresses and usernames
+
+Under Settings, Tools, **Disposable inbox** makes throwaway email addresses for sign-ups that only need a confirmation mail. Each address stays in a list, kept inside the encrypted vault, until you close it, so leaving the page does not lose it. Addresses can come from mail.tm, mail.gw or Guerrilla Mail, from your own server running the mail.tm API, or from an [Inbucket](https://inbucket.org/) server you run. Opening an address shows its mail, checked every few seconds while the page is open.
+
+A mail opens the way a mail app shows it, with its layout and links, but no script in it runs, and pictures stay unloaded until you tap **Load**, so the sender cannot see that you opened it. A code in the mail gets its own copy button, and the mail can be saved to the vault as a note. Closing an address can also delete it on the service. The service, and possibly others, can read what arrives at these addresses: never use one for an account you want to keep.
+
+**Username checker** asks every site at once whether a name is taken, and shows how far it has got. TikTok and Instagram only answer a browser, so they are read one after the other in a hidden browser view. A site that fails, for instance because it got too many requests, says so on its own row and can be asked again. Tapping a site opens that name's page there, and sites that give no readable answer are listed under **Look for yourself**.
 
 ## Passkeys
 

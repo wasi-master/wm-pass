@@ -238,6 +238,48 @@ fn connect(address: &str) -> Result<TcpStream, SessionError> {
 
 /// One call. `service` is locked only for the moments vault state is needed.
 #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
+/// Where a kept mailbox's service lives. The named ones are fixed; the rest are the owner's.
+fn inbox_base(provider: &str, base: &str) -> Result<String, SessionError> {
+    match provider {
+        "mailtm" => Ok(inbox::MAIL_TM.to_owned()),
+        "mailgw" => Ok(inbox::MAIL_GW.to_owned()),
+        "guerrilla" => Ok(String::new()),
+        "custom" | "inbucket" => {
+            let base = base.trim().trim_end_matches('/');
+            let scheme = base.starts_with("https://") || base.starts_with("http://");
+            if !scheme || base.contains(char::is_whitespace) || base.len() < 10 {
+                return Err(failed("invalid", "give the server's address, such as https://mail.example.com"));
+            }
+            Ok(base.to_owned())
+        }
+        _ => Err(failed("invalid", "unknown inbox service")),
+    }
+}
+
+/// A kept mailbox, read from the open vault.
+fn kept_inbox(service: &Mutex<Option<Service>>, handle: u64, id: &str) -> Result<wmpass_core::model::Inbox, SessionError> {
+    let mut guard = service.lock().map_err(|_| failed("busy", "try that again"))?;
+    let service = guard.as_mut().ok_or_else(|| failed("not_started", "the vault service has not started"))?;
+    service
+        .with_vault(handle, |vault| vault.doc.prefs.inboxes.get(id).and_then(|kept| kept.v.clone()))?
+        .ok_or_else(|| failed("invalid", "that inbox was closed"))
+}
+
+/// Writes a kept mailbox back, or closes it with `None`.
+fn keep_inbox(service: &Mutex<Option<Service>>, handle: u64, id: &str, inbox: Option<wmpass_core::model::Inbox>, now_ms: u64) -> Result<(), SessionError> {
+    let mut guard = service.lock().map_err(|_| failed("busy", "try that again"))?;
+    let service = guard.as_mut().ok_or_else(|| failed("not_started", "the vault service has not started"))?;
+    service.with_vault(handle, |vault| {
+        let at = vault.tick(now_ms);
+        vault.doc.prefs.inboxes.insert(id.to_owned(), wmpass_core::model::Lww::new(inbox, at));
+    })?;
+    service.touch(handle)
+}
+
+fn mail_rows(list: &[inbox::Message]) -> Value {
+    json!(list.iter().map(|m| json!({"id": m.id, "from": m.from, "subject": m.subject, "preview": m.preview, "at_ms": m.at_ms})).collect::<Vec<_>>())
+}
+
 /// Whether a call belongs here rather than on the service itself.
 pub fn is_net_method(method: &str) -> bool {
     method == "remote.sync" || ["breach.", "alias.", "usernames.", "inbox.", "lan.", "share.", "bitwarden."].iter().any(|prefix| method.starts_with(prefix))
@@ -331,6 +373,17 @@ pub fn call(
         "usernames.sites" => {
             let names: Vec<&str> = usernames::SITES.iter().map(|s| s.name).collect();
             Ok(view(json!(names)))
+        }
+        // Every site in one list: `check` is asked here, `page` is read in a hidden browser
+        // view by the app, and `link` is only opened for a person to look at.
+        "usernames.site_list" => {
+            let sites: Vec<Value> = usernames::SITES
+                .iter()
+                .map(|s| json!({"name": s.name, "profile": s.profile, "icon": s.icon, "kind": "check"}))
+                .chain(usernames::PAGE_SITES.iter().map(|s| json!({"name": s.name, "profile": s.profile, "icon": s.icon, "kind": "page"})))
+                .chain(usernames::LINK_SITES.iter().map(|s| json!({"name": s.name, "profile": s.url, "icon": s.icon, "kind": "link"})))
+                .collect();
+            Ok(view(json!(sites)))
         }
         "usernames.check" => {
             let a: NameArgs = parse(args)?;
@@ -427,6 +480,172 @@ pub fn call(
             let a: A = parse(args)?;
             let text = run(inbox::mailtm_body(&secret_text(secret)?, &a.id), online)?;
             Ok(view(json!({"text": text})))
+        }
+        // ---- kept inboxes: their tokens stay in the vault and never reach the app ----
+        "inbox.sessions" => with_service(&mut |service| {
+            let rows = service.with_vault(handle, |vault| {
+                let mut kept: Vec<(&String, &wmpass_core::model::Inbox)> =
+                    vault.doc.prefs.inboxes.iter().filter_map(|(id, kept)| kept.v.as_ref().map(|inbox| (id, inbox))).collect();
+                kept.sort_by(|a, b| b.1.created_ms.cmp(&a.1.created_ms));
+                kept.iter()
+                    .map(|(id, inbox)| {
+                        json!({"id": id, "provider": inbox.provider, "base": inbox.base, "address": inbox.address, "label": inbox.label, "created_ms": inbox.created_ms})
+                    })
+                    .collect::<Vec<Value>>()
+            })?;
+            Ok(view(json!(rows)))
+        }),
+        "inbox.open" => {
+            #[derive(Deserialize, Default)]
+            #[serde(default)]
+            struct A {
+                provider: String,
+                base: String,
+                domain: String,
+                label: String,
+            }
+            let a: A = parse(args)?;
+            let base = inbox_base(&a.provider, &a.base)?;
+            let made = match a.provider.as_str() {
+                "mailtm" | "mailgw" | "custom" => {
+                    let domains = run(inbox::mailtm_domains_at(&base), online)?;
+                    let domain = domains.first().ok_or_else(|| failed("network", "the service offered no addresses"))?;
+                    let local: [u8; 8] = crypto::random_array()?;
+                    let address = format!("{}@{domain}", hex(&local));
+                    let password: [u8; 18] = crypto::random_array()?;
+                    let password = Secret::from(hex(&password));
+                    let account = run(inbox::mailtm_create_at(&base, &address, &password), online)?;
+                    let token = run(inbox::mailtm_token_at(&base, &address, &password), online)?;
+                    wmpass_core::model::Inbox { provider: a.provider.clone(), base, address, label: a.label.clone(), token, password, account, created_ms: now_ms }
+                }
+                "guerrilla" => {
+                    let session = run(inbox::guerrilla_new(), online)?;
+                    wmpass_core::model::Inbox {
+                        provider: "guerrilla".to_owned(),
+                        address: session.address,
+                        token: session.token,
+                        label: a.label.clone(),
+                        created_ms: now_ms,
+                        ..wmpass_core::model::Inbox::default()
+                    }
+                }
+                "inbucket" => {
+                    let domain = a.domain.trim().trim_start_matches('@').to_ascii_lowercase();
+                    if domain.is_empty() || domain.contains(['/', '@', ' ']) || !domain.contains('.') {
+                        return Err(failed("invalid", "name the domain your Inbucket server takes mail for"));
+                    }
+                    let local: [u8; 6] = crypto::random_array()?;
+                    wmpass_core::model::Inbox {
+                        provider: "inbucket".to_owned(),
+                        base,
+                        address: format!("{}@{domain}", hex(&local)),
+                        label: a.label.clone(),
+                        created_ms: now_ms,
+                        ..wmpass_core::model::Inbox::default()
+                    }
+                }
+                _ => return Err(failed("invalid", "unknown inbox service")),
+            };
+            let address = made.address.clone();
+            let id_bytes: [u8; 8] = crypto::random_array()?;
+            let id = hex(&id_bytes);
+            keep_inbox(service, handle, &id, Some(made), now_ms)?;
+            Ok(view(json!({"id": id, "address": address})))
+        }
+        "inbox.list" | "inbox.read" => {
+            #[derive(Deserialize, Default)]
+            #[serde(default)]
+            struct A {
+                id: String,
+                message: String,
+            }
+            let a: A = parse(args)?;
+            let mut kept = kept_inbox(service, handle, &a.id)?;
+            let reading = method == "inbox.read";
+            let reply = match kept.provider.as_str() {
+                "mailtm" | "mailgw" | "custom" => {
+                    let base = kept.base.clone();
+                    let attempt = |token: &Secret| -> Result<Value, SessionError> {
+                        if reading {
+                            let body = run(inbox::mailtm_read_at(&base, token, &a.message), online)?;
+                            Ok(json!({"from": body.from, "to": body.to, "subject": body.subject, "text": body.text, "html": body.html, "at_ms": body.at_ms}))
+                        } else {
+                            Ok(mail_rows(&run(inbox::mailtm_messages_at(&base, token), online)?))
+                        }
+                    };
+                    match attempt(&kept.token) {
+                        Ok(reply) => reply,
+                        Err(_) => {
+                            // Tokens run out, so the mailbox signs in again with its own password.
+                            kept.token = run(inbox::mailtm_token_at(&base, &kept.address, &kept.password), online)?;
+                            let reply = attempt(&kept.token)?;
+                            keep_inbox(service, handle, &a.id, Some(kept.clone()), now_ms)?;
+                            reply
+                        }
+                    }
+                }
+                "guerrilla" => {
+                    // Guerrilla's sessions lapse when quiet, and a lapsed one hands out a new
+                    // address, so each visit first points the session back at this one.
+                    let resumed = run(inbox::guerrilla_resume(&kept.token, &kept.address), online)?;
+                    if resumed.token != kept.token {
+                        kept.token = resumed.token.clone();
+                        keep_inbox(service, handle, &a.id, Some(kept.clone()), now_ms)?;
+                    }
+                    let session = inbox::GuerrillaSession { address: kept.address.clone(), token: resumed.token };
+                    if reading {
+                        let body = run(inbox::guerrilla_read(&session, &a.message), online)?;
+                        json!({"from": body.from, "to": body.to, "subject": body.subject, "text": body.text, "html": body.html, "at_ms": body.at_ms})
+                    } else {
+                        mail_rows(&run(inbox::guerrilla_messages(&session), online)?)
+                    }
+                }
+                "inbucket" => {
+                    let mailbox = kept.address.split('@').next().unwrap_or_default().to_owned();
+                    if reading {
+                        let body = run(inbox::inbucket_read(&kept.base, &mailbox, &a.message), online)?;
+                        json!({"from": body.from, "to": body.to, "subject": body.subject, "text": body.text, "html": body.html, "at_ms": body.at_ms})
+                    } else {
+                        mail_rows(&run(inbox::inbucket_messages(&kept.base, &mailbox), online)?)
+                    }
+                }
+                _ => return Err(failed("invalid", "unknown inbox service")),
+            };
+            Ok(view(reply))
+        }
+        "inbox.rename" => {
+            #[derive(Deserialize, Default)]
+            #[serde(default)]
+            struct A {
+                id: String,
+                label: String,
+            }
+            let a: A = parse(args)?;
+            let mut kept = kept_inbox(service, handle, &a.id)?;
+            kept.label = a.label.trim().to_owned();
+            keep_inbox(service, handle, &a.id, Some(kept), now_ms)?;
+            Ok(view(json!({})))
+        }
+        "inbox.close" => {
+            #[derive(Deserialize, Default)]
+            #[serde(default)]
+            struct A {
+                id: String,
+                /// Also delete the mailbox on the service, where it allows that.
+                delete: bool,
+            }
+            let a: A = parse(args)?;
+            let kept = kept_inbox(service, handle, &a.id)?;
+            if a.delete && online {
+                // Best effort: the mailbox is forgotten here either way.
+                let _ = match kept.provider.as_str() {
+                    "mailtm" | "mailgw" | "custom" => run(inbox::mailtm_delete_at(&kept.base, &kept.token, &kept.account), online),
+                    "inbucket" => run(inbox::inbucket_purge(&kept.base, kept.address.split('@').next().unwrap_or_default()), online),
+                    _ => Ok(()),
+                };
+            }
+            keep_inbox(service, handle, &a.id, None, now_ms)?;
+            Ok(view(json!({})))
         }
         // ---- the local network ----
         "lan.new_identity" => {

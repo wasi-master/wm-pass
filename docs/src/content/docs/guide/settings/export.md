@@ -86,7 +86,7 @@ Keep the file off shared drives, and out of folders that sync to the cloud, wher
 
 Delete it as soon as you are done, and empty the recycle bin. A deleted file can stay readable on the disk for a while.
 
-See also [Bitwarden JSON](/guide/settings/export/#action-export-bitwarden), [CSV](/guide/settings/export/#action-export-csv), [Printable page](/guide/settings/export/#action-export-html), [Hidden shelf](/guide/settings/shelf/).
+See also [Bitwarden JSON](/guide/settings/export/#action-export-bitwarden), [CSV](/guide/settings/export/#action-export-csv), [Printable page](/guide/settings/export/#action-export-html), [PDF or printer](/guide/settings/export/#action-export-pdf), [Hidden shelf](/guide/settings/shelf/).
 
 <a id="action-export-bitwarden"></a>
 
@@ -137,3 +137,23 @@ One-time codes appear as their setup links, which hold the secret.
 The file is [plain text](/guide/settings/export/#group-export-plain) until you delete it, and the paper can be read by anyone who finds it.
 
 See also [Plain text](/guide/settings/export/#group-export-plain), [Emergency kit](/guide/settings/security/#action-emergency-kit).
+
+<a id="action-export-pdf"></a>
+
+## PDF or printer
+
+*Only in Android.*
+
+Hands the printable page to Android's print screen, which saves it as a PDF or sends it to a printer.
+
+#### How it works
+
+Choose **Save as PDF** there and pick where the file goes, or choose a printer. The page carries a warning at the top that anyone holding it can read everything on it.
+
+#### Limits
+
+One-time codes appear as their setup links, which hold the secret.
+
+Like the other [plain-text](/guide/settings/export/#group-export-plain) exports, the PDF is not encrypted: anyone who opens it can read everything until you delete it, and the paper can be read by anyone who finds it.
+
+See also [Plain text](/guide/settings/export/#group-export-plain), [Printable page](/guide/settings/export/#action-export-html).

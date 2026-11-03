@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
@@ -102,6 +103,10 @@ fun NavGraphBuilder.settingsGraph() {
     composable("settings/aliases") { AliasScreen() }
     composable("settings/usernames") { UsernameScreen() }
     composable("settings/inbox") { InboxScreen() }
+    composable("settings/inbox/{id}") { entry -> InboxSessionScreen(entry.arguments?.getString("id").orEmpty()) }
+    composable("settings/inbox/{id}/{message}") { entry ->
+        MailScreen(entry.arguments?.getString("id").orEmpty(), entry.arguments?.getString("message").orEmpty())
+    }
     composable("settings/hardware") { HardwareScreen() }
     composable("settings/vaults") { VaultsScreen() }
     composable("settings/receive") { ReceiveScreen() }
@@ -876,18 +881,26 @@ private fun ShelfScreen() {
     val revision by Pass.revision.collectAsStateWithLifecycle()
     val field = rememberTextFieldState()
     var open by remember { mutableStateOf(false) }
+    var checking by remember { mutableStateOf(false) }
     var items by remember { mutableStateOf<List<Summary>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(revision, open) {
         open = runCatching { Pass.info().shelfOpen }.getOrDefault(false)
         if (open) items = runCatching { Pass.search("hidden") }.getOrDefault(emptyList())
     }
-    WmScreen("Hidden shelf", route = "settings/shelf", onBack = back()) {
+    // Leaving the page puts the shelf away again; opening one of its items does not.
+    fun leave() {
+        if (open) shell.launch { runCatching { Pass.change("shelf.close") } }
+        field.clearText()
+        shell.nav.popBackStack()
+    }
+    androidx.activity.compose.BackHandler { leave() }
+    WmScreen("Hidden shelf", route = "settings/shelf", onBack = { leave() }) {
         com.wasimaster.wmpass.ui.help.Hint(shell.prefs, "shelf", "screen.shelf", Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
         if (!open) {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                 Text(
-                    "Entries on the shelf stay out of every list, search and autofill until you open it with your password. It closes again when the vault locks.",
+                    "Entries on the shelf stay out of every list, search and autofill until you open it with your password. It closes again when you leave this page or the vault locks.",
                     color = colors.textMid,
                     style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.padding(horizontal = 4.dp),
@@ -899,11 +912,22 @@ private fun ShelfScreen() {
                     Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium)
                 }
                 Spacer(Modifier.height(12.dp))
-                PrimaryButton("Open the shelf", Modifier.fillMaxWidth(), enabled = field.text.isNotEmpty()) {
+                // The password is stretched the same way as at the door, which takes a moment.
+                androidx.compose.animation.AnimatedVisibility(checking) {
+                    androidx.compose.material3.LinearProgressIndicator(
+                        color = colors.primary,
+                        trackColor = colors.surface3,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp).clip(androidx.compose.foundation.shape.CircleShape),
+                    )
+                }
+                PrimaryButton(if (checking) "Checking the password…" else "Open the shelf", Modifier.fillMaxWidth(), enabled = field.text.isNotEmpty() && !checking) {
+                    checking = true
+                    error = null
                     shell.launch {
                         val secret = field.text.toString().toByteArray()
                         try {
                             Pass.change("shelf.open", secret = secret)
+                            field.clearText()
                             open = true
                             shell.haptics.confirm()
                         } catch (failure: NativeFailure) {
@@ -911,6 +935,7 @@ private fun ShelfScreen() {
                             shell.haptics.reject()
                         } finally {
                             secret.fill(0)
+                            checking = false
                         }
                     }
                 }
@@ -1038,25 +1063,30 @@ private val ExportGuideList = listOf(
     ExportGuide("raivo", "Raivo"),
 )
 
-/** The apps with a guide on the website. Each opens its own page, Android steps first. */
+/** The apps with a guide on the website. Each opens its page here, Android steps first. */
 @Composable
 private fun ExportGuideSheet(onDismiss: () -> Unit) {
     val colors = palette
-    val browser = androidx.compose.ui.platform.LocalUriHandler.current
+    var reading by remember { mutableStateOf<ExportGuide?>(null) }
+    reading?.let { guide ->
+        // Back from a page comes back to the list.
+        GuidePageSheet("${guide.page}.mdx", ExportGuides + guide.page + "/") { reading = null }
+        return
+    }
     PassSheet(onDismiss, "Export from your old app") {
         Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState())) {
             ExportGuideList.forEach { guide ->
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .clickable { runCatching { browser.openUri(ExportGuides + guide.page + "/") } }
+                        .clickable { reading = guide }
                         .padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     SiteTile(guide.name, null, "login", size = 36.dp, icon = guide.brand?.let { "brand:$it" })
                     Spacer(Modifier.width(14.dp))
                     Text(guide.name, color = colors.text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                    Icon(PassIcons.OpenInNew, null, tint = colors.textLow, modifier = Modifier.size(18.dp))
+                    Icon(PassIcons.ChevronRight, null, tint = colors.textLow, modifier = Modifier.size(18.dp))
                 }
             }
         }
@@ -1219,7 +1249,7 @@ private fun ImportScreen() {
                     QuietButton("Scan Google Authenticator's code", Modifier.fillMaxWidth(), PassIcons.QrCodeScanner, colors.primary) { scanCode() }
                     QuietButton("Wi-Fi saved on this phone", Modifier.fillMaxWidth(), PassIcons.Wifi, colors.primary) { savedWifi = true }
                     Text("Delete the exported file afterwards. It holds your passwords in plain text.", color = colors.textLow, style = MaterialTheme.typography.bodySmall)
-                    QuietButton("How to export from your old app", Modifier.fillMaxWidth(), PassIcons.OpenInNew) { guides = true }
+                    QuietButton("How to export from your old app", Modifier.fillMaxWidth(), PassIcons.MenuBook) { guides = true }
                 }
             }
         }
@@ -1277,6 +1307,7 @@ private fun ExportScreen() {
                 Triple("bitwarden", "Bitwarden JSON", "wm-pass-bitwarden.json"),
                 Triple("csv", "CSV", "wm-pass.csv"),
                 Triple("html", "Printable page", "wm-pass.html"),
+                Triple("pdf", "PDF or printer", ""),
             ).forEach { (id, label, name) ->
                 item {
                     NavRow(label, "Anyone who opens this file can read every password.", icon = PassIcons.Warning, info = Help.info("action.export_$id")) {
@@ -1295,7 +1326,21 @@ private fun ExportScreen() {
             "Export",
             danger = false,
             onDismiss = { warned = null },
-        ) { save.launch(pendingName) }
+        ) {
+            if (format != "pdf") {
+                save.launch(pendingName)
+            } else {
+                // Android's print screen saves the PDF, or sends it to a printer, wherever the person picks.
+                val activity = context as? android.app.Activity
+                if (activity != null) {
+                    shell.launch {
+                        val reply = Pass.plainCall("export.file") { put("format", "html") }
+                        val page = if (reply.blobs.isNotEmpty()) reply.blobs[0].decodeToString() else reply.secret?.consume { it.decodeToString() }.orEmpty()
+                        com.wasimaster.wmpass.system.PrintPage.print(activity, page, "WM Pass")
+                    }
+                }
+            }
+        }
     }
     if (askingPassword) {
         PassSheet({ askingPassword = false }, "Password for the new file") {

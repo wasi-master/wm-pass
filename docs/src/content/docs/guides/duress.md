@@ -7,7 +7,7 @@ description: What a duress password, a decoy and a hidden vault do, and the limi
 
 **A hidden vault** is a file among others that look just like it, opened by its own password. The app never shows which one opened.
 
-**The hidden shelf** keeps chosen entries out of every list, search and autofill until you open it with your password.
+**The hidden shelf** keeps chosen entries out of every list, search and autofill until you open it with your password. It closes again when you leave its page or the vault locks.
 
 **Self-destructing entries** remove themselves at a time you set.
 

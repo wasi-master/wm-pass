@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -34,7 +33,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.wasimaster.wmpass.BuildConfig
@@ -43,7 +41,6 @@ import com.wasimaster.wmpass.core.NativeFailure
 import com.wasimaster.wmpass.core.Pass
 import com.wasimaster.wmpass.core.Summary
 import com.wasimaster.wmpass.system.NetAccess
-import com.wasimaster.wmpass.system.PageCheck
 import com.wasimaster.wmpass.ui.fx.rim
 import com.wasimaster.wmpass.ui.icons.PassIcons
 import com.wasimaster.wmpass.ui.parts.Eyebrow
@@ -97,7 +94,7 @@ fun NetGate(what: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun Page(title: String, content: @Composable () -> Unit) {
+internal fun Page(title: String, content: @Composable () -> Unit) {
     val shell = LocalShell.current
     val route = when (title) {
         "Breaches" -> "settings/breaches"
@@ -128,8 +125,11 @@ fun BreachScreen() {
         NetGate("Checks your passwords against Have I Been Pwned. Only the first five characters of each password's SHA-1 hash are sent, so the service cannot tell which password you asked about. Checking an email address sends that address.") {
             Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Eyebrow("Your passwords")
+                val checkable = entries.count { it.hasPassword }
                 Text(
-                    if (found.isEmpty() && !running) {
+                    if (checkable == 0) {
+                        "No item in this vault holds a password yet, so there is nothing to check."
+                    } else if (found.isEmpty() && !running) {
                         "See whether any password in this vault has appeared in a known leak."
                     } else if (running) {
                         "Checked $done of $total."
@@ -148,7 +148,7 @@ fun BreachScreen() {
                         modifier = Modifier.fillMaxWidth().clip(CircleShape).padding(vertical = 4.dp),
                     )
                 }
-                PrimaryButton(if (running) "Checking…" else "Check every password", Modifier.fillMaxWidth(), enabled = !running, icon = PassIcons.GppGood) {
+                if (checkable > 0) PrimaryButton(if (running) "Checking…" else "Check every password", Modifier.fillMaxWidth(), enabled = !running, icon = PassIcons.GppGood) {
                     running = true
                     problem = null
                     scope.launch {
@@ -550,222 +550,6 @@ private fun AddressTricks() {
         ) {
             Text(value, color = colors.text, style = PassType.secretSmall, modifier = Modifier.weight(1f))
             RowIconButton(PassIcons.ContentCopy, "Copy") { shell.copyPlain("Address", value) }
-        }
-    }
-}
-
-// ---- disposable inbox ----
-
-@Composable
-fun InboxScreen() {
-    val colors = palette
-    val shell = LocalShell.current
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var address by remember { mutableStateOf<String?>(null) }
-    var token by remember { mutableStateOf<ByteArray?>(null) }
-    var service by remember { mutableStateOf("mailtm") }
-    var messages by remember { mutableStateOf<List<JsonObject>>(emptyList()) }
-    var opened by remember { mutableStateOf<Pair<String, String>?>(null) }
-    var problem by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(address) {
-        while (address != null) {
-            runCatching {
-                messages = (
-                    Engine.net("inbox.messages", online = NetAccess.allowed(context), secret = token) {
-                        put("service", service)
-                        put("address", address.orEmpty())
-                    }.json as JsonArray
-                    ).map { it.jsonObject }
-            }
-            kotlinx.coroutines.delay(8000)
-        }
-    }
-    Page("Disposable inbox") {
-        NetGate("Makes a throwaway address on a public mail service, for a sign-up that only needs one confirmation mail. The service, and possibly others, can read what arrives. Never use one for an account you want to keep.") {
-            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                val current = address
-                if (current == null) {
-                    Text(
-                        "Anyone could read these mailboxes in principle, and the address is gone when you leave this page. Good for a one-off sign-up, nothing more.",
-                        color = colors.textMid,
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Pill("mail.tm", service == "mailtm") { service = "mailtm" }
-                        Pill("Guerrilla Mail", service == "guerrilla") { service = "guerrilla" }
-                    }
-                    PrimaryButton("Make an address", Modifier.fillMaxWidth(), icon = PassIcons.Inbox) {
-                        scope.launch {
-                            try {
-                                val reply = Engine.net("inbox.new", online = NetAccess.allowed(context)) { put("service", service) }
-                                token = reply.secret?.consume { it.copyOf() }
-                                address = reply.obj["address"]!!.jsonPrimitive.content
-                                problem = null
-                            } catch (failure: NativeFailure) {
-                                problem = failure.message
-                            }
-                        }
-                    }
-                } else {
-                    Row(
-                        Modifier.fillMaxWidth().clip(Shapes.cardSmall).background(colors.surface1).rim(Shapes.cardSmall, colors).padding(start = 18.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(current, color = colors.text, style = PassType.secretSmall, modifier = Modifier.weight(1f))
-                        RowIconButton(PassIcons.ContentCopy, "Copy") { shell.copyPlain("Address", current) }
-                    }
-                    Eyebrow("Arrived") { com.wasimaster.wmpass.ui.help.HelpMark("group.inbox.arrived", "mail that arrived") }
-                    if (messages.isEmpty()) {
-                        Text("Nothing yet. This page checks every few seconds.", color = colors.textMid, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 6.dp))
-                    } else {
-                        GroupCard {
-                            messages.forEachIndexed { index, message ->
-                                if (index > 0) Hairline()
-                                val subject = message["subject"]!!.jsonPrimitive.content
-                                val preview = message["preview"]!!.jsonPrimitive.content
-                                Column(
-                                    Modifier.fillMaxWidth().clickable {
-                                        if (service == "mailtm") {
-                                            scope.launch {
-                                                val body = runCatching {
-                                                    Engine.net("inbox.body", online = NetAccess.allowed(context), secret = token) { put("id", message["id"]!!.jsonPrimitive.content) }
-                                                        .obj["text"]!!.jsonPrimitive.content
-                                                }.getOrDefault(preview)
-                                                opened = subject to body
-                                            }
-                                        } else {
-                                            opened = subject to preview
-                                        }
-                                    }.padding(horizontal = 18.dp, vertical = 12.dp),
-                                ) {
-                                    Text(subject.ifEmpty { "No subject" }, color = colors.text, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold), maxLines = 1)
-                                    Text(message["from"]!!.jsonPrimitive.content, color = colors.textMid, style = MaterialTheme.typography.bodySmall, maxLines = 1)
-                                    Text(preview, color = colors.textMid, style = MaterialTheme.typography.bodyMedium, maxLines = 2)
-                                }
-                            }
-                        }
-                    }
-                    opened?.let { (subject, body) ->
-                        Eyebrow(subject)
-                        // Plain text only, so no tracking pixel or script in a mail ever runs here.
-                        Text(body, color = colors.text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 6.dp))
-                    }
-                }
-                problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
-                Spacer(Modifier.height(30.dp))
-            }
-        }
-    }
-}
-
-// ---- usernames ----
-
-@Composable
-fun UsernameScreen() {
-    val colors = palette
-    val context = LocalContext.current
-    val shell = LocalShell.current
-    val scope = rememberCoroutineScope()
-    val name = rememberTextFieldState()
-    var sites by remember { mutableStateOf<List<String>>(emptyList()) }
-    // Sites that only answer a browser, read in a hidden WebView.
-    var pages by remember { mutableStateOf<List<String>>(emptyList()) }
-    val answers = remember { mutableStateMapOf<String, String>() }
-    var links by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
-    var running by remember { mutableStateOf(false) }
-    var problem by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) {
-        sites = runCatching { (Engine.net("usernames.sites", online = false).json as JsonArray).map { it.jsonPrimitive.content } }.getOrDefault(emptyList())
-        pages = runCatching { (Engine.net("usernames.pages", online = false).json as JsonArray).map { it.jsonPrimitive.content } }.getOrDefault(emptyList())
-    }
-    Page("Username checker") {
-        NetGate("Asks each site whether a name is taken, one at a time. Every site you check learns the name you looked up. TikTok and Instagram only answer a browser, so their pages load in a hidden browser view that runs their scripts and keeps nothing afterwards. X, Threads, Reddit and a few others refuse or give the same answer for every name, so their profile pages are linked for you to open yourself.") {
-            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                SheetField(name, "A username")
-                PrimaryButton(if (running) "Checking…" else "Check", Modifier.fillMaxWidth(), enabled = !running && name.text.isNotBlank(), icon = PassIcons.PersonSearch) {
-                    val wanted = name.text.toString().trim()
-                    val online = NetAccess.allowed(context)
-                    running = true
-                    problem = null
-                    answers.clear()
-                    links = emptyList()
-                    scope.launch {
-                        suspend fun ask(site: String, run: suspend () -> String) {
-                            answers[site] = "…"
-                            try {
-                                answers[site] = run()
-                            } catch (failure: NativeFailure) {
-                                answers[site] = "unknown"
-                                problem = failure.message
-                            }
-                        }
-                        for (site in sites) {
-                            ask(site) {
-                                Engine.net("usernames.check", online = online) {
-                                    put("site", site)
-                                    put("name", wanted)
-                                }.obj["answer"]!!.jsonPrimitive.content
-                            }
-                        }
-                        if (online) for (site in pages) ask(site) { PageCheck.check(context, site, wanted) }
-                        links = runCatching {
-                            Engine.net("usernames.links", online = false) { put("name", wanted) }.json.jsonArray.map {
-                                it.jsonObject["site"]!!.jsonPrimitive.content to it.jsonObject["url"]!!.jsonPrimitive.content
-                            }
-                        }.getOrDefault(emptyList())
-                        running = false
-                    }
-                }
-                problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
-                val shown = (sites + pages).filter { it in answers }
-                if (shown.isNotEmpty()) {
-                    GroupCard {
-                        shown.forEachIndexed { index, site ->
-                            if (index > 0) Hairline(inset = 70.dp)
-                            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                SiteTile(site, null, "login", size = 38.dp)
-                                Spacer(Modifier.width(14.dp))
-                                Text(site, color = colors.text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                                val answer = answers[site].orEmpty()
-                                Text(
-                                    when (answer) {
-                                        "free" -> "Free"
-                                        "taken" -> "Taken"
-                                        "unknown" -> "No clear answer"
-                                        else -> "…"
-                                    },
-                                    color = when (answer) {
-                                        "free" -> colors.primary
-                                        "taken" -> colors.textMid
-                                        else -> colors.textLow
-                                    },
-                                    style = MaterialTheme.typography.labelLarge,
-                                )
-                            }
-                        }
-                    }
-                }
-                if (links.isNotEmpty()) {
-                    Eyebrow("Look for yourself") { com.wasimaster.wmpass.ui.help.HelpMark("group.usernames.links", "the profile links") }
-                    GroupCard {
-                        links.forEachIndexed { index, (site, url) ->
-                            if (index > 0) Hairline(inset = 70.dp)
-                            Row(
-                                Modifier.fillMaxWidth().clickable { shell.openUrl(url) }.padding(horizontal = 16.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                SiteTile(site, null, "login", size = 38.dp)
-                                Spacer(Modifier.width(14.dp))
-                                Text(site, color = colors.text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                                Icon(PassIcons.OpenInNew, contentDescription = "Open in your browser", tint = colors.textLow, modifier = Modifier.size(20.dp))
-                            }
-                        }
-                    }
-                }
-                Spacer(Modifier.height(30.dp))
-            }
         }
     }
 }
