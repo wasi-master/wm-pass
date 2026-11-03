@@ -618,9 +618,20 @@ version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6aeac2e1fe888769f34f05ac343bbef98b14d1ffb292ab69d4608b3abc86f2a2"
 dependencies = [
- "blowfish",
+ "blowfish 0.9.1",
  "pbkdf2 0.12.2",
  "sha2 0.10.9",
+]
+
+[[package]]
+name = "bcrypt-pbkdf"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "144e573728da132683b9488acd528274c790e07fc06ff81ee29f9d8f8b1041e0"
+dependencies = [
+ "blowfish 0.10.0",
+ "pbkdf2 0.13.0",
+ "sha2 0.11.1",
 ]
 
 [[package]]
@@ -829,6 +840,16 @@ checksum = "e412e2cd0f2b2d93e02543ceae7917b3c70331573df19ee046bcbc35e45e87d7"
 dependencies = [
  "byteorder",
  "cipher 0.4.4",
+]
+
+[[package]]
+name = "blowfish"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62ce3946557b35e71d1bbe07ec385073ce9eda05043f95de134eb578fcf1a298"
+dependencies = [
+ "byteorder",
+ "cipher 0.5.2",
 ]
 
 [[package]]
@@ -7085,7 +7106,7 @@ version = "0.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b86f5297f0f04d08cabaa0f6bff7cb6aec4d9c3b49d87990d63da9d9156a8c3"
 dependencies = [
- "bcrypt-pbkdf",
+ "bcrypt-pbkdf 0.10.0",
  "ed25519-dalek 2.2.0",
  "p256 0.13.2",
  "p384",
@@ -9677,22 +9698,31 @@ dependencies = [
  "aes 0.9.4",
  "aes-gcm 0.11.1",
  "base64 0.23.1",
+ "bcrypt-pbkdf 0.11.0",
  "ccm",
+ "chacha20 0.10.2",
  "cmac",
+ "ctr 0.10.1",
+ "ed25519-dalek 3.0.0",
  "getrandom 0.4.3",
  "hmac 0.13.0",
  "md-5",
  "md4",
  "num-bigint 0.5.1",
+ "p256 0.14.0",
  "pbkdf2 0.13.0",
+ "poly1305 0.9.1",
  "quick-xml 0.42.0",
  "serde_json",
+ "sha1 0.11.0",
  "sha2 0.11.1",
  "subtle",
  "tempfile",
  "url",
  "wmpass-core",
  "wmpass-net",
+ "x25519-dalek",
+ "zeroize",
 ]
 
 [[package]]

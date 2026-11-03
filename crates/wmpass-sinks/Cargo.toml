@@ -31,13 +31,24 @@ pbkdf2 = { version = "0.13", default-features = false, features = ["hmac"] }
 num-bigint = { version = "0.5", default-features = false, features = ["std"] }
 subtle = "2.6"
 
-# SMB: NTLM's digests, SMB 3 signing and encryption. Native only, like the sink.
+# Native only, like the sinks that need them (raw sockets).
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# SMB: NTLM's digests, SMB 3 signing and encryption.
 md4 = "0.11"
 md-5 = "0.11"
 cmac = "0.8"
 ccm = "0.6"
 aes-gcm = { version = "0.11", default-features = false, features = ["aes", "alloc"] }
+# SSH (for SFTP) and NFS, hand-written over these primitives.
+ctr = "0.10"
+chacha20 = { version = "0.10", features = ["legacy"] }
+poly1305 = "0.9"
+bcrypt-pbkdf = "0.11"
+ed25519-dalek = "3"
+p256 = { version = "0.14", default-features = false, features = ["ecdsa", "std"] }
+x25519-dalek.workspace = true
+sha1.workspace = true
+zeroize.workspace = true
 
 [dev-dependencies]
 tempfile = "3"
