@@ -1,0 +1,113 @@
+---
+title: Moving from Proton Pass
+description: How to export your passwords from Proton Pass on each device, and bring them into WM Pass.
+sidebar:
+  label: "Proton Pass"
+source:
+  name: "Proton Pass"
+  kind: manager
+  logo: proton
+  exportOn: ["Web", "Browser extension", "Windows"]
+  choose: "CSV or unencrypted ZIP"
+---
+
+import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+import Shot from '../../../../components/Shot.astro';
+
+<Aside type="tip" title="Which file">
+Choose **CSV** or the unencrypted ZIP. WM Pass can't read the PGP-encrypted ZIP.
+</Aside>
+
+<Tabs syncKey="device">
+<TabItem label="Android" icon="mobile-android">
+
+<Aside>
+Proton Pass's phone apps can't export. Use the web app, the browser extension or the Windows app on a computer.
+</Aside>
+
+</TabItem>
+<TabItem label="Web" icon="external">
+<Steps>
+
+1. Open the Proton Pass web app and click the gear icon in the bottom-left corner to open settings.
+
+   <Shot src="https://res.cloudinary.com/dbulfrlrz/images/f_auto,q_auto/v1778850495/wp-pme/pass-export-1_143105045e8/pass-export-1_143105045e8.png?_i=AA" alt="Proton Pass menu with the gear icon for Settings" from="https://proton.me/support/pass-export" publisher="Proton" />
+
+2. In the settings menu, open the **Export** tab.
+
+   <Shot src="https://res.cloudinary.com/dbulfrlrz/images/f_auto,q_auto/v1778850502/wp-pme/pass-export-2_14312686b48/pass-export-2_14312686b48.png?_i=AA" alt="Proton Pass settings with the Export tab" from="https://proton.me/support/pass-export" publisher="Proton" />
+
+3. Pick the format. Choose **CSV**, or the unencrypted ZIP. Don't pick the PGP-encrypted ZIP; WM Pass can't read it.
+
+   <Shot src="https://res.cloudinary.com/dbulfrlrz/images/f_auto,q_auto/v1744722900/wp-pme/image-20_83595ad65b/image-20_83595ad65b.png?_i=AA" alt="Proton Pass export dialog with format choices and a passphrase field" from="https://proton.me/support/pass-export" publisher="Proton" />
+
+4. Click **Export**. The file downloads to your default downloads folder.
+
+</Steps>
+
+Steps from [How to export from Proton Pass](https://proton.me/support/pass-export).
+
+</TabItem>
+<TabItem label="Browser extension" icon="puzzle">
+<Steps>
+
+1. Open the Proton Pass extension, click the hamburger menu (three lines), then the gear icon to open settings.
+
+   <Shot src="https://res.cloudinary.com/dbulfrlrz/images/f_auto,q_auto/v1778850495/wp-pme/pass-export-1_143105045e8/pass-export-1_143105045e8.png?_i=AA" alt="Proton Pass menu with the gear icon for Settings" from="https://proton.me/support/pass-export" publisher="Proton" />
+
+2. In the settings menu, open the **Export** tab.
+
+   <Shot src="https://res.cloudinary.com/dbulfrlrz/images/f_auto,q_auto/v1778850502/wp-pme/pass-export-2_14312686b48/pass-export-2_14312686b48.png?_i=AA" alt="Proton Pass settings with the Export tab" from="https://proton.me/support/pass-export" publisher="Proton" />
+
+3. Pick the format. Choose **CSV**, or the unencrypted ZIP. Don't pick the PGP-encrypted ZIP; WM Pass can't read it.
+
+   <Shot src="https://res.cloudinary.com/dbulfrlrz/images/f_auto,q_auto/v1744722900/wp-pme/image-20_83595ad65b/image-20_83595ad65b.png?_i=AA" alt="Proton Pass export dialog with format choices and a passphrase field" from="https://proton.me/support/pass-export" publisher="Proton" />
+
+4. Click **Export**. The file downloads to your default downloads folder.
+
+</Steps>
+
+Steps from [How to export from Proton Pass](https://proton.me/support/pass-export).
+
+</TabItem>
+<TabItem label="Windows" icon="laptop">
+<Steps>
+
+1. Open the Proton Pass Windows app, click the hamburger menu (three lines), then the gear icon to open settings.
+
+   <Shot src="https://res.cloudinary.com/dbulfrlrz/images/f_auto,q_auto/v1778850495/wp-pme/pass-export-1_143105045e8/pass-export-1_143105045e8.png?_i=AA" alt="Proton Pass menu with the gear icon for Settings" from="https://proton.me/support/pass-export" publisher="Proton" />
+
+2. In the settings menu, open the **Export** tab.
+
+   <Shot src="https://res.cloudinary.com/dbulfrlrz/images/f_auto,q_auto/v1778850502/wp-pme/pass-export-2_14312686b48/pass-export-2_14312686b48.png?_i=AA" alt="Proton Pass settings with the Export tab" from="https://proton.me/support/pass-export" publisher="Proton" />
+
+3. Pick the format. Choose **CSV**, or the unencrypted ZIP. Don't pick the PGP-encrypted ZIP; WM Pass can't read it.
+
+   <Shot src="https://res.cloudinary.com/dbulfrlrz/images/f_auto,q_auto/v1744722900/wp-pme/image-20_83595ad65b/image-20_83595ad65b.png?_i=AA" alt="Proton Pass export dialog with format choices and a passphrase field" from="https://proton.me/support/pass-export" publisher="Proton" />
+
+4. Click **Export**. The file downloads to your default downloads folder.
+
+</Steps>
+
+Steps from [How to export from Proton Pass](https://proton.me/support/pass-export).
+
+</TabItem>
+</Tabs>
+
+## Good to know
+
+- Proton offers three formats: a ZIP holding a PGP-encrypted JSON file, an unencrypted ZIP, and CSV. WM Pass reads the last two.
+
+## Then, in WM Pass
+
+Open Settings, Import, and choose the file. The [import steps](/guides/import-export/#importing-into-wm-pass) cover every WM Pass app.
+
+Delete the export once WM Pass has read it.
+
+If you exported on a computer and use WM Pass on your phone, import the file in WM Pass on that computer and [sync](/guides/backup-sync/), or copy the file to the phone over a USB cable. Email and cloud drives keep copies of what passes through them.
+
+## Sources
+
+These steps follow Proton Pass's own help pages, read on 4 November 2026. Menus move between versions; if a step does not match what you see, the page it came from may be newer.
+
+- [How to export from Proton Pass](https://proton.me/support/pass-export), Proton

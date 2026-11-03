@@ -1,0 +1,68 @@
+---
+title: Moving from KeePass and KeePassXC
+description: How to export your passwords from KeePass and KeePassXC on each device, and bring them into WM Pass.
+sidebar:
+  label: "KeePass and KeePassXC"
+source:
+  name: "KeePass and KeePassXC"
+  kind: manager
+  logo: keepassxc
+  exportOn: ["Android", "Computer"]
+  choose: "The .kdbx database itself"
+---
+
+import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+import Shot from '../../../../components/Shot.astro';
+
+<Aside type="tip" title="Which file">
+No export needed. WM Pass opens the `.kdbx` database itself, with its password, and its key file if it has one.
+</Aside>
+
+<Tabs syncKey="device">
+<TabItem label="Android" icon="mobile-android">
+
+KeePassDX keeps the database as one .kdbx file that you manage yourself, so there is nothing to export; WM Pass opens that file.
+
+<Steps>
+
+1. Find the .kdbx file. If you remember where you saved it, open it in your file manager.
+2. If you do not remember, search your phone for a file ending in **.kdbx**.
+3. If you keep the file in cloud storage, open your cloud app and select the database file there.
+4. In WM Pass, choose that .kdbx file and enter its master password.
+5. If the database also uses a key file, choose that file too.
+
+</Steps>
+
+Steps from [KeePassDX FAQ](https://github.com/Kunzisoft/KeePassDX/wiki/FAQ).
+
+</TabItem>
+<TabItem label="Computer" icon="laptop">
+<Steps>
+
+1. Open **KeePassXC**.
+2. Look at the **Recent Databases** list to find your database, or use **Open existing database** and browse to it.
+3. Note the location of the .kdbx file; KeePassXC saves it wherever you chose when you created it.
+4. Copy that .kdbx file to your phone by a trusted route, such as a USB cable, or keep it in the cloud storage you already use.
+5. In WM Pass, choose the .kdbx file and enter the database password, plus the key file if the database has one.
+
+</Steps>
+
+Steps from [KeePassXC User Guide: Creating and opening a database; Storing Your Database](https://keepassxc.org/docs/KeePassXC_UserGuide#_storing_your_database).
+
+</TabItem>
+</Tabs>
+
+## Good to know
+
+- The database stays encrypted, but protect the key file if one is used; losing the master password or key file locks the database for good.
+
+## Then, in WM Pass
+
+Open Settings, Import, choose the `.kdbx` file and enter its password. The [import steps](/guides/import-export/#importing-into-wm-pass) cover every WM Pass app. The database stays encrypted, so there is nothing to delete afterwards.
+
+## Sources
+
+These steps follow KeePass and KeePassXC's own help pages, read on 4 November 2026. Menus move between versions; if a step does not match what you see, the page it came from may be newer.
+
+- [KeePassXC User Guide: Creating and opening a database; Storing Your Database](https://keepassxc.org/docs/KeePassXC_UserGuide#_storing_your_database), KeePassXC
+- [KeePassDX FAQ](https://github.com/Kunzisoft/KeePassDX/wiki/FAQ), Kunzisoft (KeePassDX)

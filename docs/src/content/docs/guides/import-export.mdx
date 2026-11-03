@@ -1,0 +1,93 @@
+---
+title: Import and export
+description: Bring your passwords in from other password managers and authenticator apps, or take them out again.
+---
+
+import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+import SourceGrid from '../../../components/SourceGrid.astro';
+import SourceTable from '../../../components/SourceTable.astro';
+
+Moving to WM Pass takes two steps. Your old app writes its passwords to a file, and WM Pass reads that file. KeePass databases need no export, and Google Authenticator hands its codes over as QR codes instead of a file.
+
+## Exporting from your old app
+
+Choose the app you are leaving. Each guide has the steps for every device that app can export from, Android first, with the pictures from the app's own help pages.
+
+### Password managers
+
+<SourceGrid kind="manager" />
+
+### Authenticators
+
+<SourceGrid kind="authenticator" />
+
+<Aside type="caution">
+Most exports are plain text. Anyone who opens the file can read every password in it, so keep it off shared folders and cloud drives, and delete it once WM Pass has read it.
+</Aside>
+
+## Importing into WM Pass
+
+<Tabs syncKey="wm-pass-app">
+<TabItem label="Android">
+<Steps>
+
+1. Open **Settings**, then **Import**.
+2. Tap **Choose a file** and pick the export. For Google Authenticator, tap **Scan Google Authenticator's code** instead, or pick a screenshot of the code.
+3. If the file has a password, as a KeePass database does, enter it and tap **Open**.
+4. Check the count and the first few names, then tap **Import**.
+5. Delete the export file from your phone's Downloads.
+
+</Steps>
+</TabItem>
+<TabItem label="Desktop">
+<Steps>
+
+1. Open **Settings**, then **Import**, under Your vault.
+2. Choose **Choose a file** and pick the export.
+3. If the file has a password, enter it and choose **Open**.
+4. Check the count and the first few names, then choose **Import**.
+5. Delete the export file.
+
+</Steps>
+</TabItem>
+<TabItem label="Browser extension">
+<Steps>
+
+1. Open the extension, then **Settings**, then **Import**, under Your vault.
+2. Choose **Choose a file** and pick the export.
+3. If the file has a password, enter it and choose **Open**.
+4. Check the count and the first few names, then choose **Import**.
+5. Delete the export file.
+
+</Steps>
+</TabItem>
+<TabItem label="Terminal">
+<Steps>
+
+1. Run `wmpass import` with your vault and the export:
+
+   ```sh
+   wmpass import ~/Passwords.wmvault ~/Downloads/bitwarden_export.json
+   ```
+
+   It asks for the vault's password, and for the database password when the file is a KeePass database.
+
+2. Delete the export file.
+
+</Steps>
+
+In the full-screen app, press `:` and choose **Import from another app**.
+</TabItem>
+</Tabs>
+
+A login with the same site, username and password as one already in your vault is skipped, so importing the same file twice adds nothing.
+
+## Every app at a glance
+
+<SourceTable />
+
+These importers were tested against sample files written by hand from each format's published or observed layout, not against exports from every real app. Compare the count afterwards, and [tell us](https://github.com/wasi-master/wm-pass/issues) if anything is missing.
+
+## Exporting from WM Pass
+
+Under Settings, Export, WM Pass writes `.wmvault`, KDBX, Bitwarden JSON, CSV or a printable HTML page. CSV and HTML are plain text, so delete them once you are done.

@@ -1,0 +1,102 @@
+---
+title: Moving from LastPass
+description: How to export your passwords from LastPass on each device, and bring them into WM Pass.
+sidebar:
+  label: "LastPass"
+source:
+  name: "LastPass"
+  kind: manager
+  logo: lastpass
+  exportOn: ["Browser extension", "Web"]
+  choose: "CSV"
+---
+
+import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+import Shot from '../../../../components/Shot.astro';
+
+<Aside type="tip" title="Which file">
+LastPass has one plain export, **Export data for use anywhere**, which saves a CSV file.
+</Aside>
+
+<Tabs syncKey="device">
+<TabItem label="Android" icon="mobile-android">
+
+<Aside>
+LastPass's Android app can't export. Use the browser extension or the LastPass website on a computer.
+</Aside>
+
+</TabItem>
+<TabItem label="Browser extension" icon="puzzle">
+
+LastPass says these steps work only in the browser extension. A Teams or Business admin can switch export off with a policy.
+
+<Steps>
+
+1. Click the grey or black **LastPass** icon in your browser toolbar.
+2. Enter your email address and master password, then click **Log In**.
+3. If multifactor authentication is on, complete it.
+4. Click the **LastPass** icon again and open the **Account** tab.
+5. Go to **Fix a problem yourself**, then **Export vault items**, then **Export data for use anywhere**.
+6. If asked, enter your master password. You can tick **Do not re-prompt for** and pick a time to skip this later.
+7. Click **Continue**. A CSV file downloads.
+8. In LastPass for Safari the CSV opens in a new tab instead. Right-click the tab, choose **Save Page As...**, name the file and click **Save**.
+
+</Steps>
+
+Steps from [Export vault data from LastPass as a generic CSV file](https://community.lastpass.com/kb/articles/40-export-vault-data-from-lastpass-as-a-generic-csv-file%EF%BB%BF).
+
+</TabItem>
+<TabItem label="Web" icon="external">
+
+Use this when the extension only shows a message about checking your email. The pictures are from RoboForm's guide to leaving LastPass.
+
+<Steps>
+
+1. Open your LastPass vault in a browser and log in.
+2. In the left column, click **Advanced Options**, then **Export**.
+
+   <Shot src="https://help.roboform.com/hc/article_attachments/44240994443405" alt="LastPass vault with Advanced Options and Export in the left column" from="https://help.roboform.com/hc/en-us/articles/4421721070861-How-to-Export-from-LastPass-and-Import-into-RoboForm" publisher="RoboForm (third party)" />
+
+3. Open the verification email from LastPass and click **Continue export**.
+
+   <Shot src="https://help.roboform.com/hc/article_attachments/44241010984973" alt="LastPass verification email with a Continue export button" from="https://help.roboform.com/hc/en-us/articles/4421721070861-How-to-Export-from-LastPass-and-Import-into-RoboForm" publisher="RoboForm (third party)" />
+
+4. LastPass confirms the check. Return to your vault and do the **Advanced Options**, **Export** step again.
+
+   <Shot src="https://help.roboform.com/hc/article_attachments/44240994459021" alt="LastPass confirming the export verification" from="https://help.roboform.com/hc/en-us/articles/4421721070861-How-to-Export-from-LastPass-and-Import-into-RoboForm" publisher="RoboForm (third party)" />
+
+5. Enter your master password and click **Submit**.
+
+   <Shot src="https://help.roboform.com/hc/article_attachments/44240994462605" alt="LastPass master password prompt for the export" from="https://help.roboform.com/hc/en-us/articles/4421721070861-How-to-Export-from-LastPass-and-Import-into-RoboForm" publisher="RoboForm (third party)" />
+
+6. LastPass downloads a CSV named lastpass_vault_export.csv to your Downloads folder.
+
+</Steps>
+
+Steps from [How to Export from LastPass and Import into RoboForm](https://help.roboform.com/hc/en-us/articles/4421721070861-How-to-Export-from-LastPass-and-Import-into-RoboForm).
+
+</TabItem>
+</Tabs>
+
+## Good to know
+
+- The export leaves out attachments and the one-time code (TOTP) secrets stored in password items.
+- Custom item types and custom fields are not supported by LastPass's CSV export.
+- If the CSV comes out blank or LastPass emails you instead, use the website route.
+- If you edit the CSV by hand, LastPass says to keep every column header in lowercase.
+
+## Then, in WM Pass
+
+Open Settings, Import, and choose the file. The [import steps](/guides/import-export/#importing-into-wm-pass) cover every WM Pass app.
+
+Delete the export once WM Pass has read it.
+
+If you exported on a computer and use WM Pass on your phone, import the file in WM Pass on that computer and [sync](/guides/backup-sync/), or copy the file to the phone over a USB cable. Email and cloud drives keep copies of what passes through them.
+
+## Sources
+
+These steps follow LastPass's own help pages, read on 4 November 2026. Menus move between versions; if a step does not match what you see, the page it came from may be newer.
+
+- [Export vault data from LastPass as a generic CSV file](https://community.lastpass.com/kb/articles/40-export-vault-data-from-lastpass-as-a-generic-csv-file%EF%BB%BF), LastPass
+- [How to export vault using the app (without having to switch devices) (reply from LastPass Support)](https://community.lastpass.com/discussion/1292/how-to-export-vault-using-the-app-without-having-to-switch-devices), LastPass Community
+- [How to Export from LastPass and Import into RoboForm](https://help.roboform.com/hc/en-us/articles/4421721070861-How-to-Export-from-LastPass-and-Import-into-RoboForm), RoboForm (third party)

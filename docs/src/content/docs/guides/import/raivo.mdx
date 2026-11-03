@@ -1,0 +1,69 @@
+---
+title: Moving from Raivo
+description: How to export your codes from Raivo on each device, and bring them into WM Pass.
+sidebar:
+  label: "Raivo"
+source:
+  name: "Raivo"
+  kind: authenticator
+  exportOn: ["iPhone"]
+  choose: "The JSON inside its ZIP"
+---
+
+import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+import Shot from '../../../../components/Shot.astro';
+
+<Aside type="tip" title="Which file">
+Raivo exports only an encrypted ZIP. Unzip it with your Raivo master password and choose the JSON file inside.
+</Aside>
+
+<Tabs syncKey="device">
+<TabItem label="Android" icon="mobile-android">
+
+<Aside>
+Raivo is an iPhone and iPad app. Export from the iPhone or iPad that has it.
+</Aside>
+
+</TabItem>
+<TabItem label="iPhone" icon="phone">
+
+Raivo is discontinued and has no export guide, so these steps follow the app's menus.
+
+<Steps>
+
+1. Open Raivo and unlock it.
+2. Go to Raivo's settings and find the **Data** section.
+3. Tap **Export OTPs to ZIP archive**.
+4. Read the notice, then tap **Export**.
+5. Wait a few seconds for the archive to be built.
+6. In the share sheet, save the ZIP to Files or send it to the device that runs WM Pass.
+7. Unzip it with your Raivo master password and keep the JSON file inside.
+
+</Steps>
+
+Steps from [Raivo's settings screen, in its source code](https://github.com/raivo-otp/ios-application/blob/master/Raivo/Forms/MiscellaneousForm.swift).
+
+</TabItem>
+</Tabs>
+
+## Good to know
+
+- Raivo is discontinued.
+- The ZIP is encrypted with your master password (without the passcode). If the password has special characters, some unzip tools fail; Raivo suggests opening the ZIP in the iOS Files app.
+- The ZIP holds a JSON file and an HTML file; WM Pass reads the JSON one.
+
+## Then, in WM Pass
+
+Open Settings, Import, and choose the file. The [import steps](/guides/import-export/#importing-into-wm-pass) cover every WM Pass app.
+
+Delete the export once WM Pass has read it.
+
+If you exported on a computer and use WM Pass on your phone, import the file in WM Pass on that computer and [sync](/guides/backup-sync/), or copy the file to the phone over a USB cable. Email and cloud drives keep copies of what passes through them.
+
+## Sources
+
+These steps follow Raivo's own help pages, read on 4 November 2026. Menus move between versions; if a step does not match what you see, the page it came from may be newer.
+
+- [Raivo OTP for iOS, README](https://github.com/raivo-otp/ios-application/blob/master/README.md), Raivo (GitHub)
+- [Raivo's settings screen, in its source code](https://github.com/raivo-otp/ios-application/blob/master/Raivo/Forms/MiscellaneousForm.swift), Raivo (GitHub)
+- [Raivo's settings screen, in its source code](https://github.com/raivo-otp/ios-application/blob/master/Raivo/Views/SwiftUI/MainDataExportView.swift), Raivo (GitHub)

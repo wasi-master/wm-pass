@@ -1,0 +1,137 @@
+---
+title: Moving from Bitwarden
+description: How to export your passwords from Bitwarden on each device, and bring them into WM Pass.
+sidebar:
+  label: "Bitwarden"
+source:
+  name: "Bitwarden"
+  kind: manager
+  logo: bitwarden
+  exportOn: ["Android", "iPhone", "Web", "Browser extension", "Computer"]
+  choose: ".json, not encrypted"
+---
+
+import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+import Shot from '../../../../components/Shot.astro';
+
+<Aside type="tip" title="Which file">
+Choose **.json**, not **.json (Encrypted)**. WM Pass can't read the encrypted file, and **.csv** leaves out cards, identities and passkeys.
+</Aside>
+
+<Tabs syncKey="device">
+<TabItem label="Android" icon="mobile-android">
+
+Bitwarden's Android app can also export straight to another app that supports Credential Exchange (Android 10+), but that starts from the other app and WM Pass can't receive it. Use the file export below.
+
+<Steps>
+
+1. Open Bitwarden and tap the **Settings** icon.
+2. Tap **Vault**.
+3. Tap **Export vault**.
+4. Under **File Format**, choose **.json**.
+
+   <Shot src="https://bitwarden.com/assets/6IvRA9oYfTvO9GxylX2MMh/528b65ca6d83f0f28c469b62078570d5/2025-01-22_09-51-29.png" alt="Bitwarden's Export vault screen on iPhone and Android, showing the file format, password and Export vault button" from="https://bitwarden.com/help/export-your-data/" publisher="Bitwarden" />
+
+5. Enter your master password.
+6. Tap **Export**. The file is saved where your device puts downloads, usually the Downloads folder.
+
+</Steps>
+
+Steps from [Export Vault Data](https://bitwarden.com/help/export-your-data/).
+
+</TabItem>
+<TabItem label="iPhone" icon="phone">
+<Steps>
+
+1. Open Bitwarden and tap the **Settings** icon.
+2. Tap **Vault**.
+3. Tap **Export vault**.
+4. If you're asked, choose **Export vault to a file**, not **Export vault to another app**. This choice appears on iOS 26 and later.
+5. Under **File Format**, choose **.json**.
+
+   <Shot src="https://bitwarden.com/assets/6IvRA9oYfTvO9GxylX2MMh/528b65ca6d83f0f28c469b62078570d5/2025-01-22_09-51-29.png" alt="Bitwarden's Export vault screen on iPhone and Android, showing the file format, password and Export vault button" from="https://bitwarden.com/help/export-your-data/" publisher="Bitwarden" />
+
+6. Enter your master password.
+7. Tap **Export**. The file is saved where your device puts downloads, usually the Downloads folder.
+
+</Steps>
+
+Steps from [Export Vault Data](https://bitwarden.com/help/export-your-data/).
+
+</TabItem>
+<TabItem label="Web" icon="external">
+<Steps>
+
+1. Log in to the Bitwarden web vault and select **Tools** in the sidebar.
+2. Select **Export**.
+
+   <Shot src="https://bitwarden.com/assets/5PUGzasNsQnABG9gtso4o3/4e4880193ff45c22f0474c129e68e4e3/2025-12-17_11-43-59.png" alt="Bitwarden web vault Export page with Export under Tools highlighted in the sidebar" from="https://bitwarden.com/help/export-your-data/" publisher="Bitwarden" />
+
+3. In **Export from**, choose **My vault**.
+4. In **File Format**, choose **.json**.
+5. Select **Export**.
+6. Enter your master password or an email verification code to confirm.
+
+</Steps>
+
+Steps from [Export Vault Data](https://bitwarden.com/help/export-your-data/).
+
+</TabItem>
+<TabItem label="Browser extension" icon="puzzle">
+<Steps>
+
+1. Open the Bitwarden browser extension and select the **Settings** icon.
+2. Select **Vault options**.
+3. Select **Export vault**.
+4. In **Export from**, choose **My vault**.
+5. In **File Format**, choose **.json**.
+6. Select **Export vault**.
+7. Enter your master password or an email verification code to confirm.
+8. Select **Export vault** again to save the file.
+
+</Steps>
+
+Steps from [Export Vault Data](https://bitwarden.com/help/export-your-data/).
+
+</TabItem>
+<TabItem label="Computer" icon="laptop">
+
+The desktop app is the same on Windows, Mac and Linux.
+
+<Steps>
+
+1. Open the Bitwarden desktop app and select **Export** in the navigation menu.
+2. In **Export from**, choose **My vault**.
+3. In **File Format**, choose **.json**.
+4. Select **Export vault**.
+5. Enter your master password or an email verification code to confirm.
+6. Select **Export vault** again to save the file.
+
+</Steps>
+
+Steps from [Export Vault Data](https://bitwarden.com/help/export-your-data/).
+
+</TabItem>
+</Tabs>
+
+## Good to know
+
+- Only .json exports include cards, identities, stored passkeys and SSH keys; .csv leaves them out.
+- No export format includes items in the trash or Sends.
+- A personal vault export leaves out organization-owned items. Only admins, owners and some custom roles can export those from the web app or CLI; members with Manage collection permission can export collections they can access.
+- Bitwarden's .json (Encrypted) export, whether account restricted or password protected, can't be read by WM Pass. On mobile the equivalent is .json (Password protected). Choose plain .json and delete the file afterwards.
+- Passkeys created before 2024.3.1 carry a usage counter that can make some sites reject them after export, so don't rely on them as a long-term backup.
+- Mobile also offers a direct transfer to another app through the FIDO Credential Exchange Protocol on iOS 26+ (Export vault to another app); WM Pass has no Credential Exchange import, so use the file option.
+- The .zip (with attachments) format is available on web, extension and desktop for individual vaults; it holds a .json file plus attachments.
+
+## Then, in WM Pass
+
+Open Settings, Import, and choose the file. The [import steps](/guides/import-export/#importing-into-wm-pass) cover every WM Pass app.
+
+Delete the export once WM Pass has read it.
+
+## Sources
+
+These steps follow Bitwarden's own help pages, read on 4 November 2026. Menus move between versions; if a step does not match what you see, the page it came from may be newer.
+
+- [Export Vault Data](https://bitwarden.com/help/export-your-data/), Bitwarden

@@ -1,0 +1,58 @@
+---
+title: Moving from SafeInCloud
+description: How to export your passwords from SafeInCloud on each device, and bring them into WM Pass.
+sidebar:
+  label: "SafeInCloud"
+source:
+  name: "SafeInCloud"
+  kind: manager
+  exportOn: ["Computer"]
+  choose: "XML"
+---
+
+import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+import Shot from '../../../../components/Shot.astro';
+
+<Aside type="tip" title="Which file">
+Choose **XML**. SafeInCloud also exports CSV and plain text.
+</Aside>
+
+<Tabs syncKey="device">
+<TabItem label="Android" icon="mobile-android">
+
+<Aside>
+SafeInCloud's Android app can't export. Use the desktop app on a computer.
+</Aside>
+
+</TabItem>
+<TabItem label="Computer" icon="laptop">
+
+SafeInCloud's own guide names the formats but not the menu. The File, Export path below is the one other apps' import guides give, so it may differ in your version.
+
+<Steps>
+
+1. Open the SafeInCloud desktop app and unlock your database.
+2. Open the **File** menu and choose **Export**.
+3. Pick **XML** as the format and save the file.
+
+</Steps>
+
+Steps from [Import from SafeInCloud](https://help.enpass.io/personal/latest/all/import-from-safeincloud).
+
+</TabItem>
+</Tabs>
+
+## Then, in WM Pass
+
+Open Settings, Import, and choose the file. The [import steps](/guides/import-export/#importing-into-wm-pass) cover every WM Pass app.
+
+Delete the export once WM Pass has read it.
+
+If you exported on a computer and use WM Pass on your phone, import the file in WM Pass on that computer and [sync](/guides/backup-sync/), or copy the file to the phone over a USB cable. Email and cloud drives keep copies of what passes through them.
+
+## Sources
+
+These steps follow SafeInCloud's own help pages, read on 4 November 2026. Menus move between versions; if a step does not match what you see, the page it came from may be newer.
+
+- [Import & Export Issues](https://kb.safe-in-cloud.com/en/troubleshooting/import-export-issues.html), SafeInCloud
+- [Import from SafeInCloud](https://help.enpass.io/personal/latest/all/import-from-safeincloud), Enpass (third party)

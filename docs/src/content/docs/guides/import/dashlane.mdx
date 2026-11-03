@@ -1,0 +1,173 @@
+---
+title: Moving from Dashlane
+description: How to export your passwords from Dashlane on each device, and bring them into WM Pass.
+sidebar:
+  label: "Dashlane"
+source:
+  name: "Dashlane"
+  kind: manager
+  logo: dashlane
+  exportOn: ["Android", "iPhone", "Web", "Mac"]
+  choose: "CSV, then the credentials file"
+---
+
+import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+import Shot from '../../../../components/Shot.astro';
+
+<Aside type="tip" title="Which file">
+Choose **Export to CSV**. The DASH file is encrypted and WM Pass can't read it. The export is a ZIP of several CSV files; choose the one named credentials.
+</Aside>
+
+<Tabs syncKey="device">
+<TabItem label="Android" icon="mobile-android">
+<Steps>
+
+1. In the Dashlane Android app, open the side menu and select **Settings**.
+
+   <Shot src="https://support.dashlane.com/hc/article_attachments/32905397264146" alt="Dashlane Android side menu with Settings highlighted" from="https://support.dashlane.com/hc/en-us/articles/32905278138002-Export-your-Dashlane-data-to-a-CSV" publisher="Dashlane" />
+
+2. Select **General**.
+
+   <Shot src="https://support.dashlane.com/hc/article_attachments/32905409011986" alt="Dashlane Android Settings with General highlighted" from="https://support.dashlane.com/hc/en-us/articles/32905278138002-Export-your-Dashlane-data-to-a-CSV" publisher="Dashlane" />
+
+3. Select **Export data to CSV**.
+
+   <Shot src="https://support.dashlane.com/hc/article_attachments/32905397267218" alt="Dashlane Android General screen with Export data to CSV highlighted" from="https://support.dashlane.com/hc/en-us/articles/32905278138002-Export-your-Dashlane-data-to-a-CSV" publisher="Dashlane" />
+
+4. Select **Export & download**, enter your Master Password in the pop-up, then select **Unlock**.
+5. If a message asks you to move personal items out of your Business Space, move them and export again, or select **Continue**.
+6. When the message about the Downloads folder appears, select **See file**.
+7. Open the **Dashlane CSV** folder in Downloads.
+
+   <Shot src="https://support.dashlane.com/hc/article_attachments/32905397268370" alt="Android Downloads screen with the Dashlane CSV folder highlighted" from="https://support.dashlane.com/hc/en-us/articles/32905278138002-Export-your-Dashlane-data-to-a-CSV" publisher="Dashlane" />
+
+8. Choose **credentials.csv** when WM Pass asks for the file.
+
+   <Shot src="https://support.dashlane.com/hc/article_attachments/32905397268882" alt="Contents of the Dashlane CSV folder with credentials.csv, ids.csv, payments.csv, personalInfo.csv and secureNotes.csv highlighted" from="https://support.dashlane.com/hc/en-us/articles/32905278138002-Export-your-Dashlane-data-to-a-CSV" publisher="Dashlane" />
+
+</Steps>
+
+Steps from [Export your Dashlane data to a CSV](https://support.dashlane.com/hc/en-us/articles/32905278138002-Export-your-Dashlane-data-to-a-CSV).
+
+</TabItem>
+<TabItem label="iPhone" icon="phone">
+
+The iPhone steps are shown here. On an iPad, follow the Mac steps, which the vendor gives for the macOS and iPad apps.
+
+<Steps>
+
+1. In the Dashlane iPhone app, tap **Settings** in the bottom menu.
+
+   <Shot src="https://support.dashlane.com/hc/article_attachments/32905397269394" alt="Dashlane iPhone Settings tab with General highlighted" from="https://support.dashlane.com/hc/en-us/articles/32905278138002-Export-your-Dashlane-data-to-a-CSV" publisher="Dashlane" />
+
+2. Tap **General**.
+3. Tap **Export data**.
+
+   <Shot src="https://support.dashlane.com/hc/article_attachments/32905397270290" alt="Dashlane iPhone General screen with Export data highlighted" from="https://support.dashlane.com/hc/en-us/articles/32905278138002-Export-your-Dashlane-data-to-a-CSV" publisher="Dashlane" />
+
+4. Tap **Export data to CSV**, not **Export data to another app**.
+
+   <Shot src="https://support.dashlane.com/hc/article_attachments/32905409015442" alt="Dashlane iPhone export options with Export data to CSV highlighted" from="https://support.dashlane.com/hc/en-us/articles/32905278138002-Export-your-Dashlane-data-to-a-CSV" publisher="Dashlane" />
+
+5. Tap **Export data now**.
+
+   <Shot src="https://support.dashlane.com/hc/article_attachments/32905409015954" alt="Dashlane Export your Dashlane data screen with Export data now button" from="https://support.dashlane.com/hc/en-us/articles/32905278138002-Export-your-Dashlane-data-to-a-CSV" publisher="Dashlane" />
+
+6. Tap **Save** at the top right.
+
+   <Shot src="https://support.dashlane.com/hc/article_attachments/32905409016722" alt="iPhone Files save screen with Save highlighted" from="https://support.dashlane.com/hc/en-us/articles/32905278138002-Export-your-Dashlane-data-to-a-CSV" publisher="Dashlane" />
+
+7. If a message asks you to move personal items out of your Business Space, move them and export again, or tap **Continue**.
+8. Wait for the **File exported** message. The folder is saved in Files.
+
+   <Shot src="https://support.dashlane.com/hc/article_attachments/32905409017234" alt="Files app showing the Dashlane CSV folder" from="https://support.dashlane.com/hc/en-us/articles/32905278138002-Export-your-Dashlane-data-to-a-CSV" publisher="Dashlane" />
+
+9. Open the folder and choose **credentials** when WM Pass asks for the file.
+
+   <Shot src="https://support.dashlane.com/hc/article_attachments/32905397273490" alt="Files app listing the credentials, ids, payments, personalInfo, secureNotes and wifi CSV files" from="https://support.dashlane.com/hc/en-us/articles/32905278138002-Export-your-Dashlane-data-to-a-CSV" publisher="Dashlane" />
+
+</Steps>
+
+Steps from [Export your Dashlane data to a CSV](https://support.dashlane.com/hc/en-us/articles/32905278138002-Export-your-Dashlane-data-to-a-CSV).
+
+</TabItem>
+<TabItem label="Web" icon="external">
+
+Use this on Windows and Linux too. Safari needs version 18.1 or higher to open the exported ZIP; another browser also works.
+
+<Steps>
+
+1. In the Dashlane web app, open the **Vault** menu at the top left, then select **Settings**.
+
+   <Shot src="https://support.dashlane.com/hc/article_attachments/32905397262866" alt="Dashlane web app Vault menu with Settings highlighted" from="https://support.dashlane.com/hc/en-us/articles/32905278138002-Export-your-Dashlane-data-to-a-CSV" publisher="Dashlane" />
+
+2. In the Settings panel, select **Export data**.
+
+   <Shot src="https://support.dashlane.com/hc/article_attachments/32905409007250" alt="Dashlane Settings panel with Export data highlighted" from="https://support.dashlane.com/hc/en-us/articles/32905278138002-Export-your-Dashlane-data-to-a-CSV" publisher="Dashlane" />
+
+3. Select **Export to CSV**, not **Export to DASH**.
+
+   <Shot src="https://support.dashlane.com/hc/article_attachments/32905409008146" alt="Dashlane Export data panel with Export to CSV highlighted" from="https://support.dashlane.com/hc/en-us/articles/32905278138002-Export-your-Dashlane-data-to-a-CSV" publisher="Dashlane" />
+
+4. If asked, enter your Master Password, use biometrics or enter your PIN, then select **Unlock**.
+5. If a message asks you to move personal items out of your Business Space, move them and export again, or select **Continue** to export your personal items as they are.
+6. Open the ZIP file that downloads to your Downloads folder. It holds several CSV files; you will need the one named **credentials**.
+
+</Steps>
+
+Steps from [Export your Dashlane data to a CSV](https://support.dashlane.com/hc/en-us/articles/32905278138002-Export-your-Dashlane-data-to-a-CSV).
+
+</TabItem>
+<TabItem label="Mac" icon="apple">
+<Steps>
+
+1. In the Dashlane Mac app, click the **gear** icon above the left menu, then **General**.
+
+   <Shot src="https://support.dashlane.com/hc/article_attachments/32905397274514" alt="Dashlane Mac app with the Settings gear and General highlighted" from="https://support.dashlane.com/hc/en-us/articles/32905278138002-Export-your-Dashlane-data-to-a-CSV" publisher="Dashlane" />
+
+2. Select **Export data**.
+
+   <Shot src="https://support.dashlane.com/hc/article_attachments/32905397275410" alt="Dashlane General screen with Export data highlighted" from="https://support.dashlane.com/hc/en-us/articles/32905278138002-Export-your-Dashlane-data-to-a-CSV" publisher="Dashlane" />
+
+3. Select **Export data to CSV**.
+
+   <Shot src="https://support.dashlane.com/hc/article_attachments/32905409023122" alt="Dashlane Export data options with Export data to CSV highlighted" from="https://support.dashlane.com/hc/en-us/articles/32905278138002-Export-your-Dashlane-data-to-a-CSV" publisher="Dashlane" />
+
+4. Enter your Master Password or use Touch ID to unlock Dashlane.
+5. On the **Export your Dashlane data** screen, select **Export data now**.
+
+   <Shot src="https://support.dashlane.com/hc/article_attachments/32905409023506" alt="Dashlane Export your Dashlane data dialog" from="https://support.dashlane.com/hc/en-us/articles/32905278138002-Export-your-Dashlane-data-to-a-CSV" publisher="Dashlane" />
+
+6. Choose where to save the folder, change its name if you like, then select **Save**.
+7. Wait for the **File exported** message, then open the folder and choose **credentials.csv**.
+
+   <Shot src="https://support.dashlane.com/hc/article_attachments/32905409024146" alt="Finder showing credentials.csv, ids.csv, payments.csv, personalInfo.csv, secureNotes.csv and wifi.csv" from="https://support.dashlane.com/hc/en-us/articles/32905278138002-Export-your-Dashlane-data-to-a-CSV" publisher="Dashlane" />
+
+</Steps>
+
+Steps from [Export your Dashlane data to a CSV](https://support.dashlane.com/hc/en-us/articles/32905278138002-Export-your-Dashlane-data-to-a-CSV).
+
+</TabItem>
+</Tabs>
+
+## Good to know
+
+- The export is several CSV files (credentials, ids, payments, personal info, secure notes, and Wi-Fi on Apple apps). WM Pass reads logins and passwords from the file named credentials.
+- Passkeys can't be exported to CSV. They may appear in the file but won't work after import.
+- Items shared with you with the Can autofill permission are left out of the credentials file.
+- Secure Note attachments aren't exported. Download them separately.
+- Authenticator tokens aren't exported directly, but the credentials file has an otpSecret column with the 2FA setup code for logins that use 2FA.
+- Only the first line of a note shows when you open the CSV in a spreadsheet, but the file holds the full note.
+- On a work plan, the admin may have turned export off. Business Space items may need moving to the Personal Space first.
+
+## Then, in WM Pass
+
+Open Settings, Import, and choose the file. The [import steps](/guides/import-export/#importing-into-wm-pass) cover every WM Pass app.
+
+Delete the export once WM Pass has read it.
+
+## Sources
+
+These steps follow Dashlane's own help pages, read on 4 November 2026. Menus move between versions; if a step does not match what you see, the page it came from may be newer.
+
+- [Export your Dashlane data to a CSV](https://support.dashlane.com/hc/en-us/articles/32905278138002-Export-your-Dashlane-data-to-a-CSV), Dashlane

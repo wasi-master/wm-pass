@@ -1,0 +1,68 @@
+---
+// A card per app to leave, linking to its guide.
+import Logo from './Logo.astro';
+import { sources } from './sources';
+
+interface Props {
+  kind: 'manager' | 'authenticator';
+}
+
+const list = await sources(Astro.props.kind);
+---
+
+<ul class="grid not-content">
+  {
+    list.map((source) => (
+      <li>
+        <a href={source.href}>
+          <Logo name={source.name} slug={source.logo} color={source.color} size={36} />
+          <span class="text">
+            <span class="name">{source.name}</span>
+            <span class="where">{source.exportOn.join(' · ')}</span>
+          </span>
+        </a>
+      </li>
+    ))
+  }
+</ul>
+
+<style>
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
+    gap: 0.5rem;
+    margin-top: 1rem;
+    padding: 0;
+    list-style: none;
+  }
+  a {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    height: 100%;
+    padding: 0.625rem 0.75rem;
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 0.625rem;
+    color: var(--sl-color-white);
+    text-decoration: none;
+    transition: border-color 0.15s, background-color 0.15s;
+  }
+  a:hover,
+  a:focus-visible {
+    border-color: var(--sl-color-accent);
+    background: var(--sl-color-gray-6);
+  }
+  .text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .name {
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  .where {
+    font-size: var(--sl-text-xs);
+    color: var(--sl-color-gray-3);
+  }
+</style>

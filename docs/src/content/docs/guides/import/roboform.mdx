@@ -1,0 +1,149 @@
+---
+title: Moving from RoboForm
+description: How to export your passwords from RoboForm on each device, and bring them into WM Pass.
+sidebar:
+  label: "RoboForm"
+source:
+  name: "RoboForm"
+  kind: manager
+  exportOn: ["Browser extension", "Windows", "Mac"]
+  choose: "CSV"
+---
+
+import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+import Shot from '../../../../components/Shot.astro';
+
+<Aside type="tip" title="Which file">
+Choose **CSV file** as the format.
+</Aside>
+
+<Tabs syncKey="device">
+<TabItem label="Android" icon="mobile-android">
+
+<Aside>
+RoboForm's Android app can't export a CSV. Its Backup and Restore makes a RoboForm backup, which other apps can't read. Use the browser extension or the desktop app on a computer.
+</Aside>
+
+</TabItem>
+<TabItem label="Browser extension" icon="puzzle">
+<Steps>
+
+1. Click the **RoboForm** extension icon in your browser, then the three dots in the upper right, and choose **Settings**.
+
+   <Shot src="https://help.roboform.com/hc/article_attachments/37483237999885" alt="RoboForm extension menu with Settings" from="https://help.roboform.com/hc/en-us/articles/230425008-How-to-export-your-RoboForm-logins-into-a-CSV-file" publisher="RoboForm" />
+
+2. Open **Account & Data** in the left column, and under **Export data from RoboForm** click **Export**.
+
+   <Shot src="https://help.roboform.com/hc/article_attachments/37241283570445" alt="RoboForm Account &amp; Data page with the Export button" from="https://help.roboform.com/hc/en-us/articles/230425008-How-to-export-your-RoboForm-logins-into-a-CSV-file" publisher="RoboForm" />
+
+3. Enter your master password and click **Continue**.
+
+   <Shot src="https://help.roboform.com/hc/article_attachments/14081306446989" alt="RoboForm master password prompt" from="https://help.roboform.com/hc/en-us/articles/230425008-How-to-export-your-RoboForm-logins-into-a-CSV-file" publisher="RoboForm" />
+
+4. Confirm the CSV export by clicking **Export**. The file goes to your Downloads folder.
+
+   <Shot src="https://help.roboform.com/hc/article_attachments/14081306539917" alt="RoboForm CSV export confirmation" from="https://help.roboform.com/hc/en-us/articles/230425008-How-to-export-your-RoboForm-logins-into-a-CSV-file" publisher="RoboForm" />
+
+5. Click **Close** on the finished message.
+
+   <Shot src="https://help.roboform.com/hc/article_attachments/14081306610573" alt="RoboForm export completed message" from="https://help.roboform.com/hc/en-us/articles/230425008-How-to-export-your-RoboForm-logins-into-a-CSV-file" publisher="RoboForm" />
+
+</Steps>
+
+Steps from [How to export your RoboForm logins into a CSV file](https://help.roboform.com/hc/en-us/articles/230425008-How-to-export-your-RoboForm-logins-into-a-CSV-file).
+
+</TabItem>
+<TabItem label="Windows" icon="laptop">
+
+You open the desktop app's options from the browser extension.
+
+<Steps>
+
+1. Click the **RoboForm** extension icon in your browser, then the three dots in the upper right, and choose **Settings**.
+
+   <Shot src="https://help.roboform.com/hc/article_attachments/37483237999885" alt="RoboForm extension menu with Settings" from="https://help.roboform.com/hc/en-us/articles/230425008-How-to-export-your-RoboForm-logins-into-a-CSV-file" publisher="RoboForm" />
+
+2. Open the **Advanced** tab, scroll to **Open Options in Installed RoboForm** and click **Open**.
+
+   <Shot src="https://help.roboform.com/hc/article_attachments/37293433789709" alt="RoboForm Advanced settings with the Open Options in Installed RoboForm button" from="https://help.roboform.com/hc/en-us/articles/230425008-How-to-export-your-RoboForm-logins-into-a-CSV-file" publisher="RoboForm" />
+
+3. In the desktop app, open **Account & Data** and click **Export**.
+
+   <Shot src="https://help.roboform.com/hc/article_attachments/14081282182029" alt="RoboForm desktop Account &amp; Data page" from="https://help.roboform.com/hc/en-us/articles/230425008-How-to-export-your-RoboForm-logins-into-a-CSV-file" publisher="RoboForm" />
+
+4. Enter your master password and click **Log In**.
+
+   <Shot src="https://help.roboform.com/hc/article_attachments/14081306701965" alt="RoboForm desktop master password prompt" from="https://help.roboform.com/hc/en-us/articles/230425008-How-to-export-your-RoboForm-logins-into-a-CSV-file" publisher="RoboForm" />
+
+5. Select the folders to export, set the format to **CSV file**, tick the data types you want (Logins, Bookmarks, Safenotes) and pick where to save. Choose the format first, because some formats can't be saved to every folder.
+
+   <Shot src="https://help.roboform.com/hc/article_attachments/14081306744205" alt="RoboForm export dialog with folders, format and data types" from="https://help.roboform.com/hc/en-us/articles/230425008-How-to-export-your-RoboForm-logins-into-a-CSV-file" publisher="RoboForm" />
+
+6. Click **Export**, then **Yes** to confirm saving an unencrypted CSV.
+
+   <Shot src="https://help.roboform.com/hc/article_attachments/14081306794765" alt="RoboForm confirming an unencrypted CSV export" from="https://help.roboform.com/hc/en-us/articles/230425008-How-to-export-your-RoboForm-logins-into-a-CSV-file" publisher="RoboForm" />
+
+7. Click **Close** when it finishes. **Open containing folder** shows the file.
+
+   <Shot src="https://help.roboform.com/hc/article_attachments/14081306842125" alt="RoboForm export finished window" from="https://help.roboform.com/hc/en-us/articles/230425008-How-to-export-your-RoboForm-logins-into-a-CSV-file" publisher="RoboForm" />
+
+</Steps>
+
+Steps from [How to export your RoboForm logins into a CSV file](https://help.roboform.com/hc/en-us/articles/230425008-How-to-export-your-RoboForm-logins-into-a-CSV-file).
+
+</TabItem>
+<TabItem label="Mac" icon="apple">
+
+You open the desktop app's options from the browser extension.
+
+<Steps>
+
+1. Click the **RoboForm** extension icon in your browser, then the three dots in the upper right, and choose **Settings**.
+
+   <Shot src="https://help.roboform.com/hc/article_attachments/37483237999885" alt="RoboForm extension menu with Settings" from="https://help.roboform.com/hc/en-us/articles/230425008-How-to-export-your-RoboForm-logins-into-a-CSV-file" publisher="RoboForm" />
+
+2. Open **Advanced** in the left column and click **Open** under **Open Options in installed RoboForm**.
+
+   <Shot src="https://help.roboform.com/hc/article_attachments/48751710412429" alt="RoboForm Advanced settings on Mac" from="https://help.roboform.com/hc/en-us/articles/230425008-How-to-export-your-RoboForm-logins-into-a-CSV-file" publisher="RoboForm" />
+
+3. In the desktop app, open **Account & Data** and click **Export to...**.
+
+   <Shot src="https://help.roboform.com/hc/article_attachments/14081282537997" alt="RoboForm Mac Account &amp; Data page" from="https://help.roboform.com/hc/en-us/articles/230425008-How-to-export-your-RoboForm-logins-into-a-CSV-file" publisher="RoboForm" />
+
+4. Enter your master password and click **Log In**.
+
+   <Shot src="https://help.roboform.com/hc/article_attachments/14081282570765" alt="RoboForm Mac master password prompt" from="https://help.roboform.com/hc/en-us/articles/230425008-How-to-export-your-RoboForm-logins-into-a-CSV-file" publisher="RoboForm" />
+
+5. Select the folders to export, set the format to **CSV file**, tick the data types you want (Logins, Bookmarks, Safenotes) and pick where to save. Choose the format first.
+
+   <Shot src="https://help.roboform.com/hc/article_attachments/14081282637197" alt="RoboForm Mac export dialog" from="https://help.roboform.com/hc/en-us/articles/230425008-How-to-export-your-RoboForm-logins-into-a-CSV-file" publisher="RoboForm" />
+
+6. Click **Export**, then **Yes** to confirm saving an unencrypted CSV.
+
+   <Shot src="https://help.roboform.com/hc/article_attachments/14081307062541" alt="RoboForm Mac CSV export confirmation" from="https://help.roboform.com/hc/en-us/articles/230425008-How-to-export-your-RoboForm-logins-into-a-CSV-file" publisher="RoboForm" />
+
+7. Click **Close** when it finishes.
+
+   <Shot src="https://help.roboform.com/hc/article_attachments/14081307109773" alt="RoboForm Mac export finished window" from="https://help.roboform.com/hc/en-us/articles/230425008-How-to-export-your-RoboForm-logins-into-a-CSV-file" publisher="RoboForm" />
+
+</Steps>
+
+Steps from [How to export your RoboForm logins into a CSV file](https://help.roboform.com/hc/en-us/articles/230425008-How-to-export-your-RoboForm-logins-into-a-CSV-file).
+
+</TabItem>
+</Tabs>
+
+## Then, in WM Pass
+
+Open Settings, Import, and choose the file. The [import steps](/guides/import-export/#importing-into-wm-pass) cover every WM Pass app.
+
+Delete the export once WM Pass has read it.
+
+If you exported on a computer and use WM Pass on your phone, import the file in WM Pass on that computer and [sync](/guides/backup-sync/), or copy the file to the phone over a USB cable. Email and cloud drives keep copies of what passes through them.
+
+## Sources
+
+These steps follow RoboForm's own help pages, read on 4 November 2026. Menus move between versions; if a step does not match what you see, the page it came from may be newer.
+
+- [How to export your RoboForm logins into a CSV file](https://help.roboform.com/hc/en-us/articles/230425008-How-to-export-your-RoboForm-logins-into-a-CSV-file), RoboForm
+- [How can I make a backup of my RoboForm data?](https://help.roboform.com/hc/en-us/articles/360021625572), RoboForm

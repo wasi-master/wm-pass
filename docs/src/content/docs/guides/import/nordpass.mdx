@@ -1,0 +1,91 @@
+---
+title: Moving from NordPass
+description: How to export your passwords from NordPass on each device, and bring them into WM Pass.
+sidebar:
+  label: "NordPass"
+source:
+  name: "NordPass"
+  kind: manager
+  exportOn: ["Computer", "Web"]
+  choose: "CSV"
+---
+
+import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+import Shot from '../../../../components/Shot.astro';
+
+<Aside type="tip" title="Which file">
+NordPass exports a single CSV file.
+</Aside>
+
+<Tabs syncKey="device">
+<TabItem label="Android" icon="mobile-android">
+
+<Aside>
+NordPass's Android app can't export. Use the desktop app or the web vault on a computer.
+</Aside>
+
+</TabItem>
+<TabItem label="Computer" icon="laptop">
+
+NordPass lists the Windows, macOS (Intel and Apple Silicon) and Linux desktop apps. The steps are the same in each.
+
+<Steps>
+
+1. Log in to NordPass.
+2. Click the gear icon in the upper-left corner to open **Settings**.
+3. Scroll to **Import and Export** and click **Export**.
+4. Enter your master password and click **Continue**.
+5. Save the CSV file to your device.
+
+</Steps>
+
+Steps from [How to export passwords from NordPass?](https://support.nordpass.com/hc/en-us/articles/360007646477-How-to-export-passwords-from-NordPass).
+
+</TabItem>
+<TabItem label="Web" icon="external">
+
+Open app.nordpass.com and log in. The pictures are from RoboForm's guide to leaving NordPass, where the button reads Export Items.
+
+<Steps>
+
+1. Log in to NordPass.
+2. Click the gear icon in the upper-left corner to open **Settings**.
+
+   <Shot src="https://help.roboform.com/hc/article_attachments/36128078391437" alt="NordPass web vault with the Settings gear icon in the upper left" from="https://help.roboform.com/hc/en-us/articles/4423041817357-How-to-Export-from-NordPass-and-Import-into-RoboForm" publisher="RoboForm (third party)" />
+
+3. Scroll to **Import and Export** and click **Export**.
+
+   <Shot src="https://help.roboform.com/hc/article_attachments/16684289766797" alt="NordPass settings with the Import and Export section and its export button" from="https://help.roboform.com/hc/en-us/articles/4423041817357-How-to-Export-from-NordPass-and-Import-into-RoboForm" publisher="RoboForm (third party)" />
+
+4. Enter your master password and click **Continue**.
+
+   <Shot src="https://help.roboform.com/hc/article_attachments/48120394031885" alt="NordPass asking for the master password to confirm the export" from="https://help.roboform.com/hc/en-us/articles/4423041817357-How-to-Export-from-NordPass-and-Import-into-RoboForm" publisher="RoboForm (third party)" />
+
+5. Save the CSV file to your device.
+
+</Steps>
+
+Steps from [How to export passwords from NordPass?](https://support.nordpass.com/hc/en-us/articles/360007646477-How-to-export-passwords-from-NordPass).
+
+</TabItem>
+</Tabs>
+
+## Good to know
+
+- On NordPass Business, an admin can restrict exporting with the Item exporting policy in the Admin Panel.
+
+## Then, in WM Pass
+
+Open Settings, Import, and choose the file. The [import steps](/guides/import-export/#importing-into-wm-pass) cover every WM Pass app.
+
+Delete the export once WM Pass has read it.
+
+If you exported on a computer and use WM Pass on your phone, import the file in WM Pass on that computer and [sync](/guides/backup-sync/), or copy the file to the phone over a USB cable. Email and cloud drives keep copies of what passes through them.
+
+## Sources
+
+These steps follow NordPass's own help pages, read on 4 November 2026. Menus move between versions; if a step does not match what you see, the page it came from may be newer.
+
+- [How to export passwords from NordPass?](https://support.nordpass.com/hc/en-us/articles/360007646477-How-to-export-passwords-from-NordPass), NordPass
+- [How to import passwords to NordPass (Android section: import only)](https://support.nordpass.com/hc/en-us/articles/360002377197-How-to-import-passwords-to-NordPass), NordPass
+- [How to Export from NordPass and Import into RoboForm (screenshots of the web vault)](https://help.roboform.com/hc/en-us/articles/4423041817357-How-to-Export-from-NordPass-and-Import-into-RoboForm), RoboForm (third party)

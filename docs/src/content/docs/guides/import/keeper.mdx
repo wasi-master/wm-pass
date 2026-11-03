@@ -1,0 +1,72 @@
+---
+title: Moving from Keeper
+description: How to export your passwords from Keeper on each device, and bring them into WM Pass.
+sidebar:
+  label: "Keeper"
+source:
+  name: "Keeper"
+  kind: manager
+  logo: keeper
+  exportOn: ["Computer"]
+  choose: "JSON or CSV"
+---
+
+import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+import Shot from '../../../../components/Shot.astro';
+
+<Aside type="tip" title="Which file">
+Choose **JSON**, which keeps shared folders and records as Keeper writes them. CSV also works but is flatter.
+</Aside>
+
+<Tabs syncKey="device">
+<TabItem label="Android" icon="mobile-android">
+
+<Aside>
+Keeper exports from the web vault and the desktop app only. Use one of them on a computer.
+</Aside>
+
+</TabItem>
+<TabItem label="Computer" icon="laptop">
+
+The web vault and the desktop app share these steps.
+
+<Steps>
+
+1. Open the Keeper web vault or desktop app and unlock your vault.
+2. Click your email address at the top right, then **Settings**.
+
+   <Shot src="https://914511346-files.gitbook.io/~/files/v0/b/gitbook-x-prod.appspot.com/o/spaces%2F-LSGVtOTYUIkVBoYtFvK%2Fuploads%2FprnpCQkjBMbCoWmJa3HN%2FScreenshot%202025-01-19%20at%2012.50.02%E2%80%AFPM.png?alt=media&amp;token=f10b6794-d67a-4891-a2e1-bfc06b6d6dcf" alt="Keeper web vault with the account menu open and Settings highlighted" from="https://docs.keeper.io/en/user-guides/export-and-reports/vault-export" publisher="Keeper" />
+
+3. Select **Export** in the left list of the Settings window.
+
+   <Shot src="https://914511346-files.gitbook.io/~/files/v0/b/gitbook-x-prod.appspot.com/o/spaces%2F-LSGVtOTYUIkVBoYtFvK%2Fuploads%2FX5b5PKYFHDQjI10zhIkw%2FScreenshot%202025-01-19%20at%2012.49.34%E2%80%AFPM.png?alt=media&amp;token=7f4a37d3-a596-4c01-943a-ae5ae3e3ac46" alt="Keeper Settings window on Export, with CSV, JSON, PDF and KDBX options" from="https://docs.keeper.io/en/user-guides/export-and-reports/vault-export" publisher="Keeper" />
+
+4. Under **Export File**, choose **JSON**.
+5. Tick **Include records shared with me** if you want those records too.
+6. Click **Export** beside **Export File**, not the one under Shared Records Report.
+
+</Steps>
+
+Steps from [Vault Export](https://docs.keeper.io/en/user-guides/export-and-reports/vault-export).
+
+</TabItem>
+</Tabs>
+
+## Good to know
+
+- Keeper's export has no file attachments.
+- On a company account, the admin's role policy can turn export off.
+
+## Then, in WM Pass
+
+Open Settings, Import, and choose the file. The [import steps](/guides/import-export/#importing-into-wm-pass) cover every WM Pass app.
+
+Delete the export once WM Pass has read it.
+
+If you exported on a computer and use WM Pass on your phone, import the file in WM Pass on that computer and [sync](/guides/backup-sync/), or copy the file to the phone over a USB cable. Email and cloud drives keep copies of what passes through them.
+
+## Sources
+
+These steps follow Keeper's own help pages, read on 4 November 2026. Menus move between versions; if a step does not match what you see, the page it came from may be newer.
+
+- [Vault Export](https://docs.keeper.io/en/user-guides/export-and-reports/vault-export), Keeper

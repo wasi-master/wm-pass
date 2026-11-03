@@ -3,7 +3,7 @@ title: Browser extension
 description: The Chrome and Firefox extension, how it fills logins, and how it connects to the desktop app.
 ---
 
-The extension runs the same core as the other apps, as WebAssembly. It can hold its own vault, use the one open in the desktop app, or both.
+The extension runs the same core as the other apps, as WebAssembly. It can hold its own vault, use the one open in the desktop app, or both. Settings, Import reads other apps' exports, as the [import guide](/guides/import-export/) describes.
 
 ## Filling
 
