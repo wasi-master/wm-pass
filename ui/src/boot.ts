@@ -7,12 +7,14 @@ import { brands } from './engine/brands.svelte';
 import { setHost, type Host } from './engine/host';
 import { pass } from './engine/pass.svelte';
 import { prefs } from './engine/prefs.svelte';
+import { settingsSync } from './engine/settingsSync.svelte';
 import { accounts } from './settings/accounts.svelte';
 import { places } from './settings/places.svelte';
 
 export async function boot(host: Host) {
   setHost(host);
   await prefs.load();
+  settingsSync.start();
   await pass.init();
   await Promise.all([accounts.load(), places.load()]);
   void brands.load();

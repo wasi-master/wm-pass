@@ -64,6 +64,8 @@ class PassStore {
   afterAccountSave: (() => Promise<void>) | null = null;
   /** Called after the vault in this folder has saved, for a sync that follows it. */
   afterSave: (() => void) | null = null;
+  /** Called after the lists reload, which follows every change and every merge. */
+  afterRefresh: (() => void) | null = null;
   /** Run on a wipe, so what the app keeps beside the vault goes too. */
   onWipe: (() => void)[] = [];
   /** How long to wait after a change before writing. The extension's popup can vanish at any moment. */
@@ -379,6 +381,11 @@ class PassStore {
     this.afterSave?.();
   }
 
+  /** Saves soon, after a change that needs no lists reloaded. */
+  flushSoon() {
+    this.scheduleSave();
+  }
+
   /** Writes pending changes now, before the window or process may go away. */
   async flush() {
     if (this.saveTimer) clearTimeout(this.saveTimer);
@@ -391,6 +398,7 @@ class PassStore {
     this.entries = await this.view<Summary[]>('entry.list', { sort: 'title' });
     this.folders = await this.view<FolderView[]>('folder.list');
     this.revision += 1;
+    this.afterRefresh?.();
   }
 
   /** Reloads the lists, after something changed the vault from outside these calls. */

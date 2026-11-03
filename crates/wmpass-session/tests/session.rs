@@ -421,6 +421,20 @@ fn a_tag_icon_is_kept_in_the_vault_and_can_be_cleared() {
 }
 
 #[test]
+fn synced_settings_are_kept_in_the_vault_and_only_real_changes_count() {
+    let mut s = Service::new(1);
+    let h = new_vault(&mut s);
+    let set = json_of(&call(&mut s, "prefs.sync", h, json!({"values": {"layout": "grid", "gen_length": 32, "row_icons": false}})));
+    assert_eq!(set["changed"], 3);
+    let again = json_of(&call(&mut s, "prefs.sync", h, json!({"values": {"layout": "grid"}})));
+    assert_eq!(again["changed"], 0);
+    call(&mut s, "prefs.sync", h, json!({"values": {"row_icons": null}}));
+    assert_eq!(json_of(&call(&mut s, "prefs.synced", h, json!({}))), json!({"gen_length": 32, "layout": "grid"}));
+    let bad = json!({"values": {"Not A Key": 1}}).to_string();
+    assert!(s.call("prefs.sync", Call { handle: h, args: &bad, ..Call::default() }).is_err());
+}
+
+#[test]
 fn a_tag_renamed_keeps_its_place_and_merges_with_a_twin() {
     let mut s = Service::new(1);
     let h = new_vault(&mut s);

@@ -62,6 +62,10 @@ The default theme follows the WM Pass shield on a dark background. `Ctrl+T` cycl
 
 If your terminal uses a [Nerd Font](https://www.nerdfonts.com), WM Pass can draw proper icons for each kind of item, the sidebar and the tabs. Turn them on with `:` then Nerd Font icons, or set `WMPASS_ICONS=nerd`. They are off at first because without such a font every icon shows as an empty box.
 
+## Settings that follow the vault
+
+The theme, the icons and how long a shown secret stays on screen travel inside the vault, so another computer opening the same vault in the terminal picks them up. The time to hide a shown secret is shared with the phone and desktop apps; the theme and icons are the terminal's own. Turn this off with `:` then **Sync settings with the vault on or off**. To keep one of them on this computer only, list its key (`tui_theme`, `tui_icons` or `reveal_seconds`) under `sync_skip` in `tui.json`, in the state folder (`$XDG_STATE_HOME/wmpass`, or `WMPASS_STATE_DIR` when set). The lock and clipboard timers never leave this computer.
+
 ## In scripts
 
 Every subcommand reads the password from the terminal. For scripts and tests, `WMPASS_PASSWORD` can supply it, though any other program running as you can read a process's environment. `WMPASS_KEY_FILE` names a key file.

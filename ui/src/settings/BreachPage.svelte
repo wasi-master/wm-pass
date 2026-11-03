@@ -9,6 +9,10 @@
   import EntryLines from './EntryLines.svelte';
   import NetGate from './NetGate.svelte';
   import { breachCounts, online } from './net.svelte';
+  import { saveServiceKey, serviceKey } from './aliasServices';
+
+  /** The key is an item in the vault, so it follows the vault to every device. */
+  const HIBP_KEY = 'Have I Been Pwned API key';
 
   let running = $state(false);
   let done = $state(0);
@@ -20,6 +24,7 @@
   let results = $state<Record<string, string>>({});
 
   const found = $derived(Object.keys(breachCounts.counts));
+  const hibpKept = $derived(pass.entries.some((e) => e.kind === 'api' && e.title === HIBP_KEY));
   const breached = $derived(pass.entries.filter((e) => e.id in breachCounts.counts));
   const emails = $derived([...new Set(pass.entries.map((e) => e.subtitle.trim().toLowerCase()).filter((s) => s.includes('@')))]);
 
@@ -58,9 +63,13 @@
         results[email] =
           matched > 0 ? `${matched} of your passwords for it are in this leak. Change them.` : reply.json.lines > 0 ? 'The address is listed, with passwords you no longer use.' : 'Not listed.';
       } else {
-        const secret = source === 'hibp' ? bytesOf(apiKey) : null;
+        const secret = source !== 'hibp' ? null : hibpKept ? await serviceKey(HIBP_KEY) : bytesOf(apiKey.trim());
         const rows = await pass.engine<{ name: string }[]>('breach.account', { source, email }, { secret, online: online() });
         secret?.fill(0);
+        if (source === 'hibp' && !hibpKept && apiKey.trim()) {
+          await saveServiceKey(HIBP_KEY, apiKey.trim());
+          apiKey = '';
+        }
         results[email] = rows.json.length === 0 ? 'Not listed.' : `In ${rows.json.length}: ${rows.json.slice(0, 5).map((r) => r.name).join(', ')}`;
       }
     } catch (failure: any) {
@@ -103,7 +112,14 @@
       <div class="set-body stack">
         <p class="dim">{WHAT_EMAIL}</p>
         <Segmented value={source} options={[['leakcheck', 'LeakCheck'], ['hibp', 'Have I Been Pwned'], ['comb', 'Passwords in COMB']]} onchange={(v) => (source = v)} />
-        {#if source === 'hibp'}<Field bind:value={apiKey} placeholder="API key" mono />{/if}
+        {#if source === 'hibp'}
+          {#if hibpKept}
+            <p class="dim">Using the key kept in the vault as “{HIBP_KEY}”.</p>
+          {:else}
+            <Field bind:value={apiKey} placeholder="API key" mono />
+            <p class="dim">After the first check the key is kept in the vault, so your other devices have it too.</p>
+          {/if}
+        {/if}
       </div>
       {#each emails as email}
         <div class="set-row">

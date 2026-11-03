@@ -193,6 +193,44 @@ Sync is not a backup: a change on one device, moving an item to the trash includ
 
 See also [Keeping devices in sync](/guide/how-it-works/#feature-sync), [Add a place](/guide/settings/backup/#action-add-place), [Backups](/guide/settings/backup/).
 
+<a id="setting-sync-settings"></a>
+
+## Sync settings with the vault
+
+Keeps your customisations the same on every device that opens this vault: the look, the list, the editor, codes, the generator and the rest.
+
+#### How it works
+
+The settings travel inside the vault, encrypted with it, so every way the vault syncs carries them: your devices on this network, a folder or server, and a WM Pass server. A copy of the vault file says nothing about them.
+
+Each setting goes on its own. When two devices change the same one, the later change wins on both.
+
+The first device to sync brings what it has changed from the defaults. Turning this back on takes the settings the vault holds.
+
+Keys for alias services and Have I Been Pwned are items in the vault, so they sync with it whether this is on or not.
+
+#### Limits
+
+Protection settings stay on each device: locking, the clipboard, screenshots, the network switch, and everything that lets another app or the browser in. So does what describes one window, such as its sidebar and the sections left open.
+
+A setting one platform does not have is kept for the devices that do.
+
+It follows the vault you opened at the door, not an account or a nested vault.
+
+See also [Settings that stay on this device](/guide/settings/sync/#setting-sync-skip), [Through a folder or server](/guide/settings/sync/#group-sync-files), [Your devices, on this network](/guide/settings/sync/#group-sync-lan).
+
+<a id="setting-sync-skip"></a>
+
+## Settings that stay on this device
+
+Settings this device neither sends to the vault nor takes from it. The others still sync.
+
+#### How it works
+
+Turn a setting off here when you want it different on this device, such as a bigger code size on the phone. Turning it back on takes the value the vault holds.
+
+See also [Sync settings with the vault](/guide/settings/sync/#setting-sync-settings).
+
 <a id="group-sync-accounts"></a>
 
 ## Accounts held elsewhere

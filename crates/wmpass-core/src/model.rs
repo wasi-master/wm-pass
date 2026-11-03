@@ -722,6 +722,23 @@ pub struct VaultPrefs {
     /// The glyph each tag is drawn with, by tag name. Empty means the automatic one. Kept in the
     /// vault rather than the app's settings because tag names say what is in it.
     pub tag_icons: BTreeMap<String, Lww<String>>,
+    /// The apps' own settings that follow the vault to every device, by key, each value as JSON
+    /// text. Inside the vault so any sync carries them and the file says nothing about them. An
+    /// empty value is a setting some device took back out.
+    pub app: BTreeMap<String, Lww<String>>,
+}
+
+/// Merges two maps of values set one key at a time: for each key the later write wins.
+fn merge_keyed(mine: &mut BTreeMap<String, Lww<String>>, theirs: &BTreeMap<String, Lww<String>>) {
+    for (key, value) in theirs {
+        match mine.get_mut(key) {
+            Some(held) if value.at > held.at => *held = value.clone(),
+            Some(_) => {}
+            None => {
+                mine.insert(key.clone(), value.clone());
+            }
+        }
+    }
 }
 
 /// The encrypted contents of a vault file.
@@ -800,15 +817,8 @@ impl VaultDoc {
             self.slots = other.slots.clone();
             self.slots_at = other.slots_at;
         }
-        for (tag, icon) in &other.prefs.tag_icons {
-            match self.prefs.tag_icons.get_mut(tag) {
-                Some(mine) if icon.at > mine.at => *mine = icon.clone(),
-                Some(_) => {}
-                None => {
-                    self.prefs.tag_icons.insert(tag.clone(), icon.clone());
-                }
-            }
-        }
+        merge_keyed(&mut self.prefs.tag_icons, &other.prefs.tag_icons);
+        merge_keyed(&mut self.prefs.app, &other.prefs.app);
         self.generation = self.generation.max(other.generation);
         self.minor = self.minor.max(other.minor);
     }

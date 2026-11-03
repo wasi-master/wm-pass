@@ -56,6 +56,8 @@ import com.wasimaster.wmpass.system.Destinations
 import com.wasimaster.wmpass.system.FileSync
 import com.wasimaster.wmpass.system.Lan
 import com.wasimaster.wmpass.system.LanPeer
+import com.wasimaster.wmpass.app.Prefs
+import com.wasimaster.wmpass.ui.help.Help
 import com.wasimaster.wmpass.ui.help.HelpMark
 import com.wasimaster.wmpass.ui.help.helpAnchor
 import com.wasimaster.wmpass.ui.icons.PassIcons
@@ -194,6 +196,7 @@ fun SyncScreen() {
                 }
                 fileMessage?.let { Text(it, color = colors.textMid, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 6.dp, top = 10.dp)) }
             }
+            SettingsSyncSection()
             Column(Modifier.helpAnchor("group:sync.accounts")) {
             Eyebrow("Accounts held elsewhere") { HelpMark("group.sync.accounts", "accounts held elsewhere") }
             Text(
@@ -344,6 +347,54 @@ fun AddAccountSheet(onDismiss: () -> Unit) {
                 }
             }
         }
+    }
+}
+
+/** Whether customisations follow the vault, and which ones stay on this phone. */
+@Composable
+private fun SettingsSyncSection() {
+    val prefs = Prefs.of(LocalContext.current)
+    var choosing by remember { mutableStateOf(false) }
+    Eyebrow("Settings") { HelpMark("setting.sync_settings", "syncing settings") }
+    GroupCard {
+        SyncSwitchRow("Sync settings with the vault", "Your customisations follow this vault to your other devices. Protection settings stay here.", prefs.syncSettings.value) {
+            prefs.syncSettings.set(it)
+        }
+        if (prefs.syncSettings.value) {
+            Hairline()
+            val skipped = prefs.syncSkip
+            NavRow(
+                "Settings that stay on this phone",
+                if (skipped.isEmpty()) "None: everything syncs" else "${skipped.size} kept here",
+                icon = PassIcons.Devices,
+                help = "setting.sync_skip",
+            ) { choosing = !choosing }
+            if (choosing) {
+                // Named as the guide names them, grouped by the page each one is on.
+                val rows = remember {
+                    prefs.syncable
+                        .mapNotNull { opt -> Help.forPref(opt.key)?.let { Triple(opt.key, it.title, Help.where(it).removePrefix("Settings, ")) } }
+                        .sortedWith(compareBy({ it.third }, { it.second }))
+                }
+                rows.forEach { (key, title, where) ->
+                    Hairline()
+                    SyncSwitchRow(title, where, key !in skipped) { prefs.setSyncSkipped(key, !it) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SyncSwitchRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    val colors = palette
+    Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 12.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = colors.text, style = MaterialTheme.typography.bodyLarge)
+            Text(subtitle, color = colors.textMid, style = MaterialTheme.typography.bodySmall)
+        }
+        Spacer(Modifier.width(8.dp))
+        PassSwitch(checked) { onChange(it) }
     }
 }
 

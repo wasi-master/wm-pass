@@ -38,6 +38,12 @@ class Prefs(context: Context) {
         }
 
         fun set(next: T) {
+            put(next)
+            onSet?.invoke(this)
+        }
+
+        /** Writes a value without telling anyone, for one that came from the vault. */
+        internal fun put(next: T) {
             value = next
             store.edit().also { write(it, next) }.apply()
         }
@@ -257,6 +263,17 @@ class Prefs(context: Context) {
         if (id !in helpToursDone) helpToursDoneOpt.set((helpToursDone + id).joinToString(","))
     }
 
+    // ---- settings sync: each phone decides for itself ----
+
+    val syncSettings = flag("sync_settings", true, portable = false)
+    private val syncSkipOpt = local("sync_skip", "")
+    val syncSkip: Set<String> get() = syncSkipOpt.value.split(",").filter { it.isNotEmpty() }.toSet()
+
+    fun setSyncSkipped(key: String, skipped: Boolean) {
+        val next = if (skipped) syncSkip + key else syncSkip - key
+        syncSkipOpt.set(next.joinToString(","))
+    }
+
     /** Key chords for a physical keyboard, by what they do. */
     private val shortcutsOpt = word("shortcuts", "")
     val shortcuts: Map<String, String?> get() = DEFAULT_SHORTCUTS + shortcutsOpt.value.split('\n').filter { '=' in it }.associate {
@@ -341,6 +358,52 @@ class Prefs(context: Context) {
     /** The setting stored under [key], for the guide's "Now" and "Default" marks and its **Use this**. */
     fun opt(key: String): Opt<*>? = all.firstOrNull { it.key == key }
 
+    // ---- settings that follow the vault ----
+
+    /** Told about every setting someone changes, for the vault to carry it to other devices. */
+    var onSet: ((Opt<*>) -> Unit)? = null
+
+    /** Every setting that can follow the vault, whether or not this phone lets it. */
+    val syncable: List<Opt<*>> get() = all.filter { it.portable && it.key !in DEVICE_ONLY }
+
+    /** Whether [opt] goes to and comes from the vault on this phone. */
+    fun syncs(opt: Opt<*>): Boolean = syncSettings.value && opt.portable && opt.key !in DEVICE_ONLY && opt.key !in syncSkip
+
+    /**
+     * Takes settings another device left in the vault. Each one gets the checks a settings file
+     * gets, and own themes keep their ids so the theme chosen with them is still found. Returns how
+     * many changed. Nothing here is sent back.
+     */
+    fun applySynced(values: Map<String, Any?>): Int {
+        var changed = 0
+        for ((key, raw) in values) {
+            val opt = opt(key) ?: continue
+            if (!syncs(opt)) continue
+            if (opt === themeIdOpt && raw == BuiltInThemes.SYSTEM && defaultTheme() != BuiltInThemes.SYSTEM) continue
+            val incoming = if (opt === customThemesOpt) cleanThemes(raw) else raw
+            @Suppress("UNCHECKED_CAST")
+            val typed = opt as Opt<Any?>
+            val parsed = typed.parse(incoming) ?: continue
+            if (parsed != typed.value) {
+                typed.put(parsed)
+                changed++
+            }
+        }
+        if (changed > 0) PassIcons.style = iconStyle.value
+        return changed
+    }
+
+    private fun cleanThemes(raw: Any?): String? {
+        val text = raw as? String ?: return null
+        if (text.isEmpty()) return ""
+        val clean = ThemeCodec.readList(text).mapNotNull { theme ->
+            runCatching { ThemeCodec.read(ThemeCodec.toText(theme)) }.getOrNull()?.let { checked ->
+                if (Regex("custom_[\\w-]{1,40}").matches(theme.id)) checked.copy(id = theme.id) else checked
+            }
+        }
+        return ThemeCodec.writeList(clean)
+    }
+
     /** Every customisation as a file. Protection settings are left out on purpose. */
     fun exportText(): String = JSONObject().apply {
         put("format", "wmpass-settings")
@@ -401,6 +464,12 @@ class Prefs(context: Context) {
         val DEFAULT_TABS = listOf("vault", "codes", "generator", "health")
         val DEFAULT_ADD = listOf("login", "otp", "note", "card", "identity", "recovery", "wifi", "ssh", "api", "database", "licence", "document")
         private const val IMPORT_LIMIT = 200_000
+
+        /**
+         * Customisations that describe this phone's screens rather than the person, or mean
+         * something different on a computer under the same name. They never travel with the vault.
+         */
+        private val DEVICE_ONLY = setOf("tabs", "last_tab", "folds_open", "editor_open")
         val DEFAULT_SHORTCUTS: Map<String, String?> = mapOf(
             "search" to "Ctrl+F",
             "add" to "Ctrl+N",

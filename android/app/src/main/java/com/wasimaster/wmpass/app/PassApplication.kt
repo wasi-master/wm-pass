@@ -9,6 +9,7 @@ class PassApplication : Application() {
         // First, so a look that keeps crashing is gone before anything reads it.
         LaunchGuard.start(this) { Prefs.of(this).resetLook() }
         Pass.init(this)
+        SettingsSync.start(Prefs.of(this))
         AutoLock.install(this)
         Thread { com.wasimaster.wmpass.ui.parts.Brands.warm(this) }.start()
         // Only where to read it from: the guide is parsed the first time it is needed.
