@@ -3,6 +3,7 @@
 //! sealed between the extension and the app, so it holds no keys and needs none.
 
 use std::io::{self, Read, Write};
+use std::sync::Arc;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as B64;
@@ -90,13 +91,17 @@ fn main() {
         let _ = write_browser(&mut stdout, &json!({"closed": true}));
         return;
     };
-    let (mut from_app, mut to_app) = socket.split();
+    // `&Stream` reads and writes, so the two directions share one stream.
+    let socket = Arc::new(socket);
+    let writer = Arc::clone(&socket);
+    let mut from_app: &Stream = &socket;
     let origin = std::env::args().nth(1).unwrap_or_default();
-    if write_frame(&mut to_app, origin.as_bytes()).is_err() {
+    if write_frame(&mut &*writer, origin.as_bytes()).is_err() {
         return;
     }
 
     std::thread::spawn(move || {
+        let mut to_app: &Stream = &writer;
         let mut stdin = io::stdin().lock();
         while let Ok(frame) = read_browser(&mut stdin) {
             if write_frame(&mut to_app, &frame).is_err() {
