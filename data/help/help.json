@@ -855,6 +855,15 @@
      "runs": [
       {
        "t": "text",
+       "s": "If WM Keyboard is your keyboard, its clipboard history keeps the copy only until then: when WM Pass empties the clipboard, the keyboard drops it from its history too."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
        "s": "Usernames, websites and other plain fields are copied as they are, and not cleared."
       }
      ]

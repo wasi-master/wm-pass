@@ -285,6 +285,7 @@ export const features = [
           'A copied secret is marked as sensitive, so Android keeps it out of clipboard previews and history where it honors the mark.',
           'A small bar counts down until it is cleared, with **Clear now**.',
           'When the time set under [[setting.clipboard_seconds]] is up, WM Pass empties the clipboard, unless you have copied something else since.',
+          'If WM Keyboard is your keyboard, its clipboard history keeps the copy only until then: when WM Pass empties the clipboard, the keyboard drops it from its history too.',
           'Usernames, websites and other plain fields are copied as they are, and not cleared.',
         ],
         when: 'Where you can, fill instead of copying: the autofill service does not use the clipboard.',
