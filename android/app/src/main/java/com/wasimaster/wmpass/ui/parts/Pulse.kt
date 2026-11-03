@@ -29,6 +29,7 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
+import com.wasimaster.wmpass.ui.theme.onBrand
 import com.wasimaster.wmpass.ui.theme.palette
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -76,7 +77,7 @@ fun Listening(icon: ImageVector, modifier: Modifier = Modifier, size: Dp = 200.d
                 .background(Brush.linearGradient(listOf(colors.brandFrom, colors.brandTo))),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(icon, null, tint = Color.White, modifier = Modifier.size(34.dp))
+            Icon(icon, null, tint = colors.onBrand, modifier = Modifier.size(34.dp))
         }
     }
 }

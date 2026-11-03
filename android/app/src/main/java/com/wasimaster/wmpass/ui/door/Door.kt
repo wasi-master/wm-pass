@@ -112,6 +112,7 @@ import com.wasimaster.wmpass.ui.parts.StrengthBar
 import com.wasimaster.wmpass.ui.parts.secretSemantics
 import com.wasimaster.wmpass.ui.theme.MonoFamily
 import com.wasimaster.wmpass.ui.theme.PassType
+import com.wasimaster.wmpass.ui.theme.onBrand
 import com.wasimaster.wmpass.ui.theme.palette
 import com.wasimaster.wmpass.ui.theme.rememberHaptics
 import kotlinx.coroutines.delay
@@ -273,7 +274,7 @@ private fun GoButton(enabled: Boolean, onClick: () -> Unit) {
         Icon(
             PassIcons.ChevronRight,
             "Unlock",
-            tint = if (enabled) androidx.compose.ui.graphics.Color.White else colors.textLow,
+            tint = if (enabled) colors.onBrand else colors.textLow,
             modifier = Modifier.size(24.dp),
         )
     }

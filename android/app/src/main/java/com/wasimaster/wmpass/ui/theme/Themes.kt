@@ -195,6 +195,19 @@ fun mixColors(a: Color, b: Color, amount: Float) = Color(
     a.blue + (b.blue - a.blue) * amount,
 )
 
+/**
+ * Ink for words and icons on the brand gradient, judged where a label sits on it. White alone
+ * failed on a pale brand: a theme with a light blue primary had white on it at 1.7:1. The palette's
+ * own colour for the purpose wins when it reads; otherwise whichever of white or black reads best.
+ */
+val Palette.onBrand: Color
+    get() {
+        val under = listOf(0.3f, 0.5f, 0.7f).map { mixColors(brandFrom, brandTo, it) }
+        fun reads(ink: Color) = under.minOf { contrast(ink, it) }
+        if (reads(onPrimary) >= 4.5) return onPrimary
+        return listOf(onPrimary, Color.White, Color.Black).maxBy { reads(it) }
+    }
+
 /** Moves [color] towards black or white until it reads on [ground]. */
 private fun readable(color: Color, ground: Color, ratio: Double): Color {
     if (contrast(color, ground) >= ratio) return color
