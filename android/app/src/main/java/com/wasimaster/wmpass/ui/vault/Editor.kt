@@ -154,7 +154,7 @@ private fun appPackage(site: JsonElement): String =
 
 /**
  * Puts what the card scanner read into the form: the number, shown so it can be checked
- * against the card, and the expiry when the scanner saw one.
+ * against the card, and the expiry and name when the scanner read them.
  */
 private fun applyCard(read: com.wasimaster.wmpass.core.CardReader.Read, fields: List<EditField>) {
     fields.firstOrNull { it.spec.key == "number" }?.let { field ->
@@ -163,6 +163,7 @@ private fun applyCard(read: com.wasimaster.wmpass.core.CardReader.Read, fields: 
         field.showing = true
     }
     read.expiry?.let { expiry -> fields.firstOrNull { it.spec.key == "expiry" }?.text?.setTextAndPlaceCursorAtEnd(expiry) }
+    read.name?.let { name -> fields.firstOrNull { it.spec.key == "holder" }?.text?.setTextAndPlaceCursorAtEnd(name) }
 }
 
 /**

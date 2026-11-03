@@ -30,13 +30,16 @@ internal object Native {
     /** A hardware key operation, over [device]. Blocks until the key has answered. */
     external fun hardware(method: String, factor: String, device: HwDevice): Array<Any?>
 
-    /** Loads the card reader from its model's bytes. False when it will not load. */
-    external fun cardOpen(model: ByteArray): Boolean
+    /**
+     * Starts a card scan. With the model's bytes, frames go to [cardFrame]; with null, a text
+     * recognizer reads them and passes its lines to [cardText]. False when the model will not load.
+     */
+    external fun cardOpen(model: ByteArray?): Boolean
 
     /**
-     * One RGBA camera frame for the card reader. Null until two frames agree on a number, then
-     * `{ByteArray number, String? expiry}`. [crop] is the card's left, top, right and bottom as
-     * fractions of the upright frame.
+     * One RGBA camera frame for the card reader. Null until frames agree on a number, then
+     * `{ByteArray number, String? expiry, String? name}`. [crop] is the card's left, top, right
+     * and bottom as fractions of the upright frame.
      */
     external fun cardFrame(
         pixels: ByteArray,
@@ -47,6 +50,9 @@ internal object Native {
         crop: FloatArray,
         nowMs: Long,
     ): Array<Any?>?
+
+    /** One frame as a text recognizer read it: [boxes] holds each line's left and top. Replies as [cardFrame]. */
+    external fun cardText(lines: Array<String>, boxes: FloatArray, nowMs: Long): Array<Any?>?
 
     /** Drops the card reader and every number it read. */
     external fun cardClose()

@@ -6,8 +6,13 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-val wearLink = providers.gradleProperty("wmpass.offline").orNull != "true" &&
+// Google's SDKs (the Wearable API for the watch link, ML Kit for the card scanner) are in the
+// standard build only. F-Droid's may carry no Google artifact, and the offline build leaves them
+// out too, since Play services would reach the network for them from its own process.
+// src/google holds the code that calls them; src/nogoogle has the same names doing without.
+val googleSdks = providers.gradleProperty("wmpass.offline").orNull != "true" &&
     providers.gradleProperty("wmpass.fdroid").orNull != "true"
+val wearLink = googleSdks
 
 // App ids for the cloud services backups can sign in to, registered for WM Pass in each
 // service's console. Not secrets: the sign-in is PKCE. Missing means that service is not offered.
@@ -32,6 +37,7 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         buildConfigField("boolean", "WATCH", wearLink.toString())
+        buildConfigField("boolean", "GOOGLE_SDKS", googleSdks.toString())
         buildConfigField("boolean", "OFFLINE", (providers.gradleProperty("wmpass.offline").orNull == "true").toString())
         buildConfigField("String", "DROPBOX_APP_KEY", "\"${appKey("wmpass.dropboxAppKey", "WMPASS_DROPBOX_APP_KEY")}\"")
         buildConfigField("String", "ONEDRIVE_CLIENT_ID", "\"${appKey("wmpass.oneDriveClientId", "WMPASS_ONEDRIVE_CLIENT_ID")}\"")
@@ -78,6 +84,12 @@ android {
     }
 }
 
+androidComponents {
+    onVariants { variant ->
+        variant.sources.kotlin?.addStaticSourceDirectory(if (googleSdks) "src/google/java" else "src/nogoogle/java")
+    }
+}
+
 // Stills and JVM tests run against this computer's build of the native library.
 tasks.withType<Test>().configureEach { dependsOn(":core:buildHostNative") }
 
@@ -91,6 +103,8 @@ dependencies {
     implementation(project(":core"))
     // The watch link brings in Google's Wearable API, which the F-Droid and offline builds leave out.
     if (wearLink) implementation(project(":wearlink"))
+    // The card scanner's text reader, from Play services, which fetches its model: about 260 KB here.
+    if (googleSdks) implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
     implementation("com.wasimaster.wmsuite:theme")
     implementation("com.wasimaster.wmsuite:ui-core")
     implementation("com.wasimaster.wmsuite:settings-ui")
