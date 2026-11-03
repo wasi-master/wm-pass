@@ -1,0 +1,78 @@
+---
+title: Moving from mSecure
+description: How to export your passwords from mSecure on each device, and bring them into WM Pass.
+sidebar:
+  label: "mSecure"
+source:
+  name: "mSecure"
+  kind: manager
+  exportOn: ["Windows", "Mac"]
+  choose: "CSV"
+---
+
+import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+import Shot from '../../../../components/Shot.astro';
+
+<Aside type="tip" title="Which file">
+Export a **CSV** file from mSecure 5 or later. Export all records, and keep the file as it is, since mSecure writes no header row.
+</Aside>
+
+<Tabs syncKey="device">
+<TabItem label="Android" icon="mobile-android">
+
+<Aside>
+mSecure can't make a CSV on a phone. Use the desktop app on a Mac or Windows PC.
+</Aside>
+
+</TabItem>
+<TabItem label="Windows" icon="laptop">
+
+Before you start, open **All Items**. The Windows app exports only the view you are in or the records you select.
+
+<Steps>
+
+1. Open mSecure and unlock it.
+2. Click the gear icon to open **Settings**.
+3. Open **Backups**.
+4. Choose the option to export to a CSV file, name the file, and save it.
+
+</Steps>
+
+Steps from [Export to a CSV file](https://support.msecure.com/en/support/solutions/articles/36000176914-export-to-a-csv-file) and [How to export passwords from mSecure to NordPass?](https://support.nordpass.com/hc/en-us/articles/360013931137-How-to-export-passwords-from-mSecure).
+
+</TabItem>
+<TabItem label="Mac" icon="apple">
+<Steps>
+
+1. Open mSecure and unlock it.
+2. Choose **File**, then **Export**, then **CSV**.
+3. Click **OK** on the warning.
+4. Choose **Export All Records**, name the file, and click **Export**.
+
+</Steps>
+
+Steps from [Export to a CSV file](https://support.msecure.com/en/support/solutions/articles/36000176914-export-to-a-csv-file), with the record choice from [Import from mSecure](https://docs.keeper.io/user-guides/import-records-1/import-from-msecure).
+
+</TabItem>
+</Tabs>
+
+## Good to know
+
+- mSecure's own page says exported CSV files are stored in plain text.
+- The file layout differs between mSecure versions. WM Pass reads the one from mSecure 5 and later.
+
+## Then, in WM Pass
+
+Open Settings, Import, and choose the file. The [import steps](/guides/import-export/#importing-into-wm-pass) cover every WM Pass app.
+
+Delete the export once WM Pass has read it.
+
+If you exported on a computer and use WM Pass on your phone, import the file in WM Pass on that computer and [sync](/guides/backup-sync/), or copy the file to the phone over a USB cable. Email and cloud drives keep copies of what passes through them.
+
+## Sources
+
+These steps follow mSecure's own help pages and third-party guides, read on 4 November 2026. Menus move between versions; if a step does not match what you see, the page it came from may be newer.
+
+- [Export to a CSV file](https://support.msecure.com/en/support/solutions/articles/36000176914-export-to-a-csv-file), mSecure
+- [How to export passwords from mSecure to NordPass?](https://support.nordpass.com/hc/en-us/articles/360013931137-How-to-export-passwords-from-mSecure), NordPass (third party)
+- [Import from mSecure](https://docs.keeper.io/user-guides/import-records-1/import-from-msecure), Keeper (third party)

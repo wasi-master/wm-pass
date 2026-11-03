@@ -1,0 +1,65 @@
+---
+title: Moving from Opera
+description: How to export your passwords from Opera on each device, and bring them into WM Pass.
+sidebar:
+  label: "Opera"
+source:
+  name: "Opera"
+  kind: manager
+  logo: opera
+  exportOn: ["Computer"]
+  choose: "CSV"
+---
+
+import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+import Shot from '../../../../components/Shot.astro';
+
+<Aside type="tip" title="Which file">
+Opera saves your passwords as a CSV file in the same layout as Google Password Manager (name, url, username, password, note). WM Pass reads it as it reads that one.
+</Aside>
+
+<Tabs syncKey="device">
+<TabItem label="Android" icon="mobile-android">
+
+<Aside>
+The Opera help page that describes the export does not say it exists on Android. Export from Opera on a computer.
+</Aside>
+
+</TabItem>
+<TabItem label="Computer" icon="laptop">
+<Steps>
+
+1. Open Opera and go to **Settings** (Alt + P).
+2. Click **Advanced** in the left sidebar, then **Privacy & security**.
+3. Under **Autofill**, click **Passwords**.
+4. In the Password Manager, click **Settings** in the left sidebar.
+5. Next to **Export passwords**, click **Download file**.
+6. If asked, confirm with your computer password, then choose where to save the file.
+
+</Steps>
+
+Steps from [Web preferences](https://help.opera.com/en/latest/web-preferences/).
+
+</TabItem>
+</Tabs>
+
+## Good to know
+
+- Opera's help strongly recommends deleting the file once you are done, because it holds sensitive information.
+- Older Opera versions put the export under **Saved Passwords**, behind a three-dot menu. If you do not see **Download file**, look there.
+
+## Then, in WM Pass
+
+Open Settings, Import, and choose the file. The [import steps](/guides/import-export/#importing-into-wm-pass) cover every WM Pass app.
+
+Delete the export once WM Pass has read it.
+
+If you exported on a computer and use WM Pass on your phone, import the file in WM Pass on that computer and [sync](/guides/backup-sync/), or copy the file to the phone over a USB cable. Email and cloud drives keep copies of what passes through them.
+
+## Sources
+
+These steps follow Opera's own help pages and third-party guides, read on 4 November 2026. Menus move between versions; if a step does not match what you see, the page it came from may be newer.
+
+- [Web preferences](https://help.opera.com/en/latest/web-preferences/), Opera
+- [How to export data from Opera and import into Passwarden](https://passwarden.com/help/manuals/how-to-import-from-browsers/opera), Passwarden (third party, for the older menu)
+- [Opera-Passwörter exportieren](https://www.heise.de/tipps-tricks/Opera-Passwoerter-exportieren-so-klappt-s-11162367.html), heise online (third party)

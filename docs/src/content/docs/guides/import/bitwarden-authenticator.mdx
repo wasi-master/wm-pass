@@ -1,0 +1,65 @@
+---
+title: Moving from Bitwarden Authenticator
+description: How to export your codes from Bitwarden Authenticator on each device, and bring them into WM Pass.
+sidebar:
+  label: "Bitwarden Authenticator"
+source:
+  name: "Bitwarden Authenticator"
+  kind: authenticator
+  logo: bitwarden
+  exportOn: ["Android", "iPhone"]
+  choose: ".json"
+---
+
+import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+import Shot from '../../../../components/Shot.astro';
+
+<Aside type="tip" title="Which file">
+Choose **.json**. It has the same layout as Bitwarden's unencrypted JSON export, which WM Pass reads. The **.csv** choice is not the one to use.
+</Aside>
+
+<Tabs syncKey="device">
+<TabItem label="Android" icon="mobile-android">
+<Steps>
+
+1. Open Bitwarden Authenticator and go to the **Settings** tab.
+2. Tap **Export**.
+3. Under **File format**, choose **.json**.
+4. Tap **Export items** and save the file.
+
+</Steps>
+
+Steps from [Bitwarden Authenticator: import and export](https://bitwarden.com/help/authenticator-import-export/).
+
+</TabItem>
+<TabItem label="iPhone" icon="phone">
+<Steps>
+
+1. Open Bitwarden Authenticator and go to the **Settings** tab.
+2. Tap **Export**.
+3. Under **File format**, choose **.json**.
+4. Tap **Export items** and save the file.
+
+</Steps>
+
+Steps from [Bitwarden Authenticator: import and export](https://bitwarden.com/help/authenticator-import-export/).
+
+</TabItem>
+</Tabs>
+
+## Good to know
+
+- Only codes stored in the Authenticator app are exported. Codes saved inside your Bitwarden vault are not in this file; export the vault too, as the [Bitwarden guide](/guides/import/bitwarden/) describes.
+- Each entry carries its `otpauth://totp/` link with the secret key.
+
+## Then, in WM Pass
+
+Open Settings, Import, and choose the file. The [import steps](/guides/import-export/#importing-into-wm-pass) cover every WM Pass app.
+
+Delete the export once WM Pass has read it. The file holds every secret key in readable form.
+
+## Sources
+
+These steps follow Bitwarden Authenticator's own help pages, read on 4 November 2026. Menus move between versions; if a step does not match what you see, the page it came from may be newer.
+
+- [Bitwarden Authenticator: import and export](https://bitwarden.com/help/authenticator-import-export/), Bitwarden
