@@ -41,6 +41,15 @@ object Accounts {
     /** How the last trip to a server went: null for fine, or words to show. */
     val syncProblem = MutableStateFlow<String?>(null)
 
+    /** The account just added, for the door to have ready the next time it shows. */
+    private var signInNext: String? = null
+
+    fun signInNext(id: String) {
+        signInNext = id
+    }
+
+    fun takeSignInNext(): String? = signInNext.also { signInNext = null }
+
     private val serializer = ListSerializer(AccountRef.serializer())
 
     private fun store(context: Context) = context.getSharedPreferences("accounts", Context.MODE_PRIVATE)

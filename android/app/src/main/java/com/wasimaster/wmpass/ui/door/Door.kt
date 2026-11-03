@@ -303,7 +303,11 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
     var retryAt by remember { mutableStateOf(Pass.retryAt()) }
     var remaining by remember { mutableStateOf(0L) }
     var needed by remember { mutableStateOf<List<NeededFactor>?>(null) }
-    var source by remember { mutableStateOf(if (hasLocal) null else accounts.firstOrNull()) }
+    // An account just added comes chosen, with its password asked for straight away.
+    var source by remember {
+        val next = Accounts.takeSignInNext()?.let { id -> accounts.firstOrNull { it.id == id } }
+        mutableStateOf(next ?: if (hasLocal) null else accounts.firstOrNull())
+    }
     // After a reset the look is standard, so only the standard door below says why.
     val notice = remember { LaunchGuard.takeNotice() }
     val codeField = rememberTextFieldState()
