@@ -651,7 +651,7 @@ fun UsernameScreen() {
         sites = runCatching { (Engine.net("usernames.sites", online = false).json as JsonArray).map { it.jsonPrimitive.content } }.getOrDefault(emptyList())
     }
     Page("Username checker") {
-        NetGate("Asks each site whether a name is taken, one at a time. Every site you check learns the name you looked up. X, Instagram, npm and PyPI are left out, because they refuse or give the same answer for every name.") {
+        NetGate("Asks each site whether a name is taken, one at a time. Every site you check learns the name you looked up. X, Instagram, Reddit, Twitch, npm and PyPI are left out, because they refuse or give the same answer for every name.") {
             Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 SheetField(name, "A username")
                 PrimaryButton(if (running) "Checking…" else "Check", Modifier.fillMaxWidth(), enabled = !running && name.text.isNotBlank(), icon = PassIcons.PersonSearch) {

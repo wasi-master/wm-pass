@@ -37,7 +37,7 @@
   const WORDS: Record<string, string> = { free: 'Free', taken: 'Taken', unknown: 'No clear answer' };
 </script>
 
-<NetGate what="Asks each site whether a name is taken, one at a time. Every site you check learns the name you looked up. X, Instagram, npm and PyPI are left out, because they refuse or give the same answer for every name.">
+<NetGate what="Asks each site whether a name is taken, one at a time. Every site you check learns the name you looked up. X, Instagram, Reddit, Twitch, npm and PyPI are left out, because they refuse or give the same answer for every name.">
   <div class="stack" style="padding-bottom:14px;max-width:420px">
     <Field bind:value={name} placeholder="A username" onenter={() => name.trim() && !running && check()} />
     <div><Btn label={running ? 'Checking…' : 'Check'} icon="person_search" variant="primary" disabled={running || !name.trim()} onclick={check} /></div>

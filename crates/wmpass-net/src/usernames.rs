@@ -1,7 +1,8 @@
 //! Is a username taken? Each check tells that site the name being looked at, so this is
 //! opt-in and runs one site at a time. Sites that block anonymous lookups or answer the
-//! same for every name, including X, Instagram, npm and PyPI, are left out: a guess is
-//! worse than no answer here. `tests/live.rs` checks that each listed signal still holds.
+//! same for every name, including X, Instagram, Reddit, Twitch, npm and PyPI, are left
+//! out: a guess is worse than no answer here. `tests/live.rs` checks that each listed
+//! signal still holds.
 
 use crate::http::{Call, NetError, Request, Response};
 use wmpass_core::otp::percent_encode;
@@ -24,6 +25,8 @@ pub enum Signal {
     Status,
     /// With a 200, this text in the body means free.
     BodyMeansFree(&'static str),
+    /// 200 means taken; this status with this text in the body means free.
+    ErrorMeansFree(u16, &'static str),
 }
 
 /// A site that can be asked.
@@ -79,6 +82,116 @@ pub const SITES: &[Site] = &[
         url: "https://steamcommunity.com/id/{}",
         signal: Signal::BodyMeansFree("The specified profile could not be found"),
     },
+    Site {
+        name: "Bitbucket",
+        url: "https://api.bitbucket.org/2.0/workspaces/{}",
+        signal: Signal::Status,
+    },
+    Site {
+        name: "SourceHut",
+        url: "https://sr.ht/~{}/",
+        signal: Signal::Status,
+    },
+    Site {
+        name: "SourceForge",
+        url: "https://sourceforge.net/u/{}/profile",
+        signal: Signal::Status,
+    },
+    Site {
+        name: "Launchpad",
+        url: "https://api.launchpad.net/devel/~{}",
+        signal: Signal::Status,
+    },
+    Site {
+        name: "Hugging Face",
+        url: "https://huggingface.co/api/users/{}/overview",
+        signal: Signal::Status,
+    },
+    Site {
+        name: "RubyGems",
+        url: "https://rubygems.org/api/v1/profiles/{}.json",
+        signal: Signal::Status,
+    },
+    Site {
+        name: "DEV",
+        url: "https://dev.to/api/users/by_username?url={}",
+        signal: Signal::Status,
+    },
+    Site {
+        name: "Lobsters",
+        url: "https://lobste.rs/~{}.json",
+        signal: Signal::Status,
+    },
+    Site {
+        name: "Codewars",
+        url: "https://www.codewars.com/api/v1/users/{}",
+        signal: Signal::Status,
+    },
+    Site {
+        name: "HackerOne",
+        url: "https://hackerone.com/{}",
+        signal: Signal::Status,
+    },
+    Site {
+        name: "Pastebin",
+        url: "https://pastebin.com/u/{}",
+        signal: Signal::Status,
+    },
+    Site {
+        name: "Bluesky",
+        url: "https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor={}.bsky.social",
+        signal: Signal::ErrorMeansFree(400, "Profile not found"),
+    },
+    Site {
+        name: "Wikipedia",
+        url: "https://en.wikipedia.org/w/api.php?action=query&list=users&format=json&ususers={}",
+        signal: Signal::BodyMeansFree(r#""missing":""#),
+    },
+    Site {
+        name: "Linktree",
+        url: "https://linktr.ee/{}",
+        signal: Signal::Status,
+    },
+    Site {
+        name: "Vimeo",
+        url: "https://vimeo.com/{}",
+        signal: Signal::Status,
+    },
+    Site {
+        name: "Dribbble",
+        url: "https://dribbble.com/{}/about",
+        signal: Signal::Status,
+    },
+    Site {
+        name: "Unsplash",
+        url: "https://unsplash.com/@{}/collections",
+        signal: Signal::Status,
+    },
+    Site {
+        name: "Lichess",
+        url: "https://lichess.org/api/user/{}",
+        signal: Signal::Status,
+    },
+    Site {
+        name: "Chess.com",
+        url: "https://api.chess.com/pub/player/{}",
+        signal: Signal::Status,
+    },
+    Site {
+        name: "Minecraft",
+        url: "https://api.mojang.com/users/profiles/minecraft/{}",
+        signal: Signal::Status,
+    },
+    Site {
+        name: "Duolingo",
+        url: "https://www.duolingo.com/2017-06-30/users?username={}",
+        signal: Signal::BodyMeansFree(r#"{"users":[]}"#),
+    },
+    Site {
+        name: "MyAnimeList",
+        url: "https://myanimelist.net/profile/{}",
+        signal: Signal::Status,
+    },
 ];
 
 fn read(signal: Signal, response: &Response) -> Result<Availability, NetError> {
@@ -100,14 +213,23 @@ fn read(signal: Signal, response: &Response) -> Result<Availability, NetError> {
             })
         }
         (Signal::BodyMeansFree(_), 404) => Ok(Availability::Available),
+        (Signal::ErrorMeansFree(..), 200) => Ok(Availability::Taken),
+        (Signal::ErrorMeansFree(code, marker), status) if status == code => {
+            Ok(if response.text()?.contains(marker) {
+                Availability::Available
+            } else {
+                Availability::Unknown
+            })
+        }
         _ => Ok(Availability::Unknown),
     }
 }
 
 /// Builds the check for one site. Names outside letters, digits, dot, dash and
-/// underscore are refused, since none of these sites allow others.
+/// underscore are refused, since none of these sites allow others, and so are names
+/// of dots alone, which a path would read as `.` or `..`.
 pub fn check(site: Site, name: &str) -> Result<Call<Availability>, NetError> {
-    let valid = !name.is_empty()
+    let valid = name.chars().any(|c| c != '.')
         && name.len() <= 64
         && name
             .chars()
@@ -188,6 +310,46 @@ mod tests {
     }
 
     #[test]
+    fn error_sites() {
+        let sky = site("Bluesky");
+        let host = "https://public.api.bsky.app";
+        let taken = FakeHttp::new().answer(host, 200, r#"{"did":"did:plc:x"}"#);
+        assert_eq!(
+            check(sky, "x").unwrap().run(&taken, ANY),
+            Ok(Availability::Taken)
+        );
+        let free = FakeHttp::new().answer(
+            host,
+            400,
+            r#"{"error":"InvalidRequest","message":"Profile not found"}"#,
+        );
+        assert_eq!(
+            check(sky, "x").unwrap().run(&free, ANY),
+            Ok(Availability::Available)
+        );
+        let refused = FakeHttp::new().answer(
+            host,
+            400,
+            r#"{"error":"InvalidRequest","message":"Invalid AT identifier"}"#,
+        );
+        assert_eq!(
+            check(sky, "x").unwrap().run(&refused, ANY),
+            Ok(Availability::Unknown)
+        );
+    }
+
+    #[test]
+    fn site_names_are_unique() {
+        for (i, a) in SITES.iter().enumerate() {
+            assert!(
+                SITES[i + 1..].iter().all(|b| b.name != a.name),
+                "{}",
+                a.name
+            );
+        }
+    }
+
+    #[test]
     fn hostile_names_never_reach_a_url() {
         for bad in [
             "",
@@ -198,6 +360,8 @@ mod tests {
             "a#b",
             "%2e",
             "x@y",
+            ".",
+            "..",
             &"a".repeat(65),
         ] {
             assert!(check(site("GitHub"), bad).is_err(), "{bad}");
