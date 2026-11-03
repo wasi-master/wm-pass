@@ -352,6 +352,7 @@ private fun QuickActions(entry: Detail) {
     val shell = LocalShell.current
     val username = entry.fields.firstOrNull { it.key == "username" || it.key == "user" }?.text.orEmpty()
     val url = entry.sites.firstNotNullOfOrNull { siteLine(it)?.openable }
+    val wifi = rememberWifiActions(entry)
     if (palette.flat) {
         val prefs = shell.prefs
         if (!prefs.entryActions.value) {
@@ -369,6 +370,12 @@ private fun QuickActions(entry: Detail) {
             if (url != null && prefs.entryActionOpen.value) {
                 LabelledAction(PassIcons.OpenInNew, "Open site", filled = false, confirms = false, Modifier.weight(1f)) { shell.openUrl(url) }
             }
+            if (wifi?.canShow == true) {
+                LabelledAction(PassIcons.QrCode, "QR code", filled = !entry.hasPassword, confirms = false, Modifier.weight(1f), wifi.show)
+            }
+            if (wifi?.canAdd == true) {
+                LabelledAction(PassIcons.Wifi, "Add to phone", filled = false, confirms = false, Modifier.weight(1f), wifi.add)
+            }
         }
         return
     }
@@ -382,6 +389,8 @@ private fun QuickActions(entry: Detail) {
         if (url != null) {
             RoundAction(PassIcons.OpenInNew, "Open site") { shell.openUrl(url) }
         }
+        if (wifi?.canShow == true) RoundAction(PassIcons.QrCode, "Show QR code", wifi.show)
+        if (wifi?.canAdd == true) RoundAction(PassIcons.Wifi, "Add to this phone", wifi.add)
     }
 }
 
