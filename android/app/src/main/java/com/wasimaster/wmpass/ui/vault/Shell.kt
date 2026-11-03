@@ -56,8 +56,8 @@ import com.wasimaster.wmpass.app.Prefs
 import com.wasimaster.wmpass.core.Pass
 import com.wasimaster.wmpass.core.SecretBytes
 import com.wasimaster.wmpass.core.SecureClipboard
+import com.wasimaster.wmpass.ui.fx.BackdropSource
 import com.wasimaster.wmpass.ui.fx.LocalBackdrop
-import com.wasimaster.wmpass.ui.fx.backdropSource
 import com.wasimaster.wmpass.ui.fx.rememberBackdrop
 import com.wasimaster.wmpass.ui.settings.settingsGraph
 import com.wasimaster.wmpass.ui.theme.Haptics
@@ -300,7 +300,8 @@ fun VaultShell(prefs: Prefs) {
                 },
         ) {
             ReceiveIncoming()
-            SharedTransitionLayout(Modifier.fillMaxSize().backdropSource(backdrop)) {
+            BackdropSource(backdrop, Modifier.fillMaxSize()) {
+            SharedTransitionLayout(Modifier.fillMaxSize()) {
                 CompositionLocalProvider(LocalShared provides this) {
                     com.wasimaster.wmpass.ui.settings.ProvideSettingsKit(prefs) {
                     NavHost(
@@ -368,6 +369,7 @@ fun VaultShell(prefs: Prefs) {
                     }
                     }
                 }
+            }
             }
             // Above every page: the capsule that counts a copied secret down.
             if (colors.flat) {
