@@ -66,11 +66,21 @@ export interface Host {
   link?: DesktopLink;
   /** Calls that reach a network run in this shell. */
   network?: boolean;
+  /** Reads a username page in a hidden, private browser view, for sites that only answer once their scripts run. */
+  checkUsernamePage?(site: string, name: string, online: boolean): Promise<string>;
+  /** Username checks made by another app: the extension asks the desktop app over its link. */
+  usernames?: UsernameHost;
   places?: PlacesHost;
   hardware?: HardwareHost;
   outside?: OutsideFiles;
   lan?: LanHost;
   desktop?: DesktopHost;
+}
+
+export interface UsernameHost {
+  sites(): Promise<{ sites: string[]; pages: string[] }>;
+  check(site: string, name: string): Promise<string>;
+  links(name: string): Promise<{ site: string; url: string }[]>;
 }
 
 export interface DesktopLink {

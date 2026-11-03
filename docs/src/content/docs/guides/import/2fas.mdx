@@ -1,0 +1,68 @@
+---
+title: Moving from 2FAS
+description: How to export your codes from 2FAS on each device, and bring them into WM Pass.
+sidebar:
+  label: "2FAS"
+source:
+  name: "2FAS"
+  kind: authenticator
+  logo: 2fas
+  exportOn: ["Android", "iPhone"]
+  choose: "Backup file, no password"
+---
+
+import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+import Shot from '../../../../components/Shot.astro';
+
+<Aside type="tip" title="Which file">
+Export a 2FAS backup with no password. WM Pass reads only the unencrypted one.
+</Aside>
+
+<Tabs syncKey="device">
+<TabItem label="Android" icon="mobile-android">
+<Steps>
+
+1. Open the 2FAS app.
+2. Go to **Settings**, then **2FAS Backup**.
+3. Tap **Export**.
+4. Leave the password option off. WM Pass cannot read a backup that has a password.
+5. Save the file on the phone, in a place you can pick it from inside WM Pass.
+
+</Steps>
+
+Steps from [I want to move/copy/transfer tokens (codes) between iOS and Android](https://2fas.com/support/2fas-auth-mobile-app/i-want-to-move-copy-transfer-tokens-codes-between-ios-and-android/).
+
+</TabItem>
+<TabItem label="iPhone" icon="phone">
+<Steps>
+
+1. Open the 2FAS app.
+2. Go to **Settings**, then **2FAS Backup**.
+3. Tap **Export**.
+4. Leave the password option off. WM Pass cannot read a backup that has a password.
+5. Save the file on the phone, in a place you can pick it from inside WM Pass.
+
+</Steps>
+
+Steps from [I want to move/copy/transfer tokens (codes) between iOS and Android](https://2fas.com/support/2fas-auth-mobile-app/i-want-to-move-copy-transfer-tokens-codes-between-ios-and-android/).
+
+</TabItem>
+</Tabs>
+
+## Good to know
+
+- 2FAS recommends a password for the backup file, but WM Pass reads the backup only without one.
+- The app sends the file through "Export" (save) or a share button; either gives you a file WM Pass can open.
+
+## Then, in WM Pass
+
+Open Settings, Import, and choose the file. The [import steps](/guides/import-export/#importing-into-wm-pass) cover every WM Pass app.
+
+Delete the export once WM Pass has read it.
+
+## Sources
+
+These steps follow 2FAS's own help pages, read on 4 November 2026. Menus move between versions; if a step does not match what you see, the page it came from may be newer.
+
+- [I want to move/copy/transfer tokens (codes) between iOS and Android](https://2fas.com/support/2fas-auth-mobile-app/i-want-to-move-copy-transfer-tokens-codes-between-ios-and-android/), 2FAS
+- [2FAS Auth for Android, backup export screen](https://github.com/twofas/2fas-android/blob/develop/feature/backup/src/main/java/com/twofasapp/feature/backup/ui/export/BackupExportScreen.kt), 2FAS (GitHub)

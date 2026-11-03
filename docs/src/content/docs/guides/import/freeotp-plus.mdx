@@ -1,0 +1,61 @@
+---
+title: Moving from FreeOTP+
+description: How to export your codes from FreeOTP+ on each device, and bring them into WM Pass.
+sidebar:
+  label: "FreeOTP+"
+source:
+  name: "FreeOTP+"
+  kind: authenticator
+  exportOn: ["Android"]
+  choose: "JSON"
+---
+
+import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+import Shot from '../../../../components/Shot.astro';
+
+<Aside type="tip" title="Which file">
+Choose **Export JSON format**. The key URI format is a different file.
+</Aside>
+
+<Tabs syncKey="device">
+<TabItem label="Android" icon="mobile-android">
+
+FreeOTP+ has no export guide, so these steps follow the app's menus.
+
+<Steps>
+
+1. Open FreeOTP+.
+2. Tap the three-dot menu at the top.
+3. Tap **Export**, then **Export JSON format**.
+4. Choose where to save the file.
+
+</Steps>
+
+Steps from [FreeOTP+ README](https://github.com/helloworld1/FreeOTPPlus/blob/master/README.md).
+
+</TabItem>
+<TabItem label="iPhone" icon="phone">
+
+<Aside>
+FreeOTP+ is an Android app. If you used it, export from your Android phone.
+</Aside>
+
+</TabItem>
+</Tabs>
+
+## Good to know
+
+- FreeOTP+ also offers Export key URI format; use the JSON format for WM Pass.
+
+## Then, in WM Pass
+
+Open Settings, Import, and choose the file. The [import steps](/guides/import-export/#importing-into-wm-pass) cover every WM Pass app.
+
+Delete the export once WM Pass has read it.
+
+## Sources
+
+These steps follow FreeOTP+'s own help pages, read on 4 November 2026. Menus move between versions; if a step does not match what you see, the page it came from may be newer.
+
+- [FreeOTP+ README](https://github.com/helloworld1/FreeOTPPlus/blob/master/README.md), FreeOTP+ (GitHub)
+- [FreeOTP+ main menu](https://github.com/helloworld1/FreeOTPPlus/blob/master/app/src/main/res/menu/main.xml), FreeOTP+ (GitHub)

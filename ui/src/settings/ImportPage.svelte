@@ -1,13 +1,42 @@
 <script lang="ts">
   import Btn from '../parts/Btn.svelte';
+  import Dialog from '../parts/Dialog.svelte';
   import Icon from '../parts/Icon.svelte';
   import PasswordField from '../parts/PasswordField.svelte';
+  import Tile from '../parts/Tile.svelte';
   import { bytesOf, pass } from '../engine/pass.svelte';
   import { host } from '../engine/host';
   import type { ImportPreview } from '../engine/types';
 
   const FORMATS = '1Password, Apple Passwords, Bitwarden, Chrome, Dashlane, Enpass, Firefox, KeePass and KeePassXC, Keeper, LastPass, NordPass, Proton Pass, RoboForm and SafeInCloud. Authenticators: Aegis, 2FAS, andOTP, Ente, FreeOTP+, Raivo, and Google’s export QR code.';
 
+  // Each app's export steps, on the website, with the mark the vault would give it.
+  const GUIDES = 'https://wmpass.pages.dev/guides/import/';
+  const GUIDE_LIST: { page: string; name: string; brand?: string }[] = [
+    { page: '1password', name: '1Password', brand: '1password' },
+    { page: 'apple-passwords', name: 'Apple Passwords', brand: 'apple' },
+    { page: 'bitwarden', name: 'Bitwarden', brand: 'bitwarden' },
+    { page: 'chrome', name: 'Google Password Manager', brand: 'googlechrome' },
+    { page: 'dashlane', name: 'Dashlane', brand: 'dashlane' },
+    { page: 'enpass', name: 'Enpass', brand: 'enpass' },
+    { page: 'firefox', name: 'Firefox', brand: 'firefox' },
+    { page: 'keepass', name: 'KeePass and KeePassXC', brand: 'keepassxc' },
+    { page: 'keeper', name: 'Keeper', brand: 'keeper' },
+    { page: 'lastpass', name: 'LastPass', brand: 'lastpass' },
+    { page: 'nordpass', name: 'NordPass' },
+    { page: 'proton-pass', name: 'Proton Pass', brand: 'proton' },
+    { page: 'roboform', name: 'RoboForm' },
+    { page: 'safeincloud', name: 'SafeInCloud' },
+    { page: 'google-authenticator', name: 'Google Authenticator', brand: 'googleauthenticator' },
+    { page: '2fas', name: '2FAS', brand: '2fas' },
+    { page: 'aegis', name: 'Aegis', brand: 'aegisauthenticator' },
+    { page: 'andotp', name: 'andOTP' },
+    { page: 'ente-auth', name: 'Ente Auth', brand: 'ente' },
+    { page: 'freeotp-plus', name: 'FreeOTP+' },
+    { page: 'raivo', name: 'Raivo' },
+  ];
+
+  let guides = $state(false);
   let preview = $state<ImportPreview | null>(null);
   let bytes = $state<Uint8Array | null>(null);
   let needsPassword = $state(false);
@@ -78,5 +107,22 @@
     {#if error}<p class="danger-text">{error}</p>{/if}
     <div><Btn label="Choose a file" icon="file_open" variant="primary" onclick={pick} /></div>
     <p class="dimmer small">Delete the exported file afterwards. It holds your passwords in plain text.</p>
+    <div><Btn label="How to export from your old app" icon="open_in_new" onclick={() => (guides = true)} /></div>
   {/if}
 </div>
+
+{#if guides}
+  <Dialog title="Export from your old app" onclose={() => (guides = false)}>
+    <div class="set-group" style="margin-bottom:0;max-height:60vh;overflow-y:auto">
+      <div class="body">
+        {#each GUIDE_LIST as guide (guide.page)}
+          <button type="button" class="set-row" onclick={() => void host().openUrl(`${GUIDES}${guide.page}/`)}>
+            <Tile title={guide.name} icon={guide.brand ? `brand:${guide.brand}` : null} size={28} />
+            <span class="text"><span class="ell" style="display:block;font-weight:500">{guide.name}</span></span>
+            <span class="dimmer" style="display:flex"><Icon name="open_in_new" size={16} /></span>
+          </button>
+        {/each}
+      </div>
+    </div>
+  </Dialog>
+{/if}

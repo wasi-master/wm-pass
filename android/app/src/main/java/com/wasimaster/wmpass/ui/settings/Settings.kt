@@ -15,12 +15,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -984,8 +987,59 @@ fun NameSheet(title: String, initial: String, onDismiss: () -> Unit, onDone: (St
 
 private val ImportFormats = "1Password, Apple Passwords, Bitwarden, Chrome, Dashlane, Enpass, Firefox, KeePass and KeePassXC, Keeper, LastPass, NordPass, Proton Pass, RoboForm and SafeInCloud. Authenticators: Aegis, 2FAS, andOTP, Ente, FreeOTP+ and Raivo files, and Google Authenticator's export codes, scanned or from a screenshot."
 
-/** Each app's export steps, on the website. */
-private const val ExportGuide = "https://wmpass.pages.dev/guides/import-export/#exporting-from-your-old-app"
+/** Each app's export steps, on the website, with the mark the vault would give it. */
+private class ExportGuide(val page: String, val name: String, val brand: String? = null)
+
+private const val ExportGuides = "https://wmpass.pages.dev/guides/import/"
+
+private val ExportGuideList = listOf(
+    ExportGuide("1password", "1Password", "1password"),
+    ExportGuide("apple-passwords", "Apple Passwords", "apple"),
+    ExportGuide("bitwarden", "Bitwarden", "bitwarden"),
+    ExportGuide("chrome", "Google Password Manager", "googlechrome"),
+    ExportGuide("dashlane", "Dashlane", "dashlane"),
+    ExportGuide("enpass", "Enpass", "enpass"),
+    ExportGuide("firefox", "Firefox", "firefox"),
+    ExportGuide("keepass", "KeePass and KeePassXC", "keepassxc"),
+    ExportGuide("keeper", "Keeper", "keeper"),
+    ExportGuide("lastpass", "LastPass", "lastpass"),
+    ExportGuide("nordpass", "NordPass"),
+    ExportGuide("proton-pass", "Proton Pass", "proton"),
+    ExportGuide("roboform", "RoboForm"),
+    ExportGuide("safeincloud", "SafeInCloud"),
+    ExportGuide("google-authenticator", "Google Authenticator", "googleauthenticator"),
+    ExportGuide("2fas", "2FAS", "2fas"),
+    ExportGuide("aegis", "Aegis", "aegisauthenticator"),
+    ExportGuide("andotp", "andOTP"),
+    ExportGuide("ente-auth", "Ente Auth", "ente"),
+    ExportGuide("freeotp-plus", "FreeOTP+"),
+    ExportGuide("raivo", "Raivo"),
+)
+
+/** The apps with a guide on the website. Each opens its own page, Android steps first. */
+@Composable
+private fun ExportGuideSheet(onDismiss: () -> Unit) {
+    val colors = palette
+    val browser = androidx.compose.ui.platform.LocalUriHandler.current
+    PassSheet(onDismiss, "Export from your old app") {
+        Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState())) {
+            ExportGuideList.forEach { guide ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { runCatching { browser.openUri(ExportGuides + guide.page + "/") } }
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SiteTile(guide.name, null, "login", size = 36.dp, icon = guide.brand?.let { "brand:$it" })
+                    Spacer(Modifier.width(14.dp))
+                    Text(guide.name, color = colors.text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    Icon(PassIcons.OpenInNew, null, tint = colors.textLow, modifier = Modifier.size(18.dp))
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun ImportScreen() {
@@ -1050,7 +1104,6 @@ private fun ImportScreen() {
             }
         }
     }
-    val browser = androidx.compose.ui.platform.LocalUriHandler.current
     var savedWifi by remember { mutableStateOf(false) }
     if (savedWifi) {
         com.wasimaster.wmpass.ui.vault.SavedWifiSheet({ savedWifi = false }, onAddAll = { networks ->
@@ -1082,6 +1135,8 @@ private fun ImportScreen() {
             }
         })
     }
+    var guides by remember { mutableStateOf(false) }
+    if (guides) ExportGuideSheet { guides = false }
     WmScreen("Import", route = "settings/import", onBack = back()) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val shown = preview
@@ -1142,9 +1197,7 @@ private fun ImportScreen() {
                     QuietButton("Scan Google Authenticator's code", Modifier.fillMaxWidth(), PassIcons.QrCodeScanner, colors.primary) { scanCode() }
                     QuietButton("Wi-Fi saved on this phone", Modifier.fillMaxWidth(), PassIcons.Wifi, colors.primary) { savedWifi = true }
                     Text("Delete the exported file afterwards. It holds your passwords in plain text.", color = colors.textLow, style = MaterialTheme.typography.bodySmall)
-                    QuietButton("How to export from your old app", Modifier.fillMaxWidth(), PassIcons.OpenInNew) {
-                        runCatching { browser.openUri(ExportGuide) }
-                    }
+                    QuietButton("How to export from your old app", Modifier.fillMaxWidth(), PassIcons.OpenInNew) { guides = true }
                 }
             }
         }

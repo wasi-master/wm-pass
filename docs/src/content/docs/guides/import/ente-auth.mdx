@@ -1,0 +1,73 @@
+---
+title: Moving from Ente Auth
+description: How to export your codes from Ente Auth on each device, and bring them into WM Pass.
+sidebar:
+  label: "Ente Auth"
+source:
+  name: "Ente Auth"
+  kind: authenticator
+  logo: ente
+  exportOn: ["Android", "iPhone"]
+  choose: "Plain text"
+---
+
+import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+import Shot from '../../../../components/Shot.astro';
+
+<Aside type="tip" title="Which file">
+Choose **Plain text**, which writes one `otpauth` link per line. WM Pass can't read the Encrypted export.
+</Aside>
+
+<Tabs syncKey="device">
+<TabItem label="Android" icon="mobile-android">
+
+Ente's guide shows only the Encrypted export. Plain text sits beside it in the same dialog.
+
+<Steps>
+
+1. Open Ente Auth.
+2. Go to **Settings**, then **Data**.
+3. Tap **Export**.
+4. Choose **Plain text**, not **Encrypted**.
+5. Accept the warning about saving your codes unprotected.
+6. Complete the device-authentication prompt if one appears.
+7. Save the exported file where WM Pass can reach it.
+
+</Steps>
+
+Steps from [Exporting your data out of Ente Auth](https://ente.com/help/auth/migration/export).
+
+</TabItem>
+<TabItem label="iPhone" icon="phone">
+
+Ente's guide gives one set of steps for the mobile app; they are the same on iPhone.
+
+<Steps>
+
+1. Open Ente Auth.
+2. Go to **Settings**, then **Data**.
+3. Tap **Export**.
+4. Choose **Plain text**, not **Encrypted**.
+5. Accept the warning about saving your codes unprotected.
+6. Complete the device-authentication prompt if one appears.
+7. Save the exported file where WM Pass can reach it.
+
+</Steps>
+
+Steps from [Exporting your data out of Ente Auth](https://ente.com/help/auth/migration/export).
+
+</TabItem>
+</Tabs>
+
+## Then, in WM Pass
+
+Open Settings, Import, and choose the file. The [import steps](/guides/import-export/#importing-into-wm-pass) cover every WM Pass app.
+
+Delete the export once WM Pass has read it.
+
+## Sources
+
+These steps follow Ente Auth's own help pages, read on 4 November 2026. Menus move between versions; if a step does not match what you see, the page it came from may be newer.
+
+- [Exporting your data out of Ente Auth](https://ente.com/help/auth/migration/export), Ente
+- [Ente Auth export screen](https://github.com/ente-io/ente/blob/main/mobile/apps/auth/lib/ui/settings/data/export_widget.dart), Ente (GitHub)

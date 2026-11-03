@@ -1,0 +1,77 @@
+---
+title: Moving from Google Authenticator
+description: How to export your codes from Google Authenticator on each device, and bring them into WM Pass.
+sidebar:
+  label: "Google Authenticator"
+source:
+  name: "Google Authenticator"
+  kind: authenticator
+  logo: googleauthenticator
+  exportOn: ["Android", "iPhone"]
+  choose: "QR codes, scanned in WM Pass"
+---
+
+import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+import Shot from '../../../../components/Shot.astro';
+
+<Aside type="tip" title="Which file">
+Google Authenticator makes no file. It shows QR codes for the accounts you pick, and WM Pass reads those codes, scanned or from screenshots.
+</Aside>
+
+<Tabs syncKey="device">
+<TabItem label="Android" icon="mobile-android">
+
+Google calls this a transfer. WM Pass takes the place of the "new device" and scans the QR codes.
+
+<Steps>
+
+1. Open Google Authenticator on the phone that holds the codes.
+2. Tap **Menu**, then **Transfer codes**.
+3. Tap **Export codes**.
+4. Unlock the phone when it asks.
+5. Select the accounts you want to move.
+6. Tap **Next**. The app shows a QR code; with many accounts it shows several, one after another.
+7. Leave that screen open and scan each code with WM Pass. If both apps are on the same phone, take a screenshot of each code instead, where your phone allows it.
+
+</Steps>
+
+Steps from [Get verification codes with Google Authenticator](https://support.google.com/accounts/answer/1066447?co=GENIE.Platform%3DAndroid&hl=en).
+
+</TabItem>
+<TabItem label="iPhone" icon="phone">
+
+On iPhone and iPad the menu entries say "accounts" where Android says "codes".
+
+<Steps>
+
+1. Open Google Authenticator on the phone that holds the codes.
+2. Tap **Menu**, then **Transfer accounts**.
+3. Tap **Export accounts**.
+4. Unlock the phone when it asks.
+5. Select the accounts you want to move.
+6. Tap **Next**. The app shows a QR code; with many accounts it shows several, one after another.
+7. Leave that screen open and scan each code with WM Pass. If both apps are on the same phone, take a screenshot of each code instead, where your phone allows it.
+
+</Steps>
+
+Steps from [Get verification codes with Google Authenticator](https://support.google.com/accounts/answer/1066447?co=GENIE.Platform%3DiOS&hl=en).
+
+</TabItem>
+</Tabs>
+
+## Good to know
+
+- The QR codes hold the secret keys for your accounts. Anyone who sees or photographs them can make your codes, so delete any screenshot once the import is done.
+- A long list of accounts produces several QR codes; scan every one, or some accounts will be missing.
+- If your codes are synced to your Google Account, the export still works; it only reads what the app holds on that phone.
+
+## Then, in WM Pass
+
+In WM Pass on Android, open Settings, Import, and tap **Scan Google Authenticator's code**. Scan each code Google shows, then import them together. A screenshot of each code works too: choose it with **Choose a file**. The [import steps](/guides/import-export/#importing-into-wm-pass) cover the rest.
+
+## Sources
+
+These steps follow Google Authenticator's own help pages, read on 4 November 2026. Menus move between versions; if a step does not match what you see, the page it came from may be newer.
+
+- [Get verification codes with Google Authenticator](https://support.google.com/accounts/answer/1066447?co=GENIE.Platform%3DAndroid&hl=en), Google, Android
+- [Get verification codes with Google Authenticator](https://support.google.com/accounts/answer/1066447?co=GENIE.Platform%3DiOS&hl=en), Google, iPhone and iPad

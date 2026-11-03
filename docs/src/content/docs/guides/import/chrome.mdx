@@ -1,0 +1,89 @@
+---
+title: Moving from Google Password Manager
+description: How to export your passwords from Google Password Manager on each device, and bring them into WM Pass.
+sidebar:
+  label: "Google Password Manager"
+source:
+  name: "Google Password Manager"
+  kind: manager
+  logo: googlechrome
+  exportOn: ["Android", "iPhone", "Computer"]
+  choose: "CSV"
+---
+
+import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+import Shot from '../../../../components/Shot.astro';
+
+<Aside type="tip" title="Which file">
+Download the passwords as a CSV file.
+</Aside>
+
+<Tabs syncKey="device">
+<TabItem label="Android" icon="mobile-android">
+<Steps>
+
+1. Open **Chrome** on your phone.
+2. Tap **More** (the three dots), then **Settings**.
+3. Tap **Autofill and passwords**, then **Google Password Manager**.
+4. At the bottom, tap **Settings**.
+5. Tap **Export passwords & passkeys**.
+6. Tap **Download file**.
+7. If asked, confirm with your screen lock (PIN, pattern or fingerprint).
+
+</Steps>
+
+Steps from [Import or export passwords and passkeys with Chrome](https://support.google.com/chrome/answer/13068232?co=GENIE.Platform%3DAndroid).
+
+</TabItem>
+<TabItem label="iPhone" icon="phone">
+
+Chrome on iPhone hands the export to another app, such as Files, instead of saving it straight away.
+
+<Steps>
+
+1. Open **Chrome**.
+2. Tap **More**, then **Settings**.
+3. Tap **Autofill and passwords**, then **Password Manager**.
+4. At the bottom left, tap **Settings**, then **Export data**.
+5. Select the passwords you want to export, then tap **Continue**.
+6. Choose the destination app or location for the exported file.
+
+</Steps>
+
+Steps from [Import or export passwords and passkeys with Chrome](https://support.google.com/chrome/answer/13068232?co=GENIE.Platform%3DiOS).
+
+</TabItem>
+<TabItem label="Computer" icon="laptop">
+<Steps>
+
+1. Open **Chrome** on your computer.
+2. At the top right, select **More**, then **Passwords and autofill**.
+3. Select **Google Password Manager**, then **Settings**.
+4. Scroll to **Export passwords**.
+5. Select **Download file**.
+
+</Steps>
+
+Steps from [Import or export passwords and passkeys with Chrome](https://support.google.com/chrome/answer/13068232?co=GENIE.Platform%3DDesktop).
+
+</TabItem>
+</Tabs>
+
+## Good to know
+
+- A CSV carries passwords only; passkeys are not in it.
+- Exporting needs a screen lock set on the Android phone; Chrome asks you to set one up if there is none.
+- An enterprise policy can turn export off (Google lists this for iPhone and iPad).
+
+## Then, in WM Pass
+
+Open Settings, Import, and choose the file. The [import steps](/guides/import-export/#importing-into-wm-pass) cover every WM Pass app.
+
+Delete the export once WM Pass has read it.
+
+## Sources
+
+These steps follow Google Password Manager's own help pages, read on 4 November 2026. Menus move between versions; if a step does not match what you see, the page it came from may be newer.
+
+- [Import or export passwords and passkeys with Chrome](https://support.google.com/chrome/answer/13068232), Google Chrome Help
+- [Export your data from Chrome](https://support.google.com/chrome/answer/95606?co=GENIE.Platform%3DiOS), Google Chrome Help

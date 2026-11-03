@@ -1,6 +1,8 @@
 //! The app's end of the conversation with the browser extension. Requests arrive sealed through
 //! the relay program, and only the few named here are answered. An extension can ask for what
-//! matches a site and fill an entry that matches it; it cannot read the vault at large.
+//! matches a site and fill an entry that matches it; it cannot read the vault at large. It can
+//! also have this app check a username, which the extension cannot do itself, while network
+//! features are allowed here.
 
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
@@ -12,10 +14,14 @@ use interprocess::local_socket::{ListenerNonblockingMode, ListenerOptions, Strea
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use wmpass_bridge::{BridgeError, Keys, Server, fingerprint};
+use tauri::AppHandle;
 use wmpass_core::matching;
+use wmpass_net::http::NativeHttp;
+use wmpass_net::{NetError, NetPolicy, usernames};
 use zeroize::Zeroizing;
 
 use crate::engine::{Engine, now_ms};
+use crate::probe;
 use crate::sealed;
 use crate::store::Store;
 
@@ -23,6 +29,8 @@ const LARGEST_FRAME: usize = 1024 * 1024;
 const MOST_CONNECTIONS: usize = 4;
 const STATE_FILE: &str = "settings/bridge.json";
 const KEY_NAME: &str = "bridge-key";
+/// The page's settings, where its network switch is kept.
+const PREFS_FILE: &str = "settings/prefs.json";
 /// A menu with more than this is not one anybody would read.
 const MOST_MATCHES: usize = 50;
 
@@ -63,10 +71,11 @@ pub struct Bridge {
     connections: Arc<AtomicUsize>,
     saved: Arc<Mutex<Saved>>,
     store: Store,
+    app: AppHandle,
 }
 
 impl Bridge {
-    pub fn new(store: Store) -> Self {
+    pub fn new(store: Store, app: AppHandle) -> Self {
         let saved = store.read(STATE_FILE).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or_default();
         Self {
             running: Arc::new(AtomicBool::new(false)),
@@ -75,6 +84,7 @@ impl Bridge {
             connections: Arc::new(AtomicUsize::new(0)),
             saved: Arc::new(Mutex::new(saved)),
             store,
+            app,
         }
     }
 
@@ -130,6 +140,7 @@ impl Bridge {
             secret: Arc::new(keys.secret),
             saved: Arc::clone(&self.saved),
             store: self.store.clone(),
+            app: self.app.clone(),
             ask_sites: Arc::clone(&self.ask_sites),
             stop: Arc::clone(&self.stop),
         };
@@ -261,6 +272,10 @@ struct Request {
     url: String,
     #[serde(default)]
     entry: String,
+    #[serde(default)]
+    site: String,
+    #[serde(default)]
+    name: String,
 }
 
 #[derive(Clone)]
@@ -269,6 +284,7 @@ struct Conversation {
     secret: Arc<Zeroizing<[u8; 32]>>,
     saved: Arc<Mutex<Saved>>,
     store: Store,
+    app: AppHandle,
     ask_sites: Arc<AtomicBool>,
     stop: Arc<AtomicBool>,
 }
@@ -385,8 +401,42 @@ impl Conversation {
                 out.push(b'}');
                 Ok(out)
             }
+            "usernames.sites" => {
+                let sites: Vec<&str> = usernames::SITES.iter().map(|s| s.name).collect();
+                let pages: Vec<&str> = usernames::PAGE_SITES.iter().map(|s| s.name).collect();
+                Ok(reply_bytes(&json!({"id": id, "sites": sites, "pages": pages})))
+            }
+            "usernames.check" => {
+                if !self.network_allowed() {
+                    return Err("Network features are off in the desktop app.".to_owned());
+                }
+                // A page check holds this conversation for up to its whole wait, as a fill would.
+                let answer = match usernames::SITES.iter().find(|s| s.name == request.site) {
+                    Some(site) => usernames::check(*site, &request.name).and_then(|call| call.run(&NativeHttp::default(), NetPolicy::Any)).map_err(|e: NetError| e.to_string())?,
+                    None => probe::check(&self.app, probe::site(&request.site)?, &request.name)?,
+                };
+                Ok(reply_bytes(&json!({"id": id, "answer": probe::word(answer)})))
+            }
+            "usernames.links" => {
+                let links = usernames::LINK_SITES
+                    .iter()
+                    .map(|site| Ok(json!({"site": site.name, "url": usernames::link_url(site, &request.name)?})))
+                    .collect::<Result<Vec<_>, NetError>>()
+                    .map_err(|e| e.to_string())?;
+                Ok(reply_bytes(&json!({"id": id, "links": links})))
+            }
             _ => Err("unknown request".to_owned()),
         }
+    }
+
+    /// The same switch the page shows, read fresh each time so turning it off takes hold at once.
+    fn network_allowed(&self) -> bool {
+        self.store
+            .read(PREFS_FILE)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+            .and_then(|prefs| prefs.get("network_allowed").and_then(Value::as_bool))
+            .unwrap_or(false)
     }
 
     /// A person says yes once per site and extension, unless they turned the question off.

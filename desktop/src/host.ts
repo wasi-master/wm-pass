@@ -66,6 +66,7 @@ export async function desktopHost(): Promise<Host> {
     },
     saveFile: (title, name, bytes) => invoke('save_file', packed({ title, name }, bytes)),
     openUrl: (url) => invoke('open_url', { url }),
+    checkUsernamePage: (site, name, online) => invoke('check_username_page', { site, name, online }),
     memoryGib: () => invoke('memory_gib'),
     menu(items: MenuItem[]) {
       pendingMenu?.(null);

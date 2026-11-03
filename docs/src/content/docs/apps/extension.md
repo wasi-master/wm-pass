@@ -3,7 +3,7 @@ title: Browser extension
 description: The Chrome and Firefox extension, how it fills logins, and how it connects to the desktop app.
 ---
 
-The extension runs the same core as the other apps, as WebAssembly. It can hold its own vault, use the one open in the desktop app, or both.
+The extension runs the same core as the other apps, as WebAssembly. It can hold its own vault, use the one open in the desktop app, or both. Settings, Import reads other apps' exports, as the [import guide](/guides/import-export/) describes.
 
 ## Filling
 
@@ -29,6 +29,6 @@ From then on the extension uses the vault open in the app, so you unlock once. T
 
 ## What it cannot do
 
-Breach checks, aliases and other network features are in the desktop and phone apps only. Hardware keys are not available in the extension's own vault; connect to the desktop app to use one. Backups and sync work with every destination in [Backups and sync](/guides/backup-sync/) except a folder, iCloud Drive, SFTP, FTP, SMB, NFS and IMAP. A browser cannot open the raw connections those need, and iCloud's sign-in needs headers a page may not send, so they stay with the desktop and phone apps.
+Breach checks, aliases and other network features are in the desktop and phone apps only. The username checker is the exception: while the extension is connected to the desktop app, the desktop app runs the checks for it, as long as network features are allowed there. Hardware keys are not available in the extension's own vault; connect to the desktop app to use one. Backups and sync work with every destination in [Backups and sync](/guides/backup-sync/) except a folder, iCloud Drive, SFTP, FTP, SMB, NFS and IMAP. A browser cannot open the raw connections those need, and iCloud's sign-in needs headers a page may not send, so they stay with the desktop and phone apps.
 
 The browser can stop the extension's background at any quiet moment. Your main vault comes back open, since its key stays in the browser's memory until you lock or close the browser, but a nested vault locks.

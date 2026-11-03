@@ -39,9 +39,11 @@ Keys stay in Rust and are wiped on lock. View data crossing into a user interfac
 
 ## Between apps
 
-**The extension and the desktop app** talk over Noise XX through a relay program that holds no keys. A new extension needs a code compared on both screens, and each side commits to its random value before seeing the other's, so someone in the middle gets one chance in a million. An extension can ask only for what matches a page and to fill an entry that matches it. The extension's own key is sealed by a browser key that scripts cannot read out, which stops a copied profile, but not code running as the extension.
+**The extension and the desktop app** talk over Noise XX through a relay program that holds no keys. A new extension needs a code compared on both screens, and each side commits to its random value before seeing the other's, so someone in the middle gets one chance in a million. An extension can ask only for what matches a page, to fill an entry that matches it, and to have the app check a username while network features are allowed there. The extension's own key is sealed by a browser key that scripts cannot read out, which stops a copied profile, but not code running as the extension.
 
 **WM Keyboard** checks WM Pass's signing certificate, and WM Pass checks WM Keyboard's on every call, and it is off until you allow it.
+
+**The username checker** loads TikTok and Instagram in a hidden browser view, because their pages only answer once their own scripts run. Those scripts run inside the desktop and phone apps, so the view gets nothing from the app: it keeps no cookies or storage afterwards, may only load https pages on that site's domain, and has no route to the app's commands. On desktop, Tauri refuses commands from any page it did not ship. On Android, the view has no JavaScript bridge. The app reads only the text the page shows.
 
 ## Supply chain
 

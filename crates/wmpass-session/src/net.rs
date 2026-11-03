@@ -70,6 +70,25 @@ fn run<T>(call: NetCall<T>, online: bool) -> Result<T, SessionError> {
     call.run(&NativeHttp::default(), policy).map_err(net_error)
 }
 
+fn answer_word(answer: Availability) -> &'static str {
+    match answer {
+        Availability::Available => "free",
+        Availability::Taken => "taken",
+        Availability::Unknown => "unknown",
+    }
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct NameArgs {
+    site: String,
+    name: String,
+}
+
+fn page_site(name: &str) -> Result<&'static usernames::PageSite, SessionError> {
+    usernames::PAGE_SITES.iter().find(|s| s.name == name).ok_or_else(|| failed("invalid", "unknown site"))
+}
+
 fn view(value: Value) -> Reply {
     Reply { json: value.to_string(), ..Reply::default() }
 }
@@ -314,20 +333,38 @@ pub fn call(
             Ok(view(json!(names)))
         }
         "usernames.check" => {
+            let a: NameArgs = parse(args)?;
+            let site = usernames::SITES.iter().find(|s| s.name == a.site).ok_or_else(|| failed("invalid", "unknown site"))?;
+            let answer = run(usernames::check(*site, &a.name).map_err(net_error)?, online)?;
+            Ok(view(json!({"answer": answer_word(answer)})))
+        }
+        "usernames.pages" => {
+            let names: Vec<&str> = usernames::PAGE_SITES.iter().map(|s| s.name).collect();
+            Ok(view(json!(names)))
+        }
+        "usernames.page" => {
+            let a: NameArgs = parse(args)?;
+            let site = page_site(&a.site)?;
+            Ok(view(json!({"url": usernames::page_url(site, &a.name).map_err(net_error)?, "domain": site.domain})))
+        }
+        "usernames.read_page" => {
             #[derive(Deserialize, Default)]
             #[serde(default)]
             struct A {
                 site: String,
-                name: String,
+                text: String,
             }
             let a: A = parse(args)?;
-            let site = usernames::SITES.iter().find(|s| s.name == a.site).ok_or_else(|| failed("invalid", "unknown site"))?;
-            let answer = run(usernames::check(*site, &a.name).map_err(net_error)?, online)?;
-            Ok(view(json!({"answer": match answer {
-                Availability::Available => "free",
-                Availability::Taken => "taken",
-                Availability::Unknown => "unknown",
-            }})))
+            let answer = usernames::read_page(page_site(&a.site)?, &a.text);
+            Ok(view(json!({"answer": answer.map_or("waiting", answer_word)})))
+        }
+        "usernames.links" => {
+            let a: NameArgs = parse(args)?;
+            let links = usernames::LINK_SITES
+                .iter()
+                .map(|site| Ok(json!({"site": site.name, "url": usernames::link_url(site, &a.name).map_err(net_error)?})))
+                .collect::<Result<Vec<_>, SessionError>>()?;
+            Ok(view(json!(links)))
         }
         // ---- disposable inboxes ----
         "inbox.new" => {

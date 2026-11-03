@@ -1,0 +1,67 @@
+---
+title: Moving from andOTP
+description: How to export your codes from andOTP on each device, and bring them into WM Pass.
+sidebar:
+  label: "andOTP"
+source:
+  name: "andOTP"
+  kind: authenticator
+  exportOn: ["Android"]
+  choose: "Plain-text JSON"
+---
+
+import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+import Shot from '../../../../components/Shot.astro';
+
+<Aside type="tip" title="Which file">
+Make a **Backup (plain-text)**, which is a JSON file. WM Pass can't read the password-protected or OpenPGP backups.
+</Aside>
+
+<Tabs syncKey="device">
+<TabItem label="Android" icon="mobile-android">
+
+andOTP is no longer maintained and has no export guide, so these steps follow the app's menus. Your version may look slightly different from the picture.
+
+<Steps>
+
+1. Open andOTP.
+2. Tap the three-dot menu, then **Backup**.
+3. Under Plain-text backups, tap **Backup (plain-text)**.
+
+   <Shot src="https://raw.githubusercontent.com/andOTP/andOTP/master/assets/screenshots/backup_activity.png" alt="andOTP's Backups screen with Backup (plain-text) at the top" from="https://github.com/andOTP/andOTP" publisher="andOTP (GitHub)" />
+
+4. Read the security warning and tap **Yes**.
+5. Choose where to save the JSON file.
+
+</Steps>
+
+Steps from [andOTP README](https://github.com/andOTP/andOTP/blob/master/README.md).
+
+</TabItem>
+<TabItem label="iPhone" icon="phone">
+
+<Aside>
+andOTP is an Android app. If you used it, export from your Android phone.
+</Aside>
+
+</TabItem>
+</Tabs>
+
+## Good to know
+
+- andOTP is archived and no longer maintained.
+- Only the backup functions inside andOTP work; backing up the app with a third-party tool loses the data.
+- If you have set a default backup location in andOTP settings, the file may be written there instead of asking.
+
+## Then, in WM Pass
+
+Open Settings, Import, and choose the file. The [import steps](/guides/import-export/#importing-into-wm-pass) cover every WM Pass app.
+
+Delete the export once WM Pass has read it.
+
+## Sources
+
+These steps follow andOTP's own help pages, read on 4 November 2026. Menus move between versions; if a step does not match what you see, the page it came from may be newer.
+
+- [andOTP README](https://github.com/andOTP/andOTP/blob/master/README.md), andOTP (GitHub)
+- [andOTP Backups screen](https://github.com/andOTP/andOTP/blob/master/app/src/main/java/org/shadowice/flocke/andotp/Activities/BackupActivity.java), andOTP (GitHub)

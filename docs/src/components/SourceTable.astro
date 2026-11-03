@@ -1,0 +1,38 @@
+---
+// Every app on one table: where it exports, what to make, and the guide.
+import Logo from './Logo.astro';
+import { sources } from './sources';
+
+const list = await sources();
+---
+
+<table>
+  <thead>
+    <tr><th>App</th><th>Export on</th><th>Make</th></tr>
+  </thead>
+  <tbody>
+    {
+      list.map((source) => (
+        <tr>
+          <td>
+            <a class="app" href={source.href}>
+              <Logo name={source.name} slug={source.logo} color={source.color} size={22} />
+              {source.name}
+            </a>
+          </td>
+          <td>{source.exportOn.join(', ')}</td>
+          <td>{source.choose}</td>
+        </tr>
+      ))
+    }
+  </tbody>
+</table>
+
+<style>
+  .app {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    white-space: nowrap;
+  }
+</style>

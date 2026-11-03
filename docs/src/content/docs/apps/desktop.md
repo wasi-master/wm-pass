@@ -3,7 +3,7 @@ title: Desktop
 description: The desktop app for macOS, Windows and Linux, with quick search, auto-type, an SSH agent and a tray icon.
 ---
 
-The desktop app has the same vault, screens and settings as the phone, laid out for a larger window.
+The desktop app has the same vault, screens and settings as the phone, laid out for a larger window. To bring passwords over from another app, see [Import and export](/guides/import-export/); most password managers export only from a computer.
 
 ## Quick search
 

@@ -1,0 +1,38 @@
+---
+// A picture from the app's own help page. It loads from the publisher's site, so it stays
+// theirs and current; no referrer goes with it.
+interface Props {
+  src: string;
+  alt: string;
+  /** The page the picture comes from. */
+  from: string;
+  publisher: string;
+}
+
+const { src, alt, from, publisher } = Astro.props;
+---
+
+<figure class="shot">
+  <a href={src}><img src={src} alt={alt} loading="lazy" decoding="async" referrerpolicy="no-referrer" /></a>
+  <figcaption>Picture: <a href={from}>{publisher}</a></figcaption>
+</figure>
+
+<style>
+  .shot {
+    margin-block: 0.75rem 0;
+  }
+  img {
+    display: block;
+    max-width: min(100%, 28rem);
+    max-height: 32rem;
+    width: auto;
+    border-radius: 0.5rem;
+    border: 1px solid var(--sl-color-gray-5);
+    background: var(--sl-color-gray-6);
+  }
+  figcaption {
+    margin-top: 0.25rem;
+    font-size: var(--sl-text-xs);
+    color: var(--sl-color-gray-3);
+  }
+</style>

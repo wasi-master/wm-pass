@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -41,6 +42,7 @@ import com.wasimaster.wmpass.core.NativeFailure
 import com.wasimaster.wmpass.core.Pass
 import com.wasimaster.wmpass.core.Summary
 import com.wasimaster.wmpass.system.NetAccess
+import com.wasimaster.wmpass.system.PageCheck
 import com.wasimaster.wmpass.ui.fx.rim
 import com.wasimaster.wmpass.ui.icons.PassIcons
 import com.wasimaster.wmpass.ui.parts.Eyebrow
@@ -641,43 +643,63 @@ fun InboxScreen() {
 fun UsernameScreen() {
     val colors = palette
     val context = LocalContext.current
+    val shell = LocalShell.current
     val scope = rememberCoroutineScope()
     val name = rememberTextFieldState()
     var sites by remember { mutableStateOf<List<String>>(emptyList()) }
+    // Sites that only answer a browser, read in a hidden WebView.
+    var pages by remember { mutableStateOf<List<String>>(emptyList()) }
     val answers = remember { mutableStateMapOf<String, String>() }
+    var links by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
     var running by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
         sites = runCatching { (Engine.net("usernames.sites", online = false).json as JsonArray).map { it.jsonPrimitive.content } }.getOrDefault(emptyList())
+        pages = runCatching { (Engine.net("usernames.pages", online = false).json as JsonArray).map { it.jsonPrimitive.content } }.getOrDefault(emptyList())
     }
     Page("Username checker") {
-        NetGate("Asks each site whether a name is taken, one at a time. Every site you check learns the name you looked up. X, Instagram, npm and PyPI are left out, because they refuse or give the same answer for every name.") {
+        NetGate("Asks each site whether a name is taken, one at a time. Every site you check learns the name you looked up. TikTok and Instagram only answer a browser, so their pages load in a hidden browser view that runs their scripts and keeps nothing afterwards. X, Threads, Reddit and a few others refuse or give the same answer for every name, so their profile pages are linked for you to open yourself.") {
             Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 SheetField(name, "A username")
                 PrimaryButton(if (running) "Checking…" else "Check", Modifier.fillMaxWidth(), enabled = !running && name.text.isNotBlank(), icon = PassIcons.PersonSearch) {
+                    val wanted = name.text.toString().trim()
+                    val online = NetAccess.allowed(context)
                     running = true
                     problem = null
                     answers.clear()
+                    links = emptyList()
                     scope.launch {
-                        for (site in sites) {
+                        suspend fun ask(site: String, run: suspend () -> String) {
                             answers[site] = "…"
                             try {
-                                answers[site] = Engine.net("usernames.check", online = NetAccess.allowed(context)) {
-                                    put("site", site)
-                                    put("name", name.text.toString().trim())
-                                }.obj["answer"]!!.jsonPrimitive.content
+                                answers[site] = run()
                             } catch (failure: NativeFailure) {
                                 answers[site] = "unknown"
                                 problem = failure.message
                             }
                         }
+                        for (site in sites) {
+                            ask(site) {
+                                Engine.net("usernames.check", online = online) {
+                                    put("site", site)
+                                    put("name", wanted)
+                                }.obj["answer"]!!.jsonPrimitive.content
+                            }
+                        }
+                        if (online) for (site in pages) ask(site) { PageCheck.check(context, site, wanted) }
+                        links = runCatching {
+                            Engine.net("usernames.links", online = false) { put("name", wanted) }.json.jsonArray.map {
+                                it.jsonObject["site"]!!.jsonPrimitive.content to it.jsonObject["url"]!!.jsonPrimitive.content
+                            }
+                        }.getOrDefault(emptyList())
                         running = false
                     }
                 }
                 problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
-                if (answers.isNotEmpty()) {
+                val shown = (sites + pages).filter { it in answers }
+                if (shown.isNotEmpty()) {
                     GroupCard {
-                        sites.filter { it in answers }.forEachIndexed { index, site ->
+                        shown.forEachIndexed { index, site ->
                             if (index > 0) Hairline(inset = 70.dp)
                             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                                 SiteTile(site, null, "login", size = 38.dp)
@@ -698,6 +720,23 @@ fun UsernameScreen() {
                                     },
                                     style = MaterialTheme.typography.labelLarge,
                                 )
+                            }
+                        }
+                    }
+                }
+                if (links.isNotEmpty()) {
+                    Eyebrow("Look for yourself")
+                    GroupCard {
+                        links.forEachIndexed { index, (site, url) ->
+                            if (index > 0) Hairline(inset = 70.dp)
+                            Row(
+                                Modifier.fillMaxWidth().clickable { shell.openUrl(url) }.padding(horizontal = 16.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                SiteTile(site, null, "login", size = 38.dp)
+                                Spacer(Modifier.width(14.dp))
+                                Text(site, color = colors.text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                                Icon(PassIcons.OpenInNew, contentDescription = "Open in your browser", tint = colors.textLow, modifier = Modifier.size(20.dp))
                             }
                         }
                     }

@@ -1,0 +1,30 @@
+---
+// Starlight's title, with the app's logo beside it on a guide for leaving that app.
+import Default from '@astrojs/starlight/components/PageTitle.astro';
+import Logo from './Logo.astro';
+
+const { source } = Astro.locals.starlightRoute.entry.data;
+---
+
+{
+  source ? (
+    <div class="titled">
+      <Logo name={source.name} slug={source.logo} color={source.color} size={56} />
+      <Default />
+    </div>
+  ) : (
+    <Default />
+  )
+}
+
+<style>
+  .titled {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 1rem;
+  }
+  .titled :global(h1) {
+    margin-top: 0;
+  }
+</style>

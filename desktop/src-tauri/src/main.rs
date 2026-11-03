@@ -13,6 +13,7 @@ mod hardware;
 mod menu;
 mod places;
 mod signin;
+mod probe;
 mod sealed;
 mod store;
 
@@ -323,6 +324,18 @@ fn open_url(url: String) -> Result<(), String> {
     }
     open_in_browser(&url);
     Ok(())
+}
+
+/// Reads one username page in a hidden window. `online` is the page's own switch, as on every
+/// other call that reaches a network.
+#[tauri::command]
+async fn check_username_page(app: AppHandle, site: String, name: String, online: bool) -> Result<String, String> {
+    if !online {
+        return Err(wmpass_net::NetError::Blocked.to_string());
+    }
+    let site = probe::site(&site)?;
+    let answer = blocking(move || probe::check(&app, site, &name)).await??;
+    Ok(probe::word(answer).to_owned())
 }
 
 #[tauri::command]
@@ -815,6 +828,7 @@ fn main() {
             outside_read,
             outside_write,
             open_url,
+            check_username_page,
             memory_gib,
             popup_menu,
             places_list,
@@ -887,7 +901,7 @@ fn main() {
             app.manage(engine);
             app.manage(store);
             app.manage(Agent::new());
-            app.manage(Bridge::new(app.state::<Store>().inner().clone()));
+            app.manage(Bridge::new(app.state::<Store>().inner().clone(), app.handle().clone()));
             app.manage(Shell {
                 close_to_tray: Mutex::new(true),
                 shortcuts: Mutex::new(HashMap::new()),

@@ -5,6 +5,10 @@ description: The Android app, with its autofill service, passkeys, widgets, Quic
 
 The Android app is the fullest version of WM Pass.
 
+## Moving from another app
+
+Settings, Import reads exports from other password managers and authenticators, and scans Google Authenticator's transfer codes. **How to export from your old app** lists each app's own steps, which are also [on this site](/guides/import-export/#exporting-from-your-old-app), Android first.
+
 ## Autofill
 
 Set WM Pass as your autofill service in Settings, or tap **Turn on** on the card the vault list shows until you do. It matches apps by package name and signing certificate, not by name alone, and matches browsers by web address only for browsers it knows. A login never fills without your tap, and a WebView inside another app asks first and names what it is filling.

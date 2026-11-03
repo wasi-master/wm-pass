@@ -6,10 +6,11 @@
 
   // In front of any feature that leaves this device: what it sends and to whom, and a choice.
   // Until it is made, what is inside does not run and nothing goes anywhere.
-  let { what, children }: { what: string; children?: Snippet } = $props();
+  // `remote` is for a page whose calls the desktop app makes on this shell's behalf.
+  let { what, remote = false, children }: { what: string; remote?: boolean; children?: Snippet } = $props();
 </script>
 
-{#if !networkExists()}
+{#if !networkExists() && !remote}
   <p class="dim">The browser extension does not make these calls itself. Use the desktop app or the phone for this.</p>
 {:else if prefs.v.network_allowed}
   {@render children?.()}

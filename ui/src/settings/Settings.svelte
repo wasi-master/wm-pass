@@ -95,7 +95,7 @@
     if (info.desktop && !isDesktop) return false;
     if (info.extension && host().kind !== 'extension') return false;
     if (info.parent) return false;
-    if (info.needsNetwork && !host().network) return false;
+    if (info.needsNetwork && !host().network && !(info.viaDesktop && host().usernames)) return false;
     return true;
   }
 

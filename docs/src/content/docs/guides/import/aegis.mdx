@@ -1,0 +1,69 @@
+---
+title: Moving from Aegis
+description: How to export your codes from Aegis on each device, and bring them into WM Pass.
+sidebar:
+  label: "Aegis"
+source:
+  name: "Aegis"
+  kind: authenticator
+  logo: aegisauthenticator
+  exportOn: ["Android"]
+  choose: "JSON, unencrypted"
+---
+
+import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+import Shot from '../../../../components/Shot.astro';
+
+<Aside type="tip" title="Which file">
+Choose **Aegis (.JSON)** with **Encrypt the vault** unticked. WM Pass can't read an encrypted Aegis export.
+</Aside>
+
+<Tabs syncKey="device">
+<TabItem label="Android" icon="mobile-android">
+
+Aegis has no export guide of its own, so these steps follow the app's menus.
+
+<Steps>
+
+1. Open Aegis and unlock it.
+2. Open **Settings**, then **Import & Export**.
+3. Tap **Export**.
+4. Set the format to **Aegis (.JSON)**.
+5. Untick **Encrypt the vault**.
+6. Tick **I understand the risk**.
+7. Leave **Export all groups** ticked unless you only want some groups.
+8. Tap **OK**, then pick where to save the file.
+
+</Steps>
+
+Steps from [Aegis README](https://github.com/beemdevelopment/Aegis/blob/master/README.md).
+
+</TabItem>
+<TabItem label="iPhone" icon="phone">
+
+<Aside>
+Aegis is an Android app. If you used it, export from your Android phone.
+</Aside>
+
+</TabItem>
+</Tabs>
+
+## Good to know
+
+- Aegis also offers Text file (.TXT) and Web page (.HTML) exports. Use the .JSON one.
+- If you set a separate backup and export password under Security, that applies only to the encrypted export.
+
+## Then, in WM Pass
+
+Open Settings, Import, and choose the file. The [import steps](/guides/import-export/#importing-into-wm-pass) cover every WM Pass app.
+
+Delete the export once WM Pass has read it.
+
+## Sources
+
+These steps follow Aegis's own help pages, read on 4 November 2026. Menus move between versions; if a step does not match what you see, the page it came from may be newer.
+
+- [Aegis FAQ](https://github.com/beemdevelopment/Aegis/blob/master/FAQ.md), Beem Development
+- [Aegis README](https://github.com/beemdevelopment/Aegis/blob/master/README.md), Beem Development
+- [Aegis export dialog](https://github.com/beemdevelopment/Aegis/blob/master/app/src/main/java/com/beemdevelopment/aegis/ui/fragments/preferences/ImportExportPreferencesFragment.java), Beem Development (GitHub)
+- [getaegis.app](https://getaegis.app/), Beem Development
