@@ -114,7 +114,8 @@ impl Account {
         let hash = master.login_hash(password);
         let tokens: Tokens = api::run(api::login(&endpoints, email, &hash, device, factor), http, policy)??;
         let wrapped_key = tokens.key.clone().ok_or(BwError::BadAnswer)?;
-        let key = master.stretch()?.unwrap_key(&wrapped_key).map_err(|_| BwError::BadLogin)?;
+        // The server has taken the password by now, so a key that will not open is not a wrong guess.
+        let key = master.unwrap_user_key(&wrapped_key).map_err(|_| BwError::KeyUnreadable)?;
         let mut account = Self {
             endpoints,
             email: email.trim().to_lowercase(),
@@ -139,7 +140,7 @@ impl Account {
         let cache: Cache = rmp_serde::from_slice(cached).map_err(|_| BwError::BadAnswer)?;
         let kdf = Kdf::from_api(cache.kdf_kind, cache.kdf_iterations, cache.kdf_memory, cache.kdf_parallelism)?;
         let master = MasterKey::derive(password, &cache.email, kdf)?;
-        let key = master.stretch()?.unwrap_key(&cache.wrapped_key).map_err(|_| BwError::BadLogin)?;
+        let key = master.unwrap_user_key(&cache.wrapped_key).map_err(|_| BwError::BadLogin)?;
         let refresh = if cache.refresh.is_empty() { None } else { Some(key.decrypt_text(&cache.refresh)?) };
         let sync = serde_json::from_str(&cache.sync).unwrap_or(Value::Null);
         let mut account = Self {

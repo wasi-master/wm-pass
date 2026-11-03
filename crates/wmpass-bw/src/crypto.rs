@@ -128,6 +128,25 @@ impl MasterKey {
         STANDARD.encode(&out[..])
     }
 
+    /// Opens the account's own key. Most accounts hold it as type 2 under the stretched key.
+    /// Accounts made years ago may still hold it as type 0: AES-CBC under the master key itself,
+    /// with no tag. Bitwarden's clients read those, so this does too, for this one key and
+    /// nowhere else; every item after it still has to pass its tag.
+    pub fn unwrap_user_key(&self, text: &str) -> Result<SymKey> {
+        let Some(body) = text.strip_prefix("0.") else {
+            return self.stretch()?.unwrap_key(text);
+        };
+        let (iv, ciphertext) = body.split_once('|').ok_or(BwError::Crypto)?;
+        let iv = STANDARD.decode(iv).map_err(|_| BwError::Crypto)?;
+        let ciphertext = STANDARD.decode(ciphertext).map_err(|_| BwError::Crypto)?;
+        if iv.len() != 16 {
+            return Err(BwError::Crypto);
+        }
+        let decryptor = cbc::Decryptor::<Aes256>::new_from_slices(&self.0[..], &iv).map_err(|_| BwError::Crypto)?;
+        let plain = Zeroizing::new(decryptor.decrypt_padded_vec::<Pkcs7>(&ciphertext).map_err(|_| BwError::Crypto)?);
+        SymKey::from_bytes(&plain)
+    }
+
     /// The key that wraps the account's real key.
     pub fn stretch(&self) -> Result<SymKey> {
         let expand = |info: &[u8]| -> Result<Zeroizing<[u8; 32]>> {
@@ -303,6 +322,22 @@ mod tests {
         assert_eq!(a.login_hash(b"pw"), b.login_hash(b"pw"));
         assert_ne!(a.login_hash(b"pw"), STANDARD.encode(&a.0[..]));
         assert_ne!(MasterKey::derive(b"other", "me@example.com", PBKDF).unwrap().login_hash(b"other"), b.login_hash(b"pw"));
+    }
+
+    #[test]
+    fn an_old_accounts_key_under_the_master_key_opens() {
+        let master = MasterKey::derive(b"pw", "me@example.com", PBKDF).unwrap();
+        let account = SymKey::generate().unwrap();
+        let iv = [7u8; 16];
+        let encryptor = cbc::Encryptor::<Aes256>::new_from_slices(&master.0[..], &iv).unwrap();
+        let sealed = encryptor.encrypt_padded_vec::<Pkcs7>(&account.to_bytes());
+        let legacy = format!("0.{}|{}", STANDARD.encode(iv), STANDARD.encode(&sealed));
+        assert_eq!(master.unwrap_user_key(&legacy).unwrap(), account);
+        let current = master.stretch().unwrap().encrypt(&account.to_bytes()).unwrap();
+        assert_eq!(master.unwrap_user_key(&current).unwrap(), account);
+        let other = MasterKey::derive(b"other", "me@example.com", PBKDF).unwrap();
+        assert!(other.unwrap_user_key(&legacy).is_err());
+        assert!(other.unwrap_user_key(&current).is_err());
     }
 
     #[test]

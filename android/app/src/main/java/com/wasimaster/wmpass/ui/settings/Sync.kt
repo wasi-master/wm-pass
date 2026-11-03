@@ -200,7 +200,8 @@ fun SyncScreen() {
             GroupCard {
                 accounts.forEachIndexed { index, item ->
                     if (index > 0) Hairline(inset = 70.dp)
-                    NavRow(item.label, if (item.kind == "kdbx") "KeePass file" else item.server.ifEmpty { "bitwarden.com" }, icon = if (item.kind == "kdbx") PassIcons.Key else PassIcons.Sync) { removing = item }
+                    val where = com.wasimaster.wmpass.system.accountHost(item)
+                    NavRow(item.label, if (item.kind == "kdbx") where else listOf(item.email, where).filter { it.isNotEmpty() }.joinToString(" on "), icon = if (item.kind == "kdbx") PassIcons.Key else PassIcons.Sync) { removing = item }
                 }
                 if (accounts.isNotEmpty()) Hairline()
                 NavRow("Add an account", icon = PassIcons.Add) { addingAccount = true }
@@ -211,7 +212,7 @@ fun SyncScreen() {
             }
             Eyebrow("Hand over one item")
             GroupCard {
-                NavRow("Receive an item", "Show a code to the other device", icon = PassIcons.QrCodeScanner) { shell.nav.navigate("settings/receive") }
+                NavRow("Receive an item", "From WM Pass on another device, by QR code", icon = PassIcons.QrCodeScanner) { shell.nav.navigate("settings/receive") }
             }
             Spacer(Modifier.height(40.dp))
         }
@@ -488,6 +489,12 @@ private fun LanSection() {
     }
     if (adding) {
         PassSheet({ adding = false }, "Pair a device") {
+            Text(
+                "On the other device, open WM Pass and go to Settings, then Sync and accounts, then Pair a device. Both need to be on the same Wi-Fi.",
+                color = colors.textMid,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 10.dp),
+            )
             SheetRow(PassIcons.QrCodeScanner, "Show a code", "The other device scans it") {
                 adding = false
                 val address = localAddress(context)
@@ -614,7 +621,7 @@ fun ReceiveScreen() {
             Text("On the other device", color = colors.text, style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(4.dp))
             Text(
-                "Open the item, choose Send to a device, and scan this. Then scan the code it shows you. This works once and stops in two minutes, and nothing travels over a network.",
+                "Open WM Pass there, open the item, choose Send to a device, and scan this. Then scan the code it shows you. This works once and stops in two minutes, and nothing travels over a network.",
                 color = colors.textMid,
                 style = MaterialTheme.typography.bodyLarge,
                 textAlign = TextAlign.Center,

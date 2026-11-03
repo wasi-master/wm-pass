@@ -86,6 +86,7 @@ import com.wasimaster.wmpass.app.Prefs
 import com.wasimaster.wmpass.core.NativeFailure
 import com.wasimaster.wmpass.system.AccountRef
 import com.wasimaster.wmpass.system.Accounts
+import com.wasimaster.wmpass.system.accountHost
 import com.wasimaster.wmpass.system.Destination
 import com.wasimaster.wmpass.system.HardwareKeys
 import com.wasimaster.wmpass.ui.parts.Pill
@@ -377,7 +378,14 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
                     }
                     else -> {
                         shield = ShieldState.REFUSED
-                        message = failure.message?.let { it.replaceFirstChar(Char::uppercase) + "." } ?: "Wrong password."
+                        // Say which account and which server were tried: an account made on
+                        // bitwarden.eu is unknown to bitwarden.com, which answers just as it does a wrong password.
+                        message = if (ref.kind == "bitwarden" && ref.server.isEmpty()) {
+                            val other = if (ref.region == "eu") "bitwarden.com" else "bitwarden.eu"
+                            "${accountHost(ref)} did not accept the password for ${ref.email}. If the account is on $other, add it again with that choice."
+                        } else {
+                            failure.message?.let { it.replaceFirstChar(Char::uppercase) + "." } ?: "Wrong password."
+                        }
                         retryAt = Pass.noteWrongAccountPassword()
                         delay(900)
                         shield = ShieldState.IDLE

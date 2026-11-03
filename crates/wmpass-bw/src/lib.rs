@@ -31,6 +31,9 @@ pub enum BwError {
     /// The email or password was refused.
     #[error("the email or password was not accepted")]
     BadLogin,
+    /// The server took the password, but the account key it sent back would not open with it.
+    #[error("Bitwarden accepted the password, but this account's key could not be opened")]
+    KeyUnreadable,
     /// Bitwarden has emailed a code to confirm a device it has not seen before.
     #[error("Bitwarden has emailed you a code to confirm this device")]
     NewDevice,
