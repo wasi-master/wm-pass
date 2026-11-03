@@ -122,9 +122,28 @@ pub struct Response {
     pub retry_after: Option<u64>,
     /// Body.
     pub body: Vec<u8>,
+    /// Headers, names in lower case. Only what a protocol needs reads them: cookies and
+    /// session tokens for the services that sign in with a password.
+    pub headers: Vec<(String, String)>,
 }
 
 impl Response {
+    /// The first header of that name, ignoring case.
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.as_str())
+    }
+
+    /// Every header of that name, such as each `Set-Cookie`.
+    pub fn headers_named<'a>(&'a self, name: &'a str) -> impl Iterator<Item = &'a str> + 'a {
+        self.headers
+            .iter()
+            .filter(move |(key, _)| key.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.as_str())
+    }
+
     /// Body as JSON.
     pub fn json(&self) -> Result<serde_json::Value, NetError> {
         serde_json::from_slice(&self.body).map_err(|_| NetError::BadAnswer)
@@ -222,6 +241,15 @@ pub fn check(request: &Request, policy: NetPolicy) -> Result<(), NetError> {
     }
 }
 
+/// The rule for a raw connection (FTP, SFTP, SMB, NFS, IMAP), which has no URL to judge.
+/// Only the policy applies; whether the protocol encrypts is the destination's own rule.
+pub fn check_socket(policy: NetPolicy) -> Result<(), NetError> {
+    match policy {
+        NetPolicy::Any | NetPolicy::WifiOnly { on_wifi: true } => Ok(()),
+        NetPolicy::Offline | NetPolicy::WifiOnly { on_wifi: false } => Err(NetError::Blocked),
+    }
+}
+
 /// Sends requests. Clients must not follow redirects: a key sent to a service must
 /// never travel on to wherever that service points.
 pub trait Http: Send + Sync {
@@ -282,6 +310,11 @@ impl Http for NativeHttp {
             .run(configured)
             .map_err(|_| NetError::Unreachable)?;
         let status = answer.status().as_u16();
+        let headers = answer
+            .headers()
+            .iter()
+            .filter_map(|(name, value)| Some((name.as_str().to_ascii_lowercase(), value.to_str().ok()?.to_owned())))
+            .collect();
         let retry_after = answer
             .headers()
             .get("retry-after")
@@ -297,6 +330,7 @@ impl Http for NativeHttp {
             status,
             retry_after,
             body,
+            headers,
         })
     }
 }
@@ -350,6 +384,7 @@ pub mod fake {
                     status: *status,
                     retry_after: None,
                     body: body.clone(),
+                    headers: Vec::new(),
                 })
                 .ok_or(NetError::Unreachable)
         }
@@ -460,7 +495,7 @@ mod tests {
         let limited = Response {
             status: 429,
             retry_after: Some(6),
-            body: Vec::new(),
+            ..Response::default()
         };
         assert_eq!(limited.ok().err(), Some(NetError::RateLimited(Some(6))));
     }

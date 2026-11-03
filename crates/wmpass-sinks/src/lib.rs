@@ -4,15 +4,34 @@
 //! file sizes and timing, and nothing else. The code is async so the browser extension
 //! can run it over `fetch`. Blocking clients run it with [`http::block_on`].
 
-pub mod dropbox;
+pub mod boxcloud;
 pub mod drive;
+pub mod dropbox;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod folder;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod ftp;
+pub mod git;
 pub mod http;
+pub mod icloud;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod imap;
+pub mod mega;
+pub mod nas;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod nfs;
 pub mod oauth;
 pub mod onedrive;
+pub mod pcloud;
+pub mod proton;
 pub mod routines;
 pub mod s3;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod sftp;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod smb;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod ssh;
 pub mod webdav;
 
 use std::future::Future;
@@ -45,6 +64,9 @@ pub enum Fault {
     Io,
     /// A file failed verification after being written.
     NotVerified,
+    /// Reachable but not safe to use: a server key that changed since the first
+    /// connection, a repository anyone can read, a share that will not encrypt.
+    Unsafe,
 }
 
 impl std::fmt::Display for Fault {
@@ -57,6 +79,7 @@ impl std::fmt::Display for Fault {
             Self::Blocked => "network use is off",
             Self::Io => "the location could not be reached",
             Self::NotVerified => "the file could not be read back correctly",
+            Self::Unsafe => "the location is not safe to use: its identity changed, or it would expose the file",
         })
     }
 }
