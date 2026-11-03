@@ -81,6 +81,9 @@ fun NavGraphBuilder.settingsGraph() {
     composable("settings") { SettingsRoot() }
     composable("settings/security") { SecurityScreen() }
     composable("settings/look") { LookScreen() }
+    composable("settings/appearance") { AppearanceHub() }
+    composable("settings/editing") { EditingHub() }
+    composable("settings/tools") { ToolsHub() }
     composable("settings/trash") { TrashScreen() }
     composable("settings/shelf") { ShelfScreen() }
     composable("settings/folders") { FoldersScreen() }
@@ -140,6 +143,9 @@ fun SettingsRoot() {
             item {
                 NavRow("Breaches", "Check passwords and email addresses against known leaks", route = "settings/breaches", accent = routeAccent("settings/breaches"), icon = PassIcons.LocalFireDepartment) { nav.navigate("settings/breaches") }
             }
+            item {
+                NavRow("Health checks", "Which problems are listed", route = "settings/health", accent = routeAccent("settings/health"), icon = PassIcons.EcgHeart) { nav.navigate("settings/health") }
+            }
         }
         SettingsGroup("Your vault") {
             item {
@@ -163,50 +169,15 @@ fun SettingsRoot() {
                 NavRow("Sync and accounts", "Other devices, servers, Bitwarden and KeePass", route = "settings/sync", accent = routeAccent("settings/sync"), icon = PassIcons.Sync) { nav.navigate("settings/sync") }
             }
         }
-        SettingsGroup("Tools") {
+        SettingsGroup("Tools and customising") {
             item {
-                NavRow("Email aliases", "SimpleLogin, addy.io, Firefox Relay, DuckDuckGo", route = "settings/aliases", accent = routeAccent("settings/aliases"), icon = PassIcons.AlternateEmail) { nav.navigate("settings/aliases") }
+                NavRow("Tools", "Email aliases, a throwaway inbox, names and comparing", route = "settings/tools", accent = routeAccent("settings/tools"), icon = PassIcons.Widgets) { nav.navigate("settings/tools") }
             }
             item {
-                NavRow("Disposable inbox", "A throwaway address for one sign-up", route = "settings/inbox", accent = routeAccent("settings/inbox"), icon = PassIcons.Inbox) { nav.navigate("settings/inbox") }
+                NavRow("Appearance", "Style, theme, icons, the list and the item page", route = "settings/appearance", accent = routeAccent("settings/appearance"), icon = PassIcons.Palette) { nav.navigate("settings/appearance") }
             }
             item {
-                NavRow("Username checker", "See which sites have a name free", route = "settings/usernames", accent = routeAccent("settings/usernames"), icon = PassIcons.PersonSearch) { nav.navigate("settings/usernames") }
-            }
-            item {
-                NavRow("Compare two passwords", route = "settings/compare", accent = routeAccent("settings/compare"), icon = PassIcons.Balance) { nav.navigate("settings/compare") }
-            }
-        }
-        SettingsGroup("Customise") {
-            item {
-                NavRow("Appearance", "Style, theme, dark mode and motion", route = "settings/look", accent = routeAccent("settings/look"), icon = PassIcons.Palette) { nav.navigate("settings/look") }
-            }
-            item {
-                NavRow("Icons", "App icons, site icons and these ones", route = "settings/icons", accent = routeAccent("settings/icons"), icon = PassIcons.Image) { nav.navigate("settings/icons") }
-            }
-            item {
-                NavRow("Vault list", "Layout, sorting, rows and gestures", route = "settings/list", accent = routeAccent("settings/list"), icon = PassIcons.ViewAgenda) { nav.navigate("settings/list") }
-            }
-            item {
-                NavRow("Navigation", "Pages, labels and buttons", route = "settings/navigation", accent = routeAccent("settings/navigation"), icon = PassIcons.Dashboard) { nav.navigate("settings/navigation") }
-            }
-            item {
-                NavRow("Add menu", "Which types are offered, and in what order", route = "settings/add", accent = routeAccent("settings/add"), icon = PassIcons.Add) { nav.navigate("settings/add") }
-            }
-            item {
-                NavRow("Editor", "What starts open or folded", route = "settings/editor", accent = routeAccent("settings/editor"), icon = PassIcons.Edit) { nav.navigate("settings/editor") }
-            }
-            item {
-                NavRow("Item page", "Buttons, fields and history", route = "settings/entry", accent = routeAccent("settings/entry"), icon = PassIcons.Description) { nav.navigate("settings/entry") }
-            }
-            item {
-                NavRow("Codes", "Size, grouping and privacy", route = "settings/codes", accent = routeAccent("settings/codes"), icon = PassIcons.Pin) { nav.navigate("settings/codes") }
-            }
-            item {
-                NavRow("Generator", "What a new password looks like", route = "settings/generator", accent = routeAccent("settings/generator"), icon = PassIcons.Casino) { nav.navigate("settings/generator") }
-            }
-            item {
-                NavRow("Health checks", "Which problems are listed", route = "settings/health", accent = routeAccent("settings/health"), icon = PassIcons.EcgHeart) { nav.navigate("settings/health") }
+                NavRow("Adding and editing", "The add menu, the editor and the generator", route = "settings/editing", accent = routeAccent("settings/editing"), icon = PassIcons.Edit) { nav.navigate("settings/editing") }
             }
             item {
                 NavRow("Keyboard shortcuts", "For a keyboard plugged in or paired", route = "settings/shortcuts", accent = routeAccent("settings/shortcuts"), icon = PassIcons.Keyboard) { nav.navigate("settings/shortcuts") }
@@ -218,6 +189,84 @@ fun SettingsRoot() {
             }
             item {
                 NavRow("About", route = "settings/about", accent = routeAccent("settings/about"), icon = PassIcons.Info) { nav.navigate("settings/about") }
+            }
+        }
+    }
+}
+
+/** A page of pages, so the root lists what a thing is about rather than every screen. */
+@Composable
+private fun SettingsHub(title: String, route: String, content: @Composable () -> Unit) {
+    WmScreen(title, route = route, onBack = back(), content = content)
+}
+
+@Composable
+private fun AppearanceHub() {
+    val nav = LocalShell.current.nav
+    SettingsHub("Appearance", "settings/appearance") {
+        SettingsGroup("How it looks") {
+            item {
+                NavRow("Style and theme", "Style, theme, dark mode and motion", route = "settings/look", accent = routeAccent("settings/look"), icon = PassIcons.Palette) { nav.navigate("settings/look") }
+            }
+            item {
+                NavRow("Icons", "App icons, site icons and these ones", route = "settings/icons", accent = routeAccent("settings/icons"), icon = PassIcons.Image) { nav.navigate("settings/icons") }
+            }
+        }
+        SettingsGroup("What it shows") {
+            item {
+                NavRow("Vault list", "Layout, sorting, rows and gestures", route = "settings/list", accent = routeAccent("settings/list"), icon = PassIcons.ViewAgenda) { nav.navigate("settings/list") }
+            }
+            item {
+                NavRow("Navigation", "Pages, labels and buttons", route = "settings/navigation", accent = routeAccent("settings/navigation"), icon = PassIcons.Dashboard) { nav.navigate("settings/navigation") }
+            }
+            item {
+                NavRow("Item page", "Buttons, fields and history", route = "settings/entry", accent = routeAccent("settings/entry"), icon = PassIcons.Description) { nav.navigate("settings/entry") }
+            }
+            item {
+                NavRow("Codes", "Size, grouping and privacy", route = "settings/codes", accent = routeAccent("settings/codes"), icon = PassIcons.Pin) { nav.navigate("settings/codes") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EditingHub() {
+    val nav = LocalShell.current.nav
+    SettingsHub("Adding and editing", "settings/editing") {
+        SettingsGroup("New items") {
+            item {
+                NavRow("Add menu", "Which types are offered, and in what order", route = "settings/add", accent = routeAccent("settings/add"), icon = PassIcons.Add) { nav.navigate("settings/add") }
+            }
+            item {
+                NavRow("Generator", "What a new password looks like", route = "settings/generator", accent = routeAccent("settings/generator"), icon = PassIcons.Casino) { nav.navigate("settings/generator") }
+            }
+        }
+        SettingsGroup("Changing them") {
+            item {
+                NavRow("Editor", "What starts open or folded", route = "settings/editor", accent = routeAccent("settings/editor"), icon = PassIcons.Edit) { nav.navigate("settings/editor") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToolsHub() {
+    val nav = LocalShell.current.nav
+    SettingsHub("Tools", "settings/tools") {
+        SettingsGroup("Addresses and names") {
+            item {
+                NavRow("Email aliases", "SimpleLogin, addy.io, Firefox Relay, DuckDuckGo", route = "settings/aliases", accent = routeAccent("settings/aliases"), icon = PassIcons.AlternateEmail) { nav.navigate("settings/aliases") }
+            }
+            item {
+                NavRow("Disposable inbox", "A throwaway address for one sign-up", route = "settings/inbox", accent = routeAccent("settings/inbox"), icon = PassIcons.Inbox) { nav.navigate("settings/inbox") }
+            }
+            item {
+                NavRow("Username checker", "See which sites have a name free", route = "settings/usernames", accent = routeAccent("settings/usernames"), icon = PassIcons.PersonSearch) { nav.navigate("settings/usernames") }
+            }
+        }
+        SettingsGroup("Passwords") {
+            item {
+                NavRow("Compare two passwords", route = "settings/compare", accent = routeAccent("settings/compare"), icon = PassIcons.Balance) { nav.navigate("settings/compare") }
             }
         }
     }
@@ -666,7 +715,7 @@ internal fun LookScreen() {
     val shell = LocalShell.current
     val prefs = shell.prefs
     val colors = palette
-    WmScreen("Appearance", route = "settings/look", onBack = back()) {
+    WmScreen("Style and theme", route = "settings/look", onBack = back()) {
         SettingsGroup("Interface") {
             item {
                 ChoiceSetting(
