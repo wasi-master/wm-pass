@@ -538,7 +538,6 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                                         trailingIcon = {
                                             RowIconButton(PassIcons.QrCodeScanner, "Scan a QR code", tint = colors.primary) {
                                                 shell.scanTarget = { uri -> otpSeed.setTextAndPlaceCursorAtEnd(uri) }
-                                                shell.nav.navigate("scan")
                                             }
                                         },
                                     )
@@ -566,7 +565,6 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                                         Spacer(Modifier.width(8.dp))
                                         RowIconButton(PassIcons.QrCodeScanner, "Scan a QR code", tint = colors.primary) {
                                             shell.scanTarget = { uri -> otpSeed.setTextAndPlaceCursorAtEnd(uri) }
-                                            shell.nav.navigate("scan")
                                         }
                                     }
                                 }

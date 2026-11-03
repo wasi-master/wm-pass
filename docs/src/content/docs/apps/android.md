@@ -20,6 +20,10 @@ On Android 14 and up, WM Pass can be your passkey provider. Apps other than know
 - App shortcuts, and a share target for adding things to your vault.
 - Panic support, so Ripple and similar apps can lock or wipe it.
 
+## QR codes
+
+Wherever WM Pass asks you to scan a code, you can pick a picture of it instead, such as a screenshot. The picture is read on the phone through Android's photo picker, which shares only the one you choose, and WM Pass keeps nothing of it.
+
 ## Screenshots
 
 Screenshots and screen recording are blocked by default. You can change this under Settings, Security.

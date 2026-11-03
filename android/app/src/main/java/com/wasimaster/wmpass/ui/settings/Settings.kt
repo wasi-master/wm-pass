@@ -111,7 +111,6 @@ fun NavGraphBuilder.settingsGraph() {
     composable("settings/file") { SettingsFileScreen() }
     composable("settings/search") { SettingsSearchScreen() }
     composable("settings/theme_edit/{id}") { entry -> ThemeEditor(entry.arguments?.getString("id").orEmpty()) }
-    composable("scan") { com.wasimaster.wmpass.ui.vault.ScanScreen() }
 }
 
 @Composable

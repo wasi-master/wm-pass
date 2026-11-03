@@ -255,7 +255,6 @@ private fun ImportThemeSheet(onDismiss: () -> Unit) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 QuietButton("Scan", Modifier.weight(1f), PassIcons.QrCodeScanner) {
                     shell.scanTarget = { take(it) }
-                    shell.nav.navigate("scan")
                 }
                 QuietButton("File", Modifier.weight(1f), PassIcons.Folder) { pick.launch(arrayOf("*/*")) }
             }

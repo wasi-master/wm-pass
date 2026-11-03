@@ -507,7 +507,6 @@ private fun LanSection() {
                         }
                     }
                 }
-                shell.nav.navigate("scan")
             }
             SheetRow(PassIcons.Pin, "Compare six digits", "When a camera will not do. This side waits") {
                 adding = false
@@ -617,7 +616,6 @@ fun ReceiveScreen() {
                         }
                     }
                 }
-                shell.nav.navigate("scan")
             }
             Spacer(Modifier.height(30.dp))
         }

@@ -365,7 +365,6 @@ private fun AcceptSheet(link: JsonObject, onDismiss: () -> Unit, onDone: () -> U
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 QuietButton("Scan it", Modifier.weight(1f), PassIcons.QrCodeScanner, enabled = place != null) {
                     shell.scanTarget = { accept(it) }
-                    shell.nav.navigate("scan")
                 }
                 PrimaryButton("Accept", Modifier.weight(1f), enabled = place != null && invite.text.isNotBlank()) { accept(invite.text.toString()) }
             }
@@ -454,7 +453,6 @@ private fun PeopleSheet(link: JsonObject, onDismiss: () -> Unit) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     QuietButton("Scan it", Modifier.weight(1f), PassIcons.QrCodeScanner) {
                         shell.scanTarget = { read(it) }
-                        shell.nav.navigate("scan")
                     }
                     PrimaryButton("Check it", Modifier.weight(1f), enabled = code.text.isNotBlank()) { read(code.text.toString()) }
                 }
