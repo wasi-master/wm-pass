@@ -47,4 +47,13 @@ The `cargo tauri build` step runs from `desktop/src-tauri`, and `cargo run -p wm
 
 The browser tests run with `node extension/test/run.mjs` after building the extension.
 
+Google Drive, Dropbox, OneDrive and Box need WM Pass registered in each service's console, and a build offers only the services it was given ids for. The ids are not secrets apart from Box's and Google's client secrets, which those services require even from apps on a device.
+
+| Service | Android (`local.properties` or `-P`) | Desktop and extension (environment, at build time) | Redirect to register |
+|---|---|---|---|
+| Google Drive | `wmpass.driveClientId` (an iOS-type client) | `WMPASS_DRIVE_DESKTOP_CLIENT_ID`, `WMPASS_DRIVE_DESKTOP_SECRET`; extension `WMPASS_DRIVE_WEB_CLIENT_ID`, `WMPASS_DRIVE_WEB_SECRET` | Android: the reversed client id; desktop: `http://127.0.0.1:53683/oauth`; extension: `https://<extension id>.chromiumapp.org/oauth` |
+| Dropbox | `wmpass.dropboxAppKey` | `WMPASS_DROPBOX_APP_KEY` | `wmpass://oauth`, `http://127.0.0.1:53683/oauth`, the extension's |
+| OneDrive | `wmpass.oneDriveClientId` | `WMPASS_ONEDRIVE_CLIENT_ID` | the same three, as "Mobile and desktop" redirects |
+| Box | `wmpass.boxClientId`, `wmpass.boxClientSecret` | `WMPASS_BOX_CLIENT_ID`, `WMPASS_BOX_CLIENT_SECRET` | `https://wmpass.pages.dev/oauth/`, `http://127.0.0.1:53683/oauth`, the extension's |
+
 Data sources and their licences are listed in [data/README.md](data/README.md).

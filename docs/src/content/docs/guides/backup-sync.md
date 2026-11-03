@@ -12,7 +12,7 @@ A backup is a bundle of your encrypted vault files. Whoever holds it still needs
 - A server: WebDAV, S3, SFTP, FTP, SMB, NFS, or a Synology or QNAP NAS. WebDAV fills in the address for Nextcloud, ownCloud, Seafile, Koofr, pCloud, Yandex Disk, kDrive, Hetzner Storage Box, 4shared and Tailscale's Taildrive; S3 does the same for Amazon, Cloudflare R2, Backblaze B2, Wasabi, Google Cloud Storage and about ten more.
 - A Git repository on GitHub, GitLab, Gitea or Forgejo, or a mailbox over IMAP.
 
-Google Drive, Dropbox, OneDrive and Box sign in on their own page in your browser, so WM Pass never sees that password. pCloud, MEGA and Proton Drive sign in inside WM Pass and keep only the session they hand back; iCloud keeps the password too, because Apple's sessions last about a day, and asks for a fresh code about once a month. The Android app has every destination. The desktop app has a folder, WebDAV, S3, Google Drive, Dropbox, OneDrive and Box, and the browser extension the same without the folder.
+Google Drive, Dropbox, OneDrive and Box sign in on their own page in your browser, so WM Pass never sees that password. pCloud, MEGA and Proton Drive sign in inside WM Pass and keep only the session they hand back; iCloud keeps the password too, because Apple's sessions last about a day, and asks for a fresh code about once a month. The Android and desktop apps have every destination. The browser extension has all of them except a folder, iCloud Drive and the ones that need a raw connection (SFTP, FTP, SMB, NFS and IMAP); it also cannot accept a NAS's own certificate, so a NAS needs one from a known authority there.
 
 Each new backup is read back and checked before older ones are removed, so a bad write cannot cost you your last good copy.
 

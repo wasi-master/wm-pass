@@ -123,7 +123,8 @@ pub async fn place_run(place: String, request: String, bytes: Vec<u8>, fetch: Fu
         ("delete", Some(file)) => Op::Delete(file),
         _ => return Err(JsError::new("unknown operation")),
     };
-    let ran = places::run(|| Client::new(http.clone(), policy), &apps(), &place, operation, now_ms).await;
+    let reach = places::Reach { client: || Client::new(http.clone(), policy), policy };
+    let ran = places::run(&reach, &apps(), &place, operation, now_ms).await;
     let out = Object::new();
     let set = |key: &str, value: &JsValue| Reflect::set(&out, &JsValue::from_str(key), value).map(|_| ()).map_err(|_| JsError::new("could not answer"));
     set("update", &JsValue::from_str(&Value::Object(ran.update).to_string()))?;
@@ -144,7 +145,7 @@ fn service(kind: &str, place: &Place) -> Option<(wmpass_sinks::oauth::Service, A
     Some(match kind {
         "dropbox" => (wmpass_sinks::oauth::DROPBOX, apps.dropbox),
         "onedrive" => (wmpass_sinks::oauth::ONEDRIVE, apps.onedrive),
-        "box" => (wmpass_sinks::places::BOX, apps.boxcloud),
+        "box" => (wmpass_sinks::oauth::BOX, apps.boxcloud),
         "drive" => {
             let scope = if place.text("drive_space") == "folder" { wmpass_sinks::drive::SCOPE_FILE } else { wmpass_sinks::drive::SCOPE_APP_DATA };
             (wmpass_sinks::oauth::Service { scope, ..wmpass_sinks::oauth::DRIVE }, apps.drive)
@@ -178,4 +179,18 @@ pub async fn place_exchange(place: String, code: String, verifier: String, redir
         .await
         .map_err(|fault| JsError::new(&fault.to_string()))?;
     Ok(refresh.expose().to_owned())
+}
+
+/// One step of a password sign-in (pCloud, MEGA, Proton Drive, a NAS). `step` is
+/// `{ code?, mailbox_password?, pending? }`. Answers `{ extra }` or `{ needs, pending }`.
+#[wasm_bindgen]
+pub async fn place_sign_in(place: String, step: String, now_ms: f64, fetch: Function) -> Result<String, JsError> {
+    let place = Place::from_json(&serde_json::from_str(&place).map_err(|_| JsError::new("that place is not valid"))?);
+    let step: Value = serde_json::from_str(&step).map_err(|_| JsError::new("that step is not valid"))?;
+    let http = JsFetch(fetch);
+    let reach = places::Reach { client: || Client::new(http.clone(), NetPolicy::Any), policy: NetPolicy::Any };
+    places::sign_in(&reach, &place, &step, now_ms as u64)
+        .await
+        .map(|answer| answer.to_string())
+        .map_err(|fault| JsError::new(&fault.to_string()))
 }

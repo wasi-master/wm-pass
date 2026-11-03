@@ -28,7 +28,7 @@ fn service(kind: &str, place: &Value) -> Option<(Service, App)> {
     let (service, app) = match kind {
         "dropbox" => (oauth::DROPBOX, apps.dropbox),
         "onedrive" => (oauth::ONEDRIVE, apps.onedrive),
-        "box" => (places::BOX, apps.boxcloud),
+        "box" => (oauth::BOX, apps.boxcloud),
         "drive" => {
             let visible = place.pointer("/extra/drive_space").and_then(Value::as_str) == Some("folder");
             let scope = if visible { wmpass_sinks::drive::SCOPE_FILE } else { wmpass_sinks::drive::SCOPE_APP_DATA };
@@ -49,8 +49,9 @@ pub fn step(place: &Value, step: &Value, online: bool) -> Result<Value, String> 
     if let Some((service, app)) = service(kind, place) {
         return browser(service, app, kind);
     }
-    let _ = step;
-    Err("that kind of place does not sign in here".to_owned())
+    let http = NativeHttp::default();
+    let reach = places::Reach { client: || Client::new(Blocking(&http), NetPolicy::Any), policy: NetPolicy::Any };
+    block_on(places::sign_in(&reach, &places::Place::from_json(place), step, crate::engine::now_ms())).map_err(|fault| fault.to_string())
 }
 
 /// Opens the service's page and waits for it to come back with a code. Answers the

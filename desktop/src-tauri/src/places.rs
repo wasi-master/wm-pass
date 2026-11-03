@@ -66,7 +66,8 @@ fn run(place: &Place, online: bool, op: Op<'_>) -> Result<Done, String> {
     let policy = if online { NetPolicy::Any } else { NetPolicy::Offline };
     let http = NativeHttp::default();
     let parsed = places::Place::from_json(&place.0);
-    let ran = block_on(places::run(|| Client::new(Blocking(&http), policy), &apps(), &parsed, op, crate::engine::now_ms()));
+    let reach = places::Reach { client: || Client::new(Blocking(&http), policy), policy };
+    let ran = block_on(places::run(&reach, &apps(), &parsed, op, crate::engine::now_ms()));
     if !ran.update.is_empty()
         && let Ok(mut pending) = UPDATES.lock()
     {

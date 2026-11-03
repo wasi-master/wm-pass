@@ -5,7 +5,7 @@
 // the desktop app's and the phone's.
 
 import type { PlaceFile, PlacesHost, SignInAnswer } from '../../ui/src/engine/host';
-import init, { place_authorize, place_exchange, place_kinds, place_run } from '../../ui/src/wasm/wmpass_wasm.js';
+import init, { place_authorize, place_exchange, place_kinds, place_run, place_sign_in } from '../../ui/src/wasm/wmpass_wasm.js';
 
 declare const chrome: any;
 
@@ -74,9 +74,10 @@ export const extensionPlaces: PlacesHost = {
   write: async (place, name, bytes) => void (await run(place, { op: 'write', name, ...ONLINE }, bytes)),
   remove: async (place, file) => void (await run(place, { op: 'delete', file, ...ONLINE })),
   chooseFolder: async () => null,
-  async signIn(place: any) {
+  async signIn(place: any, step) {
     if (['drive', 'dropbox', 'onedrive', 'box'].includes(place.kind)) return browserSignIn(place);
-    throw new Error('That kind of place signs in from the desktop app or the phone.');
+    await wasm();
+    return JSON.parse(await place_sign_in(JSON.stringify(place), JSON.stringify(step), Date.now(), wasmFetch)) as SignInAnswer;
   },
 };
 
