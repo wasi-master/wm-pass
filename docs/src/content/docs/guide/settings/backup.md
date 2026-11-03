@@ -324,3 +324,33 @@ Where an item differs, the newer value is kept and the older one moves to that i
 To bring back items from an old backup, or to combine a copy that was changed on a device that was not syncing.
 
 See also [Bring back a copy](/guide/settings/backup/#action-restore-copy), [Save a file](/guide/settings/backup/#action-backup-save-file).
+
+<a id="action-place-from-keyboard"></a>
+
+## Use a place from WM Keyboard
+
+*Only in Android.*
+
+Fills in a new place with one you already set up in WM Keyboard, so its address and password are typed only once.
+
+#### How it works
+
+Under [Add a place](/guide/settings/backup/#action-add-place), press **Use a place from WM Keyboard**. WM Keyboard opens its list of places, behind its own app lock if you set one, and you tap one.
+
+The place fills in the sheet here. Look it over and save it. Nothing is kept until you do, and then it is sealed like any other place.
+
+A login a server checks comes across whole: a WebDAV, FTP, SFTP, SMB, email or NAS password, an SFTP key, an S3 key pair, a Git token.
+
+A sign-in does not. Google Drive, Dropbox, OneDrive and Box sign each app in separately, and a token from one does nothing in the other. Box and Proton Drive replace their tokens on every use, so two apps sharing one would sign each other out, and pCloud, MEGA and iCloud Drive keep sessions too. For those you sign in here.
+
+A folder on this phone comes without the folder, since Android lets an app into a folder only when you pick it there. A folder inside an account that still has WM Keyboard's default name becomes WM Pass's default.
+
+WM Keyboard can borrow one of your places the same way. It opens a page here that waits until the vault is open, lists your places, and sends only the one you tap.
+
+#### Limits
+
+Each app answers only the other, checked by its signing certificate. The place goes straight from one app's memory to the other's, never through a file or the clipboard.
+
+Each app keeps its own copy. Changing or removing the place in one leaves the other alone.
+
+See also [Add a place](/guide/settings/backup/#action-add-place), [Places for copies](/guide/how-it-works/#feature-places), [Let WM Keyboard fill](/guide/settings/security/#setting-keyboard-access).

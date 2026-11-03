@@ -97,6 +97,13 @@
             </intent-filter>
         </activity>
 
+        <!-- WM Keyboard's "Use a place from WM Pass". It answers only WM Keyboard, by certificate. -->
+        <activity
+            android:name=".system.PlaceShareActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:windowSoftInputMode="adjustResize" />
+
         <activity
             android:name=".system.AutofillActivity"
             android:exported="false"
