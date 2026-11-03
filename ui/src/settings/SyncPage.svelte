@@ -8,6 +8,10 @@
   import { pass } from '../engine/pass.svelte';
   import { host } from '../engine/host';
   import { ui } from '../vault/ui.svelte';
+  import { prefs } from '../engine/prefs.svelte';
+  import { help } from '../help/help.svelte';
+  import { PAGES } from './pages';
+  import Toggle from './Toggle.svelte';
   import { accounts, type AccountRef } from './accounts.svelte';
   import AddAccount from './AddAccount.svelte';
   import LanSection from './LanSection.svelte';
@@ -21,6 +25,24 @@
   let fileMessage = $state<string | null>(null);
 
   const current = $derived(accounts.list.find((a) => a.id === pass.account));
+
+  let choosing = $state(false);
+  let guideReady = $state(false);
+  void help.load().then(() => (guideReady = true));
+
+  /** What can sync, named as the guide names it and grouped by the page it is on. */
+  const syncable = $derived.by(() => {
+    void guideReady;
+    return prefs.syncable
+      .map((key) => {
+        const topic = help.topic(`setting.${key}`);
+        const page = PAGES.find((p) => p.id === topic?.page)?.title ?? '';
+        return { key, title: topic?.title ?? key.replaceAll('_', ' '), page, here: !!topic };
+      })
+      .filter((s) => s.here)
+      .sort((a, b) => a.page.localeCompare(b.page) || a.title.localeCompare(b.title));
+  });
+  const skipped = $derived(prefs.listOf('sync_skip'));
 
   async function syncAccount() {
     refreshing = true;
@@ -72,6 +94,20 @@
     {/if}
   </Group>
 {/if}
+
+<Group title="Settings" help="setting.sync_settings">
+  <Toggle title="Sync settings with the vault" sub="Your customisations follow this vault to your other devices. Protection settings stay here." icon="tune" pref="sync_settings" />
+  {#if prefs.v.sync_settings}
+    <Row title="Settings that stay on this device" sub={skipped.length ? `${skipped.length} kept here` : 'None: everything syncs'} icon="devices" help="setting.sync_skip" chevron onclick={() => (choosing = !choosing)} />
+    {#if choosing}
+      {#each syncable as item (item.key)}
+        <Row title={item.title} sub={item.page}>
+          <Switch checked={!skipped.includes(item.key)} label="Sync {item.title}" onchange={(on) => prefs.toggleInList('sync_skip', item.key, !on)} />
+        </Row>
+      {/each}
+    {/if}
+  {/if}
+</Group>
 
 <Group title="Accounts held elsewhere" help="group.sync.accounts" anchor="group:sync.accounts">
   <div class="set-body"><p class="dim">Open a KeePass file where it is, or sign in to Bitwarden, Vaultwarden or a WM Pass server. They appear on the door beside this vault.</p></div>

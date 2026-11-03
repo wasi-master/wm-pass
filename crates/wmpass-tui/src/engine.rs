@@ -375,6 +375,24 @@ impl Engine {
         Ok(())
     }
 
+    /// The settings other devices left in the vault, by key.
+    pub fn synced_settings(&mut self) -> Result<serde_json::Map<String, Value>, String> {
+        self.view("prefs.synced", &json!({}))
+    }
+
+    /// Leaves settings in the vault for the other devices, writing the file if any changed.
+    pub fn sync_settings(&mut self, values: serde_json::Map<String, Value>) -> Result<(), String> {
+        if self.read_only || values.is_empty() {
+            return Ok(());
+        }
+        let reply = self.call("prefs.sync", &json!({ "values": values }), &[], &[])?;
+        let done: Value = reply_json(&reply)?;
+        if done["changed"].as_u64().unwrap_or(0) > 0 {
+            self.save()?;
+        }
+        Ok(())
+    }
+
     /// Locks the vault, wiping it from memory.
     pub fn lock(mut self) {
         let _ = self.call("vault.lock", &json!({}), &[], &[]);

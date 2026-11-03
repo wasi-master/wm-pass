@@ -211,6 +211,8 @@ pub struct VaultUi {
     pub total: usize,
     pub areas: Areas,
     last_pull: Instant,
+    /// Set when changes from elsewhere came in, until the app has taken their settings.
+    pub merged: bool,
     last_codes: Instant,
 }
 
@@ -257,6 +259,7 @@ impl VaultUi {
             total: 0,
             areas: Areas::default(),
             last_pull: Instant::now(),
+            merged: false,
             last_codes: Instant::now() - Duration::from_secs(5),
         };
         ui.reload();
@@ -580,6 +583,7 @@ impl VaultUi {
             self.last_pull = Instant::now();
             match self.engine.pull() {
                 Ok(true) => {
+                    self.merged = true;
                     self.reload();
                     redraw = true;
                     news = Some("Changes made elsewhere were merged in".to_owned());

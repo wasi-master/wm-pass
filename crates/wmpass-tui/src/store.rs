@@ -46,6 +46,10 @@ pub struct Prefs {
     pub reveal_seconds: u32,
     /// This device's number, which breaks ties when two copies merge.
     pub device: u32,
+    /// Whether the theme, icons and reveal time follow the vault to other devices.
+    pub sync_settings: bool,
+    /// Keys from those that stay on this device, such as `tui_theme`.
+    pub sync_skip: Vec<String>,
 }
 
 impl Default for Prefs {
@@ -58,6 +62,8 @@ impl Default for Prefs {
             clip_seconds: 30,
             reveal_seconds: 20,
             device: 0,
+            sync_settings: true,
+            sync_skip: Vec::new(),
         }
     }
 }

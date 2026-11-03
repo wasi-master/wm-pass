@@ -250,6 +250,10 @@ struct SharedArgs {
     key: String,
 }
 
+/// Limits on the settings a vault carries for the apps, so a damaged shell cannot bloat the file.
+const SYNCED_KEY_MAX: usize = 96;
+const SYNCED_VALUE_MAX: usize = 256 * 1024;
+const SYNCED_KEYS_MAX: usize = 1024;
 const MEMBER_PREFIX: &str = "wmpass-member:";
 const INVITE_PREFIX: &str = "wmpass-invite:";
 
@@ -1485,6 +1489,54 @@ impl Service {
                 session.vault.doc.prefs.tag_icons.insert(a.tag, Lww::new(a.icon.unwrap_or_default(), at));
                 session.touched();
                 Ok(Reply::ok())
+            }
+            "prefs.synced" => {
+                let values: serde_json::Map<String, Value> = session
+                    .vault
+                    .doc
+                    .prefs
+                    .app
+                    .iter()
+                    .filter(|(_, value)| !value.v.is_empty())
+                    .filter_map(|(key, value)| Some((key.clone(), serde_json::from_str(&value.v).ok()?)))
+                    .collect();
+                Ok(Reply::view(Value::Object(values)))
+            }
+            "prefs.sync" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    values: serde_json::Map<String, Value>,
+                }
+                let a: A = parse(call.args)?;
+                let held = &session.vault.doc.prefs.app;
+                let mut changes = Vec::new();
+                for (key, value) in a.values {
+                    let fits = (1..=SYNCED_KEY_MAX).contains(&key.len())
+                        && key.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"_.-:".contains(&b));
+                    if !fits {
+                        return Err(invalid("a setting's name is short and plain"));
+                    }
+                    let text = if value.is_null() { String::new() } else { value.to_string() };
+                    if text.len() > SYNCED_VALUE_MAX {
+                        return Err(invalid("that setting is too long to sync"));
+                    }
+                    if held.get(&key).is_none_or(|current| current.v != text) {
+                        changes.push((key, text));
+                    }
+                }
+                if held.len() + changes.len() > SYNCED_KEYS_MAX {
+                    return Err(invalid("too many synced settings"));
+                }
+                let changed = changes.len();
+                if changed > 0 {
+                    let at = session.vault.tick(now);
+                    for (key, text) in changes {
+                        session.vault.doc.prefs.app.insert(key, Lww::new(text, at));
+                    }
+                    session.dirty = true;
+                }
+                Ok(Reply::view(json!({ "changed": changed })))
             }
             "match.web" => {
                 #[derive(Deserialize, Default)]

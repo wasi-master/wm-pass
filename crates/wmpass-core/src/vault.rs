@@ -83,6 +83,10 @@ pub struct Digests {
     pub linked: BTreeMap<String, Hlc>,
     /// When slots last changed.
     pub slots_at: Hlc,
+    /// When each tag's glyph last changed.
+    pub tag_icons: BTreeMap<String, Hlc>,
+    /// When each synced app setting last changed.
+    pub app_prefs: BTreeMap<String, Hlc>,
     /// Save counter.
     pub generation: u64,
     /// Layout version.
@@ -101,6 +105,10 @@ pub struct Delta {
     pub tombstones: BTreeMap<Id, Hlc>,
     /// Linked files likewise.
     pub linked: Vec<LinkedVault>,
+    /// Tag glyphs the peer has not seen.
+    pub tag_icons: BTreeMap<String, Lww<String>>,
+    /// Synced app settings the peer has not seen.
+    pub app_prefs: BTreeMap<String, Lww<String>>,
     /// Sender's save counter.
     pub generation: u64,
     /// Sender's layout version.
@@ -456,6 +464,8 @@ impl Vault {
             tombstones: self.doc.tombstones.clone(),
             linked: self.doc.linked.iter().map(|l| (l.file.clone(), l.at)).collect(),
             slots_at: self.doc.slots_at,
+            tag_icons: self.doc.prefs.tag_icons.iter().map(|(k, v)| (k.clone(), v.at)).collect(),
+            app_prefs: self.doc.prefs.app.iter().map(|(k, v)| (k.clone(), v.at)).collect(),
             generation: self.doc.generation,
             minor: self.doc.minor,
             ..Digests::default()
@@ -499,6 +509,14 @@ impl Vault {
             .filter(|link| theirs.linked.get(&link.file).is_none_or(|known| *known < link.at))
             .cloned()
             .collect();
+        let newer = |mine: &BTreeMap<String, Lww<String>>, theirs: &BTreeMap<String, Hlc>| {
+            mine.iter()
+                .filter(|(key, value)| theirs.get(*key).is_none_or(|known| *known < value.at))
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect()
+        };
+        let tag_icons = newer(&self.doc.prefs.tag_icons, &theirs.tag_icons);
+        let app_prefs = newer(&self.doc.prefs.app, &theirs.app_prefs);
         let file = if mine.slots_at > theirs.slots_at {
             Some(self.save()?)
         } else {
@@ -509,6 +527,8 @@ impl Vault {
             folders,
             tombstones,
             linked,
+            tag_icons,
+            app_prefs,
             generation: mine.generation,
             minor: mine.minor,
             file,
@@ -527,6 +547,11 @@ impl Vault {
             folders: delta.folders.into_iter().map(|f| (f.id.clone(), f)).collect(),
             tombstones: delta.tombstones,
             linked: delta.linked,
+            prefs: crate::model::VaultPrefs {
+                tag_icons: delta.tag_icons,
+                app: delta.app_prefs,
+                ..crate::model::VaultPrefs::default()
+            },
             ..VaultDoc::default()
         };
         observe_doc(&mut self.clock, &partial);
@@ -745,6 +770,9 @@ fn observe_doc(clock: &mut Clock, doc: &VaultDoc) {
     }
     for at in doc.tombstones.values() {
         clock.observe(*at);
+    }
+    for value in doc.prefs.tag_icons.values().chain(doc.prefs.app.values()) {
+        clock.observe(value.at);
     }
 }
 
@@ -1227,6 +1255,41 @@ mod tests {
             assert!(!file.windows(marker.len()).any(|window| window == marker));
         }
         assert!(!format!("{vault:?}").contains("PasswordMarker"));
+    }
+
+    #[test]
+    fn app_settings_follow_the_vault_by_file_and_by_delta() {
+        let mut a = fast_vault(1);
+        let shared = a.save().unwrap();
+        let mut b = Vault::from_file(&shared, a.key().clone_key(), 2).unwrap();
+        let mut c = Vault::from_file(&shared, a.key().clone_key(), 3).unwrap();
+
+        let at = a.tick(2000);
+        a.doc.prefs.app.insert("layout".into(), Lww::new("\"grid\"".into(), at));
+        let at = b.tick(3000);
+        b.doc.prefs.app.insert("layout".into(), Lww::new("\"compact\"".into(), at));
+        b.doc.prefs.app.insert("gen_length".into(), Lww::new("32".into(), at));
+        let at = b.tick(3000);
+        b.doc.prefs.tag_icons.insert("work".into(), Lww::new("work".into(), at));
+
+        // By whole file: the later write wins, whichever way round.
+        a.merge_file(&b.save().unwrap()).unwrap();
+        assert_eq!(a.doc.prefs.app["layout"].v, "\"compact\"");
+        assert_eq!(a.doc.prefs.app["gen_length"].v, "32");
+
+        // By delta, as the local network sync sends it, tag glyphs included.
+        let delta = a.delta_for(&c.digests().unwrap()).unwrap();
+        assert_eq!(delta.app_prefs.len(), 2);
+        assert_eq!(delta.tag_icons.len(), 1);
+        c.apply_delta(delta).unwrap();
+        assert_eq!(c.doc.prefs.app, a.doc.prefs.app);
+        assert_eq!(c.doc.prefs.tag_icons, a.doc.prefs.tag_icons);
+        assert_eq!(c.state_hash().unwrap(), a.state_hash().unwrap());
+        assert!(a.delta_for(&c.digests().unwrap()).unwrap().app_prefs.is_empty());
+
+        // A setting written after the merge outranks what came in.
+        let at = c.tick(2500);
+        assert!(at > a.doc.prefs.app["layout"].at);
     }
 
     #[test]

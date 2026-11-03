@@ -22,6 +22,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.int
@@ -111,6 +112,9 @@ object Pass {
 
     /** Called after the vault in this folder has saved, for a sync that follows it. */
     var afterSave: (() -> Unit)? = null
+
+    /** Called after the lists reload, which follows every change and every merge. */
+    var afterRefresh: (() -> Unit)? = null
 
     /** Run on a wipe, so that what the app keeps beside the vault goes with it. */
     val onWipe = mutableListOf<() -> Unit>()
@@ -430,6 +434,24 @@ object Pass {
         mutableFolders.value = Engine.view("folder.list", ListSerializer(FolderView.serializer()), active)
         mutableTagIcons.value = Engine.view("tags.icons", MapSerializer(String.serializer(), String.serializer()), active)
         mutableRevision.value++
+        afterRefresh?.invoke()
+    }
+
+    // ---- settings that follow the vault ----
+
+    /**
+     * Whether the vault in this folder is open, the only one that carries the app's settings: not
+     * an account held elsewhere, and not a vault opened from inside another.
+     */
+    val carriesSettings: Boolean get() = handle != 0L && file != null && accountWriter == null && childWriter == null
+
+    /** The settings other devices left in the vault, by key. */
+    suspend fun syncedSettings(): JsonObject = Engine.view("prefs.synced", JsonObject.serializer(), handle)
+
+    /** Leaves settings in the vault for the other devices, and saves soon if any changed. */
+    suspend fun syncSettings(values: JsonObject) {
+        val reply = Engine.call("prefs.sync", handle, { put("values", values) })
+        if (reply.obj["changed"]!!.jsonPrimitive.int > 0) scheduleSave()
     }
 
     // ---- reading ----

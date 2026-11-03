@@ -100,6 +100,7 @@ pub enum Command {
     Shelf,
     Theme,
     Icons,
+    SyncSettings,
     LockAfter,
     Items,
     Codes,
@@ -110,8 +111,12 @@ pub enum Command {
     Quit,
 }
 
+/// The terminal's settings that follow the vault, by the key they travel under. Its themes are
+/// not the apps' themes, so they travel under names of their own; the reveal time is shared.
+const SYNCED: [&str; 3] = ["tui_theme", "tui_icons", "reveal_seconds"];
+
 /// Every palette command, with its words and key.
-pub const COMMANDS: [(Command, &str, &str); 27] = [
+pub const COMMANDS: [(Command, &str, &str); 28] = [
     (Command::New, "New item", "n"),
     (Command::Edit, "Edit item", "e"),
     (Command::CopyPassword, "Copy password", "c"),
@@ -131,6 +136,7 @@ pub const COMMANDS: [(Command, &str, &str); 27] = [
     (Command::Shelf, "Open or close the hidden shelf", ""),
     (Command::Theme, "Next theme", "ctrl+t"),
     (Command::Icons, "Nerd Font icons on or off", ""),
+    (Command::SyncSettings, "Sync settings with the vault on or off", ""),
     (Command::LockAfter, "Lock after…", ""),
     (Command::Items, "Go to Items", "1"),
     (Command::Codes, "Go to Codes", "2"),
@@ -329,6 +335,9 @@ impl App {
             }
             let (redraw, news) = ui.tick(Duration::from_secs(u64::from(self.prefs.reveal_seconds.max(5))));
             changed |= redraw;
+            if std::mem::take(&mut ui.merged) {
+                self.pull_settings();
+            }
             if let Some(text) = news {
                 let level = if text.contains("older") { Level::Warn } else { Level::Info };
                 self.say(level, text);
@@ -337,6 +346,83 @@ impl App {
         }
         // The countdowns in the status bar move every second.
         changed || self.clip.seconds_left().is_some() || matches!(self.screen, Screen::Vault(_))
+    }
+
+    // ---- settings that follow the vault ----
+
+    fn syncs(&self, key: &str) -> bool {
+        self.prefs.sync_settings && !self.prefs.sync_skip.iter().any(|skipped| skipped == key)
+    }
+
+    fn synced_value(&self, key: &str) -> serde_json::Value {
+        match key {
+            "tui_theme" => json!(self.prefs.theme),
+            "tui_icons" => json!(self.prefs.icons),
+            _ => json!(self.prefs.reveal_seconds),
+        }
+    }
+
+    /// Takes the settings other devices left in the vault, then leaves any this terminal has
+    /// changed that the vault has never held.
+    fn pull_settings(&mut self) {
+        if !self.prefs.sync_settings {
+            return;
+        }
+        let Screen::Vault(ui) = &mut self.screen else { return };
+        let Ok(held) = ui.engine.synced_settings() else { return };
+        let defaults = Prefs::default();
+        let mut missing = serde_json::Map::new();
+        for key in SYNCED {
+            if !self.syncs(key) {
+                continue;
+            }
+            let Some(value) = held.get(key) else {
+                let fresh = match key {
+                    "tui_theme" => self.prefs.theme == defaults.theme,
+                    "tui_icons" => self.prefs.icons == defaults.icons,
+                    _ => self.prefs.reveal_seconds == defaults.reveal_seconds,
+                };
+                if !fresh {
+                    missing.insert(key.to_owned(), self.synced_value(key));
+                }
+                continue;
+            };
+            match key {
+                "tui_theme" => {
+                    if let Some(name) = value.as_str().filter(|name| *name != self.prefs.theme) {
+                        name.clone_into(&mut self.prefs.theme);
+                        self.theme = Theme { g: self.theme.g, ..Theme::pick(name) };
+                    }
+                }
+                "tui_icons" => {
+                    if let Some(name) = value.as_str().filter(|name| *name != self.prefs.icons) {
+                        name.clone_into(&mut self.prefs.icons);
+                        self.theme.g = crate::glyphs::Glyphs::pick(name);
+                    }
+                }
+                _ => {
+                    if let Some(seconds) = value.as_u64().filter(|s| *s <= 3600).and_then(|s| u32::try_from(s).ok()) {
+                        self.prefs.reveal_seconds = seconds;
+                    }
+                }
+            }
+        }
+        self.prefs.save();
+        if let Screen::Vault(ui) = &mut self.screen {
+            let _ = ui.engine.sync_settings(missing);
+        }
+    }
+
+    /// Leaves one setting in the vault for the other devices, if this terminal lets it go.
+    fn push_setting(&mut self, key: &str) {
+        if !self.syncs(key) {
+            return;
+        }
+        let mut values = serde_json::Map::new();
+        values.insert(key.to_owned(), self.synced_value(key));
+        if let Screen::Vault(ui) = &mut self.screen {
+            let _ = ui.engine.sync_settings(values);
+        }
     }
 
     /// Locks, back to the door.
@@ -440,6 +526,7 @@ impl App {
                 self.prefs.remember(&path);
                 let name = engine.name.clone();
                 self.screen = Screen::Vault(Box::new(VaultUi::new(engine)));
+                self.pull_settings();
                 match rollback {
                     Some((seen, file)) => self.say(
                         Level::Warn,
@@ -771,6 +858,7 @@ impl App {
                 self.theme = self.theme.next();
                 self.prefs.theme = self.theme.name.to_owned();
                 self.prefs.save();
+                self.push_setting("tui_theme");
                 let name = self.theme.name;
                 self.say(Level::Info, format!("Theme: {name}"));
             }
@@ -778,12 +866,23 @@ impl App {
                 self.theme.g.nerd = !self.theme.g.nerd;
                 self.prefs.icons = self.theme.g.name().to_owned();
                 self.prefs.save();
+                self.push_setting("tui_icons");
                 let text = if self.theme.g.nerd {
                     "Nerd Font icons on. Boxes instead of icons mean the terminal's font has none"
                 } else {
                     "Plain icons"
                 };
                 self.say(Level::Info, text);
+            }
+            Command::SyncSettings => {
+                self.prefs.sync_settings = !self.prefs.sync_settings;
+                self.prefs.save();
+                if self.prefs.sync_settings {
+                    self.pull_settings();
+                    self.say(Level::Info, "Theme, icons and reveal time now follow the vault");
+                } else {
+                    self.say(Level::Info, "Settings stay on this computer");
+                }
             }
             Command::LockAfter => {
                 let mut input = Input::with(&self.prefs.lock_minutes.to_string());

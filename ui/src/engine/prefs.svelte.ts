@@ -127,6 +127,10 @@ const DEFS = {
   help_seen: { value: '', portable: false },
   help_tours_done: { value: '', portable: false },
 
+  // ---- settings sync: each device decides for itself ----
+  sync_settings: { value: true, portable: false },
+  sync_skip: { value: '', portable: false },
+
   // ---- protection: never taken from a settings file, never reset with the look ----
   lock_after: { value: 300, portable: false },
   lock_on_sleep: { value: true, portable: false },
@@ -146,6 +150,12 @@ const DEFS = {
 } satisfies Record<string, Def>;
 
 export type PrefKey = keyof typeof DEFS;
+
+/**
+ * Customisations that describe this window rather than the person, or mean something different
+ * on the phone under the same name. They never travel with the vault.
+ */
+const DEVICE_ONLY: ReadonlySet<string> = new Set(['tabs', 'last_tab', 'folds_open', 'editor_open', 'sidebar_open', 'sidebar_width', 'list_width']);
 type Widen<T> = T extends boolean ? boolean : T extends number ? number : string;
 type PrefValues = { [K in PrefKey]: Widen<(typeof DEFS)[K]['value']> };
 
@@ -206,9 +216,68 @@ class Prefs {
     void host().saveSettings(SETTINGS, JSON.stringify(this.v));
   }
 
+  /** Told about every setting someone changes, for the vault to carry it to other devices. */
+  onSet: ((key: PrefKey) => void) | null = null;
+
   set<K extends PrefKey>(key: K, value: PrefValues[K]) {
     (this.v as any)[key] = value;
     this.persist();
+    this.onSet?.(key);
+  }
+
+  // ---- settings that follow the vault ----
+
+  /** Every setting that can follow the vault, whether or not this device lets it. */
+  get syncable(): PrefKey[] {
+    return (Object.entries(DEFS) as [PrefKey, Def][]).filter(([key, def]) => def.portable !== false && !DEVICE_ONLY.has(key)).map(([key]) => key);
+  }
+
+  /** Whether this setting goes to and comes from the vault on this device. */
+  syncs(key: string): key is PrefKey {
+    if (!this.v.sync_settings || !this.has(key)) return false;
+    return this.syncable.includes(key) && !this.listOf('sync_skip').includes(key);
+  }
+
+  /**
+   * Takes settings another device left in the vault. Each one gets the checks a settings file
+   * gets, and own themes keep their ids so the theme chosen with them is still found. Returns how
+   * many changed. Nothing here is sent back.
+   */
+  applySynced(values: Record<string, unknown>) {
+    let changed = 0;
+    for (const [key, raw] of Object.entries(values)) {
+      if (!this.syncs(key)) continue;
+      let value = raw;
+      if (key === 'custom_themes') value = this.cleanThemes(raw);
+      if (key === 'theme_id' && raw === 'system') continue;
+      if (value === undefined || !this.fits(DEFS[key], value) || value === this.v[key]) continue;
+      (this.v as any)[key] = value;
+      changed++;
+    }
+    if (changed) this.persist();
+    return changed;
+  }
+
+  private cleanThemes(raw: unknown): string | undefined {
+    if (typeof raw !== 'string') return undefined;
+    if (!raw) return '';
+    let list: ThemeFile[];
+    try {
+      list = JSON.parse(raw);
+    } catch {
+      return undefined;
+    }
+    if (!Array.isArray(list)) return undefined;
+    const clean: ThemeFile[] = [];
+    for (const theme of list) {
+      try {
+        const checked = readTheme(themeToText(theme));
+        clean.push(typeof theme.id === 'string' && /^custom_[\w-]{1,40}$/.test(theme.id) ? { ...checked, id: theme.id } : checked);
+      } catch {
+        // A theme that fails the checks stays behind.
+      }
+    }
+    return JSON.stringify(clean);
   }
 
   // ---- lists kept as text ----

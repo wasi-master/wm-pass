@@ -23,6 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.text.input.clearText
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -235,7 +236,16 @@ private fun EmailChecks(entries: List<Summary>) {
         Pill("Have I Been Pwned", source == "hibp") { source = "hibp" }
         Pill("Passwords in COMB", source == "comb") { source = "comb" }
     }
-    if (source == "hibp") SheetField(key, "API key")
+    val all by Pass.entries.collectAsStateWithLifecycle()
+    val hibpKept = all.any { it.kind == "api" && it.title == HIBP_KEY }
+    if (source == "hibp") {
+        if (hibpKept) {
+            Text("Using the key kept in the vault as “$HIBP_KEY”.", color = colors.textMid, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 6.dp))
+        } else {
+            SheetField(key, "API key")
+            Text("After the first check the key is kept in the vault, so your other devices have it too.", color = colors.textMid, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 6.dp))
+        }
+    }
     GroupCard {
         emails.forEachIndexed { index, email ->
             if (index > 0) Hairline()
@@ -262,11 +272,21 @@ private fun EmailChecks(entries: List<Summary>) {
                                         else -> "Not listed."
                                     }
                                 } else {
-                                    val secret = if (source == "hibp") key.text.toString().toByteArray() else null
+                                    val typed = key.text.toString().trim()
+                                    val secret = when {
+                                        source != "hibp" -> null
+                                        hibpKept -> serviceKey(HIBP_KEY)?.toByteArray()
+                                        else -> typed.toByteArray()
+                                    }
                                     val rows = Engine.net("breach.account", online = online, secret = secret) {
                                         put("source", source)
                                         put("email", email)
                                     }.json as JsonArray
+                                    secret?.fill(0)
+                                    if (source == "hibp" && !hibpKept && typed.isNotEmpty()) {
+                                        saveServiceKey(HIBP_KEY, typed)
+                                        key.clearText()
+                                    }
                                     if (rows.isEmpty()) "Not listed." else "In ${rows.size}: " + rows.take(5).joinToString(", ") { it.jsonObject["name"]!!.jsonPrimitive.content }
                                 }
                             } catch (failure: NativeFailure) {
@@ -280,6 +300,9 @@ private fun EmailChecks(entries: List<Summary>) {
         }
     }
 }
+
+/** The key is an item in the vault, so it follows the vault to every device. */
+private const val HIBP_KEY = "Have I Been Pwned API key"
 
 // ---- aliases ----
 
