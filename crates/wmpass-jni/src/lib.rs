@@ -9,7 +9,7 @@ use std::sync::Mutex;
 use jni::JNIEnv;
 use jni::objects::{JByteArray, JClass, JFloatArray, JObject, JObjectArray, JString, JValue};
 use jni::sys::{jboolean, jint, jlong, jobjectArray};
-use wmpass_cardscan::{Crop, Frame, Month, Reader, Tally};
+use wmpass_cardscan::{Crop, Frame, Month, Reader, Tally, TextLine};
 use wmpass_core::format::{FactorKind, FactorOutput};
 use wmpass_hwkey::HwError;
 use wmpass_hwkey::otp::OtpHid;
@@ -371,32 +371,61 @@ pub extern "system" fn Java_com_wasimaster_wmpass_core_Native_hardware<'local>(
     finish(&mut env, result)
 }
 
-/// The card reader while its scanner is open: the model, and what the frames so far read.
+/// The card reader while its scanner is open: the model when frames are read here, and what
+/// the frames so far read.
 struct CardScan {
-    reader: Reader,
+    reader: Option<Reader>,
     tally: Tally,
 }
 
 static CARDS: Mutex<Option<CardScan>> = Mutex::new(None);
 
-/// `cardOpen(model)`: loads the card reader from the model's bytes and forgets earlier reads.
-/// False when the model will not load.
+/// `cardOpen(model)`: starts a card scan and forgets earlier reads. With the model's bytes,
+/// frames are read here (`cardFrame`); with null, a text recognizer on the Kotlin side reads
+/// them and passes its lines (`cardText`). False when the model will not load.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_wasimaster_wmpass_core_Native_cardOpen<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     model: JByteArray<'local>,
 ) -> jboolean {
-    let Ok(model) = env.convert_byte_array(&model) else { return 0 };
-    let Ok(reader) = Reader::new(&model) else { return 0 };
+    let reader = if model.as_raw().is_null() {
+        None
+    } else {
+        let Ok(model) = env.convert_byte_array(&model) else { return 0 };
+        let Ok(reader) = Reader::new(&model) else { return 0 };
+        Some(reader)
+    };
     let Ok(mut guard) = CARDS.lock() else { return 0 };
     *guard = Some(CardScan { reader, tally: Tally::default() });
     1
 }
 
-/// `cardFrame(pixels, width, height, rowStride, rotation, crop, nowMs)`: reads one RGBA frame.
-/// Returns null until two frames agree on a number, then `{ByteArray number, String? expiry}`.
-/// The caller wipes the number's array once it has used it.
+/// What the frames agree on so far: null until a number, then `{ByteArray number, String?
+/// expiry, String? name}`. The caller wipes the number's array once it has used it.
+fn card_reply(env: &mut JNIEnv<'_>, tally: &Tally) -> jobjectArray {
+    let Some(number) = tally.number() else { return std::ptr::null_mut() };
+    let expiry = tally.expiry().map(|e| e.to_string());
+    let reply = (|| -> jni::errors::Result<jobjectArray> {
+        let object = env.find_class("java/lang/Object")?;
+        let out = env.new_object_array(3, object, JObject::null())?;
+        let digits = env.byte_array_from_slice(number.as_bytes())?;
+        env.set_object_array_element(&out, 0, digits)?;
+        if let Some(expiry) = expiry {
+            let text = env.new_string(expiry)?;
+            env.set_object_array_element(&out, 1, text)?;
+        }
+        if let Some(name) = tally.name() {
+            let text = env.new_string(name)?;
+            env.set_object_array_element(&out, 2, text)?;
+        }
+        Ok(out.into_raw())
+    })();
+    reply.unwrap_or(std::ptr::null_mut())
+}
+
+/// `cardFrame(pixels, width, height, rowStride, rotation, crop, nowMs)`: reads one RGBA frame
+/// with the model. Returns what [`card_reply`] does.
 #[unsafe(no_mangle)]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_com_wasimaster_wmpass_core_Native_cardFrame<'local>(
@@ -429,24 +458,46 @@ pub extern "system" fn Java_com_wasimaster_wmpass_core_Native_cardFrame<'local>(
     let crop = Crop { left, top, right, bottom };
     let Ok(mut guard) = CARDS.lock() else { return std::ptr::null_mut() };
     let Some(scan) = guard.as_mut() else { return std::ptr::null_mut() };
+    let Some(reader) = &scan.reader else { return std::ptr::null_mut() };
     // A frame that will not run is only a frame missed; the next one may.
-    if let Ok(card) = scan.reader.read(&frame, crop, Month::at(now_ms.cast_unsigned())) {
+    if let Ok(card) = reader.read(&frame, crop, Month::at(now_ms.cast_unsigned())) {
         scan.tally.add(card);
     }
-    let Some(number) = scan.tally.number() else { return std::ptr::null_mut() };
-    let expiry = scan.tally.expiry().map(|e| e.to_string());
-    let reply = (|| -> jni::errors::Result<jobjectArray> {
-        let object = env.find_class("java/lang/Object")?;
-        let out = env.new_object_array(2, object, JObject::null())?;
-        let digits = env.byte_array_from_slice(number.as_bytes())?;
-        env.set_object_array_element(&out, 0, digits)?;
-        if let Some(expiry) = expiry {
-            let text = env.new_string(expiry)?;
-            env.set_object_array_element(&out, 1, text)?;
+    card_reply(&mut env, &scan.tally)
+}
+
+/// `cardText(lines, boxes, nowMs)`: one frame as a text recognizer read it. `boxes` holds each
+/// line's left and top, as fractions of the card's window. Returns what [`card_reply`] does.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_wasimaster_wmpass_core_Native_cardText<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    lines: JObjectArray<'local>,
+    boxes: JFloatArray<'local>,
+    now_ms: jlong,
+) -> jobjectArray {
+    let read = (|| -> jni::errors::Result<Vec<TextLine>> {
+        let count = env.get_array_length(&lines)?;
+        let mut corners = vec![0f32; usize::try_from(count).unwrap_or(0) * 2];
+        env.get_float_array_region(&boxes, 0, &mut corners)?;
+        let mut out = Vec::with_capacity(corners.len() / 2);
+        for index in 0..count {
+            let item = JString::from(env.get_object_array_element(&lines, index)?);
+            let text: String = env.get_string(&item)?.into();
+            env.delete_local_ref(item)?;
+            let at = usize::try_from(index).unwrap_or(0) * 2;
+            out.push(TextLine { text, left: corners[at], top: corners[at + 1] });
         }
-        Ok(out.into_raw())
+        Ok(out)
     })();
-    reply.unwrap_or(std::ptr::null_mut())
+    let Ok(lines) = read else {
+        throw(&mut env, "jni", "the text could not be read");
+        return std::ptr::null_mut();
+    };
+    let Ok(mut guard) = CARDS.lock() else { return std::ptr::null_mut() };
+    let Some(scan) = guard.as_mut() else { return std::ptr::null_mut() };
+    scan.tally.add(wmpass_cardscan::card::read_text(&lines, Month::at(now_ms.cast_unsigned())));
+    card_reply(&mut env, &scan.tally)
 }
 
 /// `cardClose()`: drops the card reader, wiping every number it read.

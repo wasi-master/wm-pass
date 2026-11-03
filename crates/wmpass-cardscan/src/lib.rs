@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use tract_tflite::prelude::*;
 
-pub use card::{Card, Expiry, Month, Tally};
+pub use card::{Card, Expiry, Month, Tally, TextLine};
 pub use frame::{Crop, Frame};
 
 /// The model would not load, or a frame would not run through it.

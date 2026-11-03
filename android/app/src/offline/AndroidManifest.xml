@@ -8,7 +8,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
-    <!-- Asked for only when scanning a QR code. The camera is optional: a key can be typed. -->
+    <!-- Asked for only when scanning a QR code or a card. The camera is optional: both can be typed. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <!-- Hardware keys, optional. -->

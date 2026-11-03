@@ -1,5 +1,6 @@
-//! A card from digit boxes: lines of digits, the number, the expiry, and agreement between
-//! frames. The detector sees digits only, so a slash or a space between digits reads as a gap.
+//! A card from what one frame showed, and agreement between frames. Two sources: digit boxes
+//! from the detector, which sees digits only, so a slash or a space between digits reads as a
+//! gap; and lines of text from a general text recognizer, which also give the name.
 
 use std::fmt;
 
@@ -9,8 +10,9 @@ use crate::ssd::Digit;
 
 /// Digits further apart than this many digit widths have a separator between them.
 const GAP: f32 = 0.5;
-/// How many frames must read the same value before it is used.
-const AGREE: u32 = 2;
+/// How many frames must read the same value before it is used. Chrome on iOS asks 15 of a
+/// recognizer that runs at 30 frames a second; these run at a few.
+const AGREE: u32 = 3;
 /// Different values remembered at once. A misread is forgotten once more turn up.
 const REMEMBERED: usize = 12;
 /// Further ahead than this, a date is not a card's.
@@ -59,17 +61,51 @@ impl fmt::Display for Expiry {
     }
 }
 
+/// The name printed on a card is at most this long (ISO/IEC 7813).
+const LONGEST_NAME: usize = 26;
+
+/// Upper-case words a card prints that are not part of a name.
+const LABELS: &[&str] = &[
+    "VALID", "THRU", "THROUGH", "GOOD", "FROM", "UNTIL", "MEMBER", "SINCE", "EXPIRES", "EXPIRY", "EXPIRATION", "EXP",
+    "END", "MONTH", "YEAR", "DATE", "DEBIT", "CREDIT", "PREPAID", "GIFT", "CARD", "CARDHOLDER", "NAME", "BANK", "VISA",
+    "MASTERCARD", "MAESTRO", "ELECTRON", "AMERICAN", "EXPRESS", "AMEX", "DISCOVER", "DINERS", "CLUB", "JCB", "UNIONPAY",
+    "RUPAY", "INTERAC", "MIR", "PLATINUM", "GOLD", "SILVER", "CLASSIC", "STANDARD", "SIGNATURE", "INFINITE", "WORLD",
+    "ELITE", "BUSINESS", "CORPORATE", "COMMERCIAL", "REWARDS", "CASHBACK", "INTERNATIONAL", "AUTHORIZED", "AUTHORISED",
+    "SIGNED", "CUSTOMER", "SERVICE", "CONTACTLESS", "CHIP", "PAY", "ACCOUNT", "SAVINGS", "CHECKING", "VIRTUAL", "TRAVEL",
+    "PREFERRED", "PREMIER", "PRIVATE", "SECURE", "CODE",
+];
+
 /// What one frame showed.
 #[derive(Default, PartialEq, Eq)]
 pub struct Card {
     pub number: Option<Zeroizing<String>>,
     pub expiry: Option<Expiry>,
+    pub name: Option<String>,
 }
 
 impl fmt::Debug for Card {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Never the number itself, so a log line cannot carry it.
-        f.debug_struct("Card").field("number", &self.number.is_some()).field("expiry", &self.expiry).finish()
+        // Never the number or the name, so a log line cannot carry them.
+        f.debug_struct("Card")
+            .field("number", &self.number.is_some())
+            .field("expiry", &self.expiry)
+            .field("name", &self.name.is_some())
+            .finish()
+    }
+}
+
+/// One line a text recognizer read, with where its box starts as fractions of the card's
+/// window: 0 at the left and top, 1 at the right and bottom.
+#[derive(Clone, PartialEq)]
+pub struct TextLine {
+    pub text: String,
+    pub left: f32,
+    pub top: f32,
+}
+
+impl fmt::Debug for TextLine {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TextLine").field("left", &self.left).field("top", &self.top).finish_non_exhaustive()
     }
 }
 
@@ -147,6 +183,79 @@ pub fn expiry(text: &str, today: Month) -> Option<Expiry> {
     best
 }
 
+/// A cardholder's name in `text`: an upper-case line of two to five words, letters with only
+/// `.`, `'` and `-` among them, no longer than a card prints, and none of its words a label
+/// such as VALID or DEBIT.
+pub fn name(text: &str) -> Option<String> {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    if !(2..=5).contains(&words.len()) {
+        return None;
+    }
+    let joined = words.join(" ");
+    let allowed = |c: char| (c.is_alphabetic() && !c.is_lowercase()) || matches!(c, ' ' | '.' | '\'' | '-');
+    if joined.chars().count() > LONGEST_NAME || joined.chars().filter(|c| c.is_alphabetic()).count() < 4 || !joined.chars().all(allowed) {
+        return None;
+    }
+    let bare = |w: &str| w.trim_matches(|c: char| !c.is_alphabetic()).to_owned();
+    if words.iter().any(|w| bare(w).is_empty() || LABELS.contains(&bare(w).as_str())) {
+        return None;
+    }
+    Some(joined)
+}
+
+/// The runs of digits and spaces in `text`, trimmed, longest first.
+fn digit_runs(text: &str) -> Vec<&str> {
+    let mut runs: Vec<&str> = text.split(|c: char| !(c.is_ascii_digit() || c == ' ')).map(str::trim).filter(|r| !r.is_empty()).collect();
+    runs.sort_by_key(|r| std::cmp::Reverse(r.len()));
+    runs
+}
+
+/// What a text recognizer's `lines` from one frame show: the number from one line, or from
+/// the groups of digits on one row when the recognizer split them; the latest expiry on any
+/// other line; and the name, the nearest name-like line below the number (or in the card's
+/// lower half when there is no number), since banks print their own names at the top.
+pub fn read_text(lines: &[TextLine], today: Month) -> Card {
+    let mut found = None;
+    let mut used: Vec<usize> = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        if let Some(n) = digit_runs(&line.text).into_iter().find_map(number) {
+            found = Some((n, line.top));
+            used.push(i);
+            break;
+        }
+    }
+    if found.is_none() {
+        let mut groups: Vec<usize> = (0..lines.len())
+            .filter(|&i| {
+                let t = lines[i].text.trim();
+                !t.is_empty() && t.bytes().all(|c| c.is_ascii_digit() || c == b' ')
+            })
+            .collect();
+        groups.sort_by(|&a, &b| lines[a].top.total_cmp(&lines[b].top));
+        let mut start = 0;
+        while start < groups.len() && found.is_none() {
+            let top = lines[groups[start]].top;
+            let mut row: Vec<usize> = groups[start..].iter().copied().take_while(|&i| (lines[i].top - top).abs() < 0.04).collect();
+            start += row.len();
+            row.sort_by(|&a, &b| lines[a].left.total_cmp(&lines[b].left));
+            let joined = Zeroizing::new(row.iter().map(|&i| lines[i].text.trim()).collect::<Vec<_>>().join(" "));
+            if let Some(n) = number(&joined) {
+                found = Some((n, top));
+                used = row;
+            }
+        }
+    }
+    let rest = || lines.iter().enumerate().filter(|(i, _)| !used.contains(i)).map(|(_, l)| l);
+    let expiry = rest().filter_map(|l| expiry(&l.text, today)).max();
+    let below = found.as_ref().map_or(0.5, |(_, top)| *top);
+    let name = rest()
+        .filter(|l| l.top > below)
+        .filter_map(|l| name(&l.text).map(|n| (n, l.top)))
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(n, _)| n);
+    Card { number: found.map(|(n, _)| n), expiry, name }
+}
+
 /// The digits a frame found as lines of text, top to bottom: a space wherever two digits
 /// stand apart, and a duplicate of a digit (another class on the same spot) dropped.
 pub fn lines(digits: &[Digit]) -> Vec<String> {
@@ -221,7 +330,7 @@ pub fn read(digits: &[Digit], today: Month) -> Card {
         .filter(|(i, _)| !used.as_ref().is_some_and(|u| u.contains(i)))
         .filter_map(|(_, line)| expiry(line, today))
         .max();
-    Card { number: found, expiry }
+    Card { number: found, expiry, name: None }
 }
 
 /// Reads over several frames. A value is used only once [`AGREE`] frames read it the same.
@@ -229,11 +338,16 @@ pub fn read(digits: &[Digit], today: Month) -> Card {
 pub struct Tally {
     numbers: Vec<(Zeroizing<String>, u32)>,
     expiries: Vec<(Expiry, u32)>,
+    names: Vec<(String, u32)>,
 }
 
 impl fmt::Debug for Tally {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Tally").field("numbers", &self.numbers.len()).field("expiries", &self.expiries.len()).finish()
+        f.debug_struct("Tally")
+            .field("numbers", &self.numbers.len())
+            .field("expiries", &self.expiries.len())
+            .field("names", &self.names.len())
+            .finish()
     }
 }
 
@@ -256,6 +370,9 @@ impl Tally {
         if let Some(expiry) = card.expiry {
             count(&mut self.expiries, expiry);
         }
+        if let Some(name) = card.name {
+            count(&mut self.names, name);
+        }
     }
 
     /// The number most frames agree on, once [`AGREE`] of them do.
@@ -266,6 +383,11 @@ impl Tally {
     /// The expiry most frames agree on, once [`AGREE`] of them do.
     pub fn expiry(&self) -> Option<Expiry> {
         self.expiries.iter().filter(|(_, n)| *n >= AGREE).max_by_key(|(_, n)| *n).map(|(v, _)| *v)
+    }
+
+    /// The name most frames agree on, once [`AGREE`] of them do.
+    pub fn name(&self) -> Option<&str> {
+        self.names.iter().filter(|(_, n)| *n >= AGREE).max_by_key(|(_, n)| *n).map(|(v, _)| v.as_str())
     }
 }
 
@@ -402,20 +524,91 @@ mod tests {
     }
 
     #[test]
-    fn tally_waits_for_two_frames_to_agree() {
+    fn tally_waits_for_three_frames_to_agree() {
         let mut tally = Tally::default();
-        let card = |n: &str, e: Option<&str>| Card {
+        let card = |n: &str, e: Option<&str>, name: Option<&str>| Card {
             number: number(n),
             expiry: e.and_then(|e| expiry(e, NOV_2026)),
+            name: name.map(str::to_owned),
         };
-        tally.add(card("4242 4242 4242 4242", Some("07/37")));
+        tally.add(card("4242 4242 4242 4242", Some("07/37"), Some("ANDREA DELACRUZ")));
+        tally.add(card("5555 5555 5555 4444", None, None));
+        tally.add(card("4242 4242 4242 4242", None, Some("ANDREA DELACRUZ")));
         assert!(tally.number().is_none());
-        tally.add(card("5555 5555 5555 4444", None));
-        assert!(tally.number().is_none());
-        tally.add(card("4242 4242 4242 4242", None));
+        tally.add(card("4242 4242 4242 4242", Some("07 37"), None));
         assert_eq!(tally.number(), Some("4242424242424242"));
         assert!(tally.expiry().is_none());
-        tally.add(card("", Some("07 37")));
+        assert!(tally.name().is_none());
+        tally.add(card("", Some("07/2037"), Some("ANDREA DELACRUZ")));
         assert_eq!(tally.expiry().map(|e| e.to_string()).as_deref(), Some("07/2037"));
+        assert_eq!(tally.name(), Some("ANDREA DELACRUZ"));
+    }
+
+    #[test]
+    fn names_are_upper_case_words_that_are_not_labels() {
+        assert_eq!(name("ANDREA DELACRUZ").as_deref(), Some("ANDREA DELACRUZ"));
+        assert_eq!(name("  MR J.  O'NEIL-SMITH ").as_deref(), Some("MR J. O'NEIL-SMITH"));
+        assert_eq!(name("ZOË ÅSTRÖM").as_deref(), Some("ZOË ÅSTRÖM"));
+        for not in [
+            "Andrea Delacruz",
+            "VALID THRU",
+            "WORLD ELITE",
+            "DEBIT",
+            "MEMBER SINCE 05",
+            "ANDREA",
+            "A B",
+            "AN EXTREMELY LONG NAME THAT NO CARD PRINTS",
+            "JOHN SMITH 4242",
+            "ONE TWO THREE FOUR FIVE SIX",
+        ] {
+            assert!(name(not).is_none(), "{not}");
+        }
+    }
+
+    fn line(text: &str, left: f32, top: f32) -> TextLine {
+        TextLine { text: text.to_owned(), left, top }
+    }
+
+    #[test]
+    fn text_gives_number_expiry_and_the_name_below() {
+        let lines = [
+            line("WELLS FARGO", 0.1, 0.1),
+            line("4242 4242 4242 4242", 0.1, 0.55),
+            line("VALID THRU 07/37", 0.4, 0.68),
+            line("ANDREA DELACRUZ", 0.1, 0.82),
+            line("VISA", 0.8, 0.85),
+        ];
+        let card = read_text(&lines, NOV_2026);
+        assert_eq!(card.number.as_deref().map(String::as_str), Some("4242424242424242"));
+        assert_eq!(card.expiry.map(|e| e.to_string()).as_deref(), Some("07/2037"));
+        assert_eq!(card.name.as_deref(), Some("ANDREA DELACRUZ"));
+    }
+
+    #[test]
+    fn text_number_split_into_groups_is_joined() {
+        let lines = [
+            line("4242 4242", 0.05, 0.55),
+            line("4242", 0.5, 0.56),
+            line("4242", 0.7, 0.55),
+            line("ANDREA DELACRUZ", 0.05, 0.8),
+        ];
+        let card = read_text(&lines, NOV_2026);
+        assert_eq!(card.number.as_deref().map(String::as_str), Some("4242424242424242"));
+        assert_eq!(card.name.as_deref(), Some("ANDREA DELACRUZ"));
+    }
+
+    #[test]
+    fn text_number_survives_noise_around_it() {
+        let lines = [line("> 4242 4242 4242 4242 <", 0.1, 0.5)];
+        assert_eq!(read_text(&lines, NOV_2026).number.as_deref().map(String::as_str), Some("4242424242424242"));
+    }
+
+    #[test]
+    fn no_name_above_the_number() {
+        let lines = [line("WELLS FARGO", 0.1, 0.1), line("4242 4242 4242 4242", 0.1, 0.55)];
+        assert_eq!(read_text(&lines, NOV_2026).name, None);
+        // Without a number, only the lower half counts.
+        assert_eq!(read_text(&[line("WELLS FARGO", 0.1, 0.1)], NOV_2026).name, None);
+        assert_eq!(read_text(&[line("ANDREA DELACRUZ", 0.1, 0.8)], NOV_2026).name.as_deref(), Some("ANDREA DELACRUZ"));
     }
 }

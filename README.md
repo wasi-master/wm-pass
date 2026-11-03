@@ -43,7 +43,7 @@ cargo tauri build
 cargo run -p wmpass-cli
 ```
 
-The `cargo tauri build` step runs from `desktop/src-tauri`, and `cargo run -p wmpass-cli` opens the terminal app. The Android app builds from `android/` with `./gradlew assembleDebug`, and needs the NDK and `cargo-ndk`. Pass `-Pwmpass.fdroid=true` to leave out Google's Wearable API, or `-Pwmpass.offline=true` to drop the internet permission.
+The `cargo tauri build` step runs from `desktop/src-tauri`, and `cargo run -p wmpass-cli` opens the terminal app. The Android app builds from `android/` with `./gradlew assembleDebug`, and needs the NDK and `cargo-ndk`. Pass `-Pwmpass.fdroid=true` to leave out Google's SDKs (the Wearable API and ML Kit), or `-Pwmpass.offline=true` to drop the internet permission and those SDKs with it.
 
 The browser tests run with `node extension/test/run.mjs` after building the extension.
 

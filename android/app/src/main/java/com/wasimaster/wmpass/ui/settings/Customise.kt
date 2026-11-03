@@ -42,11 +42,14 @@ import com.wasimaster.wmpass.ui.parts.kindName
 import com.wasimaster.wmpass.ui.theme.LocalReduceMotion
 import com.wasimaster.wmpass.ui.theme.palette
 import com.wasimaster.wmpass.ui.vault.AllTabs
+import com.wasimaster.wmpass.ui.vault.CardReaderTradeOffs
+import com.wasimaster.wmpass.ui.vault.CardReaders
 import com.wasimaster.wmpass.ui.vault.ConfirmSheet
 import com.wasimaster.wmpass.ui.vault.KindOrder
 import com.wasimaster.wmpass.ui.vault.LocalShell
 import com.wasimaster.wmpass.ui.vault.PassSheet
 import com.wasimaster.wmpass.ui.vault.SheetField
+import com.wasimaster.wmpass.ui.vault.TradeOff
 import com.wasimaster.wmsuite.settings.AdvancedFolds
 import com.wasimaster.wmsuite.settings.ChoiceSetting
 import com.wasimaster.wmsuite.settings.LocalAdvancedFolds
@@ -405,6 +408,28 @@ internal fun EditorSettingsScreen() {
             item { SwitchRow("Start logins with a password", "Fill in a generated password on every new login.", prefs.editorGenerate, PassIcons.Casino) }
             item { SwitchRow("Tag new items", "A new item without tags gets the ones its site suggests, such as Banking or Social.", prefs.autoTag, PassIcons.Sell) }
         }
+        // Only builds with Google's SDKs have a second card reader to choose.
+        if (com.wasimaster.wmpass.BuildConfig.GOOGLE_SDKS) {
+            SettingsGroup("Card scanner") {
+                item {
+                    ChoiceRow(
+                        "Reader",
+                        prefs.cardReader,
+                        PassIcons.PhotoCamera,
+                        subtitle = "Both read the card on this phone.",
+                        options = listOf("" to "Ask next time", CardReaders.Google to "Google (ML Kit)", CardReaders.Own to "WM Pass"),
+                    )
+                }
+                item {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        Text("Google (ML Kit)", style = MaterialTheme.typography.titleSmall, color = palette.text)
+                        CardReaderTradeOffs.google.forEach { (good, text) -> TradeOff(if (good) PassIcons.Check else PassIcons.Info, if (good) palette.primary else palette.warn, text) }
+                        Text("WM Pass", style = MaterialTheme.typography.titleSmall, color = palette.text, modifier = Modifier.padding(top = 14.dp))
+                        CardReaderTradeOffs.own.forEach { (good, text) -> TradeOff(if (good) PassIcons.Check else PassIcons.Info, if (good) palette.primary else palette.warn, text) }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -646,6 +671,7 @@ private val SearchIndex = listOf(
     Found("Fold less used fields", "Adding and editing › Editor", "settings/editor", "details"),
     Found("Start logins with a password", "Adding and editing › Editor", "settings/editor", "generate"),
     Found("Tag new items", "Adding and editing › Editor", "settings/editor", "auto tag category"),
+    Found("Card scanner", "Adding and editing › Editor", "settings/editor", "reader camera scan credit debit ml kit google"),
     Found("Tap a field to copy it", "Appearance › Item page", "settings/entry"),
     Found("Hide shown secrets after", "Appearance › Item page", "settings/entry", "reveal timeout"),
     Found("Color digits and symbols", "Appearance › Item page", "settings/entry", "password colors"),
