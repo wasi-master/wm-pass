@@ -378,6 +378,7 @@ fn the_mouse_picks_tabs_rows_and_palette_commands() {
     assert_eq!(ui.tab, crate::vault::Tab::Generator);
     // The hint bar's keys are buttons.
     press(&mut app, KeyCode::Char(':'));
+    typed(&mut app, "go to");
     let shown = screen(&mut app, 140, 40);
     let (x, y) = find(&shown, "Go to Health");
     click(&mut app, x, y);
