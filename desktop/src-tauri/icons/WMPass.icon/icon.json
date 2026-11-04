@@ -1,0 +1,63 @@
+{
+  "fill": {
+    "linear-gradient": [
+      "srgb:0.05882,0.18039,0.16471,1.00000",
+      "srgb:0.02745,0.10196,0.09020,1.00000"
+    ]
+  },
+  "groups": [
+    {
+      "layers": [
+        {
+          "glass": true,
+          "hidden": false,
+          "image-name": "Monogram.png",
+          "name": "Monogram"
+        },
+        {
+          "glass": true,
+          "hidden": false,
+          "image-name": "Pin.png",
+          "name": "Pin"
+        }
+      ],
+      "lighting": "individual",
+      "name": "Pin",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "specular": true,
+      "translucency": {
+        "enabled": true,
+        "value": 0.1
+      }
+    },
+    {
+      "layers": [
+        {
+          "glass": true,
+          "hidden": false,
+          "image-name": "Shield.png",
+          "name": "Shield"
+        }
+      ],
+      "lighting": "individual",
+      "name": "Shield",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.45
+      },
+      "specular": true,
+      "translucency": {
+        "enabled": true,
+        "value": 0.25
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": [
+      "macOS"
+    ]
+  }
+}
