@@ -41,7 +41,7 @@ android {
         applicationId = "com.wasimaster.wmpass"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
+        versionCode = 3
         versionName = "0.1.0"
         // Only for measuring the card readers on a phone (CardCorpusTest); run with am instrument.
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -67,6 +67,7 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        aidl = true
     }
     signingConfigs {
         create("release") {
@@ -165,7 +166,6 @@ dependencies {
     // Saved Wi-Fi passwords, read through Shizuku only when asked. Both Apache-2.0.
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
-    implementation("org.lsposed.hiddenapibypass:hiddenapibypass:6.2")
     implementation("androidx.work:work-runtime-ktx:2.12.0")
 
     testImplementation(libs.junit)

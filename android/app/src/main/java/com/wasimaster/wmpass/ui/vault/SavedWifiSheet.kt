@@ -89,7 +89,7 @@ fun SavedWifiSheet(
         val now = SavedWifi.state(context)
         state = now
         if (now == SavedWifi.State.READY) {
-            runCatching { SavedWifi.list() }
+            runCatching { SavedWifi.list(context) }
                 .onSuccess { found ->
                     networks = found
                     chosen.clear()
