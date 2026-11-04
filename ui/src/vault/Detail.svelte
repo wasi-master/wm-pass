@@ -155,7 +155,7 @@
         { id: 'destruct', label: 'Self-destruct…' },
         { id: 'folder', label: 'Move to folder…' },
         { id: 'tags', label: 'Tags…' },
-        { id: 'colour', label: 'Colour…' },
+        { id: 'colour', label: 'Color…' },
         { id: 'icon', label: 'Icon…' },
         { id: 'send', label: 'Send to a device…' },
         { separator: true },

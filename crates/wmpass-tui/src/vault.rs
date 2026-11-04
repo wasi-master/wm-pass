@@ -108,7 +108,7 @@ pub const KINDS: [(&str, &str); 12] = [
     ("ssh", "SSH keys"),
     ("api", "API keys"),
     ("database", "Databases"),
-    ("licence", "Licences"),
+    ("licence", "Licenses"),
     ("recovery", "Recovery codes"),
     ("wifi", "Wi-Fi"),
     ("document", "Documents"),
@@ -125,7 +125,7 @@ pub fn kind_name(kind: &str) -> &'static str {
         "ssh" => "SSH key",
         "api" => "API key",
         "database" => "Database",
-        "licence" => "Licence",
+        "licence" => "License",
         "recovery" => "Recovery codes",
         "wifi" => "Wi-Fi",
         "document" => "Document",
@@ -191,6 +191,10 @@ pub struct VaultUi {
     pub sort: Sort,
     pub rows: Vec<Row>,
     pub list: ListState,
+    /// Items marked with space, for acting on together. Kept while the same section is listed.
+    pub marked: Vec<String>,
+    /// The section the marks were made in.
+    marked_in: String,
     pub detail: Option<Detail>,
     pub lines: Vec<Line>,
     pub line: usize,
@@ -260,6 +264,8 @@ impl VaultUi {
             sort: Sort::Title,
             rows: Vec::new(),
             list: ListState::default(),
+            marked: Vec::new(),
+            marked_in: String::new(),
             detail: None,
             lines: Vec::new(),
             line: 0,
@@ -303,6 +309,46 @@ impl VaultUi {
         self.current().map(|r| r.id.clone())
     }
 
+    /// What a command acts on: the marked items, or else the selected one.
+    pub fn targets(&self) -> Vec<String> {
+        if self.marked.is_empty() { self.current_id().into_iter().collect() } else { self.marked.clone() }
+    }
+
+    /// Marks the selected row, or unmarks it, and steps down to the next.
+    pub fn toggle_mark(&mut self) {
+        let Some(id) = self.current_id() else { return };
+        self.marked_in = self.section_query();
+        if let Some(at) = self.marked.iter().position(|m| *m == id) {
+            self.marked.remove(at);
+        } else {
+            self.marked.push(id);
+        }
+        self.move_list(1);
+    }
+
+    /// Marks every row listed, or, when they all are already, none.
+    pub fn mark_all(&mut self) {
+        let all = !self.rows.is_empty() && self.rows.iter().all(|r| self.marked.contains(&r.id));
+        if all {
+            self.marked.clear();
+        } else {
+            self.marked_in = self.section_query();
+            for row in &self.rows {
+                if !self.marked.contains(&row.id) {
+                    self.marked.push(row.id.clone());
+                }
+            }
+        }
+    }
+
+    pub fn is_marked(&self, id: &str) -> bool {
+        self.marked.iter().any(|m| m == id)
+    }
+
+    fn section_query(&self) -> String {
+        self.sections.get(self.section).map(|s| s.query.clone()).unwrap_or_default()
+    }
+
     /// Whether the trash is what is listed.
     pub fn in_trash(&self) -> bool {
         self.sections.get(self.section).is_some_and(|s| s.query == "trashed")
@@ -322,6 +368,9 @@ impl VaultUi {
         self.folders = self.engine.folders().unwrap_or_default();
         self.build_sections(&all);
         self.refresh_list(keep);
+        // An item trashed, deleted or merged away is no longer marked.
+        let rows: Vec<&str> = self.rows.iter().map(|r| r.id.as_str()).collect();
+        self.marked.retain(|id| self.titles.contains_key(id) || rows.contains(&id.as_str()));
     }
 
     fn build_sections(&mut self, all: &[Row]) {
@@ -329,7 +378,7 @@ impl VaultUi {
         let count = |f: &dyn Fn(&Row) -> bool| all.iter().filter(|r| f(r)).count();
         let mut out = vec![
             Section::new(Glyph::All, "All items", "", all.len()),
-            Section::new(Glyph::Favourite, "Favourites", "favourite", count(&|r| r.favourite)),
+            Section::new(Glyph::Favourite, "Favorites", "favourite", count(&|r| r.favourite)),
             Section::new(Glyph::Codes, "With codes", "has:otp", count(&|r| r.has_otp)),
             Section::new(Glyph::Passkey, "Passkeys", "has:passkey", count(&|r| r.has_passkey)),
         ];
@@ -375,6 +424,9 @@ impl VaultUi {
 
     /// Runs the list query again.
     pub fn refresh_list(&mut self, keep: Option<String>) {
+        if !self.marked.is_empty() && self.marked_in != self.section_query() {
+            self.marked.clear();
+        }
         let query = self.query();
         self.rows = self.engine.list(&query, self.sort.arg()).unwrap_or_default();
         let at = keep

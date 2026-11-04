@@ -96,7 +96,7 @@
 {/if}
 
 <Group title="Settings" help="setting.sync_settings">
-  <Toggle title="Sync settings with the vault" sub="Your customisations follow this vault to your other devices. Protection settings stay here." icon="tune" pref="sync_settings" />
+  <Toggle title="Sync settings with the vault" sub="Your customizations follow this vault to your other devices. Protection settings stay here." icon="tune" pref="sync_settings" />
   {#if prefs.v.sync_settings}
     <Row title="Settings that stay on this device" sub={skipped.length ? `${skipped.length} kept here` : 'None: everything syncs'} icon="devices" help="setting.sync_skip" chevron onclick={() => (choosing = !choosing)} />
     {#if choosing}

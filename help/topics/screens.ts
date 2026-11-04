@@ -189,7 +189,7 @@ export const screens = [
       ...LIST_ROWS,
       'Clicking a row opens the item, and [[setting.tap_action]] can make it copy something as well. Double-clicking does what [[setting.double_click]] says. The copy button on a row\'s right edge shows when you point at it.',
       'Right-click a row for **Copy password**, **Copy username**, **Copy code**, **Open site**, **Edit**, **Duplicate**, favorites, **Pin to the top**, **Move to hidden shelf** and **Move to trash**.',
-      'Arrow keys move up and down the list. Hold Ctrl, or Cmd on a Mac, and click to choose several rows, or Shift-click to choose a run of them. The right pane then offers to add them to favorites, pin them, put them on the hidden shelf, or move them to the trash.',
+      'Arrow keys move up and down the list. Hold Ctrl, or Cmd on a Mac, and click to choose several rows, or Shift-click to choose a run of them. The right pane then offers to move them to a folder, give them a color or tags, link them together so each lists the others under Linked, add them to favorites, pin them, put them on the hidden shelf, or move them to the trash.',
     ],
     when: 'An empty vault offers **Add a login** and **Import**. A search that finds nothing offers **Add it as a login**, with what you typed as its name.',
     tour: 'tour.first_item',

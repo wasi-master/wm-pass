@@ -604,7 +604,7 @@ export const features = [
     why: 'Moving everything at once is not always possible. A work account on a Bitwarden server, or a KeePass file shared with others, can stay where it is while you use WM Pass for it.',
     how: [
       'Add one under Settings, Sync and accounts, with **Add an account**, or at the door with **Add another vault or account**. Choose **Bitwarden**, **Bitwarden EU**, **Own server** or **KeePass file**.',
-      'It then appears at the door beside your own vault. Choose it there and type its own password.',
+      'An account opens in place of your vault, so adding one under Settings offers **Sign in now**: the vault locks and the door opens with the account chosen and its password asked for. Added at the door, it comes chosen there. Later, it appears at the door beside your own vault; choose it and type its own password.',
       'For a server account, your password is never sent: a key made from it proves who you are, as with any Bitwarden app. The first sign-in from a new device may need a code Bitwarden emails you, or a two-step code, typed beside the password.',
       'Changes go up to the server after each edit. If it cannot be reached they wait, and WM Pass keeps an offline copy, encrypted as the server\'s is.',
       ACCOUNT_KDBX,
@@ -618,7 +618,7 @@ export const features = [
       extension: {
         how: [
           'Add one under Settings, Sync and accounts, with **Add an account**, or at the door with **Add another vault or account**. The extension can open a **KeePass file** only: signing in to a server is in the desktop and phone apps.',
-          'It then appears at the door beside your own vault. Choose it there and type its own password.',
+          'Added under Settings, it offers **Sign in now**, which locks the vault and opens the door with the file chosen. Added at the door, it comes chosen there. Later, it appears at the door beside your own vault; choose it and type its own password.',
           'The extension keeps its own copy of the file you choose, since a browser cannot reach the original again. Changes stay in that copy, not in the original file.',
         ],
         caveats: ACCOUNT_CAVEATS,

@@ -82,7 +82,7 @@ Give it a name, then choose **Light** or **Dark** for the side you are coloring.
 
 There are eleven colors: the accent, the background, three levels of surface, three of text, and danger, warning and information. Beside each is its contrast against the background.
 
-**Corners** goes from square to 28 px. **Font** is System, Inter, Serif or Mono.
+**Corners** goes from square to 28 px. **Font** is System, Inter, Serif, Mono, or a .ttf or .otf file you add with **Add a font file**, which is kept with the app's files. The sample line under the fonts is drawn in the one chosen.
 
 **Save and use** adds it under Yours and switches to it.
 
@@ -91,6 +91,10 @@ There are eleven colors: the accent, the background, three levels of surface, th
 Changing the accent resets the colors worked out from it, such as the tint behind selected things, so they follow the new one.
 
 Text that falls under a readable contrast with its background is darkened or lightened when the theme is drawn, so a faint color may come out stronger than you picked.
+
+Words on the accent, as on the main button, use white or black, whichever reads better, unless the theme names a color for them that reads at 4.5:1.
+
+A font file stays on the device it was added on. A theme shared or synced to another device uses the system font there unless that device has the same file.
 
 #### On Android
 

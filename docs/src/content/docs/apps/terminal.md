@@ -72,7 +72,7 @@ Press `?` for every key, or `:` for a list of commands you can search by name. T
 | Key | Does |
 |---|---|
 | `/` | Search, with the same words as the apps: `tag:work`, `kind:card`, `has:otp`, `weak` |
-| `c` | Copy the password |
+| `c` | Copy the password, or for an item with none, its one-time code or else its username |
 | `u` | Copy the username |
 | `t` | Copy the one-time code |
 | `r` | Show the password for a few seconds |
@@ -93,6 +93,17 @@ Press `i` on a finding to leave that item out of that check only, for a site wit
 
 The terminal app makes no network calls, so it has no breach check. Run one in the phone or desktop app.
 
+## Several items at once
+
+In the list, `Space` marks the item under the cursor and steps to the next; press it again on a marked item to unmark it. Marked items show a tick, and the list's title counts them. While any are marked, `f`, `p`, `m`, `+`, `-` and `d` act on all of them, and so do these in the `:` palette:
+
+- **Color**, with the site's own color or one of twelve
+- **Put on or take off the hidden shelf**
+- **Link the marked items together**, so each lists the others under Linked
+- **Mark all listed, or none**
+
+In the trash, `u` and `D` restore or delete every marked item. `Esc` unmarks them all, and so does moving to another part of the sidebar. Moving, coloring, linking, hiding and trashing unmark them when done; tagging, pinning and starring keep them marked for the next step.
+
 ## Editing
 
 The editor has the same fields as the phone and desktop apps for every kind. In a password field, `Ctrl+G` fills in a strong one. A secret field opens empty and stays as it was unless you type something, so fixing a title never brings the password onto the screen. `Ctrl+R` shows what you typed, or loads the saved value if you want to change part of it. `Ctrl+S` saves.
@@ -107,9 +118,9 @@ Over SSH there is no local clipboard to reach, so copies go through the terminal
 
 A shown password hides itself after 20 seconds. The vault locks after 5 minutes without a key press; change that under `:` then Lock after. The app draws on the terminal's alternate screen, so nothing is left in the scrollback when it closes.
 
-## Colours and icons
+## Colors and icons
 
-The default theme follows the WM Pass shield on a dark background. `Ctrl+T` cycles through a light theme, a softer dark one, one that uses only the terminal's own sixteen colours, and one with no colour at all. Terminals without 24-bit colour start on the sixteen-colour theme, and setting `NO_COLOR` turns colour off.
+The default theme follows the WM Pass shield on a dark background. `Ctrl+T` cycles through a light theme, a softer dark one, one that uses only the terminal's own sixteen colors, and one with no color at all. Terminals without 24-bit color start on the sixteen-color theme, and setting `NO_COLOR` turns color off. An item's color from the apps shows as the nearest of the terminal's own.
 
 If your terminal uses a [Nerd Font](https://www.nerdfonts.com), WM Pass can draw proper icons for each kind of item, the sidebar and the tabs. Turn them on with `:` then Nerd Font icons, or set `WMPASS_ICONS=nerd`. They are off at first because without such a font every icon shows as an empty box.
 

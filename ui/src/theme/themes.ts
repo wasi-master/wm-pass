@@ -188,6 +188,21 @@ export function readTheme(text: string): ThemeFile {
   };
 }
 
+/**
+ * Ink for labels on the accent. The theme's own onPrimary wins only when it reads at 4.5:1: a theme
+ * with a pale accent and white on it was unreadable. A theme that names none gets its background
+ * where that reads. Otherwise whichever of white or black reads best.
+ */
+export function onBrand(c: ThemeColors, primary: Rgb = rgb(c.primary)): Rgb {
+  const own = c.onPrimary ? rgb(c.onPrimary) : null;
+  if (own && contrast(own, primary) >= 4.5) return own;
+  const ground = rgb(c.background);
+  if (!own && contrast(ground, primary) >= 4.5) return ground;
+  const inks: Rgb[] = [[1, 1, 1], [0, 0, 0]];
+  if (own) inks.unshift(own);
+  return inks.reduce((best, ink) => (contrast(ink, primary) > contrast(best, primary) ? ink : best));
+}
+
 /** Puts a theme on the page as custom properties. */
 export function applyTheme(theme: ThemeFile, dark: boolean, black: boolean, root: HTMLElement = document.documentElement) {
   const chosen = dark ? (theme.dark ?? theme.light) : (theme.light ?? theme.dark);
@@ -203,10 +218,7 @@ export function applyTheme(theme: ThemeFile, dark: boolean, black: boolean, root
   const text = rgb(c.text);
   const primary = rgb(c.primary);
   const danger = rgb(c.danger);
-  let on: Rgb;
-  if (c.onPrimary) on = rgb(c.onPrimary);
-  else if (contrast(rgb(c.background), primary) >= 4.5) on = rgb(c.background);
-  else on = contrast([1, 1, 1], primary) >= contrast([0, 0, 0], primary) ? [1, 1, 1] : [0, 0, 0];
+  const on = onBrand(c, primary);
   const onDanger: Rgb = contrast([1, 1, 1], danger) >= contrast([0, 0, 0], danger) ? [1, 1, 1] : [0, 0, 0];
   const vars: Record<string, string> = {
     '--bg': hexOf(bg),

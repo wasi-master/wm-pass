@@ -130,6 +130,8 @@ pub struct Detail {
     pub questions: Vec<String>,
     /// Where the site lets you change the password, for a login saved for a website.
     pub change_password: Option<String>,
+    /// The items this one lists under Linked.
+    pub links: Vec<String>,
 }
 
 /// A live one-time code.
@@ -669,19 +671,13 @@ impl Engine {
         self.change("entry.common", &args, &[]).map(drop)
     }
 
-    /// Moves to the trash.
-    pub fn trash(&mut self, id: &str) -> Result<(), String> {
-        self.change("entry.trash", &json!({"id": id}), &[]).map(drop)
-    }
-
-    /// Brings back from the trash.
-    pub fn restore(&mut self, id: &str) -> Result<(), String> {
-        self.change("entry.restore", &json!({"id": id}), &[]).map(drop)
-    }
-
-    /// Deletes for good, with its attachment files.
-    pub fn purge(&mut self, id: &str) -> Result<(), String> {
-        let reply = self.change("entry.purge", &json!({"id": id}), &[])?;
+    /// Does one thing to several entries: `op` is trash, restore, purge, folder, color, favourite,
+    /// pin, hide, tag_add or tag_remove, with its value in `extra`.
+    pub fn bulk(&mut self, ids: &[String], op: &str, extra: Value) -> Result<(), String> {
+        let mut args = if extra.is_object() { extra } else { json!({}) };
+        args["ids"] = json!(ids);
+        args["op"] = json!(op);
+        let reply = self.change("entries.bulk", &args, &[])?;
         self.delete_blobs(&reply);
         Ok(())
     }

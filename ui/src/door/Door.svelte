@@ -25,7 +25,8 @@
   let now = $state(Date.now());
   let strength = $state<StrengthView | null>(null);
   let needed = $state<NeededFactor[] | null>(null);
-  let source = $state<AccountRef | null>(null);
+  // An account just added comes chosen, with its password asked for straight away.
+  let source = $state<AccountRef | null>(accounts.takeSignInNext());
   let accountKeyFile = $state<Uint8Array | null>(null);
   let code = $state('');
   let asksCode = $state(false);
@@ -379,7 +380,18 @@
   />
 {/if}
 {#if sheet === 'account'}
-  <AddAccount onclose={() => (sheet = null)} />
+  <AddAccount
+    onclose={() => (sheet = null)}
+    onadded={(ref) => {
+      creating = false;
+      source = ref;
+      password = '';
+      message = null;
+      needed = null;
+      asksCode = false;
+      accountKeyFile = null;
+    }}
+  />
 {/if}
 
 {#if sheet === 'shares'}
