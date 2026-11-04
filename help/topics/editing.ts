@@ -1,8 +1,24 @@
-// Settings, Editor, Item page, Codes, Generator and Keyboard shortcuts: adding and editing items, reading them, and the keys that drive the window.
+// Settings, Adding and editing (the hub, Editor, Generator), Item page, Codes, Generator and Keyboard shortcuts: adding and editing items, reading them, and the keys that drive the window.
 
 import type { Topic } from '../schema.ts';
 
 export const editing = [
+  // ---- the hub ----
+
+  {
+    id: 'page.editing',
+    kind: 'page',
+    title: 'Adding and editing',
+    page: 'editing',
+    what: 'What a new item starts with, and how the editor opens. Each row opens its own page.',
+    how: [
+      '**New items** holds [[page.add|Add menu]], for which types the add button offers and in what order, and [[page.generator|Generator]], for what a new password looks like.',
+      '**Changing them** holds [[page.editor|Editor]], for which sections start open and which start folded.',
+    ],
+    related: ['page.add', 'page.generator', 'page.editor'],
+    words: 'new item editor generator add menu',
+  },
+
   // ---- editor ----
 
   {

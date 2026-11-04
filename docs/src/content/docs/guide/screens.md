@@ -253,8 +253,6 @@ The fields that kind of item needs come next. For some kinds, the less used ones
 
 Further sections open when you need them: **Websites** for a login, **One-time code** for a login or code, **Notes**, **More fields** for fields of your own, hidden or not, **Security questions** for a login, and **Organize** for the folder, tags, icon, color and favorite. A section that already holds something starts open; [Editor](/guide/settings/editor/) sets which empty ones do.
 
-In **One-time code**, paste the site's setup key or `otpauth://` link, or choose **Scan its QR code**. On a computer, that reads the code with the webcam, or from a screenshot through **Choose a picture**. The picture is read on your device and sent nowhere.
-
 A secret that is already saved shows as **Saved. Click to change** and stays in the vault until you click it, so fixing a name never brings the password onto the screen.
 
 A password field has a show button, and **Generate**, which opens the generator; **Use this** puts the result in the field. While you type a password, a meter under it shows how strong it is. A username field has **Use an alias**. An SSH key's private key field has **Generate a key**.

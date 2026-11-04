@@ -1346,7 +1346,7 @@ A theme holds colors and a few settings. Nothing from your vault is in it.
 
 Themes use the same format on the phone and the computer, so a theme shared from one opens on the other.
 
-See also [Theme](/guide/settings/themes/), [Appearance](/guide/settings/look/), [Dark mode](/guide/settings/look/#setting-look).
+See also [Theme](/guide/settings/themes/), [Style and theme](/guide/settings/look/), [Dark mode](/guide/settings/look/#setting-look).
 
 <a id="feature-lock-tile"></a>
 
@@ -1435,7 +1435,7 @@ The style, theme, animations, the app, site and settings icons, and the list lay
 
 Your vault, dark mode, accent and your other settings stay as they were. Leaving the app, locking it, the screen going off or swiping it away never counts.
 
-See also [Appearance](/guide/settings/appearance/).
+See also [Appearance](/guide/settings/appearance/), [Style and theme](/guide/settings/look/).
 
 <a id="feature-home-widget"></a>
 

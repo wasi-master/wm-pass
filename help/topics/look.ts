@@ -1,14 +1,41 @@
-// Settings, Appearance, Theme and Icons: colours, dark mode, sizes, motion, themes and how icons are drawn.
+// Settings, Appearance: the hub, Style and theme, Theme and Icons: colours, dark mode, sizes, motion, themes and how icons are drawn.
 
 import type { Topic } from '../schema.ts';
 
 export const look = [
+  // ---- the hub ----
+
+  {
+    id: 'page.appearance',
+    kind: 'page',
+    title: 'Appearance',
+    page: 'appearance',
+    what: 'How WM Pass looks, and what its main screens show. Each row opens its own page.',
+    how: [
+      '**How it looks** holds [[page.look|Style and theme]], for the theme, dark mode, row height, text size and animations, and [[page.icons|Icons]], for the app\'s own icons, site icons and the icons in Settings.',
+      '**What it shows** holds a page for each main part of the window: [[page.list|Vault list]], [[page.navigation|Sidebar]], [[page.entry|Item page]] and [[page.codes|Codes]]. On a Mac, [[page.widgets|Widgets]] is there too.',
+    ],
+    caveats: 'All of these can be carried to another computer, or put back, under Settings, Settings file.',
+    related: ['page.look', 'page.themes', 'page.icons', 'page.list', 'page.file'],
+    words: 'customize look theme layout',
+    on: {
+      android: {
+        how: [
+          '**How it looks** holds [[page.look|Style and theme]], for the style, theme, dark mode, animations and vibration, and [[page.icons|Icons]], for the app\'s own icons, site icons and the icons in Settings.',
+          '**What it shows** holds a page for each main screen: [[page.list|Vault list]], [[page.navigation|Navigation]], [[page.entry|Item page]] and [[page.codes|Codes]].',
+        ],
+        caveats: 'All of these can be carried to another phone, or put back, under Settings, Settings file.',
+        related: ['page.look', 'page.themes', 'page.icons', 'page.list', 'page.file', 'feature.launch_guard'],
+      },
+    },
+  },
+
   // ---- look ----
 
   {
     id: 'page.look',
     kind: 'page',
-    title: 'Appearance',
+    title: 'Style and theme',
     page: 'look',
     what: 'The theme, dark mode, row height, text size and animations.',
     how: 'The theme decides the colors, and Dark mode decides whether you see its light side or its dark one. Row height and Text size change how much fits in the window.',
@@ -16,7 +43,6 @@ export const look = [
     words: 'look colors dark light font size',
     on: {
       android: {
-        title: 'Style and theme',
         what: 'The style, theme, dark mode, motion and vibration.',
         how: 'Style chooses between the plain Android look and Glass. The theme decides the colors, and Dark mode decides whether you see its light side or its dark one.',
       },
