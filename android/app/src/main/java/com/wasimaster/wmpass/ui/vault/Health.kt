@@ -134,7 +134,7 @@ private fun issuesOf(h: HealthView): List<Issue> = listOf(
     Issue("duplicates", "Duplicate items", "The same login saved more than once. Merging keeps both histories.", PassIcons.Layers, h.duplicates.flatten(), false),
     Issue(
         "similar", "Maybe the same account",
-        "These share a password and look like one account saved twice: another spelling of the name, an email in place of a username, or another address for the same site.",
+        "These share a password and look like one account saved twice: another spelling of the name, an email in place of a username or phone number, or another address for the same site.",
         PassIcons.Layers, h.similar.flatten(), false,
     ),
 )
@@ -431,16 +431,21 @@ private fun IssueCard(
                 when {
                     sets.isNotEmpty() -> sets.forEach { set ->
                         Hairline()
-                        Text(
-                            "${set.size} items share one password",
-                            color = colors.textMid,
-                            style = MaterialTheme.typography.labelLarge,
-                            modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp),
-                        )
-                        set.forEach { line(it, indent = true) }
-                        similar.filter { group -> group.all { it in set } }.forEach { group ->
-                            MergeLine("These ${group.size} look like one account. Merge them") { merging = group }
+                        SharedPasswordHeader(set)
+                        // The ones that look like one account come first, side by side, with the
+                        // offer to merge them right under them; then the rest of the set.
+                        val inSet = similar.filter { group -> group.all { it in set } }
+                        inSet.forEach { group ->
+                            group.forEach { line(it, indent = true) }
+                            MergeLine("${namesOf(group, entries)} look like one account. Merge them", indent = true) { merging = group }
                         }
+                        set.filter { id -> inSet.none { id in it } }.forEach { line(it, indent = true) }
+                    }
+                    groups.isNotEmpty() -> groups.forEach { group ->
+                        Hairline()
+                        group.forEach { line(it, indent = true) }
+                        val first = entries.firstOrNull { it.id == group.first() }?.title.orEmpty()
+                        MergeLine(if (issue.key == "similar") "Merge ${namesOf(group, entries)}" else "Merge these ${group.size} copies of $first", indent = true) { merging = group }
                     }
                     counts.isNotEmpty() -> {
                         Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -452,11 +457,6 @@ private fun IssueCard(
                         ordered.forEach { line(it) }
                     }
                     else -> issue.ids.distinct().forEach { line(it) }
-                }
-                groups.forEach { group ->
-                    val first = entries.firstOrNull { it.id == group.first() } ?: return@forEach
-                    Hairline()
-                    MergeLine(if (issue.key == "similar") "Merge ${group.size} items for ${first.title}" else "Merge ${group.size} copies of ${first.title}") { merging = group }
                 }
             }
         }
@@ -472,14 +472,53 @@ private fun IssueCard(
     merging?.let { group -> MergeSheet(group, { merging = null }) }
 }
 
+/** "A and B", or "A, B and C", by the items' titles, so an offer says which items it means. */
+private fun namesOf(ids: List<String>, entries: List<Summary>): String {
+    val names = ids.map { id -> entries.firstOrNull { it.id == id }?.title?.ifEmpty { null } ?: "Untitled" }
+    return if (names.size < 2) names.joinToString() else names.dropLast(1).joinToString(", ") + " and " + names.last()
+}
+
+/**
+ * Heads one set of items that share a password, with the password itself behind an eye, so
+ * the set can be told by what it shares and not only by which items are in it.
+ */
 @Composable
-private fun MergeLine(text: String, onClick: () -> Unit) {
+private fun SharedPasswordHeader(set: List<String>) {
+    val colors = palette
+    val shell = LocalShell.current
+    var shown by remember(set) { mutableStateOf<String?>(null) }
+    Row(
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("${set.size} items share one password", color = colors.textMid, style = MaterialTheme.typography.labelLarge)
+            if (shown != null) {
+                com.wasimaster.wmpass.ui.parts.SecretText(shown, style = PassType.secretSmall, maxLines = 2)
+            }
+        }
+        com.wasimaster.wmpass.ui.parts.RowIconButton(
+            if (shown != null) PassIcons.VisibilityOff else PassIcons.Visibility,
+            if (shown != null) "Hide the password" else "Show the password",
+        ) {
+            if (shown != null) {
+                shown = null
+            } else {
+                shell.launch { shown = runCatching { Pass.reveal(set.first(), "password").consumeText() }.getOrNull() }
+            }
+        }
+        com.wasimaster.wmpass.ui.parts.RowIconButton(PassIcons.ContentCopy, "Copy the password") { shell.copyPassword(set.first()) }
+    }
+}
+
+@Composable
+private fun MergeLine(text: String, indent: Boolean = false, onClick: () -> Unit) {
     val colors = palette
     Row(
         Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 14.dp),
+            .padding(start = if (indent) 34.dp else 18.dp, end = 18.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(PassIcons.Layers, null, tint = colors.primary, modifier = Modifier.size(20.dp))
@@ -511,8 +550,36 @@ private fun HealthItemSheet(issue: Issue, entry: Summary, onDismiss: () -> Unit)
     val sites by androidx.compose.runtime.produceState<List<kotlinx.serialization.json.JsonElement>>(emptyList(), entry.id) {
         if (issue.key == "insecure") value = runCatching { Pass.detail(entry.id).sites }.getOrDefault(emptyList())
     }
+    var shown by remember(entry.id) { mutableStateOf<String?>(null) }
     PassSheet(onDismiss, entry.title.ifEmpty { "Untitled" }) {
         Text(issue.why, color = colors.textMid, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 8.dp))
+        if (entry.hasPassword) {
+            // The password itself, a tap away, so a reused or weak one can be seen without
+            // leaving Health.
+            Row(Modifier.fillMaxWidth().padding(start = 4.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                GlyphTile(PassIcons.Key, colors.primary, size = 42.dp)
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Password", color = colors.textMid, style = MaterialTheme.typography.bodySmall)
+                    com.wasimaster.wmpass.ui.parts.SecretText(shown, style = PassType.secretSmall, maxLines = 3)
+                }
+                com.wasimaster.wmpass.ui.parts.RowIconButton(
+                    if (shown != null) PassIcons.VisibilityOff else PassIcons.Visibility,
+                    if (shown != null) "Hide the password" else "Show the password",
+                ) {
+                    if (shown != null) {
+                        shown = null
+                    } else {
+                        shell.launch { shown = runCatching { Pass.reveal(entry.id, "password").consumeText() }.getOrNull() }
+                    }
+                }
+                com.wasimaster.wmpass.ui.parts.RowIconButton(PassIcons.ContentCopy, "Copy the password") { shell.copyPassword(entry.id) }
+            }
+        }
+        SheetRow(PassIcons.Description, "Open the item") {
+            onDismiss()
+            shell.open(entry.id)
+        }
         if (issue.key in setOf("breached", "reused", "weak", "old") && entry.hasPassword) {
             SheetRow(PassIcons.Password, "Set a new password", "Make one here and save it, without opening the item") { setting = true }
         }
@@ -538,10 +605,6 @@ private fun HealthItemSheet(issue: Issue, entry: Summary, onDismiss: () -> Unit)
                 }
                 SheetRow(PassIcons.OpenInNew, "Try it with https first", "Opens the site that way in your browser") { shell.openUrl(secure) }
             }
-        }
-        SheetRow(PassIcons.Key, "Open the item") {
-            onDismiss()
-            shell.open(entry.id)
         }
         SheetRow(PassIcons.Edit, "Edit") {
             onDismiss()

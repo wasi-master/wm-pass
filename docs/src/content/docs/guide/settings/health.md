@@ -188,6 +188,8 @@ Two logins with one password count when they are for the same site, or one is na
 
 Two different email addresses are two accounts, so they do not count unless one is a typo of the other.
 
+Two logins whose usernames are different kinds, such as an email and a phone number, or an email and a name, also count when they are surely for the same site: a website in common, or the same name for it. Many sites let one account sign in with any of them. Two different names, like two different emails, stay two accounts. When you merge, the username that loses can be kept as a field, so neither is lost.
+
 #### Limits
 
 It is a guess from names and addresses. Look before you merge: the merge asks which value wins wherever the two differ.

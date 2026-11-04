@@ -258,6 +258,8 @@ When the time set under [Clear the clipboard after](/guide/settings/security/#se
 
 Usernames, websites and other plain fields are copied as they are, and not cleared.
 
+On Android, a password just made with the generator, its widget or **Set a new password** is not cleared. It is saved nowhere yet and is usually on its way into a sign-up or change-password form, so clearing it there would lose it. It is still marked sensitive, and goes when you copy something else.
+
 #### When to use it
 
 Where you can, fill instead of copying: the browser extension and auto-type do not use the clipboard.

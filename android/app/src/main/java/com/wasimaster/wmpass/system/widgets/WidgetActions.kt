@@ -54,7 +54,7 @@ class GenerateAction : ActionCallback {
         runCatching { generator.roll() }.getOrElse { return }
         val value = generator.value
         if (value.isEmpty()) return
-        withContext(Dispatchers.Main) { SecureClipboard.copy(context.applicationContext, "Password", SecretBytes(value.toByteArray())) }
+        withContext(Dispatchers.Main) { SecureClipboard.copyGenerated(context.applicationContext, "Password", SecretBytes(value.toByteArray())) }
         WidgetFeed.flash(context, "generator")
     }
 }

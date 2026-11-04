@@ -137,6 +137,8 @@ fun SyncScreen() {
     var placeOpen by remember { mutableStateOf<com.wasimaster.wmpass.system.Destination?>(null) }
     var placeGone by remember { mutableStateOf<com.wasimaster.wmpass.system.Destination?>(null) }
     var fileMessage by remember { mutableStateOf<String?>(null) }
+    // Bumped after each sync, so the place rows read their last result again.
+    var placeTick by remember { mutableIntStateOf(0) }
     WmScreen("Sync and accounts", route = "settings/sync", onBack = { shell.nav.popBackStack() }) {
         Column(Modifier.padding(horizontal = 16.dp)) {
             account?.let { id ->
@@ -179,16 +181,24 @@ fun SyncScreen() {
             GroupCard {
                 places.forEachIndexed { index, place ->
                     if (index > 0) Hairline(inset = 70.dp)
+                    // A place that failed last time says why on its own row, in red, as on the backups screen.
+                    val failed = remember(place.id, placeTick) { Destinations.lastRun(context, place.id)?.problem }?.takeIf { place.sync }
                     // The row opens the place, to change or drop it; the switch only says whether it syncs.
                     Row(
                         Modifier.fillMaxWidth().clickable { placeOpen = place }.padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        GlyphTile(placeIcon(place.kind), colors.primary, size = 40.dp)
+                        GlyphTile(placeIcon(place.kind), if (failed != null) colors.danger else colors.primary, size = 40.dp)
                         Spacer(Modifier.width(14.dp))
                         Column(Modifier.weight(1f)) {
                             Text(place.label, color = colors.text, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(if (place.sync) "Syncs this vault" else "Not used for sync", color = colors.textMid, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                            Text(
+                                failed ?: if (place.sync) "Syncs this vault" else "Not used for sync",
+                                color = if (failed != null) colors.danger else colors.textMid,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
                         PassSwitch(place.sync) { on -> Destinations.put(context, place.copy(sync = on)) }
                     }
@@ -203,7 +213,9 @@ fun SyncScreen() {
                     fileSyncing = true
                     scope.launch {
                         FileSync.now(context)
-                        fileMessage = FileSync.problem.value ?: "Up to date."
+                        // A failure shows on the row of the place that failed, so here only success is said.
+                        fileMessage = if (FileSync.problem.value == null) "Up to date." else null
+                        placeTick++
                         fileSyncing = false
                     }
                 }

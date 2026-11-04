@@ -215,11 +215,15 @@ private fun NewInboxSheet(onDismiss: () -> Unit, onMade: (String) -> Unit) {
     val domain = rememberTextFieldState()
     var busy by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
+    // What the service said shows under the chosen service, or under the server for one's own.
     PassSheet(onDismiss, "New address") {
         Providers.forEach { choice ->
             SheetRow(if (choice.own) PassIcons.Dns else PassIcons.Inbox, choice.name, choice.about, selected = provider == choice.id) {
                 provider = choice.id
                 problem = null
+            }
+            if (!choice.own && provider == choice.id) {
+                problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 60.dp, bottom = 6.dp)) }
             }
         }
         val own = Providers.first { it.id == provider }.own
@@ -227,6 +231,7 @@ private fun NewInboxSheet(onDismiss: () -> Unit, onMade: (String) -> Unit) {
             Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 SheetField(base, "Server, like https://mail.example.com")
                 if (provider == "inbucket") SheetField(domain, "The domain it takes mail for")
+                problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 4.dp)) }
                 Text(
                     "Plain http works only for this phone and Tailscale addresses.",
                     color = colors.textLow,
@@ -237,10 +242,6 @@ private fun NewInboxSheet(onDismiss: () -> Unit, onMade: (String) -> Unit) {
         }
         Spacer(Modifier.height(8.dp))
         SheetField(label, "What it is for (optional)")
-        problem?.let {
-            Spacer(Modifier.height(8.dp))
-            Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 4.dp))
-        }
         Spacer(Modifier.height(14.dp))
         val ready = !own || (base.text.isNotBlank() && (provider != "inbucket" || domain.text.isNotBlank()))
         PrimaryButton(if (busy) "Making the address…" else "Make the address", Modifier.fillMaxWidth(), enabled = ready && !busy, icon = PassIcons.Inbox) {

@@ -464,7 +464,8 @@ fun AliasPickerSheet(note: String, onDismiss: () -> Unit, onPicked: (String) -> 
     val entries by Pass.entries.collectAsStateWithLifecycle()
     val ready = remember(entries) { AliasServices.filter { service -> entries.any { it.kind == "api" && it.title == service.keyTitle } } }
     var busy by remember { mutableStateOf<String?>(null) }
-    var problem by remember { mutableStateOf<String?>(null) }
+    // The service that last refused, by id, and why. It shows under that service's row.
+    var failed by remember { mutableStateOf<Pair<String, String>?>(null) }
     com.wasimaster.wmpass.ui.vault.PassSheet(onDismiss, "Use an alias") {
         if (ready.isEmpty()) {
             Text(
@@ -485,7 +486,7 @@ fun AliasPickerSheet(note: String, onDismiss: () -> Unit, onPicked: (String) -> 
                     "A new address that forwards to you",
                 ) {
                     busy = service.id
-                    problem = null
+                    failed = null
                     scope.launch {
                         try {
                             val key = serviceKey(service.keyTitle).orEmpty().toByteArray()
@@ -496,13 +497,15 @@ fun AliasPickerSheet(note: String, onDismiss: () -> Unit, onPicked: (String) -> 
                             key.fill(0)
                             onPicked(made["address"]!!.jsonPrimitive.content)
                         } catch (failure: NativeFailure) {
-                            problem = failure.message
+                            failed = service.id to (failure.message ?: "${service.name} did not make an address.")
                         }
                         busy = null
                     }
                 }
+                failed?.takeIf { it.first == service.id }?.let { (_, why) ->
+                    Text(why, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 60.dp, bottom = 6.dp))
+                }
             }
-            problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
         }
     }
 }

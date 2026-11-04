@@ -542,8 +542,10 @@ private fun rememberPicture(site: String?, app: String?, brand: Boolean, chosen:
         if (source == "app") com.wasimaster.wmpass.system.ItemIcons.remembered(com.wasimaster.wmpass.system.ItemIcons.appKey(app!!))?.let { it to true }
         else com.wasimaster.wmpass.system.ItemIcons.remembered(com.wasimaster.wmpass.system.ItemIcons.siteKey(site!!))?.let { it to false }
     }
-    var picture by remember(plan, look.from) { mutableStateOf(known()) }
-    androidx.compose.runtime.LaunchedEffect(plan, look.from) {
+    // Keyed on the site and app themselves: the plan is only a list of sources, the same for
+    // every site, so a row reused for another item would otherwise keep the last one's picture.
+    var picture by remember(plan, look.from, site, app) { mutableStateOf(known()) }
+    androidx.compose.runtime.LaunchedEffect(plan, look.from, site, app) {
         if (picture != null) return@LaunchedEffect
         for (source in plan) {
             val found = if (source == "app") {
