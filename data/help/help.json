@@ -5490,7 +5490,7 @@
       },
       {
        "t": "text",
-       "s": ", the logins are grouped by the password they share, so each group is one password to change."
+       "s": ", the logins are grouped by the password they share, so each group is one password to change. The eye beside a group shows the password it shares, and the copy button copies it."
       }
      ]
     },
@@ -5499,7 +5499,15 @@
      "runs": [
       {
        "t": "text",
-       "s": "Tapping an item offers what fixes it, there and then. "
+       "s": "Tapping an item shows its password behind an eye, with a copy button, and offers what fixes it, there and then. "
+      },
+      {
+       "t": "strong",
+       "s": "Open the item"
+      },
+      {
+       "t": "text",
+       "s": " comes first. "
       },
       {
        "t": "strong",
@@ -5507,7 +5515,7 @@
       },
       {
        "t": "text",
-       "s": " makes one with the generator and saves it, the old one kept in the item's history. "
+       "s": " makes one with the generator and saves it, the old one kept in the item's history; once you copy it, it offers to open the site, or its change-password page, and the app when it is installed. "
       },
       {
        "t": "strong",
@@ -5556,7 +5564,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Where items that share a password look like one account saved twice, such as an email in one and a username in the other, Health offers to merge them, under "
+       "s": "Where items that share a password look like one account saved twice, such as an email in one and a username or phone number in the other, Health offers to merge them, under "
       },
       {
        "t": "strong",
@@ -5572,7 +5580,7 @@
       },
       {
        "t": "text",
-       "s": ". "
+       "s": ". Those items are listed together, and the offer right under them names them. "
       },
       {
        "t": "link",
@@ -8275,6 +8283,15 @@
       {
        "t": "text",
        "s": "Two different email addresses are two accounts, so they do not count unless one is a typo of the other."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Two logins whose usernames are different kinds, such as an email and a phone number, or an email and a name, also count when they are surely for the same site: a website in common, or the same name for it. Many sites let one account sign in with any of them. Two different names, like two different emails, stay two accounts. When you merge, the username that loses can be kept as a field, so neither is lost."
       }
      ]
     }

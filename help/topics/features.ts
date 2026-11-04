@@ -261,6 +261,7 @@ export const features = [
       'The message that says something was copied shows how long it stays, with a **Clear now** button.',
       'When the time set under [[setting.clipboard_seconds]] is up, WM Pass empties the clipboard only if your secret is still on it. Anything you copied since is left alone.',
       'Usernames, websites and other plain fields are copied as they are, and not cleared.',
+      'On Android, a password just made with the generator, its widget or **Set a new password** is not cleared. It is saved nowhere yet and is usually on its way into a sign-up or change-password form, so clearing it there would lose it. It is still marked sensitive, and goes when you copy something else.',
     ],
     when: 'Where you can, fill instead of copying: the browser extension and auto-type do not use the clipboard.',
     caveats: [

@@ -143,6 +143,7 @@ export const security = [
     how: [
       'A copied secret is marked so that clipboard history and clipboard managers that respect the mark leave it out.',
       'When the time is up, WM Pass empties the clipboard only if your secret is still on it. If you have copied something else since, that is left alone.',
+      'On Android, a password just made with the generator, its widget or **Set a new password** is not cleared. It is saved nowhere yet and is usually on its way into a sign-up or change-password form, so clearing it there would lose it. It is still marked sensitive, and goes when you copy something else.',
       'The message that says something was copied has a **Clear now** button.',
     ],
     effects: [
