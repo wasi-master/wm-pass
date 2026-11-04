@@ -310,15 +310,16 @@ class PassStore {
     }
   }
 
-  /** Opens with a key the system's own store holds. The key never reaches this page. */
+  /** Opens with a key the system's keyring or a passkey holds. The key never reaches this page. */
   async unlockQuick() {
-    const desktop = host().desktop;
-    if (!desktop) return false;
+    const quick = host().quick;
+    if (!quick) return false;
     for (const f of await this.vaultFiles()) {
-      if (!(await desktop.quickEnrolled(f.name))) continue;
+      if (!(await quick.enrolled(f.name))) continue;
       const path = `${VAULTS}/${f.name}`;
       const bytes = await host().readFile(path);
-      const obj = decodeReply(await desktop.quickOpen(f.name, bytes)).json;
+      const obj = decodeReply(await quick.open(f.name, bytes)).json;
+      if (obj?.error) throw new EngineError(obj.error.code, obj.error.message);
       await this.noteSuccess();
       this.adopt(obj.handle, path, obj.name, obj.read_only === true);
       this.known = await this.hashOf(bytes);
@@ -330,10 +331,10 @@ class PassStore {
 
   /** Whether quick unlock could work for a file on this device. */
   async quickFiles() {
-    const desktop = host().desktop;
-    if (!desktop || !(await desktop.quickAvailable())) return [];
+    const quick = host().quick;
+    if (!quick || !(await quick.available())) return [];
     const out: string[] = [];
-    for (const f of await this.vaultFiles()) if (await desktop.quickEnrolled(f.name)) out.push(f.name);
+    for (const f of await this.vaultFiles()) if (await quick.enrolled(f.name)) out.push(f.name);
     return out;
   }
 

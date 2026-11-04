@@ -11,7 +11,10 @@
     "check": "svelte-check --tsconfig ./tsconfig.json --threshold error",
     "desktop:dev": "npm run assets && vite --config desktop/vite.config.ts",
     "desktop:build": "npm run assets && vite build --config desktop/vite.config.ts",
-    "extension:build": "npm run wasm && npm run assets && VITE_PART=pages vite build --config extension/vite.config.ts && VITE_PART=background vite build --config extension/vite.config.ts && VITE_PART=content vite build --config extension/vite.config.ts && VITE_PART=page-world vite build --config extension/vite.config.ts && node extension/finish.mjs"
+    "extension:build": "npm run wasm && npm run assets && VITE_PART=pages vite build --config extension/vite.config.ts && VITE_PART=background vite build --config extension/vite.config.ts && VITE_PART=content vite build --config extension/vite.config.ts && VITE_PART=page-world vite build --config extension/vite.config.ts && node extension/finish.mjs",
+    "web:dev": "npm run assets && vite --config web/vite.config.ts",
+    "web:build": "npm run wasm && npm run assets && vite build --config web/vite.config.ts && node web/finish.mjs",
+    "site:build": "sh scripts/build-site.sh"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "7.3.1",

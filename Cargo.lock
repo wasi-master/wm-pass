@@ -10118,6 +10118,7 @@ dependencies = [
  "wmpass-net",
  "wmpass-session",
  "wmpass-sinks",
+ "zeroize",
 ]
 
 [[package]]

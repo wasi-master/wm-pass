@@ -150,6 +150,29 @@ fn save_reopen_and_quick_unlock() {
     assert_eq!(got.secret.as_deref().map(Vec::as_slice), Some(PASSWORD_MARKER.as_bytes()));
 }
 
+/// A browser's quick unlock: the key is sealed under a passkey's answer and comes back only
+/// with that same answer. The page never holds the key itself.
+#[test]
+fn a_passkey_answer_seals_and_reopens_the_key() {
+    let mut s = Service::new(1);
+    let h = new_vault(&mut s);
+    let id = login(&mut s, h);
+    let file = call(&mut s, "vault.save", h, json!({})).blobs[0].clone();
+    let answer = [7u8; 32];
+    let sealed = secret_call(&mut s, "vault.quick_seal", h, json!({}), &answer);
+    assert!(sealed.secret.is_none(), "the key does not come out");
+    let sealed = sealed.blobs[0].clone();
+    s.lock_all();
+
+    let blobs: [&[u8]; 2] = [&sealed, &file];
+    let wrong = s.call("vault.quick_open", Call { secret: &[8u8; 32], blobs: &blobs, ..Call::default() });
+    assert_eq!(wrong.err().map(|e| e.code), Some("wrong_password"));
+    let open = s.call("vault.quick_open", Call { secret: &answer, blobs: &blobs, ..Call::default() }).unwrap();
+    let h = json_of(&open)["handle"].as_u64().unwrap();
+    let got = call(&mut s, "entry.reveal", h, json!({"id": id, "field": "password"}));
+    assert_eq!(got.secret.as_deref().map(Vec::as_slice), Some(PASSWORD_MARKER.as_bytes()));
+}
+
 #[test]
 fn the_shelf_stays_shut_to_a_held_id_until_a_fresh_unlock() {
     let mut s = Service::new(1);

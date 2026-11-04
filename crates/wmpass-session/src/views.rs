@@ -393,6 +393,13 @@ pub enum FactorView {
         /// OTP slot.
         slot: u8,
     },
+    /// A FIDO2 key through WebAuthn's PRF, which browsers can ask too.
+    Webauthn {
+        /// Credential id, hex.
+        credential_id: String,
+        /// PRF input, hex.
+        input: String,
+    },
 }
 
 /// Describes what a slot needs.
@@ -409,6 +416,13 @@ pub fn factor_view(kind: &FactorKind) -> FactorView {
         FactorKind::YubiKey { challenge, slot } => FactorView::Yubikey {
             challenge: hex(challenge),
             slot: *slot,
+        },
+        FactorKind::WebAuthn {
+            credential_id,
+            input,
+        } => FactorView::Webauthn {
+            credential_id: hex(credential_id),
+            input: hex(input),
         },
     }
 }

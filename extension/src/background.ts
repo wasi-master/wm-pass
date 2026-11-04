@@ -5,8 +5,9 @@
 // A message's sender is set by the browser. Content scripts run next to hostile pages, so they get
 // only the `cs.` calls here, and those use the sender's address, never one the message claims.
 
-import init, { call, lock_all, start } from '../../ui/src/wasm/wmpass_wasm.js';
+import init, { call, call_async, lock_all, start } from '../../ui/src/wasm/wmpass_wasm.js';
 import { bytesOf, decodeReply, encodeRequest } from '../../ui/src/engine/frame';
+import { wasmFetch } from '../../ui/src/hosts/fetch';
 import { database, request as idb } from '../../ui/src/hosts/web';
 import { answerLink, ask, connectLink, forgetLink, hasLink, linkReady, linkState, watchLink } from './bridge';
 import { fromB64, toB64, toB64Url, type SiteAnswer, type SiteRow } from './shared';
@@ -330,6 +331,47 @@ async function passkey(sender: any, op: 'get' | 'create', options: any) {
   return { clientData: toB64Url(clientData), ...made };
 }
 
+// ---- places through the desktop app ----
+
+// File bytes cross the link in parts: the relay may hand the browser no message over 1 MiB.
+const LINK_PART = 384 * 1024;
+
+async function linkPlace(message: any) {
+  const asked = async (request: Record<string, unknown>) => {
+    const reply = await ask(request);
+    if (reply.error) throw new Error(reply.error === 'refused' ? 'The desktop app was told no.' : reply.error);
+    return reply;
+  };
+  let token = 0;
+  if (message.op === 'write') {
+    const bytes = fromB64(message.data ?? '');
+    for (let at = 0; at < bytes.length || token === 0; at += LINK_PART) {
+      token = (await asked({ method: 'places.put', token, part: toB64(bytes.subarray(at, at + LINK_PART)) })).token;
+    }
+  }
+  const reply = await asked({ method: 'places.run', op: message.op, place: message.place, name: message.name ?? '', file: message.file ?? null, token });
+  let value = reply.value;
+  if (message.op === 'read') {
+    const parts: Uint8Array[] = [];
+    let length = 0;
+    for (let done = false; !done; ) {
+      const got = await asked({ method: 'places.get', token: value.token, offset: length });
+      const part = fromB64(got.part);
+      parts.push(part);
+      length += part.length;
+      done = got.done;
+    }
+    const whole = new Uint8Array(length);
+    let at = 0;
+    for (const part of parts) {
+      whole.set(part, at);
+      at += part.length;
+    }
+    value = toB64(whole);
+  }
+  return { value, update: reply.update ?? {} };
+}
+
 // ---- messages ----
 
 async function fromContent(message: any, sender: any) {
@@ -375,7 +417,9 @@ async function fromPage(message: any) {
   switch (message.type) {
     case 'call': {
       await active();
-      return { frame: toB64(call(fromB64(message.frame))) };
+      // Calls that reach a network go out from here, where the extension's host permissions
+      // apply. The page only ever sees their answers.
+      return { frame: toB64(await call_async(fromB64(message.frame), wasmFetch)) };
     }
     case 'attach':
       return open ? { handle: open.handle, file: open.file, name: open.name, read_only: open.read_only } : null;
@@ -429,6 +473,25 @@ async function fromPage(message: any) {
       if (reply.error) throw new Error(reply.error);
       return reply;
     }
+    // Backup places and security keys the browser cannot reach, for this extension's own vault,
+    // through the desktop app. It asks its person once for each place, and once for the keys.
+    case 'link.places.kinds': {
+      if (!linkReady()) return [];
+      const reply = await ask({ method: 'places.kinds' });
+      return reply.error ? [] : reply.kinds;
+    }
+    case 'link.places':
+      return linkPlace(message);
+    case 'link.places.sign_in': {
+      const reply = await ask({ method: 'places.sign_in', place: message.place, step: message.step ?? {} });
+      if (reply.error) throw new Error(reply.error);
+      return reply.answer;
+    }
+    case 'link.hardware': {
+      const reply = await ask({ method: 'hardware.tap', kind: message.kind, factor: message.factor ?? null });
+      if (reply.error) throw new Error(reply.error === 'refused' ? 'The desktop app was told no.' : reply.error);
+      return { factor: reply.factor, output: reply.output };
+    }
     case 'link.fill.settings':
       return chrome.storage.local.get(['offerSave', 'passkeys']);
     case 'confirm.get': {
@@ -479,6 +542,19 @@ chrome.runtime.onMessage.addListener((message: any, sender: any, respond: (r: un
       (failure) => respond({ failed: failure?.message ?? 'That did not work.', code: failure?.code }),
     );
   return true;
+});
+
+// The web vault at wmpass.pages.dev asks whether the extension is here, and may ask it to open its
+// own vault page in that tab. It learns nothing else: not whether a vault exists, nor its state.
+const WEB_VAULT = 'https://wmpass.pages.dev';
+chrome.runtime.onMessageExternal?.addListener((message: any, sender: any, respond: (r: unknown) => void) => {
+  if (typeof sender.url !== 'string' || new URL(sender.url).origin !== WEB_VAULT || sender.tab?.id === undefined) return false;
+  if (message?.type === 'web.hello') respond({ ok: true });
+  else if (message?.type === 'web.open') {
+    void chrome.tabs.update(sender.tab.id, { url: chrome.runtime.getURL('vault.html') });
+    respond({ ok: true });
+  } else respond({ failed: 'Unknown request.' });
+  return false;
 });
 
 watchLink(() => broadcast({ type: 'link.changed' }));

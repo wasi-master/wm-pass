@@ -11,7 +11,8 @@ use wmpass_core::Secret;
 use wmpass_core::backend::{Backend, BackendKind};
 use wmpass_core::model::{Entry, Id};
 use wmpass_core::vault::new_id;
-use wmpass_net::{Http, NetError, NetPolicy};
+use wmpass_net::http::{Blocking, block_on};
+use wmpass_net::{AsyncHttp, Http, NetError, NetPolicy};
 use zeroize::Zeroizing;
 
 use crate::api::{self, Device, Endpoints, Registration, Saved, SecondFactor, Tokens, prop, text};
@@ -83,6 +84,11 @@ fn kdf_numbers(kdf: Kdf) -> (u64, u64, Option<u64>, Option<u64>) {
 
 /// Creates an account on a self-hosted server.
 pub fn register(http: &dyn Http, policy: NetPolicy, endpoints: &Endpoints, email: &str, name: &str, password: &[u8], kdf: Kdf) -> Result<()> {
+    block_on(register_async(&Blocking(http), policy, endpoints, email, name, password, kdf))
+}
+
+/// [`register`], over a client that may wait.
+pub async fn register_async(http: &impl AsyncHttp, policy: NetPolicy, endpoints: &Endpoints, email: &str, name: &str, password: &[u8], kdf: Kdf) -> Result<()> {
     let master = MasterKey::derive(password, email, kdf)?;
     let account = SymKey::generate()?;
     let (public_key, private_key) = generate_key_pair(&account)?;
@@ -95,7 +101,7 @@ pub fn register(http: &dyn Http, policy: NetPolicy, endpoints: &Endpoints, email
         public_key,
         private_key,
     };
-    api::run(api::register(endpoints, &form), http, policy)
+    api::run_async(api::register(endpoints, &form), http, policy).await
 }
 
 impl Account {
@@ -109,10 +115,23 @@ impl Account {
         device: &Device,
         factor: Option<&SecondFactor>,
     ) -> Result<Self> {
-        let kdf = api::run(api::prelogin(&endpoints, email), http, policy)?;
+        block_on(Self::login_async(&Blocking(http), policy, endpoints, email, password, device, factor))
+    }
+
+    /// [`Account::login`], over a client that may wait.
+    pub async fn login_async(
+        http: &impl AsyncHttp,
+        policy: NetPolicy,
+        endpoints: Endpoints,
+        email: &str,
+        password: &[u8],
+        device: &Device,
+        factor: Option<&SecondFactor>,
+    ) -> Result<Self> {
+        let kdf = api::run_async(api::prelogin(&endpoints, email), http, policy).await?;
         let master = MasterKey::derive(password, email, kdf)?;
         let hash = master.login_hash(password);
-        let tokens: Tokens = api::run(api::login(&endpoints, email, &hash, device, factor), http, policy)??;
+        let tokens: Tokens = api::run_async(api::login(&endpoints, email, &hash, device, factor), http, policy).await??;
         let wrapped_key = tokens.key.clone().ok_or(BwError::BadAnswer)?;
         // The server has taken the password by now, so a key that will not open is not a wrong guess.
         let key = master.unwrap_user_key(&wrapped_key).map_err(|_| BwError::KeyUnreadable)?;
@@ -131,7 +150,7 @@ impl Account {
             unreadable: 0,
             pending: Vec::new(),
         };
-        account.pull(http, policy)?;
+        account.pull_async(http, policy).await?;
         Ok(account)
     }
 
@@ -240,25 +259,25 @@ impl Account {
         Ok(())
     }
 
-    fn access(&mut self, http: &dyn Http, policy: NetPolicy) -> Result<Secret> {
+    async fn access(&mut self, http: &impl AsyncHttp, policy: NetPolicy) -> Result<Secret> {
         if let Some(access) = &self.access {
             return Ok(access.clone());
         }
         let refresh = self.refresh.clone().ok_or(BwError::Net(NetError::Unauthorised))?;
-        let tokens = api::run(api::refresh(&self.endpoints, &refresh), http, policy)?;
+        let tokens = api::run_async(api::refresh(&self.endpoints, &refresh), http, policy).await?;
         self.access = Some(tokens.access.clone());
         self.refresh = Some(tokens.refresh);
         Ok(tokens.access)
     }
 
     /// Runs a call, refreshing once if the access token has expired.
-    fn with_token<T>(&mut self, http: &dyn Http, policy: NetPolicy, build: impl Fn(&Endpoints, &Secret) -> wmpass_net::Call<T>) -> Result<T> {
-        let access = self.access(http, policy)?;
-        match build(&self.endpoints, &access).run(http, policy) {
+    async fn with_token<T>(&mut self, http: &impl AsyncHttp, policy: NetPolicy, build: impl Fn(&Endpoints, &Secret) -> wmpass_net::Call<T>) -> Result<T> {
+        let access = self.access(http, policy).await?;
+        match build(&self.endpoints, &access).run_async(http, policy).await {
             Err(NetError::Unauthorised) => {
                 self.access = None;
-                let access = self.access(http, policy)?;
-                Ok(build(&self.endpoints, &access).run(http, policy)?)
+                let access = self.access(http, policy).await?;
+                Ok(build(&self.endpoints, &access).run_async(http, policy).await?)
             }
             other => Ok(other?),
         }
@@ -266,7 +285,12 @@ impl Account {
 
     /// Fetches the server's state. Local changes not yet sent are kept over it.
     pub fn pull(&mut self, http: &dyn Http, policy: NetPolicy) -> Result<()> {
-        let sync = self.with_token(http, policy, api::sync)?;
+        block_on(self.pull_async(&Blocking(http), policy))
+    }
+
+    /// [`Account::pull`], over a client that may wait.
+    pub async fn pull_async(&mut self, http: &impl AsyncHttp, policy: NetPolicy) -> Result<()> {
+        let sync = self.with_token(http, policy, api::sync).await?;
         let held: Vec<Entry> = self
             .pending
             .iter()
@@ -301,32 +325,37 @@ impl Account {
     /// Sends local changes. On a conflict, fetches and merges, then tries once more; anything
     /// still unsent stays queued for next time.
     pub fn push(&mut self, http: &dyn Http, policy: NetPolicy) -> Result<()> {
+        block_on(self.push_async(&Blocking(http), policy))
+    }
+
+    /// [`Account::push`], over a client that may wait.
+    pub async fn push_async(&mut self, http: &impl AsyncHttp, policy: NetPolicy) -> Result<()> {
         for pending in std::mem::take(&mut self.pending) {
             let id = match &pending {
                 Pending::Upsert(id) | Pending::Trash(id) => id.clone(),
             };
             let outcome = match &pending {
-                Pending::Upsert(_) => self.push_one(http, policy, &id),
-                Pending::Trash(_) => self.with_token(http, policy, |e, a| api::trash_cipher(e, a, &id)),
+                Pending::Upsert(_) => self.push_one(http, policy, &id).await,
+                Pending::Trash(_) => self.with_token(http, policy, |e, a| api::trash_cipher(e, a, &id)).await,
             };
             if let Err(error) = outcome {
                 self.pending.push(pending);
                 return Err(error);
             }
         }
-        self.pull(http, policy)
+        self.pull_async(http, policy).await
     }
 
-    fn push_one(&mut self, http: &dyn Http, policy: NetPolicy, id: &str) -> Result<()> {
+    async fn push_one(&mut self, http: &impl AsyncHttp, policy: NetPolicy, id: &str) -> Result<()> {
         for _ in 0..2 {
             let Some(entry) = self.entries.get(id).cloned() else { return Ok(()) };
             let server = self.raw.get(id).cloned();
             let key = self.key_for(id);
             let cipher = cipher_from_entry(&entry, server.as_ref(), &key)?;
             let saved = if server.is_some() {
-                self.with_token(http, policy, |e, a| api::update_cipher(e, a, id, &cipher))?
+                self.with_token(http, policy, |e, a| api::update_cipher(e, a, id, &cipher)).await?
             } else {
-                self.with_token(http, policy, |e, a| api::create_cipher(e, a, &cipher))?
+                self.with_token(http, policy, |e, a| api::create_cipher(e, a, &cipher)).await?
             };
             match saved {
                 Saved::Stored(stored) => {
@@ -343,7 +372,7 @@ impl Account {
                 }
                 Saved::Conflict => {
                     self.pending.push(Pending::Upsert(id.to_owned()));
-                    self.pull(http, policy)?;
+                    self.pull_async(http, policy).await?;
                     self.pending.retain(|pending| *pending != Pending::Upsert(id.to_owned()));
                 }
             }

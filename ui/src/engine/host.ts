@@ -1,5 +1,7 @@
 // What each shell has to supply: the desktop app over Tauri, the extension over wasm.
 
+import type { TopicId } from '$help';
+
 export interface PickedFile {
   name: string;
   bytes: Uint8Array;
@@ -64,6 +66,8 @@ export interface Host {
   lockGuard?: LockGuard;
   /** The extension's connection to the desktop app. */
   link?: DesktopLink;
+  /** Opening without the password, where the shell can keep the key behind something that asks first. */
+  quick?: QuickUnlock;
   /** Calls that reach a network run in this shell. */
   network?: boolean;
   /** Reads a username page in a hidden, private browser view, for sites that only answer once their scripts run. */
@@ -144,8 +148,24 @@ export type SignInAnswer =
 
 /** Security keys, where the shell can reach them. */
 export interface HardwareHost {
+  /** The kinds this shell can reach. Both, unless it says. */
+  kinds?: ('fido2' | 'yubikey')[];
   /** Asks a key for its secret. Without a factor it enrols the key first. */
   tap(kind: 'fido2' | 'yubikey', factor: unknown): Promise<{ factor: any; output: Uint8Array }>;
+}
+
+/** Quick unlock: the desktop app keeps the key in the system keyring, a browser seals it under a passkey. */
+export interface QuickUnlock {
+  /** The switch's title and what it costs, in this shell's words, and its help topic. */
+  title: string;
+  sub: string;
+  help: TopicId;
+  available(): Promise<boolean>;
+  enrolled(file: string): Promise<boolean>;
+  enroll(handle: number, file: string): Promise<void>;
+  forget(file: string): Promise<void>;
+  /** Opens the vault with the kept key. The reply is the same as a password's. */
+  open(file: string, sealed: Uint8Array): Promise<Uint8Array>;
 }
 
 /** Files that stay where they are, such as a KeePass database. */
@@ -167,12 +187,6 @@ export interface DesktopHost {
   /** The lock timer runs in the app, where a suspended page cannot stop it. */
   activity(): Promise<void>;
   setLockRule(afterSeconds: number, onSleep: boolean): Promise<void>;
-  quickAvailable(): Promise<boolean>;
-  quickEnrolled(file: string): Promise<boolean>;
-  quickEnroll(handle: number, file: string): Promise<void>;
-  quickForget(file: string): Promise<void>;
-  /** Opens the vault with the key kept in the system's store. The reply is the same as a password's. */
-  quickOpen(file: string, sealed: Uint8Array): Promise<Uint8Array>;
   installBrowserHost(): Promise<string[]>;
   removeBrowserHost(): Promise<void>;
   bridgeFingerprint(): Promise<string>;

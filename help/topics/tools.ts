@@ -43,11 +43,6 @@ export const tools = [
     figure: 'fig.alias',
     related: ['group.aliases.own', 'group.aliases.services', 'action.use_alias', 'feature.aliases'],
     words: 'masked email forwarding hide my email',
-    on: {
-      extension: {
-        caveats: 'The browser extension does not make calls to forwarding services itself. Use the desktop app or the phone for those.',
-      },
-    },
   },
 
   // ---- with your own address ----
@@ -332,8 +327,8 @@ export const tools = [
     on: {
       extension: {
         caveats: [
-          'The extension has no network of its own. While it is connected to the desktop app, the app makes every check for it, and only while network features are allowed there.',
-          'If nothing is connected, open the desktop app and connect it under Settings, Desktop app.',
+          'TikTok and Instagram only answer a browser that runs their scripts, so the desktop app checks those two for the extension, while it is connected and network features are allowed there.',
+          'To include them, open the desktop app and connect it under Settings, Desktop app.',
           'A name can only be letters, digits, dots, dashes and underscores, up to 64 characters.',
         ],
       },

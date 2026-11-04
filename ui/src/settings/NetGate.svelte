@@ -11,7 +11,7 @@
 </script>
 
 {#if !networkExists() && !remote}
-  <p class="dim">The browser extension does not make these calls itself. Use the desktop app or the phone for this.</p>
+  <p class="dim">This version of WM Pass does not make these calls itself. Use the desktop app or the phone for this.</p>
 {:else if prefs.v.network_allowed}
   {@render children?.()}
 {:else}

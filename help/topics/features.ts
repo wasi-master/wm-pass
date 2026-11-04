@@ -419,7 +419,7 @@ export const features = [
           'Site icons come with the extension, so showing them never tells anyone which sites are in your vault.',
         ],
         caveats: [
-          'The extension does not run breach checks, aliases, the disposable inbox, the username checker or server accounts. Use the desktop app or the phone for those.',
+          'The extension makes these calls from its background, where its permission to reach any site lets it talk to services a web page cannot. The vault page only sees the answers.',
           'The extension\'s backups and sync go to places on servers, so they need this on.',
         ],
       },
@@ -466,7 +466,6 @@ export const features = [
     on: {
       extension: {
         caveats: [
-          'The browser extension does not make these calls itself. Use the desktop app or the phone.',
           'Results are kept in memory only, so they are gone once the vault locks.',
           'A check finds only leaks the service knows about. A password it does not find can still be weak or reused.',
         ],
@@ -505,7 +504,7 @@ export const features = [
           '- Accounts. With Google Drive, Dropbox, OneDrive and Box you sign in on the service\'s own page, and WM Pass never sees that password. With pCloud, MEGA and Proton Drive you sign in inside WM Pass.',
           '- Servers and storage, which covers WebDAV, S3, and Synology or QNAP NAS boxes. WebDAV and S3 fill in the address for many services.',
           '- Somewhere else, which here means a Git repository on GitHub, GitLab or Gitea.',
-          'A browser cannot open the raw connections that a folder, SFTP, FTP, SMB, NFS or IMAP need, and iCloud\'s sign-in needs headers a page may not send, so those are in the desktop and phone apps only.',
+          'A browser cannot open the raw connections that SFTP, FTP, SMB, NFS or IMAP need, and iCloud\'s sign-in needs headers a page may not send. The extension reaches those through the desktop app while it is connected; the web vault cannot.',
           PLACE_VERIFY,
         ],
         caveats: [
@@ -795,7 +794,6 @@ export const features = [
       extension: {
         caveats: [
           'A site can strip a plus tag or the dots and reach your real address. Only a forwarding service hides it.',
-          'The browser extension does not call forwarding services itself. Use the desktop app or the phone for those.',
         ],
       },
     },
@@ -817,7 +815,7 @@ export const features = [
     words: 'username handle availability taken free',
     on: {
       extension: {
-        caveats: 'The browser extension has no network of its own. While it is connected to the desktop app, the app makes the checks for it.',
+        caveats: 'TikTok and Instagram only answer a browser that runs their scripts. The extension asks the desktop app to check those two, while it is connected.',
       },
     },
   },

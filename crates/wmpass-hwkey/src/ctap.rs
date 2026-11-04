@@ -17,8 +17,13 @@ use zeroize::Zeroizing;
 use crate::transport::Ctap2Transport;
 use crate::{HwError, Result};
 
-/// What WM Pass registers on the key. A separate relying party from any website.
+/// What WM Pass registered keys under before browsers could reach them. Still asked for keys
+/// set up that way.
 pub const RP_ID: &str = "wmpass.local";
+/// What WM Pass registers keys under now: the web vault's own domain, which the browser
+/// extension may claim too. A browser asks hmac-secret only through PRF, so this is the one
+/// relying party every shell can reach.
+pub const WEB_RP_ID: &str = "wmpass.pages.dev";
 const CMD_MAKE_CREDENTIAL: u8 = 0x01;
 const CMD_GET_ASSERTION: u8 = 0x02;
 const CMD_GET_INFO: u8 = 0x04;
@@ -72,8 +77,23 @@ fn random_32() -> Result<[u8; 32]> {
     wmpass_core::crypto::random_array().map_err(|_| HwError::Crypto)
 }
 
-/// Creates a credential for unlocking. The caller stores the result in a vault slot.
+/// What WebAuthn's PRF hands hmac-secret for an input, from the WebAuthn text.
+pub fn prf_salt(input: &[u8; 32]) -> [u8; 32] {
+    let mut hash = Sha256::new();
+    hash.update(b"WebAuthn PRF");
+    hash.update([0]);
+    hash.update(input);
+    hash.finalize().into()
+}
+
+/// Creates a credential for unlocking, one a browser can ask too. The caller stores the result
+/// in a vault slot.
 pub fn enroll(transport: &mut dyn Ctap2Transport) -> Result<FactorKind> {
+    let credential_id = make_credential(transport, WEB_RP_ID)?;
+    Ok(FactorKind::WebAuthn { credential_id, input: random_32()? })
+}
+
+fn make_credential(transport: &mut dyn Ctap2Transport, rp: &str) -> Result<Vec<u8>> {
     if !supports_hmac_secret(transport)? {
         return Err(HwError::Unsupported);
     }
@@ -81,7 +101,7 @@ pub fn enroll(transport: &mut dyn Ctap2Transport) -> Result<FactorKind> {
     let user_id = random_32()?;
     let request = encode(CMD_MAKE_CREDENTIAL, vec![
         (int(1), Value::Bytes(client_data_hash.to_vec())),
-        (int(2), Value::Map(vec![(Value::Text("id".into()), Value::Text(RP_ID.into())), (Value::Text("name".into()), Value::Text("WM Pass".into()))])),
+        (int(2), Value::Map(vec![(Value::Text("id".into()), Value::Text(rp.into())), (Value::Text("name".into()), Value::Text("WM Pass".into()))])),
         (int(3), Value::Map(vec![(Value::Text("id".into()), Value::Bytes(user_id.to_vec())), (Value::Text("name".into()), Value::Text("WM Pass vault".into()))])),
         (int(4), Value::Array(vec![Value::Map(vec![(Value::Text("alg".into()), int(-7)), (Value::Text("type".into()), Value::Text("public-key".into()))])])),
         (int(6), Value::Map(vec![(Value::Text("hmac-secret".into()), Value::Bool(true))])),
@@ -94,8 +114,7 @@ pub fn enroll(transport: &mut dyn Ctap2Transport) -> Result<FactorKind> {
         return Err(HwError::Protocol);
     }
     let length = usize::from(u16::from_be_bytes([*data.get(53).ok_or(HwError::Protocol)?, *data.get(54).ok_or(HwError::Protocol)?]));
-    let credential_id = data.get(55..55 + length).ok_or(HwError::Protocol)?.to_vec();
-    Ok(FactorKind::Fido2 { credential_id, salt: random_32()? })
+    Ok(data.get(55..55 + length).ok_or(HwError::Protocol)?.to_vec())
 }
 
 fn cose_point(key: &PublicKey) -> Result<Value> {
@@ -140,8 +159,10 @@ fn left_16_hmac(key: &[u8; 32], data: &[u8]) -> Result<Vec<u8>> {
 
 /// Asks the key for the value that unlocks. It waits for a touch.
 pub fn derive(transport: &mut dyn Ctap2Transport, factor: &FactorKind) -> Result<FactorOutput> {
-    let FactorKind::Fido2 { credential_id, salt } = factor else {
-        return Err(HwError::Protocol);
+    let (rp, credential_id, salt) = match factor {
+        FactorKind::Fido2 { credential_id, salt } => (RP_ID, credential_id, *salt),
+        FactorKind::WebAuthn { credential_id, input } => (WEB_RP_ID, credential_id, prf_salt(input)),
+        _ => return Err(HwError::Protocol),
     };
     // Agreeing a key with the authenticator, protocol one, so the salt and the result are
     // not readable on the bus.
@@ -152,7 +173,7 @@ pub fn derive(transport: &mut dyn Ctap2Transport, factor: &FactorKind) -> Result
     let mut wrapping = Zeroizing::new([0u8; 32]);
     wrapping.copy_from_slice(&Sha256::digest(shared.raw_secret_bytes()));
 
-    let salt_enc = cbc_encrypt(&wrapping, salt)?;
+    let salt_enc = cbc_encrypt(&wrapping, &salt)?;
     let salt_auth = left_16_hmac(&wrapping, &salt_enc)?;
     let extension = Value::Map(vec![
         (int(1), cose_point(&mine.public_key())?),
@@ -162,7 +183,7 @@ pub fn derive(transport: &mut dyn Ctap2Transport, factor: &FactorKind) -> Result
     ]);
     let client_data_hash = random_32()?;
     let request = encode(CMD_GET_ASSERTION, vec![
-        (int(1), Value::Text(RP_ID.into())),
+        (int(1), Value::Text(rp.into())),
         (int(2), Value::Bytes(client_data_hash.to_vec())),
         (int(3), Value::Array(vec![Value::Map(vec![
             (Value::Text("id".into()), Value::Bytes(credential_id.clone())),
@@ -194,7 +215,8 @@ pub(crate) mod tests {
 
     /// A software authenticator following the CTAP 2.1 text for these commands.
     pub struct Simulated {
-        credentials: Vec<(Vec<u8>, [u8; 32])>,
+        /// Id, the secret behind hmac-secret, and the relying party it belongs to.
+        credentials: Vec<(Vec<u8>, [u8; 32], String)>,
         agreement: Option<EphemeralSecret>,
         pub user_present: bool,
     }
@@ -225,9 +247,10 @@ pub(crate) mod tests {
                     }
                     let extensions = lookup(&map, 6).unwrap().as_map().unwrap();
                     assert!(extensions.iter().any(|(k, v)| k.as_text() == Some("hmac-secret") && *v == Value::Bool(true)));
+                    let rp = lookup(&map, 2).unwrap().as_map().unwrap().iter().find(|(k, _)| k.as_text() == Some("id")).unwrap().1.as_text().unwrap().to_owned();
                     let id = random_32().unwrap().to_vec();
-                    self.credentials.push((id.clone(), random_32().unwrap()));
-                    let mut data = Sha256::digest(RP_ID).to_vec();
+                    self.credentials.push((id.clone(), random_32().unwrap(), rp.clone()));
+                    let mut data = Sha256::digest(&rp).to_vec();
                     data.push(FLAG_ATTESTED | 1);
                     data.extend_from_slice(&[0; 4]);
                     data.extend_from_slice(&[0; 16]);
@@ -246,10 +269,11 @@ pub(crate) mod tests {
                     if !self.user_present {
                         return Ok(vec![0x2f]);
                     }
-                    assert_eq!(lookup(&map, 1).unwrap().as_text(), Some(RP_ID));
+                    let rp = lookup(&map, 1).unwrap().as_text().unwrap();
                     let allow = lookup(&map, 3).unwrap().as_array().unwrap();
                     let wanted = allow[0].as_map().unwrap().iter().find(|(k, _)| k.as_text() == Some("id")).unwrap().1.as_bytes().unwrap();
-                    let Some((_, random)) = self.credentials.iter().find(|(id, _)| id == wanted) else {
+                    // A credential belongs to one relying party: asked under another, it is not there.
+                    let Some((_, random, _)) = self.credentials.iter().find(|(id, _, owner)| id == wanted && owner == rp) else {
                         return Ok(vec![0x2e]);
                     };
                     let extensions = lookup(&map, 4).unwrap().as_map().unwrap();
@@ -268,7 +292,7 @@ pub(crate) mod tests {
                     mac.update(&salt);
                     let output = mac.finalize().into_bytes();
                     let sealed = cbc_encrypt(&wrapping, &output).unwrap();
-                    let mut data = Sha256::digest(RP_ID).to_vec();
+                    let mut data = Sha256::digest(rp).to_vec();
                     data.push(FLAG_EXTENSIONS | 1);
                     data.extend_from_slice(&[0; 4]);
                     ciborium::into_writer(&Value::Map(vec![(Value::Text("hmac-secret".into()), Value::Bytes(sealed))]), &mut data).unwrap();
@@ -288,9 +312,34 @@ pub(crate) mod tests {
         assert_eq!(first.len(), 32);
         assert_eq!(first, again, "the agreement key changes each time, the value does not");
 
-        let FactorKind::Fido2 { credential_id, .. } = &factor else { panic!() };
-        let other = FactorKind::Fido2 { credential_id: credential_id.clone(), salt: [9; 32] };
+        let FactorKind::WebAuthn { credential_id, .. } = &factor else { panic!() };
+        let other = FactorKind::WebAuthn { credential_id: credential_id.clone(), input: [9; 32] };
         assert_ne!(derive(&mut key, &other).unwrap(), first);
+    }
+
+    /// A browser's PRF answers HMAC(secret, SHA-256("WebAuthn PRF" || 0 || input)), so a key set
+    /// up here must answer the same, or a vault opened here would not open in the web vault.
+    #[test]
+    fn it_answers_what_a_browser_would() {
+        let mut key = Simulated::new();
+        let factor = enroll(&mut key).unwrap();
+        let FactorKind::WebAuthn { input, .. } = &factor else { panic!() };
+        let (_, random, rp) = key.credentials[0].clone();
+        assert_eq!(rp, WEB_RP_ID);
+        let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(&random).unwrap();
+        mac.update(&prf_salt(input));
+        assert_eq!(derive(&mut key, &factor).unwrap().as_slice(), mac.finalize().into_bytes().as_slice());
+    }
+
+    #[test]
+    fn a_key_set_up_before_still_opens() {
+        let mut key = Simulated::new();
+        let credential_id = make_credential(&mut key, RP_ID).unwrap();
+        let factor = FactorKind::Fido2 { credential_id: credential_id.clone(), salt: [3; 32] };
+        assert_eq!(derive(&mut key, &factor).unwrap(), derive(&mut key, &factor).unwrap());
+        // The same credential cannot be reached as a browser-style one: it is under the old relying party.
+        let moved = FactorKind::WebAuthn { credential_id, input: [3; 32] };
+        assert_eq!(derive(&mut key, &moved).err(), Some(HwError::WrongKey));
     }
 
     #[test]

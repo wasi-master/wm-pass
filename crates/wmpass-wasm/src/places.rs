@@ -14,7 +14,7 @@ use wmpass_sinks::Stored;
 /// `fetch(method, url, headers, body, timeoutMs)` on the page, answering
 /// `{ status, headers: [[name, value]], body: Uint8Array }`.
 #[derive(Clone)]
-struct JsFetch(Function);
+pub(crate) struct JsFetch(pub(crate) Function);
 
 impl std::fmt::Debug for JsFetch {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

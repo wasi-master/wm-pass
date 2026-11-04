@@ -263,6 +263,32 @@ macOS builds have no Secure Enclave unlock, because the app is not signed.
 
 See also [Locking](/guide/how-it-works/#feature-locking), [The master password](/guide/how-it-works/#concept-master-password).
 
+<a id="action-passkey-unlock"></a>
+
+## Unlock with a passkey
+
+*Only in the browser extension.*
+
+Opens this vault with Touch ID, Windows Hello or your phone, in place of the master password.
+
+#### How it works
+
+WM Pass makes a passkey for itself on this device. What the passkey answers seals the vault's key inside WM Pass's own engine, and only that sealed copy is kept in the browser. Turning it off throws the copy away.
+
+#### When to use it
+
+On a computer only you use, where typing the master password many times a day is the bigger risk.
+
+#### Limits
+
+The sealed copy opens nothing without the passkey, so a copied browser profile does not open the vault.
+
+The passkey belongs to wmpass.pages.dev, and your browser or phone may keep it with your other passkeys. Deleting it there turns this off.
+
+A browser without passkeys that can give an app a secret (the PRF extension) does not offer this.
+
+See also [Unlock from the system keyring](/guide/settings/security/#action-keyring-unlock), [Locking](/guide/how-it-works/#feature-locking), [The master password](/guide/how-it-works/#concept-master-password).
+
 <a id="action-change-password"></a>
 
 ## Change it

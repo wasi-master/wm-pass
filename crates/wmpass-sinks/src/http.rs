@@ -1,26 +1,10 @@
 //! The async seam, with the same policy check as every other request.
 
-use std::future::Future;
-
 use wmpass_net::http::{self, NetError, NetPolicy, Request, Response};
 
+pub use wmpass_net::http::{AsyncHttp, Blocking, block_on};
+
 use crate::{Fault, Result};
-
-/// Sends requests, possibly over `fetch`.
-pub trait AsyncHttp {
-    /// Sends one request.
-    fn send(&self, request: &Request) -> impl Future<Output = std::result::Result<Response, NetError>>;
-}
-
-/// Adapts a blocking client. Its futures are ready at once.
-#[allow(missing_debug_implementations)]
-pub struct Blocking<'a>(pub &'a dyn http::Http);
-
-impl AsyncHttp for Blocking<'_> {
-    async fn send(&self, request: &Request) -> std::result::Result<Response, NetError> {
-        self.0.send(request)
-    }
-}
 
 /// A client plus the policy it must obey. Destinations hold one of these, so none can
 /// skip the check.
@@ -56,17 +40,5 @@ impl<H: AsyncHttp> Client<H> {
         } else {
             Err(crate::status_fault(response.status))
         }
-    }
-}
-
-/// Runs a future built on a blocking client.
-pub fn block_on<F: Future>(future: F) -> F::Output {
-    let mut future = std::pin::pin!(future);
-    let mut context = std::task::Context::from_waker(std::task::Waker::noop());
-    loop {
-        if let std::task::Poll::Ready(output) = future.as_mut().poll(&mut context) {
-            return output;
-        }
-        std::thread::yield_now();
     }
 }

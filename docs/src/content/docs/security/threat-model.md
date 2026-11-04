@@ -36,10 +36,21 @@ Keys stay in Rust and are wiped on lock. View data crossing into a user interfac
 | macOS | None. The builds are unsigned, and Secure Enclave items need a signed app | n/a |
 | Windows | None yet | n/a |
 | Extension | The key stays in browser session memory until you lock or close it | Memory only |
+| Extension and web vault, with a passkey | A passkey on this device (Touch ID, Windows Hello, a phone) answers a PRF request, and the engine seals the vault key under that answer. Only the sealed copy is kept in the browser | Bound to the passkey: a copied profile opens nothing |
 
 ## Between apps
 
-**The extension and the desktop app** talk over Noise XX through a relay program that holds no keys. A new extension needs a code compared on both screens, and each side commits to its random value before seeing the other's, so someone in the middle gets one chance in a million. An extension can ask only for what matches a page, to fill an entry that matches it, and to have the app check a username while network features are allowed there. The extension's own key is sealed by a browser key that scripts cannot read out, which stops a copied profile, but not code running as the extension.
+**The extension and the desktop app** talk over Noise XX through a relay program that holds no keys. A new extension needs a code compared on both screens, and each side commits to its random value before seeing the other's, so someone in the middle gets one chance in a million. An extension can ask only for what matches a page, to fill an entry that matches it, and to have the app check a username while network features are allowed there.
+
+It can also have the app do two things a browser cannot, for the extension's own vault. The app reaches a backup place over SFTP, FTP, SMB, NFS, IMAP or iCloud with the details the extension sends, keeps none of them, and asks its person once for each place, named by its kind, server and account. And it asks a security key over USB, for a YubiKey's challenge-response slot or a key set up before browsers could reach it, after asking its person once. Neither lets an extension read the app's own vault. The app's network switch holds for these runs too. File bytes cross in parts, at most 512 MiB in flight per connection.
+
+The extension's own key is sealed by a browser key that scripts cannot read out, which stops a copied profile, but not code running as the extension.
+
+**The web vault** at wmpass.pages.dev/vault runs the same engine as WebAssembly in the page, with its files in that site's storage in your browser. Nothing about the vault reaches the site: there is no account and no server side. What the site can do is send different code on a later visit, which the extension cannot, since its code comes signed from the browser's store. So where the extension is installed, the web vault offers to hand over to it first, and the extension answers that site alone, telling it only that it is there and opening its own vault page in that tab when asked.
+
+For the web vault itself, the defences are in what the page may do. Its Content-Security-Policy allows only its own scripts and WebAssembly, no frames either way, no forms and no plugins, and requests only over https or to this computer. It sets no cookies and loads nothing from anyone else. It is published only from a release tag in this repository by its own workflow, and the deploy can be made to wait for an owner's approval. None of that helps if that workflow or the hosting account is taken over, which is the risk the extension does not carry.
+
+**Security keys and passkeys in a browser** go through WebAuthn's PRF extension. The credentials belong to `wmpass.pages.dev`, which the extension may claim because it may reach every site, and which a copy of the page served from anywhere else cannot. A security key is asked without its PIN, as the desktop app asks it, so the answer is the same in every app.
 
 **WM Keyboard** checks WM Pass's signing certificate, and WM Pass checks WM Keyboard's on every call, and it is off until you allow it.
 

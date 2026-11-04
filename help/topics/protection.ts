@@ -60,11 +60,6 @@ export const protection = [
     figure: 'fig.breach',
     related: ['feature.breaches', 'setting.network_allowed', 'screen.health', 'feature.network'],
     words: 'hibp have i been pwned leak pwned leakcheck proxynova comb compromised',
-    on: {
-      extension: {
-        how: 'The browser extension does not make these calls itself, so this page only shows a note. Use the desktop app or the phone to check for breaches.',
-      },
-    },
   },
   {
     id: 'action.check_every_password',

@@ -23,14 +23,18 @@
   let asked = $state('');
   let problem = $state<string | null>(null);
 
-  // The extension has no network of its own, so the desktop app makes its checks.
+  // Sites that answer a plain request are asked from here when this shell has a network. TikTok
+  // and Instagram only answer a browser that runs their scripts: the desktop and phone apps open
+  // a hidden one, and the extension asks the desktop app to, over its link.
   const remote = host().usernames;
+  const local = networkExists();
+  const pagesRemote = !!remote && !host().checkUsernamePage;
   // Where no hidden window can be opened, a page site can only be looked at by hand.
-  const pagesHere = !!remote || !!host().checkUsernamePage;
+  const pagesHere = !!host().checkUsernamePage || pagesRemote;
 
   async function loadSites() {
     try {
-      known = remote ? await remote.siteList() : (await pass.engine<UsernameSite[]>('usernames.site_list', {}, {})).json;
+      known = local ? (await pass.engine<UsernameSite[]>('usernames.site_list', {}, {})).json : await remote!.siteList();
       problem = null;
     } catch (failure: any) {
       problem = sentence(failure.message);
@@ -38,7 +42,7 @@
   }
 
   $effect(() => {
-    if (remote || networkExists()) untrack(() => void loadSites());
+    if (local || remote) untrack(() => void loadSites());
   });
 
   const sites = $derived(known.filter((s) => s.kind !== 'link'));
@@ -67,8 +71,8 @@
   }
 
   async function ask(site: UsernameSite, who: string): Promise<string> {
-    if (remote) return remote.check(site.name, who);
-    if (site.kind === 'page') return host().checkUsernamePage!(site.name, who, online());
+    if (site.kind === 'page') return pagesRemote ? remote!.check(site.name, who) : host().checkUsernamePage!(site.name, who, online());
+    if (!local) return remote!.check(site.name, who);
     return (await pass.engine<{ answer: string }>('usernames.check', { site: site.name, name: who }, { online: online() })).json.answer;
   }
 
@@ -90,7 +94,7 @@
     asked = who;
     answers = {};
     // The desktop app may have connected since the page opened.
-    if (remote && known.length === 0) await loadSites();
+    if (!local && remote && known.length === 0) await loadSites();
     for (const site of sites) {
       if (site.kind === 'page' && !pagesHere) answers[site.name] = 'open';
       else check(site, who);
@@ -108,12 +112,13 @@
 
 <NetGate
   remote={!!remote}
-  what={`${remote ? 'The desktop app asks for this extension, and only while network features are allowed there too. ' : ''}Asks every site at once whether a name is taken. Each site learns the name you looked up. TikTok and Instagram only answer a browser, so their pages load in a hidden, private window that runs their scripts and keeps nothing afterwards. X, Threads, Reddit and a few others refuse or give the same answer for every name, so their profile pages are linked for you to open yourself.`}
+  what={`Asks every site at once whether a name is taken. Each site learns the name you looked up. TikTok and Instagram only answer a browser, so their pages load in a hidden, private window that runs their scripts and keeps nothing afterwards${pagesRemote ? '; here the desktop app opens them, while it is connected and allows network features too' : ''}. X, Threads, Reddit and a few others refuse or give the same answer for every name, so their profile pages are linked for you to open yourself.`}
 >
   <div class="stack" style="padding-bottom:14px;max-width:420px">
     <Field bind:value={name} placeholder="A username" onenter={checkAll} />
     <div><Btn label={running ? 'Checking…' : 'Check'} icon="person_search" variant="primary" disabled={running || !name.trim()} onclick={checkAll} /></div>
-    {#if remote && known.length === 0 && problem}<p class="dim">Open the desktop app and connect it under Settings, Desktop app, to check names from here.</p>{/if}
+    {#if !local && remote && known.length === 0 && problem}<p class="dim">Open the desktop app and connect it under Settings, Desktop app, to check names from here.</p>{/if}
+    {#if pagesRemote && local}<p class="dimmer small">TikTok and Instagram are checked by the desktop app, so connect it under Settings, Desktop app, for those two.</p>{/if}
     {#if problem}<p class="danger-text">{problem}</p>{/if}
     {#if values.length > 0}
       <div class="stack" style="gap:6px">
