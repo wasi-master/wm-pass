@@ -205,6 +205,7 @@ export const screens = [
           'Tap a row to open the item. Swipe a row right or left for a quick action, such as copying the password or moving it to the trash; [[page.list]] sets what each swipe does.',
           'Hold a row to start choosing several. The bar on top then moves them to a folder, tags them, changes their color, or moves them to the trash, with **Undo** after.',
           'The add button adds an item, of the kinds set under [[page.add]].',
+          'On a tablet, an unfolded phone or a phone on its side, the tabs run down the side of the screen. When the screen is wide enough, the item you tap opens beside the list instead of over it; fold the phone or narrow the window and the item becomes a page of its own.',
         ],
         when: 'An empty vault offers to import from another app, or to add a first login or code. A search that finds nothing offers to add what you typed as a new login.',
       },

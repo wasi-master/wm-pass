@@ -313,11 +313,13 @@ fun VaultTab() {
         }
     }
     val density = androidx.compose.ui.platform.LocalDensity.current
+    // As many cards to a row as the width holds: two on a phone, more on a tablet.
+    var gridColumns by remember { mutableIntStateOf(2) }
     fun pick(next: String) {
         if (next == filter) return
         val gone = if (prefs.layout == "grid") {
             // The grid is one item of rows; only the rows it loses count.
-            val rows = { list: List<Summary> -> (list.size + 1) / 2 }
+            val rows = { list: List<Summary> -> (list.size + gridColumns - 1) / gridColumns }
             val lost = rows(shown) - rows(filtered(entries, next))
             val visible = listState.layoutInfo.visibleItemsInfo.any { it.key == "grid" }
             if (visible && lost > 0) with(density) { (146.dp * lost).roundToPx() } else 0
@@ -407,7 +409,7 @@ fun VaultTab() {
                 }
                 if (prefs.layout == "grid") {
                     item("grid") {
-                        EntryGrid(shown, arrived, Modifier.helpAnchor("list.rows"))
+                        EntryGrid(shown, arrived, Modifier.helpAnchor("list.rows")) { gridColumns = it }
                     }
                 } else {
                     itemsIndexedStable(items, arrived, openSites, prefs.layout == "compact")
@@ -506,23 +508,29 @@ private fun androidx.compose.foundation.lazy.LazyListScope.itemsIndexedStable(
 }
 
 @Composable
-private fun EntryGrid(entries: List<Summary>, arrived: Boolean, modifier: Modifier = Modifier) {
+private fun EntryGrid(entries: List<Summary>, arrived: Boolean, modifier: Modifier = Modifier, onColumns: (Int) -> Unit = {}) {
     val shell = LocalShell.current
-    // A plain two-column flow, because this already sits inside the page's own list.
-    Column(modifier.then(if (palette.flat) Modifier.padding(horizontal = 16.dp) else Modifier), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        entries.chunked(2).forEachIndexed { rowIndex, row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                row.forEachIndexed { index, entry ->
-                    EntryCard(
-                        entry,
-                        entry.id in shell.selection,
-                        shell.selecting,
-                        Modifier.weight(1f).arrive(rowIndex * 2 + index, !arrived),
-                        onClick = { if (shell.selecting) shell.toggleSelected(entry.id) else shell.tapped(entry) },
-                        onLongClick = { shell.toggleSelected(entry.id) },
-                    )
+    // A plain flow of rows, because this already sits inside the page's own list. Two cards to a
+    // row on a phone; a wider window gets another column for every card's width it has to spare,
+    // rather than two cards stretched into banners.
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier.then(if (palette.flat) Modifier.padding(horizontal = 16.dp) else Modifier)) {
+        val columns = (maxWidth / 180.dp).toInt().coerceIn(2, 6)
+        androidx.compose.runtime.SideEffect { onColumns(columns) }
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            entries.chunked(columns).forEachIndexed { rowIndex, row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    row.forEachIndexed { index, entry ->
+                        EntryCard(
+                            entry,
+                            entry.id in shell.selection,
+                            shell.selecting,
+                            Modifier.weight(1f).arrive(rowIndex * columns + index, !arrived),
+                            onClick = { if (shell.selecting) shell.toggleSelected(entry.id) else shell.tapped(entry) },
+                            onLongClick = { shell.toggleSelected(entry.id) },
+                        )
+                    }
+                    repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
                 }
-                if (row.size == 1) Spacer(Modifier.weight(1f))
             }
         }
     }

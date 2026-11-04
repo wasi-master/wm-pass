@@ -1,5 +1,7 @@
 package com.wasimaster.wmpass.ui.vault
 
+import com.wasimaster.wmpass.ui.theme.readableWidth
+import androidx.compose.foundation.layout.widthIn
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
@@ -179,7 +181,9 @@ fun SearchLayer() {
                 .height(380.dp)
                 .background(androidx.compose.ui.graphics.Brush.verticalGradient(0.3f to androidx.compose.ui.graphics.Color.Transparent, 1f to colors.ground)),
         )
-        Column(Modifier.fillMaxSize().imePadding().navigationBarsPadding()) {
+        // Results in a column a phone's width or so, even on a tablet: a row read across the
+        // whole of a wide window loses the line between a name and its copy button.
+        Column(Modifier.fillMaxSize().readableWidth().imePadding().navigationBarsPadding()) {
             val lead = query.trim()
             AnimatedContent(
                 targetState = when {
@@ -497,6 +501,7 @@ fun AddLayer() {
     Box(Modifier.fillMaxSize().navigationBarsPadding().padding(start = 14.dp, end = 14.dp, bottom = 10.dp), contentAlignment = Alignment.BottomCenter) {
         Column(
             Modifier
+                .widthIn(max = 560.dp)
                 .fillMaxWidth()
                 .graphicsLayer {
                     val pop = 0.72f + 0.28f * reach
@@ -567,6 +572,7 @@ internal fun StandardSearch() {
             .fillMaxSize()
             .background(colors.ground)
             .clickable(remember { MutableInteractionSource() }, null) {}
+            .readableWidth()
             .statusBarsPadding()
             .imePadding()
             .navigationBarsPadding(),

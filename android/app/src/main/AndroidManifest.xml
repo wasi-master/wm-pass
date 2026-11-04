@@ -18,6 +18,8 @@
     <uses-permission android:name="android.permission.NFC" />
     <uses-feature android:name="android.hardware.nfc" android:required="false" />
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+    <!-- Chromebooks and desktop modes with only a mouse and keyboard can install it too. -->
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
     <!-- The apps a launcher shows, so a login can be tied to one from a list. Nothing about them is sent anywhere. -->
     <queries>
@@ -68,6 +70,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="WM Pass"
         android:supportsRtl="true"
+        android:resizeableActivity="true"
         android:theme="@style/Theme.WmPass"
         tools:targetApi="36">
 
@@ -79,7 +82,7 @@
             android:exported="true"
             android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize|density|uiMode">
+            android:configChanges="orientation|screenSize|screenLayout|keyboard|keyboardHidden|navigation|smallestScreenSize|density|uiMode">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

@@ -24,7 +24,13 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import com.wasimaster.wmpass.ui.theme.LocalWindowShape
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -95,9 +101,17 @@ fun HomeScreen() {
     // The page as a whole is already a backdrop, for the capsule above it, so glass in here
     // gets none. The dock wants the rows sliding under it, so the tab is a backdrop of its own.
     val backdrop = rememberBackdrop()
+    // On a tablet, an open foldable or a phone on its side, the dock stands up along the side
+    // instead: a bar across the foot of a wide window is far from both thumbs and wastes the
+    // height a wide window is short of.
+    val rail = LocalWindowShape.current.rail
+    val panes = showsPanes()
+    // The page keeps clear of the rail, which floats over the ground beside it.
+    val clear = if (!rail) Modifier else if (prefs.leftHanded) Modifier.padding(end = RailWidth) else Modifier.padding(start = RailWidth)
     Box(Modifier.fillMaxSize().background(colors.ground)) {
         val order = prefs.tabs
         BackdropSource(backdrop, Modifier.fillMaxSize()) {
+        ListAndItem(panes, Modifier.fillMaxSize().then(clear)) {
         AnimatedContent(
             targetState = shell.tab,
             modifier = Modifier.fillMaxSize(),
@@ -115,7 +129,27 @@ fun HomeScreen() {
             }
         }
         }
+        }
         CompositionLocalProvider(LocalBackdrop provides backdrop) {
+        if (rail) {
+            SideDock(Modifier.align(if (prefs.leftHanded) Alignment.CenterEnd else Alignment.CenterStart))
+            // What the dock carried besides the tabs, at the foot of the page it is about.
+            Column(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .then(clear)
+                    .navigationBarsPadding()
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
+                    .widthIn(max = 560.dp),
+            ) {
+                UndoBar(Modifier.padding(bottom = 10.dp))
+                AnimatedVisibility(
+                    visible = shell.selecting,
+                    enter = slideInVertically(Springs.glide()) { it } + fadeIn(tween(140)),
+                    exit = slideOutVertically(tween(160)) { it } + fadeOut(tween(100)),
+                ) { SelectionBar() }
+            }
+        } else {
         // The bar fades the page into the ground behind the dock, so rows never collide with it.
         Box(
             Modifier
@@ -135,6 +169,7 @@ fun HomeScreen() {
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(horizontal = 14.dp, vertical = 10.dp)) {
             UndoBar(Modifier.padding(bottom = 10.dp))
             Dock()
+        }
         }
         AddLayer()
         SearchLayer()
@@ -167,6 +202,46 @@ private fun Dock() {
                 if (!prefs.leftHanded) ActionStack()
             }
         }
+    }
+}
+
+/**
+ * The dock stood on end, for a wide window: the tabs in a column down the side, with search and
+ * add under them, centred on the height so either thumb finds them holding a tablet by its sides.
+ * A window too short for all of it, such as a phone on its side, scrolls the column.
+ */
+@Composable
+private fun SideDock(modifier: Modifier = Modifier) {
+    val shell = LocalShell.current
+    val prefs = shell.prefs
+    val tabs = prefs.tabs.mapNotNull { id -> AllTabs.firstOrNull { it.id == id } }
+    val style = LocalTextStyle.current.merge(TextStyle(fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold))
+    Column(
+        modifier
+            .fillMaxHeight()
+            .width(RailWidth)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        if (tabs.size > 1) {
+            Column(
+                Modifier
+                    .helpAnchor("narrow.tabs")
+                    .width(64.dp)
+                    .glass(CircleShape)
+                    .padding(vertical = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                tabs.forEach { tab -> TabButton(tab, shell.tab == tab.id, named = false, style = style) }
+            }
+            Spacer(Modifier.height(18.dp))
+        }
+        ActionStack()
     }
 }
 

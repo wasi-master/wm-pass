@@ -185,6 +185,8 @@ Hold a row to start choosing several. The bar on top then moves them to a folder
 
 The add button adds an item, of the kinds set under [Add menu](/guide/settings/add/).
 
+On a tablet, an unfolded phone or a phone on its side, the tabs run down the side of the screen. When the screen is wide enough, the item you tap opens beside the list instead of over it; fold the phone or narrow the window and the item becomes a page of its own.
+
 See also [Searching the vault](/guide/how-it-works/#concept-search), [Vault list](/guide/settings/list/), [Add menu](/guide/settings/add/), [Item view](/guide/screens/#screen-item), [Kinds of item](/guide/how-it-works/#concept-item-kinds).
 
 <a id="screen-item"></a>

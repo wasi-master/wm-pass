@@ -269,6 +269,7 @@ fun EntryRow(
     val prefs = shell.prefs
     val right = shell.effective(prefs.swipeRight.value, entry)
     val left = shell.effective(prefs.swipeLeft.value, entry)
+    val showing = entry.id == shell.paneEntry && com.wasimaster.wmpass.ui.theme.LocalWindowShape.current.panes
     SwipeRow(
         modifier,
         shape,
@@ -281,7 +282,15 @@ fun EntryRow(
         Row(
             Modifier
                 .fillMaxWidth()
-                .background(if (selected) colors.surface3 else if (colors.flat) colors.ground else colors.surface1)
+                .background(
+                    when {
+                        selected -> colors.surface3
+                        // The row whose item is open beside the list, so the eye can find its place.
+                        showing -> colors.primary.copy(alpha = if (colors.dark) 0.16f else 0.11f)
+                        colors.flat -> colors.ground
+                        else -> colors.surface1
+                    },
+                )
                 .combinedClickable(source, androidx.compose.material3.ripple(), onClick = onClick, onLongClick = onLongClick)
                 .padding(
                     start = (if (colors.flat) 16.dp else 14.dp) + indent,

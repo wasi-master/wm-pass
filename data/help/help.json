@@ -4528,6 +4528,15 @@
        "s": "."
       }
      ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "On a tablet, an unfolded phone or a phone on its side, the tabs run down the side of the screen. When the screen is wide enough, the item you tap opens beside the list instead of over it; fold the phone or narrow the window and the item becomes a page of its own."
+      }
+     ]
     }
    ],
    "when": [

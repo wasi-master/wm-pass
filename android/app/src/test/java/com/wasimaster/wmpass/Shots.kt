@@ -400,4 +400,175 @@ class Shots {
             prefs.updateAddKinds(Prefs.DEFAULT_ADD)
         }
     }
+
+    // ---- large screens: a tablet both ways round, a book-style foldable open, and a phone on its side ----
+
+    @Test
+    @Config(qualifiers = TABLET_LANDSCAPE)
+    fun tabletVault() {
+        seed()
+        shot("large-tablet-vault") { WithShell { HomeScreen() } }
+    }
+
+    @Test
+    @Config(qualifiers = TABLET_LANDSCAPE)
+    fun tabletVaultGlass() {
+        seed()
+        shot("large-tablet-vault-glass", style = "glass") { WithShell { HomeScreen() } }
+    }
+
+    @Test
+    @Config(qualifiers = TABLET_PORTRAIT)
+    fun tabletPortraitVault() {
+        seed()
+        shot("large-tablet-portrait-vault") { WithShell { HomeScreen() } }
+    }
+
+    @Test
+    @Config(qualifiers = FOLDABLE_OPEN)
+    fun foldableVault() {
+        seed()
+        shot("large-foldable-vault") { WithShell { HomeScreen() } }
+    }
+
+    @Test
+    @Config(qualifiers = FOLDABLE_OPEN)
+    fun foldableVaultGlass() {
+        seed()
+        shot("large-foldable-vault-glass", style = "glass") { WithShell { HomeScreen() } }
+    }
+
+    @Test
+    @Config(qualifiers = PHONE_LANDSCAPE)
+    fun phoneLandscapeVault() {
+        seed()
+        shot("large-phone-landscape-vault") { WithShell { HomeScreen() } }
+    }
+
+    @Test
+    @Config(qualifiers = TABLET_LANDSCAPE)
+    fun tabletEntry() {
+        val ids = seed()
+        shot("large-tablet-entry") { WithShell { EntryScreen(ids.getValue("GitHub")) } }
+    }
+
+    @Test
+    @Config(qualifiers = TABLET_LANDSCAPE)
+    fun tabletEntryGlass() {
+        val ids = seed()
+        shot("large-tablet-entry-glass", style = "glass") { WithShell { EntryScreen(ids.getValue("GitHub")) } }
+    }
+
+    @Test
+    @Config(qualifiers = TABLET_LANDSCAPE)
+    fun tabletEditor() {
+        val ids = seed()
+        shot("large-tablet-editor") { WithShell { EditorScreen(ids.getValue("GitHub"), null) } }
+    }
+
+    @Test
+    @Config(qualifiers = TABLET_LANDSCAPE)
+    fun tabletGenerator() {
+        seed()
+        shot("large-tablet-generator") { WithShell("generator") { HomeScreen() } }
+    }
+
+    @Test
+    @Config(qualifiers = TABLET_LANDSCAPE)
+    fun tabletHealth() {
+        seed()
+        shot("large-tablet-health") { WithShell("health") { HomeScreen() } }
+    }
+
+    @Test
+    @Config(qualifiers = TABLET_LANDSCAPE)
+    fun tabletSettings() {
+        seed()
+        shot("large-tablet-settings") { WithShell { com.wasimaster.wmpass.ui.settings.SettingsRoot() } }
+    }
+
+    @Test
+    @Config(qualifiers = TABLET_LANDSCAPE)
+    fun tabletDoor() = shot("large-tablet-door") { DoorScreen(LockState.Locked, prefs) }
+
+    @Test
+    @Config(qualifiers = PHONE_LANDSCAPE)
+    fun phoneLandscapeDoor() = shot("large-phone-landscape-door") { DoorScreen(LockState.Locked, prefs) }
+
+    @Test
+    @Config(qualifiers = TABLET_LANDSCAPE)
+    fun tabletSearch() {
+        seed()
+        shot("large-tablet-search") { WithShell(configure = { it.searching = true }) { HomeScreen() } }
+    }
+
+    @Test
+    @Config(qualifiers = TABLET_LANDSCAPE)
+    fun tabletAdd() {
+        seed()
+        shot("large-tablet-add") { WithShell(configure = { it.adding = true }) { HomeScreen() } }
+    }
+
+    @Test
+    @Config(qualifiers = TABLET_LANDSCAPE)
+    fun tabletVaultWithItem() {
+        val ids = seed()
+        shot("large-tablet-vault-item") { WithShell(configure = { it.paneEntry = ids.getValue("GitHub") }) { HomeScreen() } }
+    }
+
+    @Test
+    @Config(qualifiers = TABLET_LANDSCAPE)
+    fun tabletVaultWithItemGlass() {
+        val ids = seed()
+        shot("large-tablet-vault-item-glass", style = "glass") { WithShell(configure = { it.paneEntry = ids.getValue("GitHub") }) { HomeScreen() } }
+    }
+
+    @Test
+    @Config(qualifiers = FOLDABLE_OPEN)
+    fun foldableVaultWithItem() {
+        val ids = seed()
+        shot("large-foldable-vault-item") { WithShell(configure = { it.paneEntry = ids.getValue("GitHub") }) { HomeScreen() } }
+    }
+
+    @Test
+    @Config(qualifiers = FOLDABLE_TALL)
+    fun foldableTallVault() {
+        seed()
+        shot("large-foldable-tall-vault") { WithShell { HomeScreen() } }
+    }
+
+    @Test
+    @Config(qualifiers = FOLDABLE_TALL)
+    fun foldableTallVaultGlass() {
+        seed()
+        shot("large-foldable-tall-vault-glass", style = "glass") { WithShell { HomeScreen() } }
+    }
+
+    @Test
+    @Config(qualifiers = PHONE_LANDSCAPE)
+    fun phoneLandscapeVaultGlass() {
+        seed()
+        shot("large-phone-landscape-vault-glass", style = "glass") { WithShell { HomeScreen() } }
+    }
+
+    @Test
+    @Config(qualifiers = TABLET_PORTRAIT)
+    fun tabletGrid() {
+        seed()
+        prefs.updateLayout("grid")
+        try {
+            shot("large-tablet-grid", style = "glass") { WithShell(configure = { it.tab = "vault" }) { HomeScreen() } }
+        } finally {
+            prefs.updateLayout("list")
+        }
+    }
+
+    private companion object {
+        /** A book-style foldable open with its fold upright, like a Galaxy Z Fold. */
+        const val FOLDABLE_TALL = "w673dp-h841dp-port-xhdpi"
+        const val TABLET_LANDSCAPE = "w1280dp-h800dp-land-xhdpi"
+        const val TABLET_PORTRAIT = "w800dp-h1280dp-port-xhdpi"
+        const val FOLDABLE_OPEN = "w841dp-h701dp-land-xhdpi"
+        const val PHONE_LANDSCAPE = "w852dp-h393dp-land-xxhdpi"
+    }
 }

@@ -2,6 +2,7 @@
 
 package com.wasimaster.wmpass.ui.vault
 
+import com.wasimaster.wmpass.ui.theme.readableWidth
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -704,6 +705,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                 Modifier
                     .weight(1f)
                     .verticalScroll(rememberScrollState())
+                    .readableWidth()
                     .then(if (colors.flat) Modifier else Modifier.statusBarsPadding())
                     .padding(horizontal = 16.dp),
             ) {

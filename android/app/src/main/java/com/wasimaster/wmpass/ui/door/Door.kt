@@ -1,5 +1,6 @@
 package com.wasimaster.wmpass.ui.door
 
+import com.wasimaster.wmpass.ui.theme.readableWidth
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -549,6 +550,7 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, askFingerprint
                 .imePadding()
                 .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
+                .readableWidth(DoorWidth)
                 .padding(horizontal = 24.dp),
         ) {
             Spacer(Modifier.weight(1f))
@@ -655,7 +657,7 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, askFingerprint
     }
     Column(Modifier.fillMaxSize().statusBarsPadding().imePadding().navigationBarsPadding()) {
         ShieldSlot(shield, typed, Modifier.weight(1f))
-        Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 16.dp)) {
+        Column(Modifier.readableWidth(DoorWidth).padding(horizontal = 22.dp, vertical = 16.dp)) {
             Text(
                 "Welcome back",
                 color = colors.text,
@@ -865,6 +867,7 @@ private fun StandardWelcome(onBack: (() -> Unit)?) {
             .imePadding()
             .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
+            .readableWidth(DoorWidth)
             .padding(horizontal = 24.dp, vertical = 24.dp),
     ) {
         ShieldMark(ShieldState.IDLE, Modifier.offset(x = (-15).dp).size(64.dp), 0)
@@ -974,7 +977,7 @@ private fun Welcome(onBack: (() -> Unit)?) {
             },
             label = "welcome",
         ) { current ->
-            Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp).padding(bottom = 20.dp)) {
+            Column(Modifier.readableWidth(DoorWidth).padding(horizontal = 22.dp).padding(bottom = 20.dp)) {
                 when (current) {
                     Step.HELLO -> Hello(onCreate = { step = Step.CHOOSE })
                     Step.CHOOSE -> Choose(first, error) {
@@ -1277,3 +1280,9 @@ private fun Making() {
     Headline("Forging your key", "Deliberately slow, so that guessing your password is too.")
     Spacer(Modifier.height(90.dp))
 }
+
+/**
+ * How wide the door's form gets. A password field and its button the width of a tablet are a
+ * long way for the eye and the thumb; this is a phone's width with some room to spare.
+ */
+private val DoorWidth = 480.dp

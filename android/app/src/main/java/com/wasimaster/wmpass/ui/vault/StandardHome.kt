@@ -7,7 +7,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
+import com.wasimaster.wmpass.ui.theme.LocalWindowShape
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -49,7 +53,39 @@ fun StandardHome() {
     BackHandler(shell.selecting) { shell.selection.clear() }
     BackHandler(shell.searching) { shell.searching = false }
     val tabs = prefs.tabs.mapNotNull { id -> AllTabs.firstOrNull { it.id == id } }
+    // Material's navigation rail from the medium width up: a tablet, an open foldable, a phone on
+    // its side. A bar along the bottom of those is far from the hands and costs scarce height.
+    val shape = LocalWindowShape.current
+    val rail = shape.rail && tabs.size > 1
+    // The add button heads the rail, unless the window is too short to hold both it and the tabs.
+    val addInRail = rail && !shape.short
+    val panes = showsPanes()
     Box(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxSize()) {
+        if (rail) {
+            NavigationRail(
+                modifier = Modifier.helpAnchor("narrow.tabs"),
+                containerColor = colors.ground,
+                header = { if (addInRail) AddFab() },
+            ) {
+                Spacer(Modifier.weight(1f))
+                tabs.forEach { tab ->
+                    val selected = shell.tab == tab.id
+                    NavigationRailItem(
+                        selected = selected,
+                        onClick = {
+                            if (!selected) shell.haptics.tick()
+                            shell.tab = tab.id
+                        },
+                        icon = { Icon(if (selected) tab.filled else tab.icon, tab.label) },
+                        label = if (prefs.navLabels.value == "none") null else ({ Text(tab.label, maxLines = 1) }),
+                        alwaysShowLabel = prefs.navLabels.value == "all",
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+            }
+        }
+        ListAndItem(panes, Modifier.weight(1f).fillMaxHeight()) {
         Scaffold(
             containerColor = colors.ground,
             topBar = {
@@ -79,7 +115,7 @@ fun StandardHome() {
             bottomBar = {
                 androidx.compose.foundation.layout.Column {
                 if (shell.tab == "vault" && prefs.searchAtBottom.value && !shell.selecting) VaultSearchBar()
-                if (tabs.size > 1 && !shell.selecting) {
+                if (tabs.size > 1 && !shell.selecting && !shape.rail) {
                     NavigationBar(Modifier.helpAnchor("narrow.tabs")) {
                         tabs.forEach { tab ->
                             val selected = shell.tab == tab.id
@@ -98,19 +134,7 @@ fun StandardHome() {
                 }
                 }
             },
-            floatingActionButton = {
-                if (prefs.showFab.value && !shell.selecting && (shell.tab == "vault" || shell.tab == "codes")) {
-                    FloatingActionButton(modifier = Modifier.helpAnchor(if (shell.tab == "codes") "codes.add" else "list.add"), onClick = {
-                        shell.haptics.click()
-                        val direct = prefs.fabAction.value.takeIf { it in KindOrder }
-                        when {
-                            shell.tab == "codes" -> shell.nav.navigate("new/otp")
-                            direct != null -> shell.nav.navigate("new/$direct")
-                            else -> shell.adding = true
-                        }
-                    }) { Icon(PassIcons.Add, "Add") }
-                }
-            },
+            floatingActionButton = { if (!addInRail) AddFab() },
             snackbarHost = { UndoBar() },
         ) { inner ->
             AnimatedContent(
@@ -130,8 +154,28 @@ fun StandardHome() {
                 }
             }
         }
+        }
+        }
         AddLayer()
         SearchLayer()
+    }
+}
+
+/** The add button, on the pages that list what can be added. */
+@Composable
+private fun AddFab() {
+    val shell = LocalShell.current
+    val prefs = shell.prefs
+    if (prefs.showFab.value && !shell.selecting && (shell.tab == "vault" || shell.tab == "codes")) {
+        FloatingActionButton(modifier = Modifier.helpAnchor(if (shell.tab == "codes") "codes.add" else "list.add"), onClick = {
+            shell.haptics.click()
+            val direct = prefs.fabAction.value.takeIf { it in KindOrder }
+            when {
+                shell.tab == "codes" -> shell.nav.navigate("new/otp")
+                direct != null -> shell.nav.navigate("new/$direct")
+                else -> shell.adding = true
+            }
+        }) { Icon(PassIcons.Add, "Add") }
     }
 }
 

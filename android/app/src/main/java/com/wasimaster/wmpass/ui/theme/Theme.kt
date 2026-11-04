@@ -499,6 +499,7 @@ fun PassTheme(
         com.wasimaster.wmpass.ui.parts.LocalSiteIcons provides com.wasimaster.wmpass.ui.parts.SiteIconLook(prefs.siteIconStyle.value, prefs.siteIconShape.value, prefs.iconSources, prefs.siteIconFrom.value),
         com.wasimaster.wmsuite.settings.LocalWmPlainGroups provides (flat && !prefs.settingsCards.value),
         com.wasimaster.wmsuite.settings.LocalWmBareTiles provides (prefs.settingsIcons.value == "bare"),
+        LocalWindowShape provides rememberWindowShape(),
     ) {
         MaterialTheme(colorScheme = resolved.second, typography = type, shapes = shapes, content = content)
     }

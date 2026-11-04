@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import com.wasimaster.wmpass.ui.theme.readableWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -174,17 +175,20 @@ fun whenText(ms: Long): String {
     }
 }
 
-/** An entry's page: lit in the colour of its site. */
+/**
+ * An entry's page: lit in the colour of its site. [inPane] when it sits beside the list on a wide
+ * window rather than over it, where there is nothing to go back to and the list is still there.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun EntryScreen(id: String) {
+fun EntryScreen(id: String, inPane: Boolean = false) {
     val colors = palette
     val shell = LocalShell.current
     val revision by Pass.revision.collectAsStateWithLifecycle()
     var detail by remember { mutableStateOf<Detail?>(null) }
     LaunchedEffect(id, revision) {
         val loaded = runCatching { Pass.detail(id) }.getOrNull()
-        if (loaded != null) detail = loaded else if (detail != null) shell.nav.popBackStack()
+        if (loaded != null) detail = loaded else if (detail != null) shell.leaveEntry()
     }
     val revealed = remember { mutableStateMapOf<String, String>() }
     DisposableEffect(id) { onDispose { revealed.clear() } }
@@ -204,7 +208,7 @@ fun EntryScreen(id: String) {
     val from = face.from
     val to = face.to
     if (colors.flat) {
-        StandardEntry(id, entry, revealed, scroll)
+        StandardEntry(id, entry, revealed, scroll, inPane)
         return
     }
     Box(Modifier.fillMaxSize().background(colors.ground)) {
@@ -230,6 +234,7 @@ fun EntryScreen(id: String) {
                 Modifier
                     .fillMaxSize()
                     .verticalScroll(scroll)
+                    .readableWidth()
                     .statusBarsPadding()
                     .navigationBarsPadding()
                     .padding(horizontal = 16.dp),
@@ -265,22 +270,22 @@ fun EntryScreen(id: String) {
                 }
             }
         }
-        TopBar(entry, scroll.value)
+        TopBar(entry, scroll.value, inPane)
         // What this page's own buttons report, such as a network already saved, says so here
-        // rather than waiting for the vault list.
-        UndoBar(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(horizontal = 14.dp, vertical = 10.dp))
+        // rather than waiting for the vault list. Beside the list, the list's own bar says it.
+        if (!inPane) UndoBar(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(horizontal = 14.dp, vertical = 10.dp))
     }
 }
 
 /** An ordinary detail page: an app bar, a heading, and rows. */
 @OptIn(ExperimentalLayoutApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-private fun StandardEntry(id: String, entry: Detail?, revealed: MutableMap<String, String>, scroll: androidx.compose.foundation.ScrollState) {
+private fun StandardEntry(id: String, entry: Detail?, revealed: MutableMap<String, String>, scroll: androidx.compose.foundation.ScrollState, inPane: Boolean) {
     val colors = palette
     val shell = LocalShell.current
     androidx.compose.material3.Scaffold(
         containerColor = colors.ground,
-        snackbarHost = { UndoBar() },
+        snackbarHost = { if (!inPane) UndoBar() },
         topBar = {
             androidx.compose.material3.TopAppBar(
                 title = {
@@ -289,7 +294,11 @@ private fun StandardEntry(id: String, entry: Detail?, revealed: MutableMap<Strin
                     }
                 },
                 navigationIcon = {
-                    androidx.compose.material3.IconButton(onClick = { shell.nav.popBackStack() }) { Icon(PassIcons.ArrowBack, "Back") }
+                    if (inPane) {
+                        androidx.compose.material3.IconButton(onClick = { shell.leaveEntry() }) { Icon(PassIcons.Close, "Close") }
+                    } else {
+                        androidx.compose.material3.IconButton(onClick = { shell.leaveEntry() }) { Icon(PassIcons.ArrowBack, "Back") }
+                    }
                 },
                 actions = {
                     HelpAction("screen.item", "the item page")
@@ -323,6 +332,7 @@ private fun StandardEntry(id: String, entry: Detail?, revealed: MutableMap<Strin
                     .padding(inner)
                     .fillMaxSize()
                     .verticalScroll(scroll)
+                    .readableWidth()
                     .padding(horizontal = 16.dp),
             ) {
                 Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -344,12 +354,16 @@ private fun StandardEntry(id: String, entry: Detail?, revealed: MutableMap<Strin
 }
 
 @Composable
-private fun TopBar(entry: Detail?, scrolled: Int) {
+private fun TopBar(entry: Detail?, scrolled: Int, inPane: Boolean) {
     val colors = palette
     val shell = LocalShell.current
     val solid by remember(scrolled) { derivedStateOf { (scrolled / 240f).coerceIn(0f, 1f) } }
     Box(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 14.dp, vertical = 8.dp)) {
-        GlassCircle(PassIcons.ArrowBack, "Back", Modifier.align(Alignment.CenterStart)) { shell.nav.popBackStack() }
+        if (inPane) {
+            GlassCircle(PassIcons.Close, "Close", Modifier.align(Alignment.CenterStart)) { shell.leaveEntry() }
+        } else {
+            GlassCircle(PassIcons.ArrowBack, "Back", Modifier.align(Alignment.CenterStart)) { shell.leaveEntry() }
+        }
         if (entry != null) {
             Text(
                 entry.title,
@@ -529,7 +543,7 @@ private fun TrashedActions(entry: Detail) {
         ) {
             shell.launch {
                 Pass.change("entry.purge") { put("id", entry.id) }
-                shell.nav.popBackStack()
+                shell.leaveEntry()
             }
         }
     }
@@ -812,7 +826,7 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
                     shell.launch {
                         val made = Pass.change("entry.duplicate") { put("id", entry.id) }
                         made.obj["id"]?.jsonPrimitive?.content?.let { copy ->
-                            shell.nav.popBackStack()
+                            shell.leaveEntry()
                             shell.open(copy)
                         }
                     }
@@ -826,7 +840,7 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
         if (!entry.trashed) {
             if (!rare) Hairline(inset = 58.dp)
             ActionLine(PassIcons.Delete, "Move to trash", tint = colors.danger) {
-                shell.nav.popBackStack()
+                shell.leaveEntry()
                 shell.trash(entry.id, entry.title)
             }
         }

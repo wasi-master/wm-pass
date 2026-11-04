@@ -26,6 +26,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.windowInsetsPadding
+import com.wasimaster.wmpass.ui.theme.LocalWindowShape
+import com.wasimaster.wmpass.ui.theme.WindowShape
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
@@ -143,6 +150,18 @@ class Shell(
 
     val selecting: Boolean get() = selection.isNotEmpty()
 
+    /**
+     * Whether the window has room for an item beside the list (see [WindowShape.panes]). Kept
+     * up to date by [VaultShell]; the tabs that hold lists of items then open them beside it.
+     */
+    var wide by mutableStateOf(false)
+
+    /** The item open beside the list, on a window [wide] enough for both. */
+    var paneEntry by mutableStateOf<String?>(null)
+
+    /** Whether the page showing now opens items beside itself rather than over itself. */
+    val panes: Boolean get() = wide && tab in PaneTabs && nav.currentDestination?.route == "home"
+
     fun toggleSelected(id: String) {
         haptics.tick()
         if (!selection.remove(id)) selection.add(id)
@@ -153,7 +172,21 @@ class Shell(
         recents.remove(id)
         recents.add(0, id)
         if (recents.size > 8) recents.removeAt(recents.lastIndex)
-        nav.navigate("entry/$id")
+        if (panes) {
+            // Beside the list, which search would otherwise go on covering.
+            searching = false
+            paneEntry = id
+        } else {
+            nav.navigate("entry/$id")
+        }
+    }
+
+    /**
+     * Away from the item showing: the pane beside the list closes, or the page over it goes back.
+     * While the home page is the destination, the item on show can only be the one in the pane.
+     */
+    fun leaveEntry() {
+        if (paneEntry != null && nav.currentDestination?.route == "home") paneEntry = null else nav.popBackStack()
     }
 
     fun launch(block: suspend CoroutineScope.() -> Unit) {
@@ -329,6 +362,32 @@ private fun ReceiveIncoming() {
 
 val LocalShell = compositionLocalOf<Shell> { error("no shell") }
 
+/** The pages whose rows open items, and so get the item beside them on a wide window. */
+val PaneTabs = setOf("vault", "codes", "health")
+
+/**
+ * Keeps the item on show when the window changes shape under it. Folding a foldable shut, or
+ * narrowing the window, turns the item beside the list into a page of its own; unfolding it
+ * again puts the page back beside the list. Either way, the same item stays in front.
+ */
+@Composable
+private fun KeepItemAcrossShapes(shell: Shell, wide: Boolean) {
+    LaunchedEffect(wide) {
+        shell.wide = wide
+        val nav = shell.nav
+        val here = nav.currentBackStackEntry ?: return@LaunchedEffect
+        if (!wide) {
+            val id = shell.paneEntry ?: return@LaunchedEffect
+            shell.paneEntry = null
+            if (here.destination.route == "home") nav.navigate("entry/$id")
+        } else if (here.destination.route == "entry/{id}" && nav.previousBackStackEntry?.destination?.route == "home" && shell.tab in PaneTabs) {
+            val id = here.arguments?.getString("id") ?: return@LaunchedEffect
+            nav.popBackStack()
+            shell.paneEntry = id
+        }
+    }
+}
+
 @OptIn(ExperimentalSharedTransitionApi::class)
 val LocalShared = compositionLocalOf<SharedTransitionScope?> { null }
 val LocalRouteScope = compositionLocalOf<AnimatedVisibilityScope?> { null }
@@ -356,6 +415,9 @@ fun VaultShell(prefs: Prefs) {
             Modifier
                 .fillMaxSize()
                 .background(colors.ground)
+                // A phone on its side puts its camera cutout at the left or right; nothing that
+                // can be tapped or read goes under it. The ground still runs to the edge.
+                .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
                 .onPreviewKeyEvent { event ->
                     if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                     val chord = com.wasimaster.wmpass.ui.settings.chordOf(event) ?: return@onPreviewKeyEvent false
@@ -371,6 +433,7 @@ fun VaultShell(prefs: Prefs) {
                 },
         ) {
             ReceiveIncoming()
+            KeepItemAcrossShapes(shell, LocalWindowShape.current.panes)
             BackdropSource(backdrop, Modifier.fillMaxSize()) {
             SharedTransitionLayout(Modifier.fillMaxSize()) {
                 CompositionLocalProvider(LocalShared provides this) {

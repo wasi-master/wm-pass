@@ -1,5 +1,6 @@
 package com.wasimaster.wmpass.ui.vault
 
+import com.wasimaster.wmpass.ui.theme.readableWidth
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -675,6 +676,7 @@ fun GeneratorTab() {
             Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
+                .readableWidth()
                 .then(if (colors.flat) Modifier else Modifier.statusBarsPadding())
                 .padding(horizontal = 16.dp),
         ) {
