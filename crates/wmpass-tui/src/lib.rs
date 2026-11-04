@@ -17,6 +17,7 @@ mod glyphs;
 mod input;
 pub mod join;
 mod link;
+pub mod restore;
 mod settings;
 mod store;
 mod theme;

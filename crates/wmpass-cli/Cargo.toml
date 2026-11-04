@@ -19,7 +19,7 @@ path = "src/main.rs"
 default = ["tui"]
 # The full-screen app, run as `wmpass` with no subcommand or `wmpass tui`. A build for
 # scripts only can leave it out with --no-default-features.
-tui = ["dep:wmpass-tui"]
+tui = ["dep:wmpass-tui", "dep:zeroize"]
 
 [dependencies]
 wmpass-core.workspace = true
@@ -28,7 +28,9 @@ clap = { version = "4", features = ["derive"] }
 rpassword = "7"
 serde_json.workspace = true
 getrandom.workspace = true
+zeroize = { workspace = true, optional = true }
 
 [dev-dependencies]
+wmpass-sinks = { path = "../wmpass-sinks" }
 assert_cmd = "2"
 tempfile = "3"

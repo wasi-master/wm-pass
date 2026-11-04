@@ -886,3 +886,83 @@ fn linked_items_show_and_open() {
     let Screen::Vault(ui) = &app.screen else { panic!("locked") };
     assert_eq!(ui.current_id().as_deref(), Some(note.as_str()));
 }
+
+/// Waits for the restore screen's thread, as the app's loop does between frames.
+fn settle(app: &mut App) {
+    for _ in 0..400 {
+        let busy = matches!(&app.overlay, Some(Overlay::Restore(ui)) if ui.busy());
+        app.tick();
+        if !busy {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    panic!("the restore never finished");
+}
+
+#[test]
+fn a_vault_comes_back_from_a_backup_location_and_opens() {
+    use wmpass_sinks::backups::{BundleFile, bundle};
+    let dir = tempfile::tempdir().expect("dir");
+    let made = vault(dir.path());
+    let file = std::fs::read(made.path()).expect("vault file");
+    let (older, newer) = (dir.path().join("wmpass-backup-20260101-000000.wmbackup"), dir.path().join("wmpass-backup-20261104-093000.wmbackup"));
+    let copy = bundle(&[
+        BundleFile { name: "vaults/0a0a".into(), bytes: file },
+        BundleFile { name: "vaults/0b0b".into(), bytes: vec![7; 64] },
+    ]);
+    std::fs::write(&newer, &copy).expect("newer");
+    std::fs::write(&older, b"not even a zip").expect("older");
+
+    let mut app = App::over(made);
+    ctrl(&mut app, 'l');
+    ctrl(&mut app, 'b');
+    assert!(matches!(app.overlay, Some(Overlay::Restore(_))));
+    let form = screen(&mut app, 100, 30);
+    assert!(form.contains("Restore from a backup location") && form.contains("WebDAV") && form.contains("SFTP"), "{form}");
+
+    // Folder is the last kind, one step to the left of the first.
+    press(&mut app, KeyCode::Left);
+    press(&mut app, KeyCode::Tab);
+    typed(&mut app, &dir.path().to_string_lossy());
+    press(&mut app, KeyCode::Tab);
+    let root = dir.path().join("restored");
+    typed(&mut app, &root.to_string_lossy());
+    press(&mut app, KeyCode::Enter);
+    settle(&mut app);
+    let listed = screen(&mut app, 100, 30);
+    assert!(listed.contains("2 copies") && listed.contains("2026-11-04 09:30 UTC"), "{listed}");
+    let newest = listed.find("2026-11-04").expect("newest");
+    assert!(newest < listed.find("2026-01-01").expect("older"), "newest first");
+
+    // The older one is not a backup at all; the list stays to pick another.
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Enter);
+    settle(&mut app);
+    let refused = screen(&mut app, 100, 30);
+    assert!(refused.contains("not a WM Pass backup") && refused.contains("2 copies"), "{refused}");
+    assert!(!root.join("vaults").exists());
+
+    press(&mut app, KeyCode::Enter);
+    settle(&mut app);
+    assert!(app.overlay.is_none(), "{:?}", app.overlay);
+    let Screen::Door(door) = &app.screen else { panic!("back at the door") };
+    assert_eq!(door.mode, crate::door::Mode::Unlock);
+    assert_eq!(door.path.text(), root.to_string_lossy());
+    assert_eq!(door.focus, crate::door::Field::Password);
+    assert!(screen(&mut app, 100, 30).contains("Restored"));
+    assert!(matches!(engine::unlock(&root, b"master-pw", None, 9), Ok(engine::Unlock::Opened(..))), "the master password opens it");
+
+    // A second restore into the same folder is refused, and says so.
+    ctrl(&mut app, 'b');
+    press(&mut app, KeyCode::Left);
+    press(&mut app, KeyCode::Tab);
+    typed(&mut app, &dir.path().to_string_lossy());
+    press(&mut app, KeyCode::Tab);
+    typed(&mut app, &root.to_string_lossy());
+    press(&mut app, KeyCode::Enter);
+    settle(&mut app);
+    press(&mut app, KeyCode::Enter);
+    settle(&mut app);
+    assert!(screen(&mut app, 100, 30).contains("already a vault"));
+}

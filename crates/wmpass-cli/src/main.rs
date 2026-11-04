@@ -48,6 +48,24 @@ enum Command {
         /// Where to keep it. Must not exist yet.
         vault: PathBuf,
     },
+    /// Bring a vault onto this computer from a place its backups are kept: WebDAV, S3, SFTP or
+    /// a folder. Lists the copies there, newest first, and restores the one picked. Passwords
+    /// and keys are asked for, never taken as flags.
+    #[cfg(feature = "tui")]
+    Restore {
+        #[command(subcommand)]
+        from: Source,
+        /// Folder to keep it in, which must not hold a vault yet. The WM Pass app's folder on
+        /// this computer if left out.
+        #[arg(long, global = true)]
+        into: Option<PathBuf>,
+        /// Take the newest copy without asking.
+        #[arg(long, global = true)]
+        latest: bool,
+        /// Only list the copies.
+        #[arg(long, global = true)]
+        list: bool,
+    },
     /// Send a vault to a new device on this network that is waiting to join.
     #[cfg(feature = "tui")]
     AddDevice {
@@ -187,6 +205,152 @@ enum Command {
         /// Other copy.
         other: PathBuf,
     },
+}
+
+/// A place backups are kept.
+#[cfg(feature = "tui")]
+#[derive(Subcommand)]
+enum Source {
+    /// A WebDAV folder, such as Nextcloud's, a NAS's or `rclone serve webdav`.
+    Webdav {
+        /// The folder's address.
+        url: String,
+        /// User name. The password is asked for.
+        #[arg(long)]
+        user: Option<String>,
+    },
+    /// An S3 bucket: AWS, Backblaze B2, Cloudflare R2, MinIO, Garage and others.
+    S3 {
+        /// Bucket name.
+        bucket: String,
+        /// Access key id. The secret access key is asked for.
+        #[arg(long)]
+        access_key: String,
+        /// Service address. Empty for AWS, whose address comes from the region.
+        #[arg(long, default_value = "")]
+        endpoint: String,
+        /// Region.
+        #[arg(long, default_value = "us-east-1")]
+        region: String,
+        /// Key prefix the copies are under.
+        #[arg(long, default_value = "")]
+        prefix: String,
+        /// Address the bucket as a subdomain, as AWS prefers, rather than in the path.
+        #[arg(long)]
+        virtual_host: bool,
+    },
+    /// A folder on an SSH server.
+    Sftp {
+        /// Server name or address.
+        host: String,
+        /// User name.
+        #[arg(long)]
+        user: String,
+        /// Port.
+        #[arg(long, default_value_t = 22)]
+        port: u16,
+        /// Folder on the server the copies are in.
+        #[arg(long, default_value = "")]
+        path: String,
+        /// Private key file to sign in with instead of a password.
+        #[arg(long)]
+        identity: Option<PathBuf>,
+        /// The server key to expect, as `<algorithm> <base64>`, from its known_hosts line.
+        /// Without it the first key seen is taken, and its fingerprint shown for checking.
+        #[arg(long)]
+        host_key: Option<String>,
+    },
+    /// A folder on this computer, or one another app syncs here.
+    Folder {
+        /// The folder.
+        path: PathBuf,
+    },
+}
+
+/// A place's password, asked for. `WMPASS_PLACE_PASSWORD` answers instead, for tests and
+/// scripts, with the same warning as `WMPASS_PASSWORD`.
+#[cfg(feature = "tui")]
+fn place_secret(prompt: &str) -> Result<String, String> {
+    if let Ok(value) = std::env::var("WMPASS_PLACE_PASSWORD") {
+        return Ok(value);
+    }
+    rpassword::prompt_password(prompt).map_err(|e| format!("could not read the password: {e}"))
+}
+
+#[cfg(feature = "tui")]
+fn restore(from: Source, into: Option<PathBuf>, latest: bool, list_only: bool) -> Result<(), String> {
+    use std::io::{BufRead, Write};
+    use wmpass_tui::restore::{self, Kind, Secrets, Spot};
+    use zeroize::Zeroizing;
+
+    let into = match into {
+        Some(path) => path,
+        None if list_only => PathBuf::new(),
+        None => restore::default_target().ok_or("say where to keep the vault with --into")?,
+    };
+    if !list_only && wmpass_tui::app_folder::names(&into).is_ok_and(|n| !n.is_empty()) {
+        return Err(format!("{} already holds a vault; open it, or restore somewhere else with --into", into.display()));
+    }
+    let mut secrets = Secrets::default();
+    let spot = match from {
+        Source::Webdav { url, user } => {
+            if user.is_some() {
+                secrets.password = Zeroizing::new(place_secret("WebDAV password: ")?);
+            }
+            Spot { kind: Kind::WebDav, url, user: user.unwrap_or_default(), ..Spot::default() }
+        }
+        Source::S3 { bucket, access_key, endpoint, region, prefix, virtual_host } => {
+            secrets.password = Zeroizing::new(place_secret("S3 secret access key: ")?);
+            Spot { kind: Kind::S3, bucket, access_key, endpoint, region, prefix, virtual_host, ..Spot::default() }
+        }
+        Source::Sftp { host, user, port, path, identity, host_key } => {
+            match identity {
+                Some(file) => {
+                    let key = Zeroizing::new(read_file(&file)?);
+                    secrets.private_key = Zeroizing::new(String::from_utf8(key.to_vec()).map_err(|_| format!("{} is not a key file", file.display()))?);
+                    secrets.key_passphrase = Zeroizing::new(place_secret("Key passphrase (Enter if none): ")?);
+                }
+                None => secrets.password = Zeroizing::new(place_secret("SFTP password: ")?),
+            }
+            Spot { kind: Kind::Sftp, host, user, port, path, host_key: host_key.unwrap_or_default(), ..Spot::default() }
+        }
+        Source::Folder { path } => Spot { kind: Kind::Folder, path: path.to_string_lossy().into_owned(), ..Spot::default() },
+    };
+    let mut place = spot.place(&secrets);
+    drop(secrets);
+    let copies = restore::copies(&mut place)?;
+    if spot.kind == Kind::Sftp
+        && spot.host_key.is_empty()
+        && let Some(key) = restore::fingerprint(&place)
+    {
+        eprintln!("Server key {key}. Check that it matches your server's.");
+    }
+    if copies.is_empty() {
+        return Err("no WM Pass backups there; check the address or folder".to_owned());
+    }
+    for (n, copy) in copies.iter().enumerate() {
+        println!("{:>3}  {}", n + 1, restore::describe(copy));
+    }
+    if list_only {
+        return Ok(());
+    }
+    let picked = if latest {
+        0
+    } else {
+        print!("Which copy? [1] ");
+        let _ = std::io::stdout().flush();
+        let mut line = String::new();
+        std::io::stdin().lock().read_line(&mut line).map_err(|e| e.to_string())?;
+        match line.trim() {
+            "" => 0,
+            typed => typed.parse::<usize>().ok().filter(|n| (1..=copies.len()).contains(n)).ok_or("pick a number from the list")? - 1,
+        }
+    };
+    let bytes = restore::fetch(&mut place, &copies[picked])?;
+    let files = restore::install(&into, &bytes)?;
+    println!("Restored {} into {} ({files} vault {}).", copies[picked].name, into.display(), if files == 1 { "file" } else { "files, decoys among them" });
+    println!("Open it with: wmpass tui {}", into.display());
+    Ok(())
 }
 
 fn now_ms() -> u64 {
@@ -464,6 +628,8 @@ fn run(cli: Cli) -> Result<(), String> {
         Command::Join { vault } => wmpass_tui::join(vault)?,
         #[cfg(feature = "tui")]
         Command::AddDevice { vault, code } => wmpass_tui::add_device(vault, code.as_deref())?,
+        #[cfg(feature = "tui")]
+        Command::Restore { from, into, latest, list } => restore(from, into, latest, list)?,
         Command::Create { vault, name } => {
             if vault.exists() {
                 return Err(format!("{} already exists", vault.display()));

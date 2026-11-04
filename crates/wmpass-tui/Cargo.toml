@@ -15,6 +15,8 @@ workspace = true
 wmpass-core.workspace = true
 wmpass-session = { path = "../wmpass-session" }
 wmpass-lan = { path = "../wmpass-lan" }
+wmpass-sinks = { path = "../wmpass-sinks", features = ["native"] }
+wmpass-net = { path = "../wmpass-net", features = ["native"] }
 qrcode = { version = "0.14", default-features = false }
 serde.workspace = true
 serde_json.workspace = true

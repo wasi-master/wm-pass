@@ -63,6 +63,34 @@ wmpass add-device ~/vaults/personal.wmvault
 
 It lists the devices waiting on this network; pick one and compare six digits, since a terminal cannot scan a code. Or paste the text under the new device's QR code into the box on the same screen. With `--code` and that text, it sends without the full screen. From the full-screen app, it is **Add a new device** in the `:` palette. Both devices need to be on the same network.
 
+## Restoring from a backup location
+
+If the desktop or phone app backs your vault up to WebDAV, S3, SFTP or a folder, a computer with no vault can start from one of those copies. In the full-screen app, press `Ctrl+B` at the unlock screen. Choose the kind with the arrow keys, fill in where the copies are, and press Enter on the last line or `Ctrl+S`. The copies there are listed newest first. Pick one and press Enter, and the unlock screen asks for the vault's master password.
+
+From a shell or a script, `wmpass restore` does the same:
+
+```bash
+wmpass restore webdav https://dav.example.com/WM%20Pass --user me
+```
+
+```bash
+wmpass restore s3 my-bucket --access-key AKIA... --region eu-central-1
+```
+
+```bash
+wmpass restore sftp nas.local --user me --path backups/wmpass
+```
+
+```bash
+wmpass restore folder ~/Dropbox/WM\ Pass
+```
+
+It lists the copies and asks which one, Enter taking the newest. `--latest` takes the newest without asking, and `--list` only lists them. Passwords, S3 secret keys and key passphrases are asked for, never taken on the command line; `WMPASS_PLACE_PASSWORD` can answer for scripts and tests, with the same warning as `WMPASS_PASSWORD`. For SFTP, `--identity` signs in with a private key file instead of a password.
+
+The vault goes into the desktop app's folder, so the app opens it too once it is installed. `--into`, or **Restore into** on the full-screen form, names another folder. Either way the folder must not hold a vault yet. Open it afterwards with `wmpass tui` and that folder, or `wmpass tui` alone for the app's own.
+
+A copy is encrypted throughout, so it opens with the master password and nothing else. The first SFTP connection takes the server's key and prints its fingerprint; check it against the server's own, or give the key from its `known_hosts` line with `--host-key`. Google Drive, Dropbox, OneDrive and Box sign in through a browser, which a terminal does not have, so restore from those in the desktop or phone app.
+
 ## Finding your way
 
 The five tabs along the top are Items, Codes, Generator, Health and Settings. Press `1` to `5` to switch, or click them. In Items, the sidebar lists kinds, folders, tags and the trash, the middle shows what matches, and the right side shows the item you picked.
@@ -152,7 +180,7 @@ wmpass otp Personal.wmvault GitHub
 wmpass gen --words
 ```
 
-`wmpass --help` lists the rest: `create`, `show`, `add`, `rm`, `health`, `import`, `export`, `merge`, `duress`, `shares` and `recover`. When no terminal is attached, `wmpass` on its own prints that list and exits with an error, so a script never waits on a screen nobody sees.
+`wmpass --help` lists the rest: `create`, `restore`, `show`, `add`, `rm`, `health`, `import`, `export`, `merge`, `duress`, `shares` and `recover`. When no terminal is attached, `wmpass` on its own prints that list and exits with an error, so a script never waits on a screen nobody sees.
 
 ## What it cannot do
 

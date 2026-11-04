@@ -9841,7 +9841,9 @@ dependencies = [
  "serde_json",
  "tempfile",
  "wmpass-core",
+ "wmpass-sinks",
  "wmpass-tui",
+ "zeroize",
 ]
 
 [[package]]
@@ -10101,7 +10103,9 @@ dependencies = [
  "tempfile",
  "wmpass-core",
  "wmpass-lan",
+ "wmpass-net",
  "wmpass-session",
+ "wmpass-sinks",
  "zeroize",
 ]
 
