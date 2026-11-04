@@ -6,6 +6,7 @@
   import Fold from '../parts/Fold.svelte';
   import ScanDialog from '../parts/ScanDialog.svelte';
 
+  import Icon from '../parts/Icon.svelte';
   import IconBtn from '../parts/IconBtn.svelte';
   import Strength from '../parts/Strength.svelte';
   import Switch from '../parts/Switch.svelte';
@@ -14,8 +15,9 @@
   import { bytesOf, consumeText, pass } from '../engine/pass.svelte';
   import { prefs } from '../engine/prefs.svelte';
   import { kindName, oklch } from '../engine/face';
-  import { siteLine, titleFromSite } from '../engine/text';
-  import type { Detail, FieldView, StrengthView } from '../engine/types';
+  import { brands } from '../engine/brands.svelte';
+  import { siteLine, titleFromSite, whenText } from '../engine/text';
+  import type { Detail, FieldView, RelatedView, StrengthView } from '../engine/types';
   import { overlays } from '../parts/floating.svelte';
   import { GenState } from './gen.svelte';
   import GenControls from './GenControls.svelte';
@@ -68,11 +70,13 @@
   let { editing }: { editing: Editing } = $props();
 
   const entryId = editing.id;
-  const kind = editing.kind;
+  let kind = $state(editing.kind);
   let detail = $state<Detail | null>(null);
   let fields = $state<EditField[]>([]);
   let title = $state(editing.presetTitle ?? '');
   let sites = $state<EditSite[]>([]);
+  /** The Android apps a login fills in, kept as saved. */
+  let apps = $state<Record<string, any>[]>([]);
   let customs = $state<EditCustom[]>([]);
   let questions = $state<EditQuestion[]>([]);
   let notes = $state('');
@@ -134,7 +138,8 @@
       fields = d.fields.map(makeField);
       for (const raw of d.sites) {
         const line = siteLine(raw);
-        if (line) sites.push({ text: line.label, raw });
+        if (line?.app) apps.push(raw);
+        else if (line) sites.push({ text: line.label, raw });
       }
       customs = d.custom_fields.map((c) => ({
         index: c.index,
@@ -203,7 +208,9 @@
     fields.some(changed) ||
       title !== (detail?.title ?? editing.presetTitle ?? '') ||
       sites.some((s) => (s.raw === null ? s.text.trim() !== '' : siteLine(s.raw)?.label !== s.text)) ||
-      (detail ? detail.sites.filter((s) => siteLine(s)).length !== sites.length : false) ||
+      (detail ? detail.sites.filter((s) => siteLine(s) && !siteLine(s)?.app).length !== sites.length : false) ||
+      (detail ? JSON.stringify(detail.sites.filter((s) => siteLine(s)?.app)) !== JSON.stringify(apps) : apps.length > 0) ||
+      (detail !== null && kind !== detail.kind) ||
       otpSeed !== '' ||
       (notesLoaded && notes !== notesOriginal) ||
       customs.some((c) => c.index === null ? c.name !== '' || c.value !== '' : c.remove || c.value !== c.original || c.name !== detail?.custom_fields[c.index]?.name) ||
@@ -269,12 +276,15 @@
         if (site.raw && siteLine(site.raw)?.label === typed) newSites.push(site.raw);
         else newSites.push({ Url: typed.includes('://') ? typed : `https://${typed}` });
       }
+      newSites.push(...apps);
       let id = entryId;
       if (!id) {
         const reply = await pass.change<{ id: string }>('entry.create', { kind, title: finalTitle, color, folder, fields: fieldsJson, sites: newSites });
         id = reply.json.id;
-      } else if (plain.length) {
-        await pass.change('entry.set', { id, fields: fieldsJson });
+      } else {
+        // A code given a username and password becomes a login that keeps its code.
+        if (detail?.kind === 'otp' && kind === 'login') await pass.change('entry.convert', { id, kind: 'login' });
+        if (plain.length) await pass.change('entry.set', { id, fields: fieldsJson });
       }
       for (const f of fields.filter((f) => f.spec.secret && changed(f))) {
         await secretCall('entry.set_secret', { id, field: f.spec.key }, f.text);
@@ -302,6 +312,11 @@
         tags,
         ...(kind === 'login' ? { sites: newSites } : {}),
       });
+      // Tagged by its site, such as Banking or Social; the kind already says it is a card or a code.
+      if (!entryId && tags.length === 0 && prefs.v.auto_tag) {
+        const site = await pass.view<{ site: string | null }>('categorise.suggest', { id }).then((r) => r.site).catch(() => null);
+        if (site) await pass.change('entry.common', { id, tags: [site] });
+      }
       ui.editing = null;
       ui.open(id!);
     } catch (failure: any) {
@@ -346,6 +361,140 @@
     const fp = fields.find((x) => x.spec.key === 'fingerprint');
     if (pub) pub.text = reply.json.public_key;
     if (fp) fp.text = reply.json.fingerprint;
+  }
+
+  /** A code that wants a username and password too becomes a login, keeping its code. */
+  async function becomeLogin() {
+    const spec = (await pass.kinds()).find((k) => k.kind === 'login');
+    if (!spec) return;
+    fields = spec.fields.map((f) => makeField({ ...f, has_value: false, value: null }));
+    if (sites.length === 0) sites.push({ text: '', raw: null });
+    kind = 'login';
+  }
+
+  // The name, websites and apps suggest each other: Facebook brings messenger.com and the
+  // Facebook, Lite and Messenger apps. Worked out a moment after typing stops.
+  let related = $state<RelatedView | null>(null);
+  $effect(() => {
+    if (!ready || kind !== 'login') return;
+    void brands.ready;
+    const name = title;
+    const typed = sites.map((s) => s.text.trim()).filter(Boolean);
+    const chosen = apps.map((a) => a.AndroidApp?.package as string).filter(Boolean);
+    const timer = setTimeout(async () => {
+      const brand = name.trim() ? brands.find(null, name) : null;
+      const siteBrands = typed.flatMap((t) => {
+        const found = brands.find(hostOf(t), '');
+        return found ? [found.name] : [];
+      });
+      try {
+        related = await pass.view<RelatedView>('related.find', {
+          title: name,
+          sites: typed,
+          apps: chosen,
+          brand: brand ? { name: brand.name, domains: brand.domains } : null,
+          site_brands: siteBrands,
+        });
+      } catch {
+        related = null;
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  });
+
+  function hostOf(typed: string) {
+    try {
+      return new URL(typed.includes('://') ? typed : `https://${typed}`).hostname;
+    } catch {
+      return null;
+    }
+  }
+
+  function addSite(site: string) {
+    const blank = sites.find((s) => s.raw === null && !s.text.trim());
+    if (blank) blank.text = site;
+    else sites.push({ text: site, raw: null });
+  }
+
+  function addApp(pkg: string, name: string) {
+    if (!apps.some((a) => a.AndroidApp?.package === pkg)) apps.push({ AndroidApp: { package: pkg, cert_sha256: null } });
+    if (!title) title = name;
+  }
+
+  /** Common values for a field, narrowed by what has been typed; none once one is chosen. */
+  function offered(f: EditField) {
+    const options = f.spec.suggestions ?? [];
+    const typed = f.text.trim().toLowerCase();
+    if (!options.length || options.some((o) => o.toLowerCase() === typed)) return [];
+    return options.filter((o) => !typed || o.toLowerCase().includes(typed));
+  }
+
+  // A Wi-Fi password follows the security both ways: typing one means a key is needed,
+  // clearing it means none is. What was saved is left alone until the password changes.
+  let wifiHad: boolean | null = null;
+  $effect(() => {
+    if (!ready || kind !== 'wifi') return;
+    const password = fields.find((f) => f.spec.key === 'password');
+    const security = fields.find((f) => f.spec.key === 'security');
+    if (!password || !security) return;
+    const typed = password.loaded ? password.text !== '' : true;
+    if (wifiHad === null) {
+      wifiHad = typed;
+      return;
+    }
+    if (typed === wifiHad) return;
+    wifiHad = typed;
+    if (typed && security.text === 'open') security.text = 'wpa';
+    if (!typed && ['wpa', 'sae', 'wep'].includes(security.text)) security.text = 'open';
+  });
+
+  let scanningWifi = $state(false);
+  let wifiNote = $state<string | null>(null);
+
+  /** Puts a `WIFI:` code into the form: the network, its security, its password. */
+  async function fillWifi(text: string): Promise<boolean> {
+    const bytes = bytesOf(text);
+    try {
+      const reply = await pass.engine<{ ssid: string; security: string; hidden: boolean }>('wifi.parse', {}, { secret: bytes });
+      const password = consumeText(reply.secret);
+      const set = (key: string, value: string) => {
+        const f = fields.find((x) => x.spec.key === key);
+        if (f) f.text = value;
+      };
+      set('ssid', reply.json.ssid);
+      set('security', reply.json.security);
+      const pw = fields.find((x) => x.spec.key === 'password');
+      if (pw) {
+        pw.text = password;
+        pw.loaded = true;
+      }
+      wifiHad = password !== '';
+      const hidden = fields.find((x) => x.spec.key === 'hidden_ssid');
+      if (hidden) hidden.flag = reply.json.hidden;
+      if (!title && reply.json.ssid) title = reply.json.ssid;
+      return true;
+    } catch {
+      return false;
+    } finally {
+      bytes.fill(0);
+    }
+  }
+
+  async function wifiScanned(texts: string[]) {
+    scanningWifi = false;
+    for (const text of texts) if (await fillWifi(text)) return void (wifiNote = null);
+    wifiNote = 'That code is not a Wi-Fi network.';
+  }
+
+  /** A `WIFI:` code pasted where the network name goes fills in the whole network. */
+  async function ssidTyped(f: EditField) {
+    if (!/^wifi:/i.test(f.text.trim())) return;
+    const text = f.text;
+    f.text = '';
+    if (!(await fillWifi(text))) {
+      f.text = text;
+      wifiNote = 'That code is not a Wi-Fi network.';
+    } else wifiNote = null;
   }
 
   function openGenerator(f: EditField) {
@@ -441,7 +590,10 @@
           mono={spec.secret}
           placeholder={hintOf(spec.key)}
           label={spec.label}
-          oninput={() => spec.input === 'password' && rate(f)}
+          oninput={() => {
+            if (spec.input === 'password') rate(f);
+            if (kind === 'wifi' && spec.key === 'ssid') void ssidTyped(f);
+          }}
         >
           {#snippet trail()}
             {#if spec.secret && f.text}<IconBtn icon={f.showing ? 'visibility_off' : 'visibility'} label={f.showing ? 'Hide' : 'Show'} size={16} onclick={() => (f.showing = !f.showing)} />{/if}
@@ -449,6 +601,13 @@
             {#if spec.key === 'username'}<IconBtn icon="alternate_email" label="Use an alias" size={16} on onclick={() => (aliasFor = f)} />{/if}
           {/snippet}
         </Field>
+        {#if !spec.secret && offered(f).length}
+          <div class="gap wrap" style="padding-top:6px">
+            {#each offered(f) as option (option)}
+              <button type="button" class="chip" onclick={() => (f.text = option)}>{option}</button>
+            {/each}
+          </div>
+        {/if}
         {#if spec.input === 'password' && f.loaded && f.text && rating[spec.key]}
           {@const s = rating[spec.key]!}
           <div style="padding-top:5px">
@@ -472,11 +631,32 @@
   <div class="detail-inner">
     <div class="form-row" style="padding-bottom:8px" data-help-anchor="editor.name">
       <span style="justify-self:end"><Tile title={title || siteTitle} site={previewSite} {kind} label={color} {icon} size={36} /></span>
-      <Field bind:value={title} bind:ref={titleInput} placeholder={siteTitle || 'Name'} label="Name" />
+      <div>
+        <Field bind:value={title} bind:ref={titleInput} placeholder={siteTitle || 'Name'} label="Name" />
+        {#if !title && related?.name && related.name.toLowerCase() !== siteTitle.toLowerCase()}
+          <div class="gap wrap" style="padding-top:6px"><button type="button" class="chip" onclick={() => (title = related!.name!)}>{related.name}</button></div>
+        {/if}
+      </div>
     </div>
 
     {#if ready}
       <div data-help-anchor="editor.fields">{#each mainRows as f (f.spec.key)}{@render fieldEditor(f)}{/each}</div>
+      {#if kind === 'wifi'}
+        <div class="form-row">
+          <span class="label"></span>
+          <span><Btn label="Fill in from a QR code" icon="qr_code_scanner" variant="quiet" onclick={() => (scanningWifi = true)} /></span>
+        </div>
+        {#if wifiNote}<p class="dim small">{wifiNote}</p>{/if}
+      {/if}
+      {#if kind === 'otp'}
+        <div class="form-row">
+          <span class="label"></span>
+          <span class="stack" style="gap:2px;align-items:flex-start">
+            <Btn label="Add a username and password" icon="person" variant="quiet" onclick={becomeLogin} />
+            <span class="dim small">Keeps the code, and adds the login it belongs to</span>
+          </span>
+        </div>
+      {/if}
 
       <div data-help-anchor="editor.folds">
       {#if detailRows.length > 0}
@@ -487,8 +667,11 @@
       {/if}
 
       {#if kind === 'login'}
-        {@const content = firstSite !== '' || sites.length > 1}
-        <Fold title="Websites" summary={firstSite || null} open={isOpen('sites', content)} ontoggle={(o) => remember('sites', content, o)}>
+        {@const content = firstSite !== '' || sites.length > 1 || apps.length > 0}
+        {@const appNames = apps.map((a) => siteLine(a)?.label ?? '')}
+        {@const offers = related ? [...related.sites, ...related.apps.map((a) => a.name)] : []}
+        {@const summary = [firstSite, ...appNames].filter(Boolean).join(', ') || (offers.length ? `Suggests ${offers.slice(0, 3).join(', ')}` : null)}
+        <Fold title="Websites and apps" {summary} open={isOpen('sites', content)} ontoggle={(o) => remember('sites', content, o)}>
           {#each sites as site, index}
             <div class="form-row">
               <span class="label">Website</span>
@@ -499,7 +682,42 @@
               </Field>
             </div>
           {/each}
+          {#each apps as app, index (app.AndroidApp?.package)}
+            {@const line = siteLine(app)}
+            <div class="form-row">
+              <span class="label">App</span>
+              <span class="gap" style="min-width:0">
+                <span class="grow ell">{line?.label}{#if line && line.label !== line.app}<span class="dim small" style="display:block">{line.app}</span>{/if}</span>
+                <IconBtn icon="close" label="Remove {line?.label ?? 'app'}" size={14} onclick={() => apps.splice(index, 1)} />
+              </span>
+            </div>
+          {/each}
           <Btn label="Add a website" icon="add" variant="quiet" onclick={() => sites.push({ text: '', raw: null })} />
+          {#if related && (related.sites.length || related.apps.length)}
+            <div style="padding:8px 0 4px">
+              <p class="dim small gap" style="gap:6px;padding-bottom:6px"><Icon name="auto_awesome" size={14} />Goes with this login</p>
+              <div class="gap wrap">
+                {#each related.sites as site (site)}
+                  <button type="button" class="chip" onclick={() => addSite(site)}><Icon name="language" size={14} />{site}</button>
+                {/each}
+                {#each related.apps as app (app.package)}
+                  <button type="button" class="chip" title={app.package} onclick={() => addApp(app.package, app.name)}><Icon name="smartphone" size={14} />{app.name}</button>
+                {/each}
+              </div>
+            </div>
+          {/if}
+        </Fold>
+      {/if}
+
+      {#if kind === 'login' && detail?.passkeys.length}
+        <Fold title="Passkeys" summary={String(detail.passkeys.length)} open={isOpen('passkeys', false)} ontoggle={(o) => remember('passkeys', false, o)}>
+          {#each detail.passkeys as key (key.credential_id)}
+            <div class="form-row">
+              <span class="label">Passkey</span>
+              <span class="ell">{key.rp_id}<span class="dim small" style="display:block">{[key.user_name, key.created_ms > 0 ? `made ${whenText(key.created_ms)}` : ''].filter(Boolean).join(', ')}</span></span>
+            </div>
+          {/each}
+          <p class="dim small" style="padding-top:6px">A site adds a passkey when you create one there with WM Pass as your passkey provider. A passkey cannot be typed in, copied or changed, since its private half never leaves WM Pass.</p>
         </Fold>
       {/if}
 
@@ -590,9 +808,9 @@
 {:else if picker === 'tags'}
   <Pickers kind="tags" current={tags} onclose={() => (picker = null)} onpick={(v) => (tags = v)} />
 {:else if picker === 'colour'}
-  <Pickers kind="colour" current={color} onclose={() => (picker = null)} onpick={(v) => (color = v)} />
+  <Pickers kind="colour" current={color} look={{ title: title || siteTitle, site: previewSite, kind, color, icon }} onclose={() => (picker = null)} onpick={(v) => (color = v)} />
 {:else if picker === 'icon'}
-  <Pickers kind="icon" current={icon} onclose={() => (picker = null)} onpick={(v) => (icon = v)} />
+  <Pickers kind="icon" current={icon} look={{ title: title || siteTitle, site: previewSite, kind, color, icon }} onclose={() => (picker = null)} onpick={(v) => (icon = v)} />
 {/if}
 
 {#if generating && gen}
@@ -610,6 +828,10 @@
 
 {#if aliasFor}
   <AliasPicker hint={title} onclose={() => (aliasFor = null)} onpick={(address) => { aliasFor!.text = address; aliasFor = null; }} />
+{/if}
+
+{#if scanningWifi}
+  <ScanDialog title="Scan the network's code" hint="A phone shows it under Wi-Fi, Share. A screenshot of it works too." onfound={wifiScanned} onclose={() => (scanningWifi = false)} />
 {/if}
 
 {#if scanningOtp}

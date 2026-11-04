@@ -28,6 +28,8 @@ export interface FieldSpec {
   input: string;
   secret: boolean;
   choices: string[];
+  /** Values people type often, offered as chips. */
+  suggestions?: string[];
 }
 
 export interface KindSpec {
@@ -204,3 +206,15 @@ export type UnlockResult =
   | { kind: 'waiting'; retryAtMs: number }
   | { kind: 'needs_factor'; factors: NeededFactor[] }
   | { kind: 'hard_locked' };
+
+export interface RelatedApp {
+  package: string;
+  name: string;
+}
+
+/** What goes with a login: websites, apps and, for one without a name yet, a name. */
+export interface RelatedView {
+  sites: string[];
+  apps: RelatedApp[];
+  name: string | null;
+}

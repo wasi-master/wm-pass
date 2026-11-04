@@ -522,3 +522,59 @@ fn qr_codes_are_read_from_a_picture() {
     let args = json!({"width": 65, "height": 64}).to_string();
     assert!(s.call("qr.read", Call { args: &args, blobs: &[&blank], ..Call::default() }).is_err());
 }
+
+#[test]
+fn a_wifi_network_comes_in_from_its_text_and_goes_out_as_a_qr_code() {
+    let mut s = Service::new(1);
+    let reply = s
+        .call("wifi.parse", Call { secret: b"WIFI:T:WPA;S:Home;P:hunter22;;", ..Call::default() })
+        .expect("parse");
+    assert_eq!(json_of(&reply), json!({"ssid": "Home", "security": "wpa", "hidden": false}));
+    assert_eq!(reply.secret.as_ref().map(|s| s.to_vec()), Some(b"hunter22".to_vec()), "the password comes back as the secret");
+    assert!(s.call("wifi.parse", Call { secret: b"hello", ..Call::default() }).is_err());
+
+    let h = new_vault(&mut s);
+    let made = call(&mut s, "entry.create", h, json!({"kind": "wifi", "title": "Home", "fields": {"ssid": "Home", "security": "wpa"}}));
+    let id = json_of(&made)["id"].as_str().unwrap().to_owned();
+    secret_call(&mut s, "entry.set_secret", h, json!({"id": id, "field": "password"}), b"hunter22");
+    let view = json_of(&call(&mut s, "wifi.qr", h, json!({"id": id})));
+    let want = qrcode::QrCode::new(b"WIFI:T:WPA;S:Home;P:hunter22;;").unwrap();
+    assert_eq!(view["size"], want.width());
+    let rows: String = want.to_colors().iter().map(|c| if *c == qrcode::Color::Dark { '1' } else { '0' }).collect();
+    assert_eq!(view["rows"], rows);
+    call(&mut s, "entry.set", h, json!({"id": id, "fields": {"security": "eap"}}));
+    let args = json!({"id": id}).to_string();
+    assert!(s.call("wifi.qr", Call { handle: h, args: &args, ..Call::default() }).is_err(), "an enterprise network has no code");
+}
+
+#[test]
+fn related_sites_and_apps_come_from_the_engine() {
+    let mut s = Service::new(1);
+    let args = json!({"title": "", "sites": ["facebook.com"]}).to_string();
+    let found = json_of(&s.call("related.find", Call { args: &args, ..Call::default() }).expect("find"));
+    assert!(found["sites"].as_array().unwrap().contains(&json!("messenger.com")), "{found}");
+    assert!(found["apps"].as_array().unwrap().contains(&json!({"package": "com.facebook.orca", "name": "Messenger"})), "{found}");
+    assert_eq!(found["name"], "Facebook");
+    let apps = json_of(&s.call("related.apps", Call::default()).expect("apps"));
+    assert!(apps.as_array().unwrap().iter().any(|a| a["package"] == "com.facebook.katana"));
+}
+
+#[test]
+fn common_values_ride_with_the_fields() {
+    let mut s = Service::new(1);
+    let kinds = json_of(&s.call("kinds", Call::default()).expect("kinds"));
+    let field = |kind: &str, key: &str| {
+        kinds.as_array().unwrap().iter().find(|k| k["kind"] == kind).unwrap()["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["key"] == key)
+            .unwrap()
+            .clone()
+    };
+    assert!(field("database", "engine")["suggestions"].as_array().unwrap().contains(&json!("PostgreSQL")));
+    assert!(field("api", "provider")["suggestions"].as_array().unwrap().contains(&json!("Anthropic")));
+    assert!(field("document", "label")["suggestions"].as_array().unwrap().contains(&json!("Passport")));
+    assert!(field("card", "issuer")["suggestions"].as_array().unwrap().contains(&json!("Visa")));
+    assert!(field("login", "username").get("suggestions").is_none(), "a field without any leaves them out");
+}

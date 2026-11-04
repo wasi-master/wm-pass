@@ -4780,7 +4780,7 @@
       },
       {
        "t": "strong",
-       "s": "Websites"
+       "s": "Websites and apps"
       },
       {
        "t": "text",
@@ -4833,6 +4833,32 @@
       {
        "t": "text",
        "s": " sets which empty ones do."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "A login's name, websites and apps suggest each other under "
+      },
+      {
+       "t": "strong",
+       "s": "Goes with this login"
+      },
+      {
+       "t": "text",
+       "s": ": facebook.com offers messenger.com and the Facebook, Lite and Messenger apps, and a login without a name is offered one. They are worked out on your device."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Fields with common values, such as a database's engine or a card's issuer, offer them as chips while you type."
       }
      ]
     },

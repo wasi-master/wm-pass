@@ -9,6 +9,7 @@
   import { ui } from './ui.svelte';
   import { TAB_INFO } from './tabs';
   import { overlays } from '../parts/floating.svelte';
+  import { tags as tagLook } from '../engine/tags.svelte';
 
   const entries = $derived(pass.entries);
   const kinds = $derived.by(() => {
@@ -98,7 +99,9 @@
     {#if prefs.v.sidebar_tags && tags.length > 0}
       <div class="side-title">Tags</div>
       {#each tags as [tag, shown]}
-        {@render item(`tag:${tag}`, 'sell', tag, shown)}
+        <div oncontextmenu={(e) => { e.preventDefault(); ui.managingTag = tag; }} role="presentation">
+          {@render item(`tag:${tag}`, tagLook.glyph(tag), tag, shown)}
+        </div>
       {/each}
     {/if}
   </nav>

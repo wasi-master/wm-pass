@@ -16,7 +16,7 @@ use wmpass_core::otp::OtpConfig;
 use wmpass_core::sharing::{self, Manifest, MemberKeys, MemberPublic};
 use wmpass_core::search::{self, Context, Flags, FolderNames, Query};
 use wmpass_core::vault::{Freshness, OpenOutcome, Vault, check_freshness, hex, new_id, open_set, unhex};
-use wmpass_core::{Error, Secret, categorise, emergency, health, io, passkey, recovery, ssh, strength};
+use wmpass_core::{Error, Secret, categorise, emergency, health, io, passkey, recovery, related, ssh, strength, wifi};
 use zeroize::Zeroizing;
 
 use crate::fields;
@@ -107,6 +107,14 @@ impl From<Error> for SessionError {
             message: error.to_string(),
         }
     }
+}
+
+/// A QR code as rows of dark and light cells, `1` for dark, for any shell to draw.
+fn qr_view(bytes: &[u8]) -> Result<Reply, SessionError> {
+    let code = qrcode::QrCode::new(bytes).map_err(|_| invalid("too long for a QR code"))?;
+    let size = code.width();
+    let rows: String = code.to_colors().iter().map(|c| if *c == qrcode::Color::Dark { '1' } else { '0' }).collect();
+    Ok(Reply::view(json!({"size": size, "rows": rows})))
 }
 
 fn invalid(message: impl Into<String>) -> SessionError {
@@ -564,12 +572,7 @@ impl Service {
         let now = call.now_ms;
         match method {
             // ---- files, keys, slots ----
-            "qr.encode" => {
-                let code = qrcode::QrCode::new(call.secret).map_err(|_| invalid("too long for a QR code"))?;
-                let size = code.width();
-                let rows: String = code.to_colors().iter().map(|c| if *c == qrcode::Color::Dark { '1' } else { '0' }).collect();
-                Ok(Reply::view(json!({"size": size, "rows": rows})))
-            }
+            "qr.encode" => qr_view(call.secret),
             "kinds" => {
                 let kinds: Vec<Value> = fields::KINDS
                     .iter()
@@ -817,6 +820,39 @@ impl Service {
             "otp.parse" => {
                 let config = OtpConfig::from_uri(text(call.secret)?)?;
                 Ok(Reply::of(&views::otp_view(&config))?)
+            }
+            // The name, websites and apps of a login suggest each other.
+            "related.find" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    title: String,
+                    sites: Vec<String>,
+                    apps: Vec<String>,
+                    brand: Option<related::Brand>,
+                    site_brands: Vec<String>,
+                    installed: Option<Vec<related::App>>,
+                }
+                let a: A = parse(call.args)?;
+                let found = related::find(&related::Have {
+                    title: &a.title,
+                    sites: &a.sites,
+                    apps: &a.apps,
+                    brand: a.brand.as_ref(),
+                    site_brands: &a.site_brands,
+                    installed: a.installed.as_deref(),
+                });
+                Ok(Reply::of(&found)?)
+            }
+            "related.apps" => Ok(Reply::of(&related::known_apps())?),
+            // A `WIFI:` text read from a QR code. The password comes back as the secret.
+            "wifi.parse" => {
+                let network = wifi::parse(text(call.secret)?).ok_or_else(|| invalid("that is not a Wi-Fi network"))?;
+                Ok(Reply {
+                    json: json!({"ssid": network.ssid, "security": network.security, "hidden": network.hidden}).to_string(),
+                    secret: Some(Zeroizing::new(network.password.as_bytes().to_vec())),
+                    blobs: Vec::new(),
+                })
             }
             _ => self.vault_call(method, call),
         }
@@ -1509,6 +1545,18 @@ impl Service {
                     // The site's alone, without the kind's, for tagging a new item.
                     "site": categorise::site_category(entry).map(|(category, _)| category),
                 })))
+            }
+            // The QR code another phone's camera reads to join a Wi-Fi item's network. The
+            // password goes into the code without leaving the session as text.
+            "wifi.qr" => {
+                let a: Id = parse(call.args)?;
+                let Kind::Wifi(network) = &session.entry(&a.id)?.kind else {
+                    return Err(invalid("only a Wi-Fi network has a QR code"));
+                };
+                let security = fields::wifi_name(network.security.v);
+                let code = wifi::code(&network.ssid.v, security, network.password.v.expose(), network.hidden_ssid.v)
+                    .ok_or_else(|| invalid("an enterprise network or one without a name has no QR code"))?;
+                qr_view(code.as_bytes())
             }
             "tags.icons" => {
                 let icons: BTreeMap<&str, &str> = session

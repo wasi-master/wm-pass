@@ -3,11 +3,22 @@
   import { bytesOf } from '../engine/frame';
 
   // A QR code, drawn here from the engine's matrix. Nothing leaves this device to make it.
-  let { text, size = 220 }: { text: string; size?: number } = $props();
+  // `from` asks the open vault for a code it builds itself, so a secret in it never comes out as text.
+  let { text = '', from, size = 220 }: { text?: string; from?: { method: string; args: unknown }; size?: number } = $props();
   let matrix = $state<{ size: number; rows: string } | null>(null);
   let tooLong = $state(false);
 
   $effect(() => {
+    if (from) {
+      pass
+        .view<{ size: number; rows: string }>(from.method, from.args)
+        .then((view) => {
+          matrix = view;
+          tooLong = false;
+        })
+        .catch(() => (tooLong = true));
+      return;
+    }
     const bytes = bytesOf(text);
     pass
       .engine<{ size: number; rows: string }>('qr.encode', {}, { secret: bytes })
