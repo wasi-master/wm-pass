@@ -1356,6 +1356,7 @@ fn draw_overlay(frame: &mut Frame, area: Rect, overlay: &Overlay, theme: &Theme,
         }
         Overlay::Editor(editor) => draw_editor(frame, area, editor, theme, ui),
         Overlay::Link(link) => draw_link(frame, area, link, theme),
+        Overlay::WifiCode { ssid, qr } => draw_wifi_code(frame, area, ssid, qr, theme),
     }
 }
 
@@ -1467,13 +1468,14 @@ fn draw_editor(frame: &mut Frame, area: Rect, editor: &Editor, theme: &Theme, ui
 
 fn draw_help(frame: &mut Frame, area: Rect, theme: &Theme) {
     let inner = popup(frame, area, 92, (area.height - 2).min(32), theme, "Keys", false);
-    let groups: [(&str, &[(&str, &str)]); 6] = [
+    let groups: [(&str, &[(&str, &str)]); 7] = [
         ("Anywhere", &[("1-4", "Items, Codes, Generator, Health"), (": or ^K", "commands"), ("^L", "lock now"), ("^T", "next theme"), ("?", "this list"), ("q", "quit")]),
         ("Moving", &[("↑↓ or j k", "move"), ("←→ or h l", "pane"), ("Tab", "next pane"), ("g G", "top, bottom"), ("Enter", "open")]),
         ("Search", &[("/", "search"), ("Esc", "clear"), ("tag:work", "by tag"), ("kind:card", "by kind"), ("has:otp", "with codes"), ("weak reused old", "health")]),
-        ("Item", &[("c", "copy password"), ("u", "copy username"), ("t", "copy code"), ("r", "show password"), ("e n", "edit, new"), ("d", "trash"), ("f p", "favourite, pin"), ("m + -", "folder, tags"), ("a", "attach a file")]),
+        ("Item", &[("c", "copy password"), ("u", "copy username"), ("t", "copy code"), ("r", "show password"), ("e n", "edit, new"), ("d", "trash"), ("f p", "favourite, pin"), ("m + -", "folder, tags"), ("a", "attach a file"), ("w", "Wi-Fi QR code")]),
         ("In an item", &[("r Space", "show or hide"), ("y Enter", "copy the line"), ("o", "save a file")]),
         ("In the trash", &[("u", "restore"), ("D", "delete for good")]),
+        ("On a tag in the sidebar", &[("R", "rename it everywhere"), ("D", "delete it everywhere")]),
     ];
     let half = inner.width / 2;
     let mut col = [Vec::new(), Vec::new()];
@@ -1587,6 +1589,26 @@ fn answer_buttons(frame: &mut Frame, area: Rect, theme: &Theme, yes: &str, no: &
     let no_w = (no.chars().count() + 5) as u16;
     hit(Rect { x, width: yes_w, height: 1, ..area }, Hit::Key(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE)));
     hit(Rect { x: x + yes_w + 4, width: no_w, height: 1, ..area }, Hit::Key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE)));
+}
+
+/// A Wi-Fi network's code, as big as the terminal allows, with what it gives away under it.
+fn draw_wifi_code(frame: &mut Frame, area: Rect, ssid: &str, qr: &Qr, theme: &Theme) {
+    let note = "Point another phone's camera at this to join the network. The password is in the code, so anyone who can see it can read it.";
+    let (bw, bh) = qr_size(qr, true);
+    let big = bw + 4 <= area.width && bh + 8 <= area.height;
+    let (w, h) = qr_size(qr, big);
+    let width = (w + 4).max(48).min(area.width);
+    let height = (h + 7).min(area.height);
+    let title = if ssid.is_empty() { "Wi-Fi network" } else { ssid };
+    let inner = popup(frame, area, width, height, theme, title, false);
+    let qr_area = Rect { x: inner.x + inner.width.saturating_sub(w) / 2, y: inner.y + 1, width: w.min(inner.width), height: h.min(inner.height) };
+    draw_qr(frame, qr_area, qr, big);
+    let below = Rect { y: qr_area.bottom() + 1, height: inner.bottom().saturating_sub(qr_area.bottom() + 1), ..inner };
+    let lines = vec![
+        Line::from(Span::styled(note, theme.dim())),
+        Line::from(vec![Span::styled(" Esc ", theme.brand()), Span::styled(" close", theme.faint())]),
+    ];
+    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }).centered(), below);
 }
 
 fn draw_link(frame: &mut Frame, area: Rect, link: &LinkUi, theme: &Theme) {

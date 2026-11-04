@@ -44,6 +44,8 @@ data class FieldSpec(
     val input: String,
     val secret: Boolean = false,
     val choices: List<String> = emptyList(),
+    /** Values people type often, offered as chips. The engine keeps the lists for every app. */
+    val suggestions: List<String> = emptyList(),
 )
 
 @Immutable
@@ -58,6 +60,7 @@ data class FieldView(
     val input: String,
     val secret: Boolean = false,
     val choices: List<String> = emptyList(),
+    val suggestions: List<String> = emptyList(),
     @SerialName("has_value") val hasValue: Boolean = false,
     val value: JsonElement? = null,
 ) {

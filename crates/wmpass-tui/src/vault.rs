@@ -133,7 +133,7 @@ pub fn kind_name(kind: &str) -> &'static str {
     }
 }
 
-fn quoted(value: &str) -> String {
+pub fn quoted(value: &str) -> String {
     if value.contains(char::is_whitespace) { format!("\"{value}\"") } else { value.to_owned() }
 }
 
@@ -272,6 +272,12 @@ impl VaultUi {
     }
 
     /// The selected row's id.
+    /// The tag picked in the sidebar, if a tag is what is picked.
+    pub fn picked_tag(&self) -> Option<String> {
+        let section = self.sections.get(self.section)?;
+        (section.icon == Glyph::Tag && !section.heading).then(|| section.label.clone())
+    }
+
     pub fn current_id(&self) -> Option<String> {
         self.current().map(|r| r.id.clone())
     }

@@ -60,6 +60,7 @@ pub enum PromptFor {
     AttachSave { id: String, blob: String, name: String },
     ShelfPassword,
     LockMinutes,
+    RenameTag(String),
 }
 
 /// What a confirmation does on yes.
@@ -69,6 +70,7 @@ pub enum Act {
     Purge(String),
     Export(String, PathBuf),
     Import,
+    DeleteTag(String),
 }
 
 /// What a pick is for.
@@ -92,6 +94,9 @@ pub enum Command {
     MoveFolder,
     AddTag,
     RemoveTag,
+    RenameTag,
+    DeleteTag,
+    WifiCode,
     NewFolder,
     CopyPassword,
     CopyUsername,
@@ -120,7 +125,7 @@ pub enum Command {
 const SYNCED: [&str; 3] = ["tui_theme", "tui_icons", "reveal_seconds"];
 
 /// Every palette command, with its words and key.
-pub const COMMANDS: [(Command, &str, &str); 30] = [
+pub const COMMANDS: [(Command, &str, &str); 33] = [
     (Command::New, "New item", "n"),
     (Command::Edit, "Edit item", "e"),
     (Command::CopyPassword, "Copy password", "c"),
@@ -131,6 +136,9 @@ pub const COMMANDS: [(Command, &str, &str); 30] = [
     (Command::MoveFolder, "Move to folder", "m"),
     (Command::AddTag, "Add a tag", "+"),
     (Command::RemoveTag, "Remove a tag", "-"),
+    (Command::RenameTag, "Rename a tag on every item", "R"),
+    (Command::DeleteTag, "Delete a tag from every item", "D"),
+    (Command::WifiCode, "Show the Wi-Fi network's QR code", "w"),
     (Command::Duplicate, "Duplicate item", "ctrl+d"),
     (Command::Attach, "Attach a file", "a"),
     (Command::Trash, "Move to the trash", "d"),
@@ -165,6 +173,12 @@ pub enum Overlay {
     Import(ImportPreview),
     /// Moving the vault to or from another device.
     Link(Box<LinkUi>),
+    /// A Wi-Fi network's code, for another phone's camera.
+    WifiCode { ssid: String, qr: crate::join::Qr },
+}
+
+fn plural_items(n: usize) -> String {
+    if n == 1 { "1 item".to_owned() } else { format!("{n} items") }
 }
 
 /// The palette's matches for what was typed, best first.
@@ -755,6 +769,8 @@ impl App {
                 KeyCode::Down | KeyCode::Char('j') => ui.move_section(1),
                 KeyCode::Up | KeyCode::Char('k') => ui.move_section(-1),
                 KeyCode::Enter => ui.pane = Pane::List,
+                KeyCode::Char('R') if ui.picked_tag().is_some() => self.command(Command::RenameTag),
+                KeyCode::Char('D') | KeyCode::Delete if ui.picked_tag().is_some() => self.command(Command::DeleteTag),
                 _ => self.item_action(key),
             },
             Pane::List => match key.code {
@@ -794,6 +810,7 @@ impl App {
             KeyCode::Char('+') if !trash => Command::AddTag,
             KeyCode::Char('-') if !trash => Command::RemoveTag,
             KeyCode::Char('a') if !trash => Command::Attach,
+            KeyCode::Char('w') if !trash => Command::WifiCode,
             KeyCode::Char('d') | KeyCode::Delete if !trash => Command::Trash,
             KeyCode::Char('u') if trash => return self.restore(),
             KeyCode::Char('D') | KeyCode::Delete if trash => return self.ask_purge(),
@@ -890,6 +907,48 @@ impl App {
                 }
                 let items = row.tags.iter().map(|t| (t.clone(), format!("#  {t}"))).collect();
                 self.overlay = Some(Overlay::Pick { title: "Remove a tag".into(), items, at: 0, then: PickFor::RemoveTag(row.id) });
+            }
+            Command::RenameTag | Command::DeleteTag => {
+                let Some(tag) = ui.picked_tag() else {
+                    return self.say(Level::Info, "Pick a tag in the sidebar first");
+                };
+                let items = plural_items(ui.sections.get(ui.section).map_or(0, |s| s.count));
+                if command == Command::RenameTag {
+                    self.overlay = Some(Overlay::Prompt {
+                        title: format!("Rename #{tag}"),
+                        hint: format!("On {items}. The new name goes on every one of them."),
+                        input: Input::with(&tag),
+                        secret: false,
+                        then: PromptFor::RenameTag(tag),
+                    });
+                } else {
+                    self.overlay = Some(Overlay::Confirm {
+                        title: format!("Delete #{tag}?"),
+                        body: format!("It comes off every item that has it, {items} now. The items stay."),
+                        act: Act::DeleteTag(tag),
+                        danger: true,
+                    });
+                }
+            }
+            Command::WifiCode => {
+                let Some(detail) = ui.detail.clone() else {
+                    return self.say(Level::Info, "Pick an item first");
+                };
+                if detail.row.kind != "wifi" {
+                    return self.say(Level::Info, "Only a Wi-Fi network has a QR code");
+                }
+                let ssid = detail
+                    .fields
+                    .iter()
+                    .find(|f| f.key == "ssid")
+                    .and_then(|f| f.value.as_ref())
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_owned();
+                match ui.engine.wifi_qr(&detail.row.id) {
+                    Ok(qr) => self.overlay = Some(Overlay::WifiCode { ssid, qr }),
+                    Err(e) => self.say(Level::Bad, e),
+                }
             }
             Command::NewFolder => self.prompt("New folder", "Its name", false, PromptFor::NewFolder),
             Command::CopyPassword => self.copy_main(),
@@ -1353,6 +1412,7 @@ impl App {
                 }
                 _ => true,
             },
+            Overlay::WifiCode { .. } => !matches!(key.code, KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q' | 'w')),
             Overlay::Link(link) => match self.link_key(link, key) {
                 Some(keep) => keep,
                 None => return,
@@ -1471,6 +1531,7 @@ impl App {
                 let password = Zeroizing::new(String::new());
                 Self::write_export(ui, &format, &path, &password)
             }
+            Act::DeleteTag(tag) => ui.engine.remove_tag(&tag).map(|n| format!("Took #{tag} off {}", plural_items(n))),
         };
         ui.reload();
         match result {
@@ -1572,6 +1633,24 @@ impl App {
                         }
                         ui.reload();
                         self.say(Level::Good, format!("Folder {text} made"));
+                    }
+                    Err(e) => self.say(Level::Bad, e),
+                }
+            }
+            PromptFor::RenameTag(from) => {
+                let to = text.trim().trim_start_matches('#').trim().to_owned();
+                if to.is_empty() || to == from {
+                    return;
+                }
+                match ui.engine.rename_tag(&from, &to) {
+                    Ok(n) => {
+                        ui.reload();
+                        let query = format!("tag:{}", crate::vault::quoted(&to.to_lowercase()));
+                        if let Some(at) = ui.sections.iter().position(|s| s.query == query) {
+                            ui.section = at;
+                            ui.refresh_list(None);
+                        }
+                        self.say(Level::Good, format!("Renamed #{from} to #{to} on {}", plural_items(n)));
                     }
                     Err(e) => self.say(Level::Bad, e),
                 }

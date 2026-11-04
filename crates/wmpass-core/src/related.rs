@@ -162,10 +162,8 @@ pub fn find(have: &Have<'_>) -> Found {
         if let Some(site) = company_site(package) {
             push(&mut seeds, site);
         }
-        if let Some(app) = known().iter().find(|app| app.package == *package) {
-            if !app.site.is_empty() {
-                push(&mut seeds, app.site.to_owned());
-            }
+        if let Some(app) = known().iter().find(|app| app.package == *package && !app.site.is_empty()) {
+            push(&mut seeds, app.site.to_owned());
         }
     }
     for name in have.site_brands {

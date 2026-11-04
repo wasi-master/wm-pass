@@ -78,7 +78,10 @@ Press `?` for every key, or `:` for a list of commands you can search by name. T
 | `r` | Show the password for a few seconds |
 | `n`, `e` | New item, edit item |
 | `d` | Move to the trash; in the trash, `u` brings it back |
+| `w` | Show a Wi-Fi network's QR code, for another phone's camera |
 | `Ctrl+L` | Lock now |
+
+On a tag in the sidebar, `R` renames it on every item that has it and `D` deletes it from all of them; the items stay. A login saved for an Android app lists the app by its name when WM Pass knows it, such as Messenger for `com.facebook.orca`.
 
 Arrows and `h` `j` `k` `l` both move. The mouse works everywhere too. Click a tab, a row, a field or a command in the `:` list. Double-click a row to open it, or a line in an item to copy it. The key hints along the bottom are buttons. The wheel scrolls whatever is under the pointer, and over a generator setting it changes the value.
 

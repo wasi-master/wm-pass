@@ -91,6 +91,12 @@ impl Qr {
         Some(Self { width, dark })
     }
 
+    /// A code the engine drew, as rows of `1` for dark and `0` for light.
+    pub fn from_rows(width: usize, rows: &str) -> Option<Self> {
+        let dark: Vec<bool> = rows.bytes().map(|b| b == b'1').collect();
+        (width > 0 && dark.len() == width * width).then_some(Self { width, dark })
+    }
+
     /// Whether the module at `x`, `y` is dark; anything outside the code is the light border.
     pub fn dark(&self, x: isize, y: isize) -> bool {
         let (Ok(x), Ok(y)) = (usize::try_from(x), usize::try_from(y)) else { return false };
