@@ -328,6 +328,7 @@ impl Widgets {
         self.wake.notify_all();
     }
 
+    #[cfg(target_os = "macos")]
     pub fn current_feed(&self) -> Feed {
         self.inner().feed.clone()
     }
@@ -515,6 +516,7 @@ fn set_extension_enabled(on: bool) {
 }
 
 /// What a `wmpass://widget/...` link asks for.
+#[cfg(any(target_os = "macos", test))]
 #[derive(Debug, PartialEq, Eq)]
 pub enum Link {
     /// Bring the window forward and run this page command.
@@ -528,6 +530,7 @@ pub enum Link {
 }
 
 /// Reads a link. Anything not made by the widgets is `None`.
+#[cfg(any(target_os = "macos", test))]
 pub fn parse_link(url: &str, token: &str) -> Option<Link> {
     let url = tauri::Url::parse(url).ok()?;
     if url.scheme() != "wmpass" || url.host_str() != Some("widget") {
