@@ -4,6 +4,7 @@
 //! file sizes and timing, and nothing else. The code is async so the browser extension
 //! can run it over `fetch`. Blocking clients run it with [`http::block_on`].
 
+pub mod backups;
 pub mod boxcloud;
 pub mod drive;
 pub mod dropbox;

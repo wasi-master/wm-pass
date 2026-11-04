@@ -235,6 +235,11 @@ fn link_together(engine: &mut engine::Engine, ids: &[String]) -> Result<(), Stri
     Ok(())
 }
 
+/// Whether a folder already holds a vault, so a restore must not go there.
+fn app_folder_has_vault(root: &std::path::Path) -> bool {
+    crate::app_folder::names(root).is_ok_and(|names| !names.is_empty())
+}
+
 /// What the editor does after a key.
 enum EditorDo {
     Stay,
@@ -254,6 +259,8 @@ pub enum Overlay {
     Import(ImportPreview),
     /// Moving the vault to or from another device.
     Link(Box<LinkUi>),
+    /// Bringing a vault here from a place its backups are kept.
+    Restore(Box<crate::restore::RestoreUi>),
     /// A Wi-Fi network's code, for another phone's camera.
     WifiCode { ssid: String, qr: crate::join::Qr },
 }
@@ -463,6 +470,15 @@ impl App {
             // The spinner and the countdown move.
             changed = true;
         }
+        if let Some(Overlay::Restore(ui)) = &mut self.overlay {
+            // The spinner moves while the place is asked.
+            changed |= ui.busy();
+            if let Some(root) = ui.tick() {
+                self.overlay = None;
+                self.restored(&root);
+                changed = true;
+            }
+        }
         if self.toast.as_ref().is_some_and(|t| t.at.elapsed() > Duration::from_secs(6)) {
             self.toast = None;
             changed = true;
@@ -650,6 +666,10 @@ impl App {
                         let path = door::join_target(if door.mode == door::Mode::Create { door.path.text() } else { "" });
                         self.overlay = Some(Overlay::Link(Box::new(LinkUi::receive(path))));
                     }
+                    Ask::Restore => {
+                        let into = crate::restore::default_target().filter(|root| !app_folder_has_vault(root));
+                        self.overlay = Some(Overlay::Restore(Box::new(crate::restore::RestoreUi::new(into))));
+                    }
                     ask => {
                         door.busy = Some(if ask == Ask::Create { "Making your vault…" } else { "Unlocking…" });
                         door.error = None;
@@ -658,6 +678,19 @@ impl App {
                 }
             }
             Screen::Vault(_) => self.vault_key(key),
+        }
+    }
+
+    /// Back at the door after a restore, ready for the vault's master password.
+    fn restored(&mut self, root: &std::path::Path) {
+        if let Screen::Door(door) = &mut self.screen {
+            if door.mode == door::Mode::Create {
+                door.toggle_mode();
+            }
+            door.path.set(&root.to_string_lossy());
+            door.focus = door::Field::Password;
+            door.error = None;
+            door.notice = Some("Restored. Type the vault's master password to open it".to_owned());
         }
     }
 
@@ -1695,6 +1728,14 @@ impl App {
             Overlay::Link(link) => match self.link_key(link, key) {
                 Some(keep) => keep,
                 None => return,
+            },
+            Overlay::Restore(ui) => match ui.key(key) {
+                crate::restore::Outcome::Stay => true,
+                crate::restore::Outcome::Close => false,
+                crate::restore::Outcome::Restored(root) => {
+                    self.restored(&root);
+                    false
+                }
             },
             Overlay::Editor(editor) => {
                 let Screen::Vault(ui) = &mut self.screen else { return };

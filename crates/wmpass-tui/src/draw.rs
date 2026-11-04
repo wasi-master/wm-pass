@@ -388,7 +388,7 @@ fn draw_door(frame: &mut Frame, area: Rect, door: &Door, theme: &Theme, recent: 
     }
     let hints = match door.mode {
         door::Mode::Unlock => {
-            let mut keys = vec![("Enter", "unlock"), ("Tab", "next"), ("^N", "new vault"), ("^G", "from another device")];
+            let mut keys = vec![("Enter", "unlock"), ("Tab", "next"), ("^N", "new vault"), ("^G", "from another device"), ("^B", "from a backup")];
             if !recent.is_empty() {
                 keys.push(("^R", "recent"));
             }
@@ -1576,6 +1576,7 @@ fn draw_overlay(frame: &mut Frame, area: Rect, overlay: &Overlay, theme: &Theme,
         }
         Overlay::Editor(editor) => draw_editor(frame, area, editor, theme, ui),
         Overlay::Link(link) => draw_link(frame, area, link, theme),
+        Overlay::Restore(ui) => draw_restore(frame, area, ui, theme),
         Overlay::WifiCode { ssid, qr } => draw_wifi_code(frame, area, ssid, qr, theme),
     }
 }
@@ -1986,6 +1987,96 @@ fn draw_wifi_code(frame: &mut Frame, area: Rect, ssid: &str, qr: &Qr, theme: &Th
         Line::from(vec![Span::styled(" Esc ", theme.brand()), Span::styled(" close", theme.faint())]),
     ];
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }).centered(), below);
+}
+
+fn draw_restore(frame: &mut Frame, area: Rect, ui: &crate::restore::RestoreUi, theme: &Theme) {
+    use crate::restore::{Field as F, Stage as S};
+    let rows = ui.fields().len() as u16;
+    let inner = popup(frame, area, 76, (rows + 10).max(16), theme, "Restore from a backup location", false);
+    let [body, foot] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(inner);
+    let body = body.inner(Margin::new(1, 0));
+    let text = Style::new().fg(theme.text);
+    let mut lines: Vec<Line> = Vec::new();
+    let mut cursor = None;
+    let keys: Vec<(&str, &str)> = match &ui.stage {
+        S::Form | S::Busy(_) => {
+            lines.push(Line::from(Span::styled("Copies are encrypted; the vault opens with its master password.", theme.dim())));
+            lines.push(Line::default());
+            let label_w = 14usize;
+            let value_w = usize::from(body.width).saturating_sub(label_w + 3).max(4);
+            for field in ui.fields() {
+                let focused = ui.focus == field && matches!(ui.stage, S::Form);
+                let mark = Span::styled(if focused { "▌ " } else { "  " }, theme.brand());
+                let label = Span::styled(format!("{:<label_w$} ", field.label(ui.kind)), if focused { theme.brand() } else { theme.dim() });
+                let value = match ui.input(field) {
+                    None => {
+                        let kinds: Vec<Span> = crate::restore::Kind::ALL
+                            .iter()
+                            .flat_map(|k| {
+                                let on = *k == ui.kind;
+                                let style = if on { Style::new().fg(theme.on_primary).bg(theme.primary).add_modifier(Modifier::BOLD) } else { theme.dim() };
+                                [Span::styled(format!(" {} ", k.label()), style), Span::raw(" ")]
+                            })
+                            .collect();
+                        lines.push(Line::from([vec![mark, label], kinds].concat()));
+                        continue;
+                    }
+                    Some(input) if input.is_empty() => Span::styled(field.hint().to_owned(), theme.faint()),
+                    Some(input) => {
+                        let shown: String = if field.secret() { "•".repeat(input.text().chars().count()) } else { input.text().to_owned() };
+                        let skip = input.cursor().saturating_sub(value_w.saturating_sub(1));
+                        Span::styled(shown.chars().skip(skip).take(value_w).collect::<String>(), text)
+                    }
+                };
+                if focused && let Some(input) = ui.input(field) {
+                    let col = input.cursor().min(value_w.saturating_sub(1));
+                    cursor = Some(Position::new(body.x + (label_w + 3 + col) as u16, body.y + lines.len() as u16));
+                }
+                lines.push(Line::from(vec![mark, label, value]));
+            }
+            lines.push(Line::default());
+            if let S::Busy(what) = &ui.stage {
+                lines.push(Line::from(Span::styled(format!("{} {what}", ui.spinner()), theme.brand())));
+                vec![("Esc", "stop")]
+            } else {
+                if let Some(error) = &ui.error {
+                    lines.push(Line::from(Span::styled(format!("✕ {error}"), Style::new().fg(theme.danger))));
+                }
+                let mut keys = vec![("Tab", "next"), ("^S", "look for copies"), ("Esc", "back")];
+                if ui.focus == F::Kind {
+                    keys.insert(0, ("←→", "kind"));
+                }
+                keys
+            }
+        }
+        S::Copies { list, at } => {
+            lines.push(Line::from(Span::styled(format!("{} {} there, newest first. Pick one to restore.", list.len(), if list.len() == 1 { "copy" } else { "copies" }), text)));
+            if let Some(key) = &ui.server_key {
+                lines.push(Line::from(vec![Span::styled("Server key ", theme.dim()), Span::styled(key.clone(), Style::new().fg(theme.accent))]));
+                lines.push(Line::from(Span::styled("Check that it matches your server's before going on.", theme.faint())));
+            }
+            lines.push(Line::default());
+            let room = usize::from(body.height).saturating_sub(lines.len() + 3).max(1);
+            let skip = at.saturating_sub(room - 1);
+            for (n, copy) in list.iter().enumerate().skip(skip).take(room) {
+                let picked = n == *at;
+                let base = if picked { theme.selected(true) } else { Style::new() };
+                let row = crate::restore::describe(copy);
+                let pad = usize::from(body.width).saturating_sub(row.chars().count() + 2);
+                lines.push(Line::from(vec![Span::styled(if picked { "▌ " } else { "  " }, base.fg(theme.primary)), Span::styled(format!("{row}{}", " ".repeat(pad)), base.fg(theme.text))]));
+            }
+            if let Some(error) = &ui.error {
+                lines.push(Line::default());
+                lines.push(Line::from(Span::styled(format!("✕ {error}"), Style::new().fg(theme.danger))));
+            }
+            vec![("↑↓", "move"), ("Enter", "restore"), ("Esc", "back")]
+        }
+    };
+    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), body);
+    if let Some(at) = cursor {
+        frame.set_cursor_position(at);
+    }
+    hint_bar(frame, foot, theme, &keys, Alignment::Right);
 }
 
 fn draw_link(frame: &mut Frame, area: Rect, link: &LinkUi, theme: &Theme) {

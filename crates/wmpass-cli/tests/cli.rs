@@ -175,3 +175,47 @@ fn generate_needs_no_vault() {
         32
     );
 }
+
+#[test]
+fn a_vault_comes_back_from_a_backup_location() {
+    use wmpass_sinks::backups::{BundleFile, bundle};
+    let dir = tempfile::tempdir().unwrap();
+    let vault = dir.path().join("v.wmvault");
+    let v = vault.to_str().unwrap();
+    stdout(cli(dir.path(), "pw").args(["create", v]));
+    stdout(cli(dir.path(), "pw").args(["add", v, "Backed up", "--username", "me"]));
+    let place = dir.path().join("place");
+    std::fs::create_dir_all(&place).unwrap();
+    let copy = bundle(&[
+        BundleFile { name: "vaults/0a0a".into(), bytes: std::fs::read(&vault).unwrap() },
+        BundleFile { name: "vaults/0b0b".into(), bytes: vec![1; 99] },
+    ]);
+    std::fs::write(place.join("wmpass-backup-20261104-093000.wmbackup"), copy).unwrap();
+    std::fs::write(place.join("wmpass-backup-20250101-000000.wmbackup"), b"junk").unwrap();
+    std::fs::write(place.join("phone.wmsync"), b"not a copy").unwrap();
+    let p = place.to_str().unwrap();
+
+    let listed = stdout(cli(dir.path(), "pw").args(["restore", "folder", p, "--list"]));
+    let lines: Vec<&str> = listed.lines().collect();
+    assert_eq!(lines.len(), 2, "{listed}");
+    assert!(lines[0].contains("2026-11-04 09:30 UTC") && lines[1].contains("2025-01-01"), "{listed}");
+
+    // The older one, picked by number, is not a backup at all.
+    let root = dir.path().join("restored");
+    let r = root.to_str().unwrap();
+    cli(dir.path(), "pw")
+        .args(["restore", "folder", p, "--into", r])
+        .write_stdin("2\n")
+        .assert()
+        .failure()
+        .stderr("That is not a WM Pass backup\n");
+
+    let done = stdout(cli(dir.path(), "pw").args(["restore", "folder", p, "--into", r, "--latest"]));
+    assert!(done.contains("Restored wmpass-backup-20261104-093000.wmbackup"), "{done}");
+    assert!(stdout(cli(dir.path(), "pw").args(["ls", r])).contains("Backed up"));
+    cli(dir.path(), "wrong").args(["ls", r]).assert().failure();
+
+    let again = cli(dir.path(), "pw").args(["restore", "folder", p, "--into", r, "--latest"]).output().unwrap();
+    assert!(!again.status.success());
+    assert!(String::from_utf8_lossy(&again.stderr).contains("already holds a vault"));
+}
