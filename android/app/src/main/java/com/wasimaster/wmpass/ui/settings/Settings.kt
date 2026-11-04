@@ -642,6 +642,8 @@ private fun ChangePasswordSheet(rekey: Boolean, onDismiss: () -> Unit) {
     val old = rememberTextFieldState()
     val new = rememberTextFieldState()
     var error by remember { mutableStateOf<String?>(null) }
+    // A wrong current password is said under that field, not under the new one.
+    var wrongCurrent by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     PassSheet(onDismiss, if (rekey) "Change it and rekey" else "Change your password") {
         Text(
@@ -654,7 +656,11 @@ private fun ChangePasswordSheet(rekey: Boolean, onDismiss: () -> Unit) {
             style = MaterialTheme.typography.bodyMedium,
         )
         Spacer(Modifier.height(14.dp))
-        PasswordPill(old, "Current password")
+        PasswordPill(old, "Current password", error = wrongCurrent)
+        if (wrongCurrent) {
+            Spacer(Modifier.height(4.dp))
+            Text("That is not the current password.", color = colors.danger, style = MaterialTheme.typography.bodySmall)
+        }
         Spacer(Modifier.height(10.dp))
         PasswordPill(new, "New password")
         error?.let {
@@ -664,12 +670,14 @@ private fun ChangePasswordSheet(rekey: Boolean, onDismiss: () -> Unit) {
         Spacer(Modifier.height(16.dp))
         PrimaryButton(if (busy) "Working…" else "Change", Modifier.fillMaxWidth(), enabled = !busy && old.text.isNotEmpty() && new.text.isNotEmpty()) {
             busy = true
+            error = null
+            wrongCurrent = false
             shell.launch {
                 val current = old.text.toString().toByteArray()
                 val next = new.text.toString().toByteArray()
                 try {
                     if (!Pass.verify(current)) {
-                        error = "That is not the current password."
+                        wrongCurrent = true
                         shell.haptics.reject()
                     } else if (rekey) {
                         Pass.rekey(next)
@@ -1311,17 +1319,21 @@ private fun ImportScreen() {
                 result = listOfNotNull(
                     done.added.takeIf { it > 0 }?.let { if (it == 1) "Added 1 Wi-Fi network." else "Added $it Wi-Fi networks." },
                     done.updated.takeIf { it > 0 }?.let { if (it == 1) "Updated 1." else "Updated $it." },
+                    done.failed.takeIf { it > 0 }?.let { if (it == 1) "1 could not be saved." else "$it could not be saved." },
                 ).joinToString(" ").ifEmpty { null }
             },
         )
     }
     var guides by remember { mutableStateOf(false) }
     if (guides) ExportGuideSheet { guides = false }
+    // A vault under "Import into" that would not open is named under those choices.
+    var intoError by remember { mutableStateOf<String?>(null) }
     suspend fun importInto(file: String?) {
         if (file == enteredFor) return
         if (preview != null) Pass.plainCall("import.cancel")
         preview = null
         error = null
+        intoError = null
         try {
             if (enteredFor != null) {
                 Pass.leaveChild()
@@ -1335,7 +1347,8 @@ private fun ImportScreen() {
             }
             if (bytes != null) read()
         } catch (failure: Exception) {
-            error = failure.message ?: "That vault could not be opened."
+            val name = if (file == null) home.ifEmpty { "This vault" } else nested.firstOrNull { it.first == file }?.second ?: "That vault"
+            intoError = listOfNotNull("$name could not be opened.", failure.message).joinToString(" ")
         }
     }
     WmScreen("Import", route = "settings/import", onBack = back()) {
@@ -1350,6 +1363,7 @@ private fun ImportScreen() {
                             Pill(name, enteredFor == file, icon = PassIcons.Layers) { shell.launch { importInto(file) } }
                         }
                     }
+                    intoError?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
                 }
             } else if (child != null && result == null) {
                 Text("Importing into ${child.orEmpty()}, the nested vault you are inside.", color = colors.textMid, style = MaterialTheme.typography.bodyMedium)

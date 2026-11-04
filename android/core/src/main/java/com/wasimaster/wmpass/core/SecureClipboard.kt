@@ -40,11 +40,20 @@ object SecureClipboard {
         copyText(context, label, secret.consumeText(), sensitive = true)
     }
 
+    /**
+     * A password just made by the generator and saved nowhere yet. Marked sensitive like any
+     * secret, but never wiped: it is on its way to a site's sign-up or change-password form,
+     * and wiping it there, before it is saved here, would lose the only copy.
+     */
+    fun copyGenerated(context: Context, label: String, secret: SecretBytes) {
+        copyText(context, label, secret.consumeText(), sensitive = true, wipe = false)
+    }
+
     fun copyPlain(context: Context, label: String, text: String) {
         copyText(context, label, text, sensitive = false)
     }
 
-    private fun copyText(context: Context, label: String, text: String, sensitive: Boolean) {
+    private fun copyText(context: Context, label: String, text: String, sensitive: Boolean, wipe: Boolean = true) {
         val manager = context.applicationContext.getSystemService(ClipboardManager::class.java) ?: return
         val clip = ClipData.newPlainText(label, text)
         if (sensitive) {
@@ -59,7 +68,7 @@ object SecureClipboard {
         listener?.let(manager::removePrimaryClipChangedListener)
         manager.setPrimaryClip(clip)
         wipeJob?.cancel()
-        if (!sensitive || clearAfterSeconds == 0) {
+        if (!sensitive || !wipe || clearAfterSeconds == 0) {
             mutable.value = null
             return
         }

@@ -403,11 +403,11 @@ Problems are listed from the most serious down, so start at the top. [Health che
 
 For duplicate items, the button that merges each set asks **Which one stays?** The others fold into it: their passwords move to its history and their extra fields come along, so nothing is lost.
 
-Under **Used more than once**, the logins are grouped by the password they share, so each group is one password to change.
+Under **Used more than once**, the logins are grouped by the password they share, so each group is one password to change. The eye beside a group shows the password it shares, and the copy button copies it.
 
-Tapping an item offers what fixes it, there and then. **Set a new password** makes one with the generator and saves it, the old one kept in the item's history. **Change the password on the site** opens the site's own page for that, and shows only for a site that has one: either it is on a list of known pages, or it answers at /.well-known/change-password after first refusing an address no site has. An unencrypted address offers **Switch the address to https**, and **Try it with https first**. **Ignore for this check** takes the item off that list only. **Ignored** lists them again, to put any back.
+Tapping an item shows its password behind an eye, with a copy button, and offers what fixes it, there and then. **Open the item** comes first. **Set a new password** makes one with the generator and saves it, the old one kept in the item's history; once you copy it, it offers to open the site, or its change-password page, and the app when it is installed. **Change the password on the site** opens the site's own page for that, and shows only for a site that has one: either it is on a list of known pages, or it answers at /.well-known/change-password after first refusing an address no site has. An unencrypted address offers **Switch the address to https**, and **Try it with https first**. **Ignore for this check** takes the item off that list only. **Ignored** lists them again, to put any back.
 
-Where items that share a password look like one account saved twice, such as an email in one and a username in the other, Health offers to merge them, under **Used more than once** and in **Maybe the same account**. Merging asks which one stays and which value wins where they differ.
+Where items that share a password look like one account saved twice, such as an email in one and a username or phone number in the other, Health offers to merge them, under **Used more than once** and in **Maybe the same account**. Those items are listed together, and the offer right under them names them. Merging asks which one stays and which value wins where they differ.
 
 **Check for breaches** opens Settings, Breaches, and **Compare two passwords** opens a side-by-side comparison.
 

@@ -291,21 +291,48 @@ fn site_name(title: &str) -> String {
     title.chars().filter(|c| c.is_alphanumeric()).collect()
 }
 
+/// What a username is: an email, a phone number, or a plain name.
+#[derive(PartialEq, Eq, Clone, Copy)]
+enum Handle {
+    Email,
+    Phone,
+    Name,
+}
+
+fn handle_of(text: &str) -> Handle {
+    let text = text.trim();
+    if text.contains('@') {
+        return Handle::Email;
+    }
+    let digits = text.chars().filter(char::is_ascii_digit).count();
+    let phoneish = text.chars().all(|c| c.is_ascii_digit() || matches!(c, '+' | ' ' | '-' | '(' | ')' | '.'));
+    if phoneish && digits >= 6 {
+        Handle::Phone
+    } else {
+        Handle::Name
+    }
+}
+
 /// Whether two logins that share a password look like one account saved twice.
 fn same_account(a: &Entry, b: &Entry) -> bool {
     let (Some(first), Some(second)) = (a.login(), b.login()) else { return false };
-    if !same_user(&first.username.v, &second.username.v) {
-        return false;
-    }
     let (ours, theirs) = (entry_domains(a), entry_domains(b));
-    if ours.iter().any(|domain| theirs.contains(domain)) {
-        return true;
-    }
     let (name_a, name_b) = (site_name(&a.common.title.v), site_name(&b.common.title.v));
     let named = |domains: &[String], name: &str| {
         !name.is_empty() && domains.iter().any(|domain| domain.split('.').next() == Some(name))
     };
-    (!name_a.is_empty() && (name_a == name_b || near(&name_a, &name_b))) || named(&ours, &name_b) || named(&theirs, &name_a)
+    // The same site for certain: a shared domain, or one name for it.
+    let surely = ours.iter().any(|domain| theirs.contains(domain))
+        || (!name_a.is_empty() && name_a == name_b)
+        || named(&ours, &name_b)
+        || named(&theirs, &name_a);
+    if same_user(&first.username.v, &second.username.v) {
+        return surely || (!name_a.is_empty() && near(&name_a, &name_b));
+    }
+    // Different handles of different kinds, an email and a phone number or a name, on surely
+    // the same site with the same password: most sites take any of them to sign in to one
+    // account. Two different emails, or two different names, stay two accounts.
+    surely && handle_of(&first.username.v) != handle_of(&second.username.v)
 }
 
 /// Within each set sharing a password, the logins that look like one account, grouped.
@@ -427,6 +454,38 @@ mod tests {
         assert!(!same_user("jane@one.example", "jane@two.example"));
         assert!(near("netflix", "netflx"));
         assert!(!near("ebay", "etsy"));
+    }
+
+    #[test]
+    fn an_email_and_a_phone_or_name_for_one_site_look_like_one_account() {
+        let mut vault = fast_vault(1);
+        let other = "Zq7!pL3#wK9$mN2@vB5&";
+        let a = add(&mut vault, "Apex", None, "someone@example.com", STRONG);
+        let b = add(&mut vault, "Apex", None, "01715 378075", STRONG);
+        let c = add(&mut vault, "TheTVDB", None, "WasiMaster", other);
+        let d = add(&mut vault, "The TV DB", Some("https://thetvdb.com"), "someone@example.com", other);
+        // Two different emails, or two different names, on one site stay two accounts.
+        let third = "Hy4%rT8^cX1*jD6(sF0)";
+        add(&mut vault, "Shop", None, "one@example.com", third);
+        add(&mut vault, "Shop", None, "two@example.com", third);
+        let fourth = "Gw2)eU7(kR5*aM9&nQ3^";
+        add(&mut vault, "Forum", None, "alice", fourth);
+        add(&mut vault, "Forum", None, "robert", fourth);
+        // A different kind of handle on a site whose name is only close is not enough.
+        let fifth = "Lp8&dV4^tJ1%oZ6$cW3#";
+        add(&mut vault, "Netflix", None, "someone@example.com", fifth);
+        add(&mut vault, "Netflx", None, "01715378075", fifth);
+        let found = run(&vault);
+        let pair = |x: &Id, y: &Id| {
+            let mut group = vec![x.clone(), y.clone()];
+            group.sort();
+            group
+        };
+        let mut expected = vec![pair(&a, &b), pair(&c, &d)];
+        expected.sort();
+        assert_eq!(found.similar, expected);
+        assert!(handle_of("+880 1715-378075") == Handle::Phone);
+        assert!(handle_of("user123") == Handle::Name);
     }
 
     #[test]

@@ -226,9 +226,10 @@ fun BackupScreen() {
     }
     restoring?.let { place ->
         CopiesSheet(place, { restoring = null }) { bytes ->
-            val merged = Pass.mergeIn(bytes)
+            // A copy of some other vault is said under that copy, and the sheet stays open.
+            check(Pass.mergeIn(bytes) > 0) { "This copy is under another key, so it holds some other vault." }
             restoring = null
-            message = if (merged > 0) "Merged into this vault. Anything newer here was kept, and older values moved to history." else "That copy is under another key, so it holds some other vault."
+            message = "The copy from ${place.label} is merged into this vault. Anything newer here was kept, and older values moved to history."
         }
     }
     removing?.let { place ->
@@ -257,7 +258,10 @@ internal fun PlaceSheet(place: Destination, onDismiss: () -> Unit, onRestore: ((
     }
 }
 
-/** The copies at a place, newest first, to bring one back. */
+/**
+ * The copies at a place, newest first, to bring one back. A copy that cannot be read, or that
+ * [onPicked] refuses by throwing, says why under that copy, and the sheet stays open.
+ */
 @Composable
 fun CopiesSheet(place: Destination, onDismiss: () -> Unit, onPicked: suspend (ByteArray) -> Unit) {
     val colors = palette
@@ -266,6 +270,8 @@ fun CopiesSheet(place: Destination, onDismiss: () -> Unit, onPicked: suspend (By
     var copies by remember { mutableStateOf<List<SinkEntry>?>(null) }
     var problem by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    // The copy that last failed, by id, and why.
+    var failed by remember { mutableStateOf<Pair<String, String>?>(null) }
     androidx.compose.runtime.LaunchedEffect(place.id) {
         Backups.copies(context, place).onSuccess { copies = it }.onFailure { problem = sinkProblem(it) }
     }
@@ -279,9 +285,16 @@ fun CopiesSheet(place: Destination, onDismiss: () -> Unit, onPicked: suspend (By
                 Row(
                     Modifier.fillMaxWidth().clickable(enabled = !busy) {
                         busy = true
+                        failed = null
                         scope.launch {
-                            val bytes = runCatching { Backups.read(context, place, entry) }
-                            bytes.onSuccess { onPicked(it) }.onFailure { problem = sinkProblem(it) }
+                            runCatching { Backups.read(context, place, entry) }
+                                .onSuccess { bytes ->
+                                    runCatching { onPicked(bytes) }.onFailure {
+                                        if (it is kotlinx.coroutines.CancellationException) throw it
+                                        failed = entry.id to (it.message ?: "This copy could not be used.")
+                                    }
+                                }
+                                .onFailure { failed = entry.id to sinkProblem(it) }
                             busy = false
                         }
                     }.padding(vertical = 12.dp),
@@ -294,6 +307,9 @@ fun CopiesSheet(place: Destination, onDismiss: () -> Unit, onPicked: suspend (By
                         color = colors.text,
                         style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
                     )
+                }
+                failed?.takeIf { it.first == entry.id }?.let { (_, why) ->
+                    Text(why, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 34.dp, bottom = 12.dp))
                 }
             }
         }

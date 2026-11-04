@@ -1,5 +1,6 @@
 package com.wasimaster.wmpass.ui.vault
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -173,9 +174,12 @@ fun MergeSheet(ids: List<String>, onDismiss: () -> Unit, onDone: () -> Unit = {}
                                 null
                             },
                         ) { picked[question.key] = index }
+                        // Said under each one not picked, since every one of them is kept there.
+                        if (question.both == "history" && chosen != index) {
+                            Note("Kept in the password history of ${names[keep] ?: "the one that stays"}")
+                        }
                     }
                     when (question.both) {
-                        "history" -> Note("The other stays in this item's password history.")
                         "field", "joined" -> Row(
                             Modifier.fillMaxWidth().clickable { both[question.key] = !(both[question.key] ?: false) }.padding(horizontal = 4.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -259,11 +263,17 @@ fun SetPasswordSheet(entry: Summary, changeUrl: String?, onDismiss: () -> Unit) 
     val generator = remember { GenState.fromPrefs(shell.prefs) }
     var strength by remember { mutableStateOf<com.wasimaster.wmpass.core.StrengthView?>(null) }
     var saving by remember { mutableStateOf(false) }
+    var copied by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val target = changeUrl ?: entry.site?.takeIf { it.isNotBlank() }
+    val launch = remember(entry.app) { entry.app?.let { context.packageManager.getLaunchIntentForPackage(it) } }
     LaunchedEffect(Unit) {
         generator.roll()
         field.setTextAndPlaceCursorAtEnd(generator.value)
     }
     LaunchedEffect(field.text) {
+        // Another password in the field is not the one copied.
+        copied = false
         val bytes = field.text.toString().toByteArray()
         strength = if (bytes.isEmpty()) null else runCatching { Pass.strength(bytes) }.getOrNull()
         bytes.fill(0)
@@ -288,13 +298,22 @@ fun SetPasswordSheet(entry: Summary, changeUrl: String?, onDismiss: () -> Unit) 
                 StrengthBar(s.score, Modifier.fillMaxWidth().padding(horizontal = 4.dp))
                 Text("Time to crack: ${s.crackSlowHash}", color = colors.textMid, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 4.dp))
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                QuietButton("Copy", Modifier.weight(1f), PassIcons.ContentCopy) {
-                    val text = field.text.toString()
-                    shell.copySecret("Password") { com.wasimaster.wmpass.core.SecretBytes(text.toByteArray()) }
-                }
-                if (changeUrl != null) {
-                    QuietButton("Open the site", Modifier.weight(1f), PassIcons.OpenInNew) { shell.openUrl(changeUrl) }
+            QuietButton(if (copied) "Copied" else "Copy", Modifier.fillMaxWidth(), if (copied) PassIcons.Check else PassIcons.ContentCopy) {
+                shell.copyGenerated(field.text.toString())
+                copied = true
+            }
+            // Once it is copied, the way to where it goes: the site's change-password page when
+            // it has one, else the site, and the app when the item is for one installed here.
+            AnimatedVisibility(copied && (target != null || launch != null)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (target != null) {
+                        QuietButton(if (changeUrl != null) "Open the change page" else "Open the site", Modifier.weight(1f), PassIcons.OpenInNew) { shell.openUrl(target) }
+                    }
+                    if (launch != null) {
+                        QuietButton("Open the app", Modifier.weight(1f), PassIcons.Smartphone) {
+                            runCatching { context.startActivity(launch.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                        }
+                    }
                 }
             }
             PrimaryButton(if (saving) "Saving…" else "Save", Modifier.fillMaxWidth(), enabled = field.text.isNotEmpty() && !saving) {

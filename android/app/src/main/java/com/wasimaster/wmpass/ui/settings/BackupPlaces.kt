@@ -201,6 +201,8 @@ fun DestinationSheet(existing: Destination?, onDismiss: () -> Unit, onSaved: (De
     var protonPending by remember { mutableStateOf<ProtonLogin.Pending?>(null) }
     var icloudSession by remember { mutableStateOf<ICloudSession?>(null) }
     var waitingForBrowser by remember { mutableStateOf(false) }
+    // What went wrong taking a place from WM Keyboard, said under that button.
+    var keyboardProblem by remember { mutableStateOf<String?>(null) }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
             context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
@@ -218,6 +220,7 @@ fun DestinationSheet(existing: Destination?, onDismiss: () -> Unit, onSaved: (De
         kind = place.kind
         preset = ""
         problem = null
+        keyboardProblem = null
         askCode = false
         askMailbox = false
         pcloudToken = null
@@ -265,8 +268,8 @@ fun DestinationSheet(existing: Destination?, onDismiss: () -> Unit, onSaved: (De
         val raw = result.data?.getStringExtra(PlaceWire.EXTRA) ?: return@rememberLauncherForActivityResult
         val place = PlaceWire.decode(raw, id)
         when {
-            place == null -> problem = "WM Keyboard sent a place this version of WM Pass cannot use."
-            !CloudSignIn.available(place.kind) -> problem = "This build of WM Pass cannot reach ${placeKind(place.kind)?.name ?: place.kind}."
+            place == null -> keyboardProblem = "WM Keyboard sent a place this version of WM Pass cannot use."
+            !CloudSignIn.available(place.kind) -> keyboardProblem = "This build of WM Pass cannot reach ${placeKind(place.kind)?.name ?: place.kind}."
             else -> fill(place)
         }
     }
@@ -514,14 +517,16 @@ fun DestinationSheet(existing: Destination?, onDismiss: () -> Unit, onSaved: (De
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (existing == null && keyboardPackage != null) {
                 QuietButton("Use a place from WM Keyboard", Modifier.fillMaxWidth(), PassIcons.Keyboard, colors.primary) {
+                    keyboardProblem = null
                     // Checked again at the tap: the package could have changed hands since.
                     val target = KeyboardProvider.installedPackage(context) ?: return@QuietButton
                     try {
                         fromKeyboard.launch(Intent().setClassName(target, "com.wasimaster.wmkeyboard.app.PlaceShareActivity"))
                     } catch (_: ActivityNotFoundException) {
-                        problem = "Update WM Keyboard to share its places."
+                        keyboardProblem = "Update WM Keyboard to share its places."
                     }
                 }
+                keyboardProblem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 6.dp)) }
             }
             if (existing == null) {
                 shownKinds.groupBy { it.group }.forEach { (group, kinds) ->

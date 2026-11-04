@@ -105,7 +105,8 @@ fun VaultsScreen() {
     var tick by remember { mutableIntStateOf(0) }
     var sheet by remember { mutableStateOf<String?>(null) }
     var opening by remember { mutableStateOf<String?>(null) }
-    var problem by remember { mutableStateOf<String?>(null) }
+    // The vault that last failed to open, by its file, with the words for why. They show under its row.
+    var problem by remember { mutableStateOf<Pair<String, String>?>(null) }
     var chosen by remember { mutableStateOf<JsonObject?>(null) }
     LaunchedEffect(tick, child) {
         links = runCatching { (Pass.plainCall("linked.list").json as JsonArray).map { it.jsonObject } }.getOrDefault(emptyList())
@@ -132,7 +133,7 @@ fun VaultsScreen() {
                     shell.nav.popBackStack("home", false)
                 }
             } catch (failure: Exception) {
-                problem = if (failure is NativeFailure) failure.message else sinkProblem(failure)
+                problem = file to ((failure as? NativeFailure)?.message ?: sinkProblem(failure))
                 shell.haptics.reject()
             }
             opening = null
@@ -158,6 +159,7 @@ fun VaultsScreen() {
                         val shared = link["shared"]!!.jsonPrimitive.boolean
                         val pending = link["pending"]!!.jsonPrimitive.boolean
                         val owner = link["owner"]!!.jsonPrimitive.boolean
+                        val file = link["file"]!!.jsonPrimitive.content
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 NavRow(
@@ -178,7 +180,7 @@ fun VaultsScreen() {
                                     }
                                 }
                             }
-                            if (opening == link["file"]!!.jsonPrimitive.content) {
+                            if (opening == file) {
                                 CircularProgressIndicator(Modifier.size(22.dp), color = colors.primary, strokeWidth = 2.dp)
                                 Spacer(Modifier.width(14.dp))
                             } else if (shared && !pending) {
@@ -189,10 +191,12 @@ fun VaultsScreen() {
                                 Spacer(Modifier.width(12.dp))
                             }
                         }
+                        problem?.takeIf { it.first == file }?.let { (_, words) ->
+                            Text(words, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 70.dp, end = 16.dp, bottom = 12.dp))
+                        }
                     }
                 }
             }
-            problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 6.dp, top = 12.dp)) }
             Eyebrow("Add")
             GroupCard {
                 NavRow("A nested vault", "Its own encrypted file, kept apart from this one", icon = PassIcons.Layers, help = "action.nested_vault") { sheet = "nested" }
@@ -388,6 +392,10 @@ private fun PeopleSheet(link: JsonObject, onDismiss: () -> Unit) {
     var reading by remember { mutableStateOf<Pair<String, String>?>(null) }
     var invite by remember { mutableStateOf<String?>(null) }
     var removing by remember { mutableStateOf<JsonObject?>(null) }
+    // A code that could not be read or added. It shows under the field or check it concerns.
+    var codeProblem by remember { mutableStateOf<String?>(null) }
+    // The member whose removal failed, by their key, with the words for why. They show under that person.
+    var removeProblem by remember { mutableStateOf<Pair<String, String>?>(null) }
     LaunchedEffect(tick) {
         if (place == null) {
             problem = "This phone does not know where the vault lives yet. Open it once first."
@@ -401,12 +409,13 @@ private fun PeopleSheet(link: JsonObject, onDismiss: () -> Unit) {
         }
     }
     fun read(text: String) {
+        codeProblem = null
         scope.launch {
             try {
                 val reply = Engine.call("shared.read_code", Pass.handleForTests, { put("code", text.trim()) })
                 reading = text.trim() to "${reply.obj["name"]!!.jsonPrimitive.content}\n${reply.obj["fingerprint"]!!.jsonPrimitive.content}"
             } catch (failure: NativeFailure) {
-                problem = failure.message
+                codeProblem = failure.message
             }
         }
     }
@@ -422,6 +431,9 @@ private fun PeopleSheet(link: JsonObject, onDismiss: () -> Unit) {
                         RowIconButton(PassIcons.Delete, "Remove", tint = colors.danger) { removing = member }
                     }
                 }
+                removeProblem?.takeIf { it.first == member["key"]?.jsonPrimitive?.content }?.let { (_, words) ->
+                    Text(words, color = colors.danger, style = MaterialTheme.typography.bodyMedium)
+                }
             }
             problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
             val offered = invite
@@ -434,22 +446,28 @@ private fun PeopleSheet(link: JsonObject, onDismiss: () -> Unit) {
                 Text("Ask them to read their code out. A different one means someone swapped it, and adding it would hand that person the vault.", color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
                 Text(print, color = colors.text, style = PassType.secret)
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    QuietButton("Not them", Modifier.weight(1f), tint = colors.danger) { reading = null }
+                    QuietButton("Not them", Modifier.weight(1f), tint = colors.danger) {
+                        reading = null
+                        codeProblem = null
+                    }
                     PrimaryButton("It matches", Modifier.weight(1f)) {
+                        codeProblem = null
                         scope.launch {
                             try {
                                 invite = SharedVaults.addMember(context, place!!, file, check.first)
                                 reading = null
                                 tick++
                             } catch (failure: Exception) {
-                                problem = if (failure is NativeFailure) failure.message else sinkProblem(failure)
+                                codeProblem = if (failure is NativeFailure) failure.message else sinkProblem(failure)
                             }
                         }
                     }
                 }
+                codeProblem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
             } else if (owner && place != null) {
                 Eyebrow("Add someone")
                 SheetField(code, "Paste their code")
+                codeProblem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     QuietButton("Scan it", Modifier.weight(1f), PassIcons.QrCodeScanner) {
                         shell.scanTarget = { read(it) }
@@ -467,12 +485,14 @@ private fun PeopleSheet(link: JsonObject, onDismiss: () -> Unit) {
             "Remove them",
             onDismiss = { removing = null },
         ) {
+            val key = member["key"]!!.jsonPrimitive.content
+            removeProblem = null
             scope.launch {
                 try {
-                    SharedVaults.removeMember(context, place!!, file, member["key"]!!.jsonPrimitive.content)
+                    SharedVaults.removeMember(context, place!!, file, key)
                     tick++
                 } catch (failure: Exception) {
-                    problem = if (failure is NativeFailure) failure.message else sinkProblem(failure)
+                    removeProblem = key to ((failure as? NativeFailure)?.message ?: sinkProblem(failure))
                 }
             }
         }

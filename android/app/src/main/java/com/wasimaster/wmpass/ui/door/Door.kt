@@ -314,6 +314,8 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
     val keyboard = LocalSoftwareKeyboardController.current
     var shield by remember { mutableStateOf(ShieldState.IDLE) }
     var message by remember { mutableStateOf<String?>(null) }
+    // What the two-factor code needs or got wrong, said under the code field rather than the password.
+    var codeMessage by remember { mutableStateOf<String?>(null) }
     var typed by remember { mutableIntStateOf(0) }
     var retryAt by remember { mutableStateOf(Pass.retryAt()) }
     var remaining by remember { mutableStateOf(0L) }
@@ -338,6 +340,7 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
                 Accounts.remove(context, stuck.id)
                 source = null
                 message = null
+                codeMessage = null
             }) { Text("Remove this account", color = colors.danger) }
         }
     }
@@ -374,6 +377,7 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
         val password = field.text.toString().toByteArray()
         shield = ShieldState.WORKING
         message = null
+        codeMessage = null
         scope.launch {
             try {
                 if (ref.kind == "kdbx") {
@@ -393,7 +397,7 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
                         emailedCode = failure.code == "new_device"
                         codeField.clearText()
                         shield = ShieldState.IDLE
-                        message = if (emailedCode) {
+                        codeMessage = if (emailedCode) {
                             "Bitwarden has emailed you a code to confirm this phone. Enter it with your password."
                         } else {
                             "This account also needs a code from your authenticator."
@@ -402,7 +406,7 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
                     // Not a guess at the password, so none of these counts towards the wait.
                     "bad_code" -> {
                         shield = ShieldState.IDLE
-                        message = "That code was not accepted."
+                        codeMessage = "That code was not accepted."
                     }
                     "network", "bitwarden" -> {
                         shield = ShieldState.IDLE
@@ -566,6 +570,7 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
                         Pill("This device", source == null) {
                             source = null
                             message = null
+                            codeMessage = null
                             needed = null
                         }
                     } else {
@@ -575,6 +580,7 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
                         Pill(account.label, source?.id == account.id) {
                             source = account
                             message = null
+                            codeMessage = null
                             needed = null
                             asksCode = false
                             keyFile = null
@@ -586,7 +592,18 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
                 FactorEntry(factors, enabled = !busy) { kind, output -> submit(listOf(kind to output)) }
             }
             AnimatedVisibility(asksCode) {
-                Box(Modifier.padding(bottom = 10.dp)) { com.wasimaster.wmpass.ui.vault.SheetField(codeField, if (emailedCode) "Code from the email" else "Two-factor code") }
+                Column(Modifier.padding(bottom = 10.dp)) {
+                    androidx.compose.material3.OutlinedTextField(
+                        state = codeField,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(if (emailedCode) "Code from the email" else "Two-factor code") },
+                        isError = codeMessage != null,
+                        lineLimits = androidx.compose.foundation.text.input.TextFieldLineLimits.SingleLine,
+                    )
+                    AnimatedVisibility(codeMessage != null, enter = fadeIn(), exit = fadeOut()) {
+                        Text(codeMessage.orEmpty(), color = colors.danger, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 16.dp, top = 4.dp))
+                    }
+                }
             }
             PasswordPill(
                 field,
@@ -662,6 +679,7 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
                         Pill("This phone", source == null) {
                             source = null
                             message = null
+                            codeMessage = null
                             needed = null
                         }
                     } else {
@@ -671,6 +689,7 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
                         Pill(account.label, source?.id == account.id) {
                             source = account
                             message = null
+                            codeMessage = null
                             needed = null
                             asksCode = false
                             keyFile = null
@@ -683,7 +702,12 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
                 FactorEntry(factors, enabled = shield != ShieldState.WORKING) { kind, output -> submit(listOf(kind to output)) }
             }
             AnimatedVisibility(asksCode) {
-                Box(Modifier.padding(bottom = 10.dp)) { com.wasimaster.wmpass.ui.vault.SheetField(codeField, if (emailedCode) "Code from the email" else "Six-digit code") }
+                Column(Modifier.padding(bottom = 10.dp)) {
+                    com.wasimaster.wmpass.ui.vault.SheetField(codeField, if (emailedCode) "Code from the email" else "Six-digit code")
+                    AnimatedVisibility(codeMessage != null, enter = fadeIn(), exit = fadeOut()) {
+                        Text(codeMessage.orEmpty(), color = colors.danger, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 20.dp, top = 4.dp))
+                    }
+                }
             }
             PasswordPill(
                 field,
@@ -1014,14 +1038,21 @@ private fun DoorRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title
     }
 }
 
+/** Why a row's action failed, set under that row and in line with its title. */
+@Composable
+private fun DoorRowProblem(text: String) {
+    Text(text, color = palette.danger, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 62.dp, bottom = 8.dp))
+}
+
 /** Every way back to a vault that already exists somewhere. */
 @Composable
 private fun ComingBack(onDismiss: () -> Unit) {
-    val colors = palette
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var sheet by remember { mutableStateOf("menu") }
-    var problem by remember { mutableStateOf<String?>(null) }
+    // Each failure shows under the row that started it.
+    var fileProblem by remember { mutableStateOf<String?>(null) }
+    var placeProblem by remember { mutableStateOf<String?>(null) }
     var place by remember { mutableStateOf<Destination?>(null) }
     val openFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -1031,7 +1062,7 @@ private fun ComingBack(onDismiss: () -> Unit) {
                     Pass.restore(bytes)
                     onDismiss()
                 } catch (failure: Exception) {
-                    problem = failure.message ?: "That file could not be used."
+                    fileProblem = failure.message ?: "That file could not be used."
                 }
             }
         }
@@ -1041,14 +1072,18 @@ private fun ComingBack(onDismiss: () -> Unit) {
             if (!com.wasimaster.wmpass.BuildConfig.OFFLINE) {
                 DoorRow(PassIcons.Devices, "Get it from another device", "Your other phone or computer sends it over Wi-Fi") { sheet = "join" }
             }
-            DoorRow(PassIcons.Folder, "Restore from a file", ".wmvault or .wmbackup") { openFile.launch(arrayOf("*/*")) }
-            DoorRow(PassIcons.Backup, "Restore from a backup location", "Folder, WebDAV, S3 or SFTP") { sheet = "place" }
+            DoorRow(PassIcons.Folder, "Restore from a file", ".wmvault or .wmbackup") {
+                fileProblem = null
+                openFile.launch(arrayOf("*/*"))
+            }
+            fileProblem?.let { DoorRowProblem(it) }
+            DoorRow(PassIcons.Backup, "Restore from a backup location", "Folder, WebDAV, S3 or SFTP") {
+                placeProblem = null
+                sheet = "place"
+            }
+            placeProblem?.let { DoorRowProblem(it) }
             DoorRow(PassIcons.Sync, "Open a KeePass file or sign in", "KeePass, Bitwarden, Vaultwarden or a WM Pass server") { sheet = "account" }
             DoorRow(PassIcons.FamilyRestroom, "Recover with emergency shares", "When someone gave you part of their key") { sheet = "shares" }
-            problem?.let {
-                Spacer(Modifier.height(8.dp))
-                Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium)
-            }
         }
         "place" -> com.wasimaster.wmpass.ui.settings.DestinationSheet(null, onDismiss) { saved ->
             place = saved
@@ -1059,7 +1094,7 @@ private fun ComingBack(onDismiss: () -> Unit) {
                 runCatching { Pass.restore(bytes) }
                     .onSuccess { onDismiss() }
                     .onFailure {
-                        problem = it.message
+                        placeProblem = it.message ?: "That backup could not be used."
                         sheet = "menu"
                     }
             }

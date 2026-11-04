@@ -25,6 +25,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicSecureTextField
@@ -306,6 +308,21 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
     }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    /**
+     * The part of the form a failed save was about: "otp", "notes", or the field, custom field,
+     * question or file itself. Its error shows under it. Null means the error is about the whole
+     * item, and it shows by Save.
+     */
+    var errorAt by remember { mutableStateOf<Any?>(null) }
+    /** The new item a save made before a later step failed. Saving again finishes it, not a second one. */
+    var createdId by remember { mutableStateOf<String?>(null) }
+    /** Custom fields, questions and files a failed save already wrote, so saving again does not add them twice. */
+    val written = remember { mutableSetOf<Any>() }
+    /**
+     * Whether a failed save already removed a custom field. Until then a field that was there
+     * before is written by its index, which is safe to write again with what it says now.
+     */
+    var removedAny by remember { mutableStateOf(false) }
     var sheet by remember { mutableStateOf<String?>(null) }
     var generating by remember { mutableStateOf<EditField?>(null) }
     var aliasFor by remember { mutableStateOf<EditField?>(null) }
@@ -497,7 +514,10 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
         if (saving) return
         saving = true
         error = null
+        errorAt = null
         scope.launch {
+            // The part of the form the step running now writes, so a failure can point at it.
+            var step: Any? = null
             try {
                 val finalTitle = title.text.toString().trim().ifEmpty { derived }.ifEmpty { "Untitled" }
                 val plain = fields.filter { !it.spec.secret && it.changed }
@@ -516,7 +536,8 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                     }
                     apps.forEach { add(it) }
                 }
-                val id = entryId ?: Pass.change("entry.create") {
+                val made = createdId
+                val id = entryId ?: made ?: Pass.change("entry.create") {
                     put("kind", kind)
                     put("title", finalTitle)
                     color?.let { put("color", it) }
@@ -526,20 +547,21 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                         buildJsonObject { plain.forEach { put(it.spec.key, jsonValue(it)) } },
                     )
                     putJsonArray("sites") { newSites.forEach { add(it) } }
-                }.obj["id"]!!.jsonPrimitive.content
+                }.obj["id"]!!.jsonPrimitive.content.also { createdId = it }
                 if (entryId != null && detail?.kind == "otp" && kind == "login") {
                     Pass.change("entry.convert") {
                         put("id", id)
                         put("kind", "login")
                     }
                 }
-                if (entryId != null && plain.isNotEmpty()) {
+                if ((entryId != null || made != null) && plain.isNotEmpty()) {
                     Pass.change("entry.set") {
                         put("id", id)
                         put("fields", buildJsonObject { plain.forEach { put(it.spec.key, jsonValue(it)) } })
                     }
                 }
                 fields.filter { it.spec.secret && it.changed }.forEach { field ->
+                    step = field
                     val bytes = field.text.text.toString().toByteArray()
                     Pass.change("entry.set_secret", secret = bytes) {
                         put("id", id)
@@ -548,6 +570,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                     bytes.fill(0)
                 }
                 if (notesLoaded && notes.text.toString() != notesOriginal) {
+                    step = "notes"
                     val bytes = notes.text.toString().toByteArray()
                     Pass.change("entry.set_secret", secret = bytes) {
                         put("id", id)
@@ -556,6 +579,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                     bytes.fill(0)
                 }
                 if (otpSeed.text.isNotBlank()) {
+                    step = "otp"
                     val bytes = otpSeed.text.toString().toByteArray()
                     Pass.change("entry.otp_set", secret = bytes) {
                         put("id", id)
@@ -564,7 +588,8 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                     bytes.fill(0)
                 }
                 // Changed before any is removed, while every index still points where it did.
-                customs.filter { !it.remove && it.name.text.isNotBlank() }.forEach { custom ->
+                customs.filter { !it.remove && it.name.text.isNotBlank() && !(it in written && (it.existing == null || removedAny)) }.forEach { custom ->
+                    step = custom
                     val existing = custom.existing
                     when {
                         existing == null && custom.value.text.isEmpty() -> Unit
@@ -577,24 +602,32 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                                 put("kind", custom.kind)
                             }
                             bytes.fill(0)
+                            written.add(custom)
                         }
                         // Only its name or whether it is secret: the value stays in the vault untouched.
-                        custom.metaChanged -> Pass.change("entry.custom_meta") {
-                            put("id", id)
-                            put("index", existing.index)
-                            put("name", custom.name.text.toString().trim())
-                            put("kind", custom.kind)
+                        custom.metaChanged -> {
+                            Pass.change("entry.custom_meta") {
+                                put("id", id)
+                                put("index", existing.index)
+                                put("name", custom.name.text.toString().trim())
+                                put("kind", custom.kind)
+                            }
+                            written.add(custom)
                         }
                     }
                 }
                 // Removed from the end first, so earlier indexes stay right.
-                customs.filter { it.remove && it.existing != null }.sortedByDescending { it.existing!!.index }.forEach { custom ->
+                customs.filter { it.remove && it.existing != null && it !in written }.sortedByDescending { it.existing!!.index }.forEach { custom ->
+                    step = null
                     Pass.change("entry.custom_remove") {
                         put("id", id)
                         put("index", custom.existing!!.index)
                     }
+                    written.add(custom)
+                    removedAny = true
                 }
-                questions.filter { it.answer.text.isNotEmpty() && it.question.text.isNotBlank() }.forEach { q ->
+                questions.filter { it.answer.text.isNotEmpty() && it.question.text.isNotBlank() && it !in written }.forEach { q ->
+                    step = q
                     val bytes = q.answer.text.toString().toByteArray()
                     Pass.change("entry.question_set", secret = bytes) {
                         put("id", id)
@@ -602,7 +635,9 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                         put("question", q.question.text.toString().trim())
                     }
                     bytes.fill(0)
+                    if (q.index == null) written.add(q)
                 }
+                step = null
                 Pass.change("entry.common") {
                     put("id", id)
                     put("title", finalTitle)
@@ -624,15 +659,18 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                         )
                     }
                 }
-                files.forEach { file ->
+                files.filter { it !in written }.forEach { file ->
+                    step = file
                     val bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                         context.contentResolver.openInputStream(file.uri)?.use { it.readBytes() }
                     }
                     if (bytes != null) {
                         Pass.addAttachment(id, file.name, file.mime, bytes)
                         bytes.fill(0)
+                        written.add(file)
                     }
                 }
+                step = null
                 // Tagged by its site, such as Banking or Social; the kind already says it is a card or a code.
                 // A guess only when asked for: a wrong tag costs the owner a hunt to undo it.
                 if (entryId == null && tags.isEmpty() && shell.prefs.autoTag.value) {
@@ -654,6 +692,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
             } catch (failure: NativeFailure) {
                 shell.haptics.reject()
                 error = failure.message
+                errorAt = step
                 saving = false
             }
         }
@@ -747,6 +786,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                                     },
                                     tag = { options -> options.offering(keyboardToken, keyboardActions(field.spec.key)) },
                                 ) { generating = field }
+                                FieldError(error.takeIf { errorAt === field })
                     }
                     val mainRows = fields.filter { mainKeys == null || it.spec.key in mainKeys }
                     val detailRows = fields.filter { mainKeys != null && it.spec.key !in mainKeys }
@@ -771,7 +811,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                     }
                     if (colors.flat) Spacer(Modifier.height(8.dp))
                     if (detailRows.isNotEmpty()) {
-                        EditorFold("details", "Other details", detailRows.joinToString(", ") { it.spec.label }, false) {
+                        EditorFold("details", "Other details", detailRows.joinToString(", ") { it.spec.label }, false, opensFor = detailRows.any { it === errorAt }) {
                             detailRows.forEachIndexed { index, field ->
                                 if (index > 0) Hairline()
                                 fieldEditor(field)
@@ -875,7 +915,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                     }
                     val otpShown = kind == "otp" || otpOpen || detail?.otp != null || "otp" in added || "otp" in opened
                     if (kind == "login" || kind == "otp") Appear(otpShown) {
-                        EditorFold("otp", "One-time code", if (detail?.otp != null) "Saved" else null, kind == "otp" || otpOpen || "otp" in added) {
+                        EditorFold("otp", "One-time code", if (detail?.otp != null) "Saved" else null, kind == "otp" || otpOpen || "otp" in added, opensFor = errorAt == "otp") {
                             Box {
                                 if (colors.flat) {
                                     androidx.compose.material3.OutlinedTextField(
@@ -920,11 +960,12 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                                     }
                                 }
                             }
+                            FieldError(error.takeIf { errorAt == "otp" })
                         }
                     }
                     val notesShown = detail?.hasNotes == true || notes.text.isNotEmpty() || "notes" in added || "notes" in opened
                     if (kind != "note") Appear(notesShown) {
-                        EditorFold("notes", "Notes", if (detail?.hasNotes == true) "Saved" else null, "notes" in added) {
+                        EditorFold("notes", "Notes", if (detail?.hasNotes == true) "Saved" else null, "notes" in added, opensFor = errorAt == "notes") {
                             if ((notesLoaded || detail?.hasNotes != true) && colors.flat) {
                                 if (!notesLoaded) notesLoaded = true
                                 androidx.compose.material3.OutlinedTextField(
@@ -958,11 +999,12 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                                     }
                                 }
                             }
+                            FieldError(error.takeIf { errorAt == "notes" })
                         }
                     }
                     val customCount = customs.count { !it.remove }
                     Appear(customCount > 0 || "custom" in added || "custom" in opened) {
-                        EditorFold("custom", "Custom fields", if (customCount == 0) null else "$customCount", "custom" in added) {
+                        EditorFold("custom", "Custom fields", if (customCount == 0) null else "$customCount", "custom" in added, opensFor = customs.any { it === errorAt }) {
                             val first = customs.indexOfFirst { !it.remove }
                             customs.forEachIndexed { index, custom ->
                                 // New ones grow in and removed ones fold away, rather than jumping.
@@ -976,6 +1018,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                                     Column {
                                         if (index > first) Hairline()
                                         CustomEditor(entryId, custom)
+                                        FieldError(error.takeIf { errorAt === custom })
                                     }
                                 }
                             }
@@ -986,7 +1029,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                         }
                     }
                     if (kind == "login") Appear(questions.isNotEmpty() || "questions" in added || "questions" in opened) {
-                        EditorFold("questions", "Security questions", if (questions.isEmpty()) null else "${questions.size}", "questions" in added) {
+                        EditorFold("questions", "Security questions", if (questions.isEmpty()) null else "${questions.size}", "questions" in added, opensFor = questions.any { it === errorAt }) {
                             questions.forEachIndexed { index, q ->
                                 if (index > 0) Hairline()
                                 Column(Modifier.padding(horizontal = 18.dp, vertical = 12.dp)) {
@@ -994,6 +1037,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                                     Spacer(Modifier.height(8.dp))
                                     PlainField(q.answer, if (q.index != null) "Saved. Type to replace the answer" else "Answer", mono = true)
                                 }
+                                FieldError(error.takeIf { errorAt === q })
                             }
                             if (questions.isNotEmpty()) Hairline()
                             AddLine("Add a question") { questions.add(EditQuestion(null, "")) }
@@ -1029,7 +1073,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                         }
                     }
                     Appear(files.isNotEmpty()) {
-                        EditorFold("files", "Files to attach", "${files.size}", true) {
+                        EditorFold("files", "Files to attach", "${files.size}", true, opensFor = files.any { it === errorAt }) {
                             files.toList().forEach { file ->
                                 Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Icon(if (file.mime.startsWith("image/")) PassIcons.Image else PassIcons.AttachFile, null, tint = colors.textMid, modifier = Modifier.size(20.dp))
@@ -1037,6 +1081,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                                     Text(file.name, color = colors.text, style = MaterialTheme.typography.bodyLarge, maxLines = 1, modifier = Modifier.weight(1f))
                                     RowIconButton(PassIcons.Close, "Leave out ${file.name}") { files.remove(file) }
                                 }
+                                FieldError(error.takeIf { errorAt === file })
                                 Hairline()
                             }
                             AddLine("Attach another file") { pickFile.launch(arrayOf("*/*")) }
@@ -1093,11 +1138,11 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                 Spacer(Modifier.height(24.dp))
             }
             // Saving stays under the thumb, above the keyboard when there is one.
-            if (colors.flat && error != null) {
+            if (colors.flat && error != null && errorAt == null) {
                 Text(error.orEmpty(), color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.navigationBarsPadding().padding(16.dp))
             }
             if (!colors.flat) Column(Modifier.navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 10.dp)) {
-                AnimatedVisibility(error != null) {
+                AnimatedVisibility(error != null && errorAt == null) {
                     Text(
                         error.orEmpty(),
                         color = colors.danger,
@@ -1222,14 +1267,16 @@ private val EditField.hasContent: Boolean
 /**
  * A part of the form that stays out of the way until it is wanted. Every fold starts closed, with
  * its line saying what is inside, unless it was just asked for under Add more ([startOpen]) or
- * the owner keeps it open.
+ * the owner keeps it open. It also opens when a save failed on something inside it ([opensFor]),
+ * so the error under that field can be seen.
  */
 @Composable
-private fun EditorFold(key: String, title: String, summary: String?, startOpen: Boolean, content: @Composable () -> Unit) {
+private fun EditorFold(key: String, title: String, summary: String?, startOpen: Boolean, opensFor: Boolean = false, content: @Composable () -> Unit) {
     val colors = palette
     val shell = LocalShell.current
     val prefs = shell.prefs
     var open by androidx.compose.runtime.saveable.rememberSaveable(key) { mutableStateOf(startOpen || key in prefs.editorOpen) }
+    LaunchedEffect(opensFor) { if (opensFor) open = true }
     val turn by androidx.compose.animation.core.animateFloatAsState(if (open) 180f else 0f, Springs.glide(), label = "fold")
     if (!colors.flat) Spacer(Modifier.height(10.dp))
     GroupCard(plain = true) {
@@ -1267,6 +1314,31 @@ private fun EditorFold(key: String, title: String, summary: String?, startOpen: 
                 Spacer(Modifier.height(4.dp))
             }
         }
+    }
+}
+
+/**
+ * Why a save failed, under the field it failed on, such as a setup key that is not a real key.
+ * It scrolls into sight, since Save may be far below the field.
+ */
+@Composable
+private fun FieldError(message: String?) {
+    val colors = palette
+    val requester = remember { BringIntoViewRequester() }
+    LaunchedEffect(message) {
+        if (message != null) {
+            // Waits for its fold to open first.
+            delay(320)
+            runCatching { requester.bringIntoView() }
+        }
+    }
+    AnimatedVisibility(message != null) {
+        Text(
+            message.orEmpty(),
+            color = colors.danger,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.fillMaxWidth().bringIntoViewRequester(requester).padding(start = 18.dp, end = 16.dp, top = 2.dp, bottom = 10.dp),
+        )
     }
 }
 

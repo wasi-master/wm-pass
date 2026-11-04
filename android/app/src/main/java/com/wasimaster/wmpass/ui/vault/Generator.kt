@@ -637,8 +637,7 @@ fun GeneratorTab() {
             Spacer(Modifier.height(20.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 PrimaryButton("Copy", Modifier.weight(1f), icon = PassIcons.ContentCopy) {
-                    val value = state.value
-                    shell.copySecret("Password") { SecretBytes(value.toByteArray()) }
+                    shell.copyGenerated(state.value)
                 }
                 if (!colors.flat) RollButton({ scope.launch { state.roll() } })
                 val source = remember { MutableInteractionSource() }

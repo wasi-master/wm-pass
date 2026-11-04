@@ -1,20 +1,25 @@
 package com.wasimaster.wmpass.ui.vault
 
 import android.content.Intent
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
@@ -24,6 +29,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.wasimaster.wmpass.core.Pass
 import com.wasimaster.wmpass.system.SavedWifi
 import com.wasimaster.wmpass.ui.icons.PassIcons
+import com.wasimaster.wmpass.ui.parts.GlyphTile
 import com.wasimaster.wmpass.ui.parts.PrimaryButton
 import com.wasimaster.wmpass.ui.parts.QuietButton
 import com.wasimaster.wmpass.ui.theme.palette
@@ -38,13 +44,17 @@ private fun securityName(security: String): String = when (security) {
 }
 
 /** How an add-all run went, for the line the sheet ends on. */
-class WifiAdded(val added: Int, val updated: Int, val leftAlone: Int)
+class WifiAdded(val added: Int, val updated: Int, val leftAlone: Int, val failed: Int = 0)
+
+/** What happened to one network in an add-all run. A [failed] one says why in [text]. */
+private class WifiOutcome(val text: String, val failed: Boolean)
 
 /**
  * The networks this phone has saved, read through Shizuku. With [onPick] a tap fills one item;
  * with [onAdd] several are ticked and saved at once. A network already in the vault says so and
  * starts unticked; ticking it updates that item instead of adding a copy. The sheet stays open while
- * they are saved, counting, and ends on what it did. Passwords are never shown here.
+ * they are saved, counting, and ends on what it did to each network by name: added, updated, left
+ * as it was, or not saved and why. Passwords are never shown here.
  */
 @Composable
 fun SavedWifiSheet(
@@ -73,6 +83,7 @@ fun SavedWifiSheet(
     }
     var saving by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var done by remember { mutableStateOf<WifiAdded?>(null) }
+    val outcomes = remember { mutableStateMapOf<String, WifiOutcome>() }
     LaunchedEffect(tries) {
         problem = null
         val now = SavedWifi.state(context)
@@ -154,13 +165,17 @@ fun SavedWifiSheet(
                                 1 -> "Updated 1 that was already in your vault."
                                 else -> "Updated ${result.updated} that were already in your vault."
                             },
-                            when (result.leftAlone) {
+                            when (result.failed) {
                                 0 -> null
-                                1 -> "1 already in your vault was left as it was."
-                                else -> "${result.leftAlone} already in your vault were left as they were."
+                                1 -> "1 could not be saved."
+                                else -> "${result.failed} could not be saved."
                             },
                         )
                         explain(lines.joinToString(" ").ifEmpty { "Nothing was added." })
+                        found.forEach { network ->
+                            outcomes[network.ssid]?.let { ResultRow(network.ssid, it) }
+                        }
+                        Spacer(Modifier.height(12.dp))
                         PrimaryButton("Done", Modifier.fillMaxWidth()) {
                             onFinished?.invoke(result)
                             onDismiss()
@@ -206,13 +221,25 @@ fun SavedWifiSheet(
                                 scope.launch {
                                     var added = 0
                                     var updated = 0
+                                    var failed = 0
+                                    outcomes.clear()
                                     picked.forEachIndexed { index, network ->
                                         saving = index to picked.size
                                         val existing = inVault[network.ssid]
-                                        runCatching { onAdd(network, existing) }.onSuccess { if (existing == null) added++ else updated++ }
+                                        runCatching { onAdd(network, existing) }
+                                            .onSuccess {
+                                                if (existing == null) added++ else updated++
+                                                outcomes[network.ssid] = WifiOutcome(if (existing == null) "Added" else "Updated its item", false)
+                                            }
+                                            .onFailure {
+                                                failed++
+                                                outcomes[network.ssid] = WifiOutcome("Not saved: ${it.message ?: "no reason was given"}", true)
+                                            }
                                     }
+                                    val leftAlone = found.filter { it.ssid in inVault && it.ssid !in chosen }
+                                    leftAlone.forEach { outcomes[it.ssid] = WifiOutcome("Already in your vault, left as it was", false) }
                                     saving = null
-                                    done = WifiAdded(added, updated, found.count { it.ssid in inVault && it.ssid !in chosen })
+                                    done = WifiAdded(added, updated, leftAlone.size, failed)
                                 }
                             }
                         }
@@ -229,6 +256,20 @@ fun SavedWifiSheet(
         problem?.let {
             Spacer(Modifier.height(10.dp))
             Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 4.dp))
+        }
+    }
+}
+
+/** A network after an add-all run, with what happened to it. One that failed is in red. */
+@Composable
+private fun ResultRow(ssid: String, outcome: WifiOutcome) {
+    val colors = palette
+    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp, horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        GlyphTile(PassIcons.Wifi, if (outcome.failed) colors.danger else colors.primary, size = 42.dp)
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(ssid, color = colors.text, style = MaterialTheme.typography.bodyLarge)
+            Text(outcome.text, color = if (outcome.failed) colors.danger else colors.textMid, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }

@@ -163,6 +163,13 @@ class Shell(
 
     fun copyPassword(id: String) = copySecret("Password") { Pass.reveal(id, "password") }
 
+    /** A password just generated and not saved anywhere yet: copied, and left on the clipboard. */
+    fun copyGenerated(value: String) {
+        haptics.confirm()
+        SecureClipboard.copyGenerated(context, "Password", SecretBytes(value.toByteArray()))
+        notice("Copied. A new password stays on the clipboard until you copy something else")
+    }
+
     private fun copyUsername(id: String) {
         scope.launch {
             val name = Pass.detail(id).fields.firstOrNull { it.key == "username" || it.key == "user" }?.text.orEmpty()
