@@ -14,6 +14,7 @@ use serde_json::{Value, json};
 use wmpass_session::{Call, Reply, Service, SessionError};
 use zeroize::Zeroizing;
 
+use crate::app_folder;
 use crate::store;
 
 /// The time now, in milliseconds.
@@ -220,6 +221,8 @@ pub enum Unlock {
     NeedsKeyFile,
     /// A hardware key is needed, which this app cannot talk to.
     NeedsHardware,
+    /// Too many wrong passwords: the next try is allowed at this time, in ms since 1970.
+    Waiting(u64),
 }
 
 /// One unlocked vault and its file.
@@ -234,6 +237,10 @@ pub struct Engine {
     pub read_only: bool,
     /// The file as last read or written, to notice someone else writing it.
     known: Option<(SystemTime, u64)>,
+    /// The desktop app's folder, when the vault is the one it keeps. Its files all carry one
+    /// time, so a change shows only in what they hold: `digest` is the file's hash.
+    root: Option<PathBuf>,
+    digest: Option<[u8; 32]>,
 }
 
 fn reply_json<T: DeserializeOwned>(reply: &Reply) -> Result<T, String> {
@@ -250,8 +257,12 @@ fn secret_text(reply: Reply) -> Result<Zeroizing<String>, String> {
     Ok(Zeroizing::new(text.to_owned()))
 }
 
-/// Creates a vault file and opens it.
+/// Creates a vault file and opens it. A folder makes the vault in the desktop app's folder
+/// there, beside a decoy, as the app makes its first one.
 pub fn create(path: &Path, name: &str, password: &[u8], device: u32) -> Result<Engine, String> {
+    if path.is_dir() {
+        return create_in_folder(path, name, password, device);
+    }
     if path.exists() {
         return Err(format!("{} already exists", path.display()));
     }
@@ -268,13 +279,119 @@ pub fn create(path: &Path, name: &str, password: &[u8], device: u32) -> Result<E
         name: name.to_owned(),
         read_only: false,
         known: None,
+        root: None,
+        digest: None,
     };
     engine.save()?;
     Ok(engine)
 }
 
+fn create_in_folder(root: &Path, name: &str, password: &[u8], device: u32) -> Result<Engine, String> {
+    let mut service = Service::new(device);
+    let args = json!({"name": name}).to_string();
+    let reply = service
+        .call("vault.create", Call { args: &args, secret: password, now_ms: now_ms(), ..Call::default() })
+        .map_err(err)?;
+    let opened: Value = reply_json(&reply)?;
+    let mut engine = Engine {
+        service,
+        handle: opened["handle"].as_u64().ok_or("no handle came back")?,
+        path: app_folder::vault_path(root, &app_folder::new_name()?),
+        name: name.to_owned(),
+        read_only: false,
+        known: None,
+        root: Some(root.to_owned()),
+        digest: None,
+    };
+    engine.save()?;
+    // A decoy that never changes, so a hidden vault's unchanging file is nothing unusual. Its
+    // partner, which keeps pace with this vault, came with the save.
+    let length = usize::try_from(std::fs::metadata(&engine.path).map_err(|e| e.to_string())?.len()).unwrap_or(0);
+    let decoy = engine.chaff(length)?;
+    app_folder::write(&app_folder::vault_path(root, &app_folder::new_name()?), &decoy)?;
+    app_folder::cover_times(root)?;
+    Ok(engine)
+}
+
+/// Opens the vault the desktop app keeps in `root` that this password opens, trying each file
+/// as the app does, and counting a wrong password against the app's own limit.
+fn unlock_folder(root: &Path, password: &[u8], key_file: Option<&[u8]>, device: u32) -> Result<Unlock, String> {
+    let mut door = app_folder::DoorState::load(root);
+    if let Some(at) = door.waiting(now_ms()) {
+        return Ok(Unlock::Waiting(at));
+    }
+    let files = app_folder::files(root)?;
+    if files.is_empty() {
+        return Err("The WM Pass app has no vault on this computer yet".to_owned());
+    }
+    let mut service = Service::new(device);
+    let mut blobs: Vec<&[u8]> = Vec::new();
+    let args = match key_file {
+        Some(key) => {
+            blobs.push(key);
+            json!({"factors": ["key_file"]}).to_string()
+        }
+        None => "{}".to_owned(),
+    };
+    blobs.extend(files.iter().map(|(_, bytes)| bytes.as_slice()));
+    let reply = service
+        .call("vault.open", Call { args: &args, secret: password, blobs: &blobs, now_ms: now_ms(), ..Call::default() })
+        .map_err(err)?;
+    let opened: Value = reply_json(&reply)?;
+    match opened["outcome"].as_str() {
+        Some("opened") => {
+            door.opened();
+            door.save(root);
+            let index = usize::try_from(opened["index"].as_u64().unwrap_or(0)).unwrap_or(0);
+            let (name, file) = files.get(index).ok_or("the vault file went missing")?;
+            let generation = opened["generation"].as_u64().unwrap_or(0);
+            let rollback = store::rolled_back(file, generation);
+            store::remember_generation(file, generation);
+            Ok(Unlock::Opened(
+                Box::new(Engine {
+                    service,
+                    handle: opened["handle"].as_u64().ok_or("no handle came back")?,
+                    path: app_folder::vault_path(root, name),
+                    name: opened["name"].as_str().unwrap_or("Vault").to_owned(),
+                    read_only: opened["read_only"].as_bool().unwrap_or(false),
+                    known: None,
+                    root: Some(root.to_owned()),
+                    digest: Some(*blake3::hash(file).as_bytes()),
+                }),
+                rollback,
+            ))
+        }
+        Some("needs_factor") => {
+            let wants_file = opened["factors"].as_array().is_some_and(|f| f.iter().any(|v| v["kind"] == "key_file"));
+            Ok(if wants_file && key_file.is_none() { Unlock::NeedsKeyFile } else { Unlock::NeedsHardware })
+        }
+        // A duress password does what it is set to do in the app, and then looks like a wrong
+        // one to anyone watching.
+        Some("duress") => {
+            if opened["action"] == "wipe" {
+                app_folder::wipe(root);
+            } else {
+                door.hard_lock(now_ms());
+                door.save(root);
+            }
+            Ok(Unlock::Wrong)
+        }
+        _ => {
+            door.failed(now_ms());
+            door.save(root);
+            Ok(Unlock::Wrong)
+        }
+    }
+}
+
 /// Opens a vault file with a password, and a key file if it has one.
 pub fn unlock(path: &Path, password: &[u8], key_file: Option<&[u8]>, device: u32) -> Result<Unlock, String> {
+    if app_folder::is_app_folder(path) {
+        return unlock_folder(path, password, key_file, device);
+    }
+    if let Some(root) = app_folder::root_of(path) {
+        return unlock_folder(&root, password, key_file, device);
+    }
     let file = store::read(path)?;
     let mut service = Service::new(device);
     let (args, blobs): (String, Vec<&[u8]>) = match key_file {
@@ -298,6 +415,8 @@ pub fn unlock(path: &Path, password: &[u8], key_file: Option<&[u8]>, device: u32
                     name: opened["name"].as_str().unwrap_or("Vault").to_owned(),
                     read_only: opened["read_only"].as_bool().unwrap_or(false),
                     known: store::stamp(path),
+                    root: None,
+                    digest: None,
                 }),
                 rollback,
             ))
@@ -341,8 +460,61 @@ impl Engine {
         Ok(reply)
     }
 
+    /// The desktop app's folder, when this is its vault.
+    pub fn app_folder(&self) -> Option<&Path> {
+        self.root.as_deref()
+    }
+
+    /// Moves the vault into the desktop app's folder at `root`, attachments too, so the app and
+    /// this terminal use one vault. The old file is left where it was.
+    pub fn move_into(&mut self, root: &Path) -> Result<(), String> {
+        let first = app_folder::names(root).map(|n| n.is_empty()).unwrap_or(true);
+        let old_blobs = store::blob_dir(&self.path);
+        let path = app_folder::vault_path(root, &app_folder::new_name()?);
+        if let Ok(dir) = std::fs::read_dir(&old_blobs) {
+            let blobs = store::blob_dir(&path);
+            std::fs::create_dir_all(&blobs).map_err(|e| e.to_string())?;
+            for entry in dir.flatten() {
+                std::fs::copy(entry.path(), blobs.join(entry.file_name())).map_err(|e| e.to_string())?;
+            }
+        }
+        let (old_path, old_known) = (std::mem::replace(&mut self.path, path), self.known.take());
+        self.root = Some(root.to_owned());
+        if let Err(e) = self.save() {
+            self.path = old_path;
+            self.known = old_known;
+            self.root = None;
+            return Err(e);
+        }
+        if first {
+            let length = usize::try_from(std::fs::metadata(&self.path).map_err(|e| e.to_string())?.len()).unwrap_or(0);
+            let decoy = self.chaff(length)?;
+            app_folder::write(&app_folder::vault_path(root, &app_folder::new_name()?), &decoy)?;
+            app_folder::cover_times(root)?;
+        }
+        Ok(())
+    }
+
+    /// A decoy the size of a vault file, under this vault's key settings.
+    fn chaff(&mut self, length: usize) -> Result<Vec<u8>, String> {
+        let handle = self.handle;
+        let reply = self.call("vault.chaff", &json!({"file_len": length, "same_kdf_as": handle}), &[], &[])?;
+        reply.blobs.into_iter().next().ok_or_else(|| "no decoy came back".to_owned())
+    }
+
     /// Merges in the file if someone else wrote it since. Returns whether anything came in.
     pub fn pull(&mut self) -> Result<bool, String> {
+        if self.root.is_some() {
+            let Ok(file) = std::fs::read(&self.path) else { return Ok(false) };
+            let digest = *blake3::hash(&file).as_bytes();
+            if Some(digest) == self.digest {
+                return Ok(false);
+            }
+            let seen = store::seen_generation(&file);
+            self.call("vault.merge", &json!({"seen_generation": seen}), &[], &[&file])?;
+            self.digest = Some(digest);
+            return Ok(true);
+        }
         let now = store::stamp(&self.path);
         if now.is_none() || now == self.known {
             return Ok(false);
@@ -362,12 +534,23 @@ impl Engine {
 
     /// Writes the vault to its file, taking in anyone else's changes first.
     pub fn save(&mut self) -> Result<(), String> {
-        if self.known.is_some() {
+        if self.known.is_some() || self.digest.is_some() {
             // A rollback is reported by `pull` on its own tick; here the write goes ahead.
             let _ = self.pull();
         }
         let reply = self.call("vault.save", &json!({}), &[], &[])?;
         let file = reply.blobs.first().ok_or("nothing came back to write")?;
+        if let Some(root) = self.root.clone() {
+            // The app's folder: no backup file beside it, which would be one more file in
+            // `vaults/`, and the decoy and the times kept as the app keeps them.
+            app_folder::write(&self.path, file)?;
+            self.digest = Some(*blake3::hash(file).as_bytes());
+            let length = file.len();
+            let info: Value = reply_json(&reply)?;
+            store::remember_generation(file, info["generation"].as_u64().unwrap_or(0));
+            let partner = self.view::<Value>("vault.chaff_name", &json!({}))?["name"].as_str().unwrap_or_default().to_owned();
+            return app_folder::cover_tracks(&root, &partner, length, |n| self.chaff(n));
+        }
         store::write_atomic(&self.path, file)?;
         let info: Value = reply_json(&reply)?;
         store::remember_generation(file, info["generation"].as_u64().unwrap_or(0));
@@ -697,5 +880,38 @@ mod tests {
         second.create("note", "From two", &serde_json::Map::new(), &[]).expect("two");
         let titles: Vec<String> = second.list("", "title").expect("list").into_iter().map(|r| r.title).collect();
         assert_eq!(titles, ["From one", "From two"]);
+    }
+
+    #[test]
+    fn the_desktop_apps_folder_is_shared_not_copied() {
+        let dir = tempfile::tempdir().expect("dir");
+        let root = dir.path();
+        let mut first = create(root, "Personal", b"pw", 1).expect("create");
+        let names = app_folder::names(root).expect("names");
+        assert_eq!(names.len(), 3, "the vault, its partner decoy, and a decoy that never changes");
+        let times: std::collections::HashSet<_> = names
+            .iter()
+            .map(|n| std::fs::metadata(app_folder::vault_path(root, n)).and_then(|m| m.modified()).expect("time"))
+            .collect();
+        assert_eq!(times.len(), 1, "every file carries the same time");
+        assert!(!names.iter().any(|n| n.ends_with(".bak") || n.ends_with(".tmp")));
+
+        // Another program, as the desktop app would, opens the same folder and adds an item.
+        let Unlock::Opened(mut second, _) = unlock(root, b"pw", None, 2).expect("opens") else { panic!("did not open") };
+        assert_eq!(second.path(), first.path());
+        second.create("note", "From the app", &serde_json::Map::new(), &[]).expect("note");
+        // The file's time did not move, so only its contents say it changed.
+        assert!(first.pull().expect("pull"));
+        assert_eq!(first.list("From the app", "").expect("list").len(), 1);
+        first.create("note", "From the terminal", &serde_json::Map::new(), &[]).expect("note");
+        assert!(second.pull().expect("pull"));
+        assert_eq!(second.list("", "").expect("list").len(), 2);
+        assert_eq!(app_folder::names(root).expect("names").len(), 3, "writes add no files");
+
+        // Wrong passwords count against the app's own limit.
+        for _ in 0..6 {
+            assert!(matches!(unlock(root, b"nope", None, 3).expect("tries"), Unlock::Wrong));
+        }
+        assert!(matches!(unlock(root, b"pw", None, 3).expect("tries"), Unlock::Waiting(_)));
     }
 }

@@ -199,9 +199,13 @@ fn restrict(path: &Path) {
 #[cfg(not(unix))]
 fn restrict(_path: &Path) {}
 
-/// Where a vault's attachments live, beside it, as the command line keeps them.
+/// Where a vault's attachments live: beside it, as the command line keeps them, or under
+/// `blobs/` for a vault in the desktop app's folder.
 pub fn blob_dir(vault: &Path) -> PathBuf {
-    vault.with_extension("blobs")
+    match (crate::app_folder::root_of(vault), vault.file_name()) {
+        (Some(root), Some(name)) => root.join("blobs").join(name),
+        _ => vault.with_extension("blobs"),
+    }
 }
 
 /// A file's size and time, to notice another program writing it.

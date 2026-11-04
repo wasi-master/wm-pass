@@ -6,6 +6,7 @@
 //! the vault locks after a quiet spell. The alternate screen leaves nothing in scrollback.
 
 mod app;
+pub mod app_folder;
 mod clip;
 mod door;
 mod draw;

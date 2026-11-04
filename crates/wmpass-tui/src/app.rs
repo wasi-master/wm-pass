@@ -104,6 +104,7 @@ pub enum Command {
     Icons,
     SyncSettings,
     AddDevice,
+    IntoApp,
     LockAfter,
     Items,
     Codes,
@@ -119,7 +120,7 @@ pub enum Command {
 const SYNCED: [&str; 3] = ["tui_theme", "tui_icons", "reveal_seconds"];
 
 /// Every palette command, with its words and key.
-pub const COMMANDS: [(Command, &str, &str); 29] = [
+pub const COMMANDS: [(Command, &str, &str); 30] = [
     (Command::New, "New item", "n"),
     (Command::Edit, "Edit item", "e"),
     (Command::CopyPassword, "Copy password", "c"),
@@ -141,6 +142,7 @@ pub const COMMANDS: [(Command, &str, &str); 29] = [
     (Command::Icons, "Nerd Font icons on or off", ""),
     (Command::SyncSettings, "Sync settings with the vault on or off", ""),
     (Command::AddDevice, "Add a new device: send this vault to it", ""),
+    (Command::IntoApp, "Keep this vault in the WM Pass app on this computer", ""),
     (Command::LockAfter, "Lock after…", ""),
     (Command::Items, "Go to Items", "1"),
     (Command::Codes, "Go to Codes", "2"),
@@ -391,6 +393,20 @@ impl App {
         changed || self.clip.seconds_left().is_some() || matches!(self.screen, Screen::Vault(_))
     }
 
+    /// The desktop app's vault follows the app's own timers, which stay on this computer.
+    fn follow_app_timers(&mut self, root: &std::path::Path) {
+        let (lock, clip, reveal) = crate::app_folder::app_timers(root);
+        if let Some(seconds) = lock {
+            self.prefs.lock_minutes = u32::try_from(seconds.div_ceil(60)).unwrap_or(u32::MAX).min(24 * 60);
+        }
+        if let Some(seconds) = clip {
+            self.prefs.clip_seconds = u32::try_from(seconds).unwrap_or(u32::MAX).min(3600);
+        }
+        if let Some(seconds) = reveal {
+            self.prefs.reveal_seconds = u32::try_from(seconds).unwrap_or(u32::MAX).min(3600);
+        }
+    }
+
     // ---- settings that follow the vault ----
 
     fn syncs(&self, key: &str) -> bool {
@@ -505,8 +521,7 @@ impl App {
                     Ask::Quit => self.quit = true,
                     Ask::Nothing => {}
                     Ask::Join => {
-                        let typed = door.path.text().trim().to_owned();
-                        let path = if typed.is_empty() || store::expand(&typed).exists() { door::default_new_path() } else { store::expand(&typed) };
+                        let path = door::join_target(if door.mode == door::Mode::Create { door.path.text() } else { "" });
                         self.overlay = Some(Overlay::Link(Box::new(LinkUi::receive(path))));
                     }
                     ask => {
@@ -563,6 +578,10 @@ impl App {
                         return;
                     }
                     Ok(Unlock::NeedsHardware) => Err("This vault needs a hardware key. Open it in the desktop or phone app".into()),
+                    Ok(Unlock::Waiting(at)) => {
+                        let minutes = at.saturating_sub(engine::now_ms()).div_ceil(60_000);
+                        Err(format!("Too many wrong passwords. Try again in {minutes} min"))
+                    }
                     Err(e) => Err(e),
                 }
             }
@@ -573,6 +592,9 @@ impl App {
                 door.wipe();
                 self.prefs.remember(&path);
                 let name = engine.name.clone();
+                if let Some(root) = engine.app_folder() {
+                    self.follow_app_timers(root);
+                }
                 self.screen = Screen::Vault(Box::new(VaultUi::new(engine)));
                 self.pull_settings();
                 match rollback {
@@ -949,6 +971,24 @@ impl App {
             Command::Health => self.switch_tab(Tab::Health),
             Command::Help => self.overlay = Some(Overlay::Help),
             Command::Lock => self.lock("Locked"),
+            Command::IntoApp => {
+                if ui.engine.app_folder().is_some() {
+                    return self.say(Level::Info, "This is already the WM Pass app's vault");
+                }
+                let Some(root) = crate::app_folder::default_root() else {
+                    return self.say(Level::Bad, "No WM Pass app folder on this computer");
+                };
+                let old = ui.engine.path().to_owned();
+                match ui.engine.move_into(&root) {
+                    Ok(()) => {
+                        self.prefs.recent.retain(|p| *p != old && std::fs::canonicalize(&old).ok().as_ref() != Some(p));
+                        self.prefs.remember(&root);
+                        self.follow_app_timers(&root);
+                        self.say(Level::Good, format!("The app and this terminal now share it. {} is no longer used; delete it once you are sure", old.display()));
+                    }
+                    Err(e) => self.say(Level::Bad, e),
+                }
+            }
             Command::AddDevice => {
                 if let Screen::Vault(ui) = &self.screen {
                     self.overlay = Some(Overlay::Link(Box::new(LinkUi::send(ui.engine.path().to_owned()))));
@@ -1651,7 +1691,8 @@ impl App {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         match (&link.stage, key.code) {
             (Stage::Received { path, .. }, KeyCode::Enter | KeyCode::Esc) => {
-                let path = path.clone();
+                // A vault that went into the app's folder opens as the app's.
+                let path = crate::app_folder::root_of(path).unwrap_or_else(|| path.clone());
                 if let Screen::Door(door) = &mut self.screen {
                     if door.mode == door::Mode::Create {
                         door.toggle_mode();

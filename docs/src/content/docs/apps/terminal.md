@@ -13,7 +13,7 @@ wmpass
 wmpass tui ~/Sync/Personal.wmvault
 ```
 
-With no file named, it opens the vault you used last.
+With no file named, it opens the WM Pass desktop app's vault when the app is on this computer, and otherwise the vault you used last.
 
 ## Getting it
 
@@ -22,6 +22,22 @@ Downloads for macOS, Linux and Windows are on the [releases page](https://github
 ```bash
 cargo install --path crates/wmpass-cli
 ```
+
+## The same vault as the desktop app
+
+On a computer with the WM Pass desktop app, the terminal app opens the app's own vault. The app and the terminal are then working on one vault, with no copy to keep in step. Each one merges in what the other wrote within a few seconds, and a change made in both at once keeps both edits. Settings that follow the vault, such as how long a revealed password stays, reach the terminal the same way. With the app's vault open, the terminal also uses the app's auto-lock and clipboard timers, which never leave this computer.
+
+Wrong passwords count against the app's own limit, whichever one they are typed into. A duress password does what it is set to do in the app.
+
+A vault the terminal made before it knew about the app can move in: run **Keep this vault in the WM Pass app on this computer** from the `:` palette. The old file stays where it was until you delete it.
+
+Subcommands take `@app` in place of a file for the same vault:
+
+```bash
+wmpass ls @app
+```
+
+The app's folder is `~/Library/Application Support/com.wasimaster.wmpass.desktop` on macOS, `%APPDATA%\com.wasimaster.wmpass.desktop` on Windows and `~/.local/share/com.wasimaster.wmpass.desktop` on Linux. `WMPASS_APP_DIR` points somewhere else.
 
 ## Getting your vault from another device
 

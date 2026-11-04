@@ -314,6 +314,7 @@ fn draw_door(frame: &mut Frame, area: Rect, door: &Door, theme: &Theme, recent: 
     frame.render_widget(Paragraph::new(brand_word(theme)), Rect { y, height: 1, ..inner });
     y += 1;
     let subtitle = match door.mode {
+        door::Mode::Unlock if door::place_label(door.path.text()).is_some() => "Unlock the WM Pass app's vault".to_owned(),
         door::Mode::Unlock => {
             let name = std::path::Path::new(door.path.text())
                 .file_name()
@@ -339,6 +340,15 @@ fn draw_door(frame: &mut Frame, area: Rect, door: &Door, theme: &Theme, recent: 
             Field::Password => ("Password", &door.password, true, String::new()),
             Field::Confirm => ("Password again", &door.confirm, true, String::new()),
             Field::KeyFile => ("Key file", &door.key_file, false, "Path to the key file".to_owned()),
+        };
+        // The app's folder reads as what it is until the box is picked to change it.
+        let shown;
+        let input = match door::place_label(input.text()) {
+            Some(place) if *field == Field::Path && !focused => {
+                shown = Input::with(place);
+                &shown
+            }
+            _ => input,
         };
         if let Some(at) = text_box(frame, rect, theme, input, &BoxLook { label, secret, focused, placeholder: &hint }) {
             cursor = Some(at);

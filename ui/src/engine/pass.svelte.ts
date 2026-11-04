@@ -70,6 +70,9 @@ class PassStore {
   onWipe: (() => void)[] = [];
   /** How long to wait after a change before writing. The extension's popup can vanish at any moment. */
   saveDelayMs = 350;
+  /** The vault file as last read or written, by its hash, to notice another program writing it. */
+  private known: string | null = null;
+  private watch: ReturnType<typeof setInterval> | null = null;
 
   get device() {
     return this.door.device;
@@ -199,8 +202,58 @@ class PassStore {
   private adopt(handle: number, file: string, name: string, readOnly: boolean) {
     this.handle = handle;
     this.file = file;
+    this.known = null;
     this.state = { kind: 'unlocked', name, file, readOnly };
     host().stateChanged?.({ unlocked: true, name, handle, file, read_only: readOnly });
+    this.watchFile();
+  }
+
+  // ---- other programs writing the same file ----
+
+  private async hashOf(bytes: Uint8Array) {
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as BufferSource));
+    return Array.from(digest, (b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  /**
+   * On a computer, the terminal app and `wmpass` open this same folder. Every file here keeps
+   * one time on purpose, so a change shows only in what the file holds: it is read every few
+   * seconds and merged in when it differs from what this app last read or wrote.
+   */
+  private watchFile() {
+    this.stopWatching();
+    if (host().kind !== 'desktop') return;
+    this.watch = setInterval(() => {
+      this.writing = this.writing.then(() => this.takeOutsideChanges()).catch(() => undefined);
+    }, 3000);
+  }
+
+  private stopWatching() {
+    if (this.watch) clearInterval(this.watch);
+    this.watch = null;
+  }
+
+  /** Merges in the file if another program wrote it since. Returns whether anything came in. */
+  private async takeOutsideChanges() {
+    const file = this.file;
+    if (!this.handle || !file || this.childWriter || this.accountWriter) return false;
+    let bytes: Uint8Array;
+    try {
+      bytes = await host().readFile(file);
+    } catch {
+      return false;
+    }
+    const hash = await this.hashOf(bytes);
+    if (this.known === null) {
+      this.known = hash;
+      return false;
+    }
+    if (hash === this.known || file !== this.file) return false;
+    const name = file.split('/').pop()!;
+    await this.engine('vault.merge', { seen_generation: this.door.seen[name] ?? 0 }, { handle: this.handle, blobs: [bytes] });
+    this.known = hash;
+    await this.refresh();
+    return true;
   }
 
   /** When typing a password next becomes allowed, or 0. */
@@ -237,6 +290,7 @@ class PassStore {
         await this.noteSuccess();
         const target = `${VAULTS}/${files[obj.index].name}`;
         this.adopt(obj.handle, target, obj.name, obj.read_only === true);
+        this.known = await this.hashOf(blobs[factors.length + obj.index]);
         await this.afterOpen(files[obj.index].name, obj.generation);
         return { kind: 'opened' };
       }
@@ -263,9 +317,11 @@ class PassStore {
     for (const f of await this.vaultFiles()) {
       if (!(await desktop.quickEnrolled(f.name))) continue;
       const path = `${VAULTS}/${f.name}`;
-      const obj = decodeReply(await desktop.quickOpen(f.name, await host().readFile(path))).json;
+      const bytes = await host().readFile(path);
+      const obj = decodeReply(await desktop.quickOpen(f.name, bytes)).json;
       await this.noteSuccess();
       this.adopt(obj.handle, path, obj.name, obj.read_only === true);
+      this.known = await this.hashOf(bytes);
       await this.afterOpen(f.name, obj.generation);
       return true;
     }
@@ -296,6 +352,7 @@ class PassStore {
 
   /** Saves anything pending and forgets every key. */
   async lock() {
+    this.stopWatching();
     await this.leaveChild();
     await this.flush();
     await host().lockAll();
@@ -319,6 +376,7 @@ class PassStore {
   }
 
   async wipe() {
+    this.stopWatching();
     await host().lockAll();
     await host().removeFolder(VAULTS);
     await host().removeFolder(BLOBS);
@@ -374,8 +432,11 @@ class PassStore {
       return;
     }
     if (!this.file) return;
+    // Whatever another program wrote since goes in first, so this write keeps it.
+    await this.takeOutsideChanges().catch(() => false);
     const reply = await this.engine('vault.save', {}, { handle: active });
     await host().writeFile(this.file, reply.blobs[0]);
+    this.known = await this.hashOf(reply.blobs[0]);
     this.door.seen[this.file.split('/').pop()!] = reply.json.generation;
     await this.writeDoor();
     await this.coverTracks(reply.blobs[0].length);
