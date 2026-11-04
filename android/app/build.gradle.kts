@@ -25,11 +25,18 @@ fun appKey(name: String, env: String): String =
 
 val driveClientId = appKey("wmpass.driveClientId", "WMPASS_DRIVE_CLIENT_ID")
 
+// The Play upload key, read the same way and never kept in the repo. Without it the release
+// build comes out unsigned, which is what CI and F-Droid's builder (which signs its own) want.
+val releaseStoreFile = appKey("wmpass.release.storeFile", "WMPASS_RELEASE_STORE_FILE")
+
 android {
     namespace = "com.wasimaster.wmpass"
     compileSdk {
         version = release(37)
     }
+    // The NDK that strips the Rust library and takes its symbols out for Play. Without the
+    // version AGP looks for, it packages the library unstripped and the bundle carries no symbols.
+    ndkVersion = "27.3.13750724"
     defaultConfig {
         applicationId = "com.wasimaster.wmpass"
         minSdk = 26
@@ -47,6 +54,9 @@ android {
         // Google sends a sign-in back on the reversed client id. Without one, a scheme nothing uses.
         manifestPlaceholders["driveScheme"] = driveClientId.removeSuffix(".apps.googleusercontent.com")
             .let { if (it.isEmpty()) "wmpass-no-drive" else "com.googleusercontent.apps.$it" }
+        // Native symbols go into the bundle's metadata, where Play finds them for crash reports.
+        // What gets installed is stripped all the same.
+        ndk { debugSymbolLevel = "FULL" }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -56,8 +66,21 @@ android {
         compose = true
         buildConfig = true
     }
+    signingConfigs {
+        create("release") {
+            if (releaseStoreFile.isNotEmpty()) {
+                storeFile = rootProject.file(releaseStoreFile)
+                storePassword = appKey("wmpass.release.storePassword", "WMPASS_RELEASE_STORE_PASSWORD")
+                keyAlias = appKey("wmpass.release.keyAlias", "WMPASS_RELEASE_KEY_ALIAS")
+                keyPassword = appKey("wmpass.release.keyPassword", "WMPASS_RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         release {
+            // One line, with findByName: F-Droid's builder deletes the signingConfigs block and
+            // every signingConfig line, and the build must still come out whole and unsigned.
+            signingConfig = signingConfigs.findByName("release")?.takeIf { it.storeFile?.exists() == true }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

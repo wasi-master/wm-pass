@@ -53,6 +53,7 @@ object VaultWire {
     const val VERSION = 1
 
     const val STATE = "state"
+    const val STATUS = "status"
     const val ITEMS = "items"
     const val ITEM = "item"
     const val VALUE = "value"
