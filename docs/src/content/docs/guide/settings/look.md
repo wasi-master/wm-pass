@@ -155,7 +155,7 @@ Motion in WM Pass answers something you did, or shows something really happening
 
 | Choice | What it does |
 | --- | --- |
-| On | Messages rise into view, bars fill, and a wrong password shakes the shield. |
+| On | Messages and dialogs rise into view, bars fill, and a wrong password shakes the shield. |
 | Off | Changes happen at once, with nothing moving to show them. |
 
 #### Limits

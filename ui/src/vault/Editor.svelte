@@ -1,4 +1,39 @@
+<script lang="ts" module>
+  import { bytesOf, consumeText, pass } from '../engine/pass.svelte';
+  import { prefs } from '../engine/prefs.svelte';
+  import type { Detail, FieldView, KindSpec, RelatedView, StrengthView } from '../engine/types';
+  import { GenState } from './gen.svelte';
+  import { ui, type Editing } from './ui.svelte';
+
+  /** Everything the form shows on its first frame. */
+  export type EditorLoaded = { detail: Detail | null; body: string | null; spec: KindSpec | null; generated: string | null };
+
+  /**
+   * Fetches what the form needs before it is shown, so the page already there stays until the form
+   * can be drawn filled in, rather than as an empty form for the round trip to the engine.
+   */
+  export async function loadEditor(editing: Editing): Promise<EditorLoaded> {
+    if (editing.id) {
+      const detail = await pass.detail(editing.id);
+      // A note's body is what you came to edit, so it opens straight away.
+      const body = detail.fields.some((f) => f.key === 'body' && f.has_value)
+        ? await pass.reveal('entry.reveal', { id: editing.id, field: 'body' }).catch(() => null)
+        : null;
+      return { detail, body, spec: null, generated: null };
+    }
+    const spec = (await pass.kinds()).find((k) => k.kind === editing.kind) ?? null;
+    let generated: string | null = null;
+    if (!editing.presetPassword && prefs.v.editor_generate && spec?.fields.some((f) => f.input === 'password')) {
+      const made = new GenState();
+      await made.roll();
+      generated = made.value;
+    }
+    return { detail: null, body: null, spec, generated };
+  }
+</script>
+
 <script lang="ts">
+  import { untrack } from 'svelte';
   import HelpButton from '../help/HelpButton.svelte';
   import Btn from '../parts/Btn.svelte';
   import Dialog from '../parts/Dialog.svelte';
@@ -12,19 +47,14 @@
   import Switch from '../parts/Switch.svelte';
   import Tile from '../parts/Tile.svelte';
 
-  import { bytesOf, consumeText, pass } from '../engine/pass.svelte';
-  import { prefs } from '../engine/prefs.svelte';
   import { kindName, oklch } from '../engine/face';
   import { brands } from '../engine/brands.svelte';
   import { siteLine, titleFromSite, whenText } from '../engine/text';
-  import type { Detail, FieldView, RelatedView, StrengthView } from '../engine/types';
   import { overlays } from '../parts/floating.svelte';
-  import { GenState } from './gen.svelte';
   import GenControls from './GenControls.svelte';
   import GenValue from './GenValue.svelte';
   import Pickers, { type PickerKind } from './Pickers.svelte';
   import AliasPicker from '../settings/AliasPicker.svelte';
-  import { ui, type Editing } from './ui.svelte';
 
   interface EditField {
     spec: FieldView;
@@ -67,7 +97,7 @@
     wifi: ['ssid', 'password'],
   };
 
-  let { editing }: { editing: Editing } = $props();
+  let { editing, initial = null }: { editing: Editing; initial?: EditorLoaded | null } = $props();
 
   const entryId = editing.id;
   let kind = $state(editing.kind);
@@ -126,13 +156,17 @@
     };
   }
 
-  $effect(() => {
-    void load();
-  });
+  // A form opened with `initial` is filled before its first frame; otherwise it loads itself.
+  const start = untrack(() => initial);
+  if (start) fill(start);
+  else
+    $effect(() => {
+      void loadEditor(untrack(() => editing)).then(fill);
+    });
 
-  async function load() {
-    if (entryId) {
-      const d = await pass.detail(entryId);
+  function fill(got: EditorLoaded) {
+    const d = got.detail;
+    if (entryId && d) {
       detail = d;
       title = d.title;
       fields = d.fields.map(makeField);
@@ -156,17 +190,14 @@
       folder = d.folder;
       favourite = d.favourite;
       tags = [...d.tags];
-      // A note's body is what you came to edit, so it opens straight away.
       const body = fields.find((f) => f.spec.key === 'body' && f.spec.has_value);
-      if (body) {
-        const text = await pass.reveal('entry.reveal', { id: entryId, field: 'body' });
-        body.text = text;
-        body.original = text;
+      if (body && got.body !== null) {
+        body.text = got.body;
+        body.original = got.body;
         body.loaded = true;
       }
-    } else {
-      const spec = (await pass.kinds()).find((k) => k.kind === kind);
-      fields = (spec?.fields ?? []).map((f) => {
+    } else if (!entryId) {
+      fields = (got.spec?.fields ?? []).map((f) => {
         const field = makeField({ ...f, has_value: false, value: null });
         if (f.input === 'choice' && f.choices.length) field.text = f.choices[0];
         return field;
@@ -176,11 +207,7 @@
       if (editing.presetPassword && password) password.text = editing.presetPassword;
       const body = fields.find((f) => f.spec.key === 'body');
       if (editing.presetNote && body) body.text = editing.presetNote;
-      if (!editing.presetPassword && prefs.v.editor_generate && password) {
-        const made = new GenState();
-        await made.roll();
-        password.text = made.value;
-      }
+      if (got.generated && password) password.text = got.generated;
     }
     ready = true;
     if (!entryId && !title) setTimeout(() => titleInput?.focus(), 30);

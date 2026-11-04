@@ -65,7 +65,7 @@ It lists the devices waiting on this network; pick one and compare six digits, s
 
 ## Finding your way
 
-The four tabs along the top are Items, Codes, Generator and Health. Press `1` to `4` to switch, or click them. In Items, the sidebar lists kinds, folders, tags and the trash, the middle shows what matches, and the right side shows the item you picked.
+The five tabs along the top are Items, Codes, Generator, Health and Settings. Press `1` to `5` to switch, or click them. In Items, the sidebar lists kinds, folders, tags and the trash, the middle shows what matches, and the right side shows the item you picked.
 
 Press `?` for every key, or `:` for a list of commands you can search by name. The ones you will use most:
 
@@ -106,23 +106,31 @@ In the trash, `u` and `D` restore or delete every marked item. `Esc` unmarks the
 
 ## Editing
 
-The editor has the same fields as the phone and desktop apps for every kind. In a password field, `Ctrl+G` fills in a strong one. A secret field opens empty and stays as it was unless you type something, so fixing a title never brings the password onto the screen. `Ctrl+R` shows what you typed, or loads the saved value if you want to change part of it. `Ctrl+S` saves.
+The editor has the same fields as the phone and desktop apps for every kind, along with the Android apps a login fills in, the fields you added yourself, a login's security questions, and its folder, tags, color and favorite. In a password field, `Ctrl+G` fills in a strong one, and a meter beside it shows how strong it is. A field with common values, such as a database's engine, offers the rest of one as you type; `→` takes it.
+
+A saved secret shows as dots until you type in it. The first key brings the saved value into the box, so you edit it like any other text; fixing a title never brings the password onto the screen. `Ctrl+R` shows or hides what is in the box. A note's text is there from the start, since that is what a note is opened for.
+
+Under **More fields**, `Ctrl+N` adds a field with a name of your own, and `Tab` moves from its name to its value. `Ctrl+O` hides a field's value or shows it again, and `Ctrl+X` takes the field away. `Ctrl+S` saves; `Esc` with unsaved changes asks before throwing them away.
 
 Every change is written to the file at once, with the previous version kept beside it as `.bak`. If a sync app changes the file while WM Pass has it open, the two are merged rather than one overwriting the other.
 
 ## What stays private
 
-A copied password is kept out of clipboard history where the system allows it, and cleared after 60 seconds unless you have copied something else since; change the time under `:` then **Clear the clipboard after…**, where 0 leaves it. Quitting or locking clears it straight away. On Linux the clipboard only holds what WM Pass copied while WM Pass is running.
+A copied password is kept out of clipboard history where the system allows it, and cleared after 60 seconds unless you have copied something else since; change the time under Settings or `:` then **Clear the clipboard after…**, where 0 leaves it. Quitting or locking clears it straight away. On Linux the clipboard only holds what WM Pass copied while WM Pass is running.
 
 Over SSH there is no local clipboard to reach, so copies go through the terminal as an OSC 52 sequence. Most modern terminals pass that to your computer's clipboard; tmux needs `set -g set-clipboard on`.
 
-A shown password hides itself after 20 seconds. The vault locks after 5 minutes without a key press; change that under `:` then Lock after. The app draws on the terminal's alternate screen, so nothing is left in the scrollback when it closes.
+A shown password hides itself after 20 seconds. The vault locks after 5 minutes without a key press. Both times are under Settings. The app draws on the terminal's alternate screen, so nothing is left in the scrollback when it closes.
 
 ## Colors and icons
 
 The default theme follows the WM Pass shield on a dark background. `Ctrl+T` cycles through a light theme, a softer dark one, one that uses only the terminal's own sixteen colors, and one with no color at all. Terminals without 24-bit color start on the sixteen-color theme, and setting `NO_COLOR` turns color off. An item's color from the apps shows as the nearest of the terminal's own.
 
 If your terminal uses a [Nerd Font](https://www.nerdfonts.com), WM Pass can draw proper icons for each kind of item, the sidebar and the tabs. Turn them on with `:` then Nerd Font icons, or set `WMPASS_ICONS=nerd`. They are off at first because without such a font every icon shows as an empty box.
+
+## Settings
+
+The Settings tab, `5`, holds every choice in one list: the theme and icons, the lock, clipboard and reveal timers, the hidden shelf, the vault's name and password, how long the trash keeps things, how many past values each field keeps, and import, export and adding a device. `←` and `→` step through a setting's values, and `Enter` turns one on or off, asks for a value of your own, or opens what it names. To change the vault password you type the current one first; your other devices take the new one with the next sync.
 
 ## Settings that follow the vault
 

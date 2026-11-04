@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import Btn from '../parts/Btn.svelte';
   import Dialog from '../parts/Dialog.svelte';
   import Field from '../parts/Field.svelte';
@@ -10,8 +11,8 @@
   import { chordOf } from '../engine/text';
   import BulkPanel from './BulkPanel.svelte';
   import CodesPage from './CodesPage.svelte';
-  import Detail from './Detail.svelte';
-  import Editor from './Editor.svelte';
+  import Detail, { loadDetail, type Loaded } from './Detail.svelte';
+  import Editor, { loadEditor, type EditorLoaded } from './Editor.svelte';
   import GeneratorPage from './GeneratorPage.svelte';
   import HealthPage from './HealthPage.svelte';
   import ListPane from './ListPane.svelte';
@@ -21,7 +22,7 @@
   import { siteIcons } from '../engine/siteIcons.svelte';
   import Settings from '../settings/Settings.svelte';
   import { TAB_INFO } from './tabs';
-  import { ui } from './ui.svelte';
+  import { ui, type Editing } from './ui.svelte';
   import { help } from '../help/help.svelte';
 
   let editor = $state<Editor>();
@@ -66,6 +67,43 @@
 
   const isList = $derived(ui.isListSection(ui.section));
   const entry = $derived(pass.entries.find((e) => e.id === ui.selected));
+
+  // The item on show. It moves to the chosen one only once that one has loaded, so the page
+  // already there stays up through the round trip to the engine instead of the pane going blank.
+  let shown = $state.raw<{ id: string; loaded: Loaded | null } | null>(null);
+  $effect(() => {
+    const id = ui.selected;
+    const revision = pass.revision;
+    if (!id) {
+      // Starting a new item clears the choice; the page stays until the empty form is ready.
+      if (!ui.editing) shown = null;
+      return;
+    }
+    const now = untrack(() => shown);
+    if (now?.id === id && now.loaded?.revision === revision) return;
+    const done = (loaded: Loaded | null) => {
+      if (ui.selected === id) shown = { id, loaded };
+    };
+    loadDetail(id).then(done, () => done(null));
+  });
+
+  // The form on show, held the same way: it opens once filled in, and after a save it stays until
+  // the item's page has caught up with what was saved.
+  let editShown = $state.raw<{ editing: Editing; loaded: EditorLoaded | null } | null>(null);
+  $effect(() => {
+    const editing = ui.editing;
+    if (!editing) {
+      const id = ui.selected;
+      const caughtUp = !id || !shown || (shown.id === id && (shown.loaded === null || shown.loaded.revision === pass.revision));
+      if (caughtUp) editShown = null;
+      return;
+    }
+    if (untrack(() => editShown)?.editing === editing) return;
+    const done = (loaded: EditorLoaded | null) => {
+      if (ui.editing === editing) editShown = { editing, loaded };
+    };
+    loadEditor(editing).then(done, () => done(null));
+  });
 
   function current() {
     return pass.entries.find((e) => e.id === ui.selected);
@@ -251,15 +289,15 @@
       {/if}
       {#if !ui.narrow || ui.showDetail || ui.editing}
         <main class="detail">
-          {#if ui.editing}
-            {#key ui.editing}
-              <Editor bind:this={editor} editing={ui.editing} />
+          {#if editShown}
+            {#key editShown.editing}
+              <Editor bind:this={editor} editing={editShown.editing} initial={editShown.loaded} />
             {/key}
           {:else if ui.multi.length > 1}
             <BulkPanel />
-          {:else if ui.selected && (entry || ui.section === 'trash' || ui.section === 'shelf')}
-            {#key ui.selected}
-              <Detail id={ui.selected} />
+          {:else if shown && (ui.selected ? entry || ui.section === 'trash' || ui.section === 'shelf' : ui.editing)}
+            {#key shown.id}
+              <Detail id={shown.id} initial={shown.loaded} />
             {/key}
           {:else if ui.section === 'shelf' && !shelfOpen}
             <div class="detail-body" style="padding-top:60px">

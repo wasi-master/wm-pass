@@ -47,7 +47,10 @@ a { color: var(--primary); }
 :focus { outline: none; }
 :focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 ::selection { background: var(--primary-c); }
-.scroll { overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+/* The gutter is kept even when nothing overflows, so where a scrollbar takes room (macOS set to
+   always show them, Windows, most Linux desktops) content does not move sideways as it comes and
+   goes between pages. */
+.scroll { overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-color: var(--line) transparent; scrollbar-gutter: stable; }
 
 .mono { font-family: var(--mono); font-variant-ligatures: none; font-feature-settings: 'zero', 'tnum'; }
 .tnum { font-variant-numeric: tabular-nums; }
@@ -253,9 +256,15 @@ dialog.sheet {
 }
 dialog.sheet.wide { width: min(640px, calc(100vw - 32px)); }
 dialog.sheet::backdrop { background: rgb(0 0 0 / 0.32); }
+/* Opening answers a click: the dimming fades in and the sheet rises a short way. Closing is
+   immediate. "Animations" off and reduced motion make --t-med 0, which stills both. */
+dialog.sheet[open] { animation: sheet-in var(--t-med) cubic-bezier(0.2, 0.8, 0.2, 1); }
+dialog.sheet[open]::backdrop { animation: backdrop-in var(--t-med) ease-out; }
+@keyframes sheet-in { from { opacity: 0; transform: translateY(8px) scale(0.985); } }
+@keyframes backdrop-in { from { opacity: 0; } }
 .sheet-inner { display: flex; flex-direction: column; max-height: calc(100vh - 50px); }
 .sheet-head { padding: 14px 16px 0; font-size: var(--fs-l); font-weight: 600; }
-.sheet-body { padding: 10px 16px 14px; overflow-y: auto; scrollbar-width: thin; }
+.sheet-body { padding: 10px 16px 14px; overflow-y: auto; scrollbar-width: thin; scrollbar-gutter: stable; }
 .sheet-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--hair); }
 
 .menu {
@@ -375,7 +384,7 @@ dialog.sheet::backdrop { background: rgb(0 0 0 / 0.32); }
 
 .detail { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--bg); }
 .detail-bar { display: flex; align-items: center; gap: 2px; flex: none; height: 44px; padding: 0 10px; }
-.detail-body { flex: 1; min-height: 0; padding: 4px 28px 28px; }
+.detail-body { flex: 1; min-height: 0; padding: 4px 28px 28px; scrollbar-gutter: stable both-edges; }
 .detail-inner { max-width: 680px; margin: 0 auto; }
 .detail-head { display: flex; align-items: center; gap: 14px; padding: 2px 0 14px; }
 .detail-head .name { font-size: var(--fs-xl); font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; }
@@ -456,7 +465,7 @@ dialog.sheet::backdrop { background: rgb(0 0 0 / 0.32); }
 .palette .head { padding: 10px; flex: none; border-bottom: 1px solid var(--hair); }
 .palette .list { flex: 1; min-height: 0; padding: 6px; }
 
-.settings-pane { flex: 1; min-width: 0; min-height: 0; padding: 20px 28px 32px; }
+.settings-pane { flex: 1; min-width: 0; min-height: 0; padding: 20px 28px 32px; scrollbar-gutter: stable both-edges; }
 .settings-inner { max-width: 680px; margin: 0 auto; }
 .settings-inner > .page-title { padding-bottom: 14px; }
 .theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }

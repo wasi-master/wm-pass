@@ -157,7 +157,7 @@ export const look = [
     what: 'Lets transitions and small animations play. Off makes them instant.',
     how: 'Motion in WM Pass answers something you did, or shows something really happening, such as a code changing.',
     effects: [
-      { value: true, label: 'On', text: 'Messages rise into view, bars fill, and a wrong password shakes the shield.' },
+      { value: true, label: 'On', text: 'Messages and dialogs rise into view, bars fill, and a wrong password shakes the shield.' },
       { value: false, label: 'Off', text: 'Changes happen at once, with nothing moving to show them.' },
     ],
     caveats: 'If your system is set to reduce motion, transitions are already instant, whatever this says.',

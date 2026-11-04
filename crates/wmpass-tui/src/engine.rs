@@ -57,6 +57,8 @@ pub struct FieldRow {
     pub input: String,
     pub secret: bool,
     pub choices: Vec<String>,
+    /// Values people type often, offered as the field is filled.
+    pub suggestions: Vec<String>,
     pub has_value: bool,
     pub value: Option<Value>,
 }
@@ -134,6 +136,16 @@ pub struct Detail {
     pub links: Vec<String>,
 }
 
+/// The vault's own settings.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct VaultInfo {
+    pub name: String,
+    pub entries: usize,
+    pub trash_days: u32,
+    pub history_limit: u32,
+}
+
 /// A live one-time code.
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
@@ -153,6 +165,10 @@ pub struct Code {
 pub struct Wiped(String);
 
 impl Wiped {
+    pub fn new(text: &str) -> Self {
+        Self(text.to_owned())
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -662,6 +678,54 @@ impl Engine {
             Some(value) => self.change("entry.otp_set", &json!({"id": id}), value).map(drop),
             None => self.change("entry.otp_set", &json!({"id": id, "clear": true}), &[]).map(drop),
         }
+    }
+
+    /// Writes a field the user added: the one at `index`, or a new one at the end. `kind` is
+    /// `text`, `hidden`, `url`, `email`, `phone`, `date` or `toggle`.
+    pub fn set_custom(&mut self, id: &str, index: Option<usize>, name: &str, kind: &str, value: &[u8]) -> Result<(), String> {
+        self.change("entry.custom_set", &json!({"id": id, "index": index, "name": name, "kind": kind}), value).map(drop)
+    }
+
+    /// Takes away a field the user added.
+    pub fn remove_custom(&mut self, id: &str, index: usize) -> Result<(), String> {
+        self.change("entry.custom_remove", &json!({"id": id, "index": index}), &[]).map(drop)
+    }
+
+    /// Writes a login's security question and its answer: the one at `index`, or a new one.
+    pub fn set_question(&mut self, id: &str, index: Option<usize>, question: &str, answer: &[u8]) -> Result<(), String> {
+        self.change("entry.question_set", &json!({"id": id, "index": index, "question": question}), answer).map(drop)
+    }
+
+    /// The vault's own settings: its name, how long the trash keeps things, how many past values
+    /// each field keeps.
+    pub fn info(&mut self) -> Result<VaultInfo, String> {
+        self.view("vault.info", &json!({}))
+    }
+
+    /// Renames the vault.
+    pub fn rename(&mut self, name: &str) -> Result<(), String> {
+        self.change("vault.rename", &json!({"name": name}), &[])?;
+        name.clone_into(&mut self.name);
+        Ok(())
+    }
+
+    /// Sets how long the trash keeps things and how many past values each field keeps. Zero
+    /// keeps them forever.
+    pub fn set_vault_prefs(&mut self, trash_days: Option<u32>, history_limit: Option<u32>) -> Result<(), String> {
+        self.change("vault.prefs", &json!({"trash_days": trash_days, "history_limit": history_limit}), &[]).map(drop)
+    }
+
+    /// Whether this is the vault's password.
+    pub fn verify(&mut self, password: &[u8]) -> Result<bool, String> {
+        let reply = self.call("vault.verify", &json!({}), password, &[])?;
+        Ok(reply_json::<Value>(&reply)?["ok"].as_bool().unwrap_or(false))
+    }
+
+    /// Changes the password that opens the vault, as the apps do: the first slot in use.
+    pub fn change_password(&mut self, password: &[u8]) -> Result<(), String> {
+        let slots: Vec<Value> = self.view("slot.list", &json!({}))?;
+        let index = slots.first().and_then(|s| s["index"].as_u64()).and_then(|i| usize::try_from(i).ok()).unwrap_or(0);
+        self.change("vault.change_password", &json!({"index": index}), password).map(drop)
     }
 
     /// Changes what every kind shares: title, tags, folder, flags.

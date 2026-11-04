@@ -19,10 +19,11 @@ pub enum Tab {
     Codes,
     Generator,
     Health,
+    Settings,
 }
 
 impl Tab {
-    pub const ALL: [Self; 4] = [Self::Items, Self::Codes, Self::Generator, Self::Health];
+    pub const ALL: [Self; 5] = [Self::Items, Self::Codes, Self::Generator, Self::Health, Self::Settings];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -30,6 +31,7 @@ impl Tab {
             Self::Codes => "Codes",
             Self::Generator => "Generator",
             Self::Health => "Health",
+            Self::Settings => "Settings",
         }
     }
 }
@@ -156,6 +158,8 @@ pub enum Line {
     File(Attachment),
     /// A past value.
     Past { index: usize, field: String, at_ms: u64 },
+    /// Another item this one lists under Linked, by id.
+    Link(String),
 }
 
 impl Line {
@@ -168,7 +172,8 @@ impl Line {
 /// Where each part of the screen was last drawn, for the mouse.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Areas {
-    pub tabs: [Rect; 4],
+    pub tabs: [Rect; 5],
+    pub settings: Rect,
     pub sidebar: Rect,
     pub list: Rect,
     pub detail: Rect,
@@ -211,6 +216,10 @@ pub struct VaultUi {
     pub health_at: usize,
     /// What the Ignored group lists, as `check:id`, kept in step with the settings.
     pub health_ignored: Vec<String>,
+    /// The setting picked in the Settings tab.
+    pub settings_at: usize,
+    /// The vault's own settings, read when the Settings tab opens.
+    pub info: Option<crate::engine::VaultInfo>,
     pub titles: HashMap<String, (String, String)>,
     pub folders: Vec<Folder>,
     pub shelf_open: bool,
@@ -280,6 +289,8 @@ impl VaultUi {
             health_group: 0,
             health_at: 0,
             health_ignored: Vec::new(),
+            settings_at: 0,
+            info: None,
             titles: HashMap::new(),
             folders: Vec::new(),
             shelf_open: false,
@@ -549,6 +560,12 @@ impl VaultUi {
                 secret: Some(Secret::Question(index)),
                 has_value: true,
             });
+        }
+        // Linked items that are still there; one deleted for good drops out.
+        let links: Vec<Line> = detail.links.iter().filter(|id| self.titles.contains_key(*id)).map(|id| Line::Link(id.clone())).collect();
+        if !links.is_empty() {
+            lines.push(Line::Heading("Linked".into()));
+            lines.extend(links);
         }
         if detail.has_notes && detail.row.kind != "note" {
             lines.push(Line::Heading("Notes".into()));
