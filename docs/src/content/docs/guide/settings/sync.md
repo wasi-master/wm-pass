@@ -248,7 +248,7 @@ Syncs this vault through any place you set up for backups. Each device leaves it
 
 Turn on the switch beside a place to sync through it. **Add a place** sets up a new one, the same way as under [Backups](/guide/settings/backup/).
 
-A sync runs about 20 seconds after your last change, so a burst of edits makes one trip. **Sync now** runs one at once.
+A sync runs about 20 seconds after your last change, so a burst of edits makes one trip. It also runs on its own, to bring in what your other devices changed: just after you unlock, when you come back to the window after a minute or more, and every five minutes while the vault is open. **Sync now** runs one at once.
 
 Each device writes only its own file, so two devices syncing at the same moment cannot overwrite each other. A file that belongs to some other vault does not open and is left alone. Attachments go up once each and stay.
 

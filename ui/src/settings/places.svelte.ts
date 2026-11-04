@@ -132,6 +132,14 @@ interface Saved {
   shared: Record<string, string>;
 }
 
+/** How often an open vault looks at its sync places, with no edit to set it off. */
+const AUTO_SYNC_MS = 5 * 60_000;
+
+async function digest(bytes: Uint8Array) {
+  const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as BufferSource));
+  return Array.from(hash, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 class Places {
   list = $state.raw<Place[]>([]);
   everyDays = $state(0);
@@ -143,6 +151,17 @@ class Places {
   private shared: Record<string, string> = {};
   private syncTimer: ReturnType<typeof setTimeout> | null = null;
   private clock: ReturnType<typeof setInterval> | null = null;
+  /** Off where a page can vanish mid-run, as the extension's popup does. */
+  autoSync = true;
+  /** The sync under way, so a timer, a focus and a button never run two at once. */
+  private syncing: Promise<void> | null = null;
+  private lastSyncMs = 0;
+  /** The vault last seen open, to notice an unlock. */
+  private seenHandle = 0;
+  /** Per place, the other devices' copies as last merged, by name: size and time. */
+  private merged: Record<string, Record<string, string>> = {};
+  /** Per place, a hash of this device's copy as last written there. */
+  private written: Record<string, string> = {};
 
   get available() {
     return !!host().places;
@@ -179,6 +198,32 @@ class Places {
     }
     this.startClock();
     pass.afterSave = () => this.syncSoon();
+    if (this.autoSync) this.startAutoSync();
+  }
+
+  /**
+   * Other devices' changes come in without an edit here: just after an unlock, when the window
+   * comes back after a minute away, and every five minutes while the vault is open.
+   */
+  private startAutoSync() {
+    const due = (gapMs: number) => Date.now() - this.lastSyncMs >= gapMs;
+    setInterval(() => {
+      const opened = pass.state.kind === 'unlocked' ? pass.handle : 0;
+      if (opened !== this.seenHandle) {
+        this.seenHandle = opened;
+        // A different vault: what was merged and written before says nothing about this one.
+        this.merged = {};
+        this.written = {};
+        if (opened) void this.syncNow(true);
+      } else if (opened && due(AUTO_SYNC_MS)) {
+        void this.syncNow(true);
+      }
+    }, 5_000);
+    const back = () => {
+      if (document.visibilityState === 'visible' && pass.state.kind === 'unlocked' && due(60_000)) void this.syncNow(true);
+    };
+    document.addEventListener('visibilitychange', back);
+    window.addEventListener('focus', back);
   }
 
   private persistState() {
@@ -298,10 +343,28 @@ class Places {
     this.syncTimer = setTimeout(() => void this.syncNow(), 20_000);
   }
 
-  async syncNow() {
-    if (pass.state.kind !== 'unlocked' || pass.account || pass.child) return;
+  /**
+   * `auto` is a run nobody asked for: it passes over places that need the network while network
+   * use is off, rather than reporting them.
+   */
+  async syncNow(auto = false): Promise<void> {
+    if (this.syncing) {
+      if (auto) return this.syncing;
+      // A button pressed during a timed run gets a full run of its own after it.
+      await this.syncing;
+    }
+    this.syncing = this.runSync(auto).finally(() => (this.syncing = null));
+    return this.syncing;
+  }
+
+  private async runSync(auto: boolean) {
+    // The desktop app's vault, seen through the extension, is synced by the app.
+    if (pass.state.kind !== 'unlocked' || pass.account || pass.child || pass.desktop) return;
+    const places = this.list.filter((p) => p.sync && (!auto || p.kind === 'folder' || online()));
+    if (!places.length) return;
+    this.lastSyncMs = Date.now();
     let failure: string | null = null;
-    for (const place of this.list.filter((p) => p.sync)) {
+    for (const place of places) {
       try {
         await this.syncOne(place);
         this.note(place.id, null);
@@ -322,12 +385,17 @@ class Places {
     const shell = host().places!;
     const mine = (await pass.view('vault.sync_name')).name as string;
     const listing = await shell.list(place);
+    // A copy unchanged since it was last merged has nothing new, so a timed run reads only what moved.
+    const merged = (this.merged[place.id] ??= {});
     for (const other of listing.filter((f) => f.name.endsWith(SYNC_EXTENSION) && f.name !== `${mine}${SYNC_EXTENSION}`)) {
+      const stamp = `${other.size}:${other.modified_ms}`;
+      if (other.modified_ms && merged[other.name] === stamp) continue;
       try {
         await pass.mergeCopy(await shell.read(place, other));
       } catch {
         // Some other vault's file.
       }
+      merged[other.name] = stamp;
     }
     await pass.flush();
     const group = ((await pass.view('vault.chaff_name')).name as string).slice(0, 16);
@@ -343,7 +411,13 @@ class Places {
     for (const entry of have.filter((f) => !local.includes(short(f.name)))) {
       await pass.writeBlob(short(entry.name), await shell.read(place, entry));
     }
-    await shell.write(place, `${mine}${SYNC_EXTENSION}`, await pass.sealedFile());
+    // Unchanged since this device last wrote it there, there is nothing to send.
+    const sealed = await pass.sealedFile();
+    const hash = await digest(sealed);
+    const there = listing.some((f) => f.name === `${mine}${SYNC_EXTENSION}`);
+    if (there && this.written[place.id] === hash) return;
+    await shell.write(place, `${mine}${SYNC_EXTENSION}`, sealed);
+    this.written[place.id] = hash;
   }
 
   // ---- shared vaults ----

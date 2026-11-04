@@ -11,6 +11,8 @@ import { extensionHost } from './host';
 import Popup from './Popup.svelte';
 
 pass.saveDelayMs = 0;
+// The popup can close at any moment; the vault tab and the desktop app sync on their own.
+places.autoSync = false;
 void extensionHost().then(async (host) => {
   setHost(host);
   await prefs.load();
