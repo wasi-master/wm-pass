@@ -6,6 +6,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde_json::json;
 
 use crate::app::{App, Overlay, Screen};
+use crate::link::{LinkUi, Role, Stage};
 use crate::engine;
 
 const PASSWORD: &str = "Tr0ub4dor-and-3-horses";
@@ -274,4 +275,116 @@ fn snapshots() {
     app.theme.g.nerd = false;
     ctrl(&mut app, 'l');
     std::fs::write(out.join("door.html"), html(&mut app, 150, 40)).expect("write");
+}
+
+fn click(app: &mut App, x: u16, y: u16) {
+    use ratatui::crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+    app.mouse_for_test(MouseEvent { kind: MouseEventKind::Down(MouseButton::Left), column: x, row: y, modifiers: KeyModifiers::NONE });
+}
+
+/// Where a piece of text was drawn.
+fn find(shown: &str, text: &str) -> (u16, u16) {
+    for (y, line) in shown.lines().enumerate() {
+        if let Some(at) = line.find(text) {
+            return (line[..at].chars().count() as u16, y as u16);
+        }
+    }
+    panic!("{text} is not on screen:\n{shown}");
+}
+
+#[test]
+fn the_join_code_draws_in_solid_cells_that_scan() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    let code = "wmpass-pair:1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:1800000000000:MTkyLjE2OC4xLjQ6NTEyMzQ".to_owned();
+    app.overlay = Some(Overlay::Link(Box::new(LinkUi::at_stage(
+        Role::Receive,
+        Stage::Waiting { code: Some(code.clone()), address: Some("192.168.1.4:51234".into()) },
+    ))));
+    let mut terminal = Terminal::new(TestBackend::new(200, 60)).expect("terminal");
+    terminal.draw(|frame| crate::draw::draw(frame, &mut app)).expect("draw");
+    let buffer = terminal.backend().buffer();
+    let (black, white) = (ratatui::style::Color::Indexed(16), ratatui::style::Color::Indexed(231));
+    let mut painted = 0;
+    for cell in buffer.content() {
+        if cell.bg == black || cell.bg == white {
+            painted += 1;
+            assert_eq!(cell.symbol(), " ", "a big code paints whole cells, with no half blocks to leave seams");
+        }
+    }
+    let qr = crate::join::Qr::new(&code).expect("qr");
+    let side = qr.width + 2 * crate::join::QUIET as usize;
+    assert_eq!(painted, side * side * 2);
+    let shown = screen(&mut app, 200, 60);
+    assert!(shown.contains("Find it on this network"), "the network way is offered too");
+    assert!(shown.contains("Paste its code"));
+    // Small terminals get the half-block code instead, which still fits.
+    let shown = screen(&mut app, 100, 40);
+    assert!(shown.contains("▀"));
+}
+
+#[test]
+fn digits_are_answered_with_a_click() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    app.overlay = Some(Overlay::Link(Box::new(LinkUi::at_stage(
+        Role::Send,
+        Stage::Digits { code: "123456".into(), peer: "Pixel".into() },
+    ))));
+    let shown = screen(&mut app, 120, 40);
+    assert!(shown.contains("Pixel"));
+    let (x, y) = find(&shown, "They differ");
+    // With nothing on the network behind it the answer goes nowhere, but the screen moves on.
+    click(&mut app, x, y);
+    let Some(Overlay::Link(link)) = &app.overlay else { panic!("the screen closed") };
+    assert_eq!(link.stage, Stage::Digits { code: "123456".into(), peer: "Pixel".into() });
+    // Esc in the hint bar closes it.
+    let shown = screen(&mut app, 120, 40);
+    let (x, y) = find(&shown, "Esc stop");
+    click(&mut app, x, y);
+    assert!(app.overlay.is_none());
+}
+
+#[test]
+fn the_mouse_picks_tabs_rows_and_palette_commands() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    let shown = screen(&mut app, 140, 40);
+    let (x, y) = find(&shown, "Wi-Fi at home");
+    click(&mut app, x, y);
+    let Screen::Vault(ui) = &app.screen else { panic!() };
+    assert_eq!(ui.current().map(|r| r.title.as_str()), Some("Wi-Fi at home"));
+    let (x, y) = find(&shown, "Generator");
+    click(&mut app, x, y);
+    let Screen::Vault(ui) = &app.screen else { panic!() };
+    assert_eq!(ui.tab, crate::vault::Tab::Generator);
+    // The hint bar's keys are buttons.
+    press(&mut app, KeyCode::Char(':'));
+    let shown = screen(&mut app, 140, 40);
+    let (x, y) = find(&shown, "Go to Health");
+    click(&mut app, x, y);
+    assert!(app.overlay.is_none());
+    let Screen::Vault(ui) = &app.screen else { panic!() };
+    assert_eq!(ui.tab, crate::vault::Tab::Health);
+    // A click outside the palette closes it.
+    press(&mut app, KeyCode::Char(':'));
+    screen(&mut app, 140, 40);
+    click(&mut app, 1, 39);
+    assert!(app.overlay.is_none());
+}
+
+#[test]
+#[ignore = "prints a screen to look at"]
+fn print_join_screens() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    let code = "wmpass-pair:1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:1800000000000:MTkyLjE2OC4xLjQ6NTEyMzQ".to_owned();
+    app.overlay = Some(Overlay::Link(Box::new(LinkUi::at_stage(Role::Receive, Stage::Waiting { code: Some(code), address: Some("192.168.1.4:51234".into()) }))));
+    println!("{}", screen(&mut app, 150, 45));
+    let mut link = LinkUi::at_stage(Role::Send, Stage::Searching);
+    link.found = vec!["192.168.1.20:5123".parse().unwrap()];
+    app.overlay = Some(Overlay::Link(Box::new(link)));
+    println!("{}", screen(&mut app, 110, 30));
+    app.overlay = Some(Overlay::Link(Box::new(LinkUi::at_stage(Role::Send, Stage::Digits { code: "482913".into(), peer: "Pixel 9".into() }))));
+    println!("{}", screen(&mut app, 110, 30));
 }

@@ -380,9 +380,9 @@ fn run(cli: Cli) -> Result<(), String> {
         #[cfg(feature = "tui")]
         Command::Tui { vault } => wmpass_tui::run(vault)?,
         #[cfg(feature = "tui")]
-        Command::Join { vault } => wmpass_tui::join::receive(&vault)?,
+        Command::Join { vault } => wmpass_tui::join(vault)?,
         #[cfg(feature = "tui")]
-        Command::AddDevice { vault, code } => wmpass_tui::join::send(&vault, code.as_deref())?,
+        Command::AddDevice { vault, code } => wmpass_tui::add_device(vault, code.as_deref())?,
         Command::Create { vault, name } => {
             if vault.exists() {
                 return Err(format!("{} already exists", vault.display()));

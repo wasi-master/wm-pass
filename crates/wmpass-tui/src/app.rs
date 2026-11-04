@@ -15,7 +15,9 @@ use crate::clip::{Clip, Route};
 use crate::door::{self, Ask, Door};
 use crate::editor::{Editor, Slot};
 use crate::engine::{self, ImportPreview, Secret, Unlock};
+use crate::draw::Hit;
 use crate::input::Input;
+use crate::link::{LinkUi, Role, Stage};
 use crate::store::{self, Prefs};
 use crate::theme::Theme;
 use crate::vault::{HEALTH_GROUPS, Line, Pane, Tab, VaultUi};
@@ -159,6 +161,8 @@ pub enum Overlay {
     Pick { title: String, items: Vec<(String, String)>, at: usize, then: PickFor },
     Editor(Box<Editor>),
     Import(ImportPreview),
+    /// Moving the vault to or from another device.
+    Link(Box<LinkUi>),
 }
 
 /// The palette's matches for what was typed, best first.
@@ -203,15 +207,14 @@ pub struct App {
     quit: bool,
     /// Work to do once the next frame shows that it is happening.
     deferred: Option<Ask>,
-    /// Work that runs as plain lines, outside the full screen.
-    outside: Option<Outside>,
-}
-
-/// What the app steps out of full screen to do.
-#[derive(Debug)]
-enum Outside {
-    Join(PathBuf),
-    Send(PathBuf),
+    /// What the last frame drew where, for the mouse.
+    pub hits: Vec<(Rect, Hit)>,
+    /// Where the overlay's part of `hits` begins, when one is open.
+    pub overlay_from: Option<usize>,
+    /// The last left click, to tell a double click.
+    last_click: Option<(Position, Instant)>,
+    /// Whether the last QR code drawn used big cells, for flipping its size.
+    pub link_drew_big: bool,
 }
 
 impl App {
@@ -237,8 +240,21 @@ impl App {
             last_input: Instant::now(),
             quit: false,
             deferred: None,
-            outside: None,
+            hits: Vec::new(),
+            overlay_from: None,
+            last_click: None,
+            link_drew_big: false,
         }
+    }
+
+    /// Opens straight onto moving a vault: waiting for it at `path`, or sending the one there.
+    pub fn linking(role: Role, path: PathBuf) -> Self {
+        let mut app = Self::new(if role == Role::Send { Some(path.clone()) } else { None });
+        app.overlay = Some(Overlay::Link(Box::new(match role {
+            Role::Receive => LinkUi::receive(path),
+            Role::Send => LinkUi::send(path),
+        })));
+        app
     }
 
     /// For tests: an app over an open vault, with no clipboard and no saved preferences.
@@ -254,7 +270,10 @@ impl App {
             last_input: Instant::now(),
             quit: false,
             deferred: None,
-            outside: None,
+            hits: Vec::new(),
+            overlay_from: None,
+            last_click: None,
+            link_drew_big: false,
         }
     }
 
@@ -262,6 +281,12 @@ impl App {
     pub fn lock_in(&self) -> Option<Duration> {
         let minutes = self.prefs.lock_minutes;
         (minutes > 0).then(|| Duration::from_secs(u64::from(minutes) * 60).saturating_sub(self.last_input.elapsed()))
+    }
+
+    /// For tests: a mouse event, as if it happened.
+    #[cfg(test)]
+    pub fn mouse_for_test(&mut self, mouse: MouseEvent) {
+        self.mouse(mouse);
     }
 
     /// For tests: one key, as if pressed.
@@ -284,11 +309,6 @@ impl App {
             }
             if let Some(ask) = self.deferred.take() {
                 self.finish_door(ask);
-                dirty = true;
-                continue;
-            }
-            if let Some(job) = self.outside.take() {
-                self.step_outside(terminal, job)?;
                 dirty = true;
                 continue;
             }
@@ -341,6 +361,11 @@ impl App {
             self.say(Level::Info, "Clipboard cleared");
             changed = true;
         }
+        if let Some(Overlay::Link(link)) = &mut self.overlay {
+            link.tick();
+            // The spinner and the countdown move.
+            changed = true;
+        }
         if self.toast.as_ref().is_some_and(|t| t.at.elapsed() > Duration::from_secs(6)) {
             self.toast = None;
             changed = true;
@@ -364,43 +389,6 @@ impl App {
         }
         // The countdowns in the status bar move every second.
         changed || self.clip.seconds_left().is_some() || matches!(self.screen, Screen::Vault(_))
-    }
-
-    /// Leaves full screen for a job that talks in plain lines, then comes back.
-    fn step_outside(&mut self, terminal: &mut DefaultTerminal, job: Outside) -> std::io::Result<()> {
-        use ratatui::crossterm::event::{DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture};
-        use ratatui::crossterm::execute;
-        let _ = execute!(std::io::stdout(), DisableMouseCapture, DisableBracketedPaste);
-        ratatui::restore();
-        let result = match &job {
-            Outside::Join(path) => crate::join::receive(path),
-            Outside::Send(path) => crate::join::send(path, None),
-        };
-        if let Err(problem) = &result {
-            println!("\n{problem}");
-        }
-        print!("\nPress Enter to go back. ");
-        let _ = std::io::Write::flush(&mut std::io::stdout());
-        let mut line = String::new();
-        let _ = std::io::stdin().read_line(&mut line);
-        *terminal = ratatui::init();
-        let _ = execute!(std::io::stdout(), EnableMouseCapture, EnableBracketedPaste);
-        terminal.clear()?;
-        self.last_input = Instant::now();
-        match (job, result) {
-            (Outside::Join(path), Ok(())) => {
-                if let Screen::Door(door) = &mut self.screen {
-                    if door.mode == door::Mode::Create {
-                        door.toggle_mode();
-                    }
-                    door.path.set(&path.to_string_lossy());
-                    door.notice = Some("Your vault is here. Unlock it with its master password".into());
-                }
-            }
-            (Outside::Send(_), Ok(())) => self.say(Level::Good, "Sent. Unlock it on the other device with the master password"),
-            (_, Err(_)) => {}
-        }
-        Ok(())
     }
 
     // ---- settings that follow the vault ----
@@ -519,7 +507,7 @@ impl App {
                     Ask::Join => {
                         let typed = door.path.text().trim().to_owned();
                         let path = if typed.is_empty() || store::expand(&typed).exists() { door::default_new_path() } else { store::expand(&typed) };
-                        self.outside = Some(Outside::Join(path));
+                        self.overlay = Some(Overlay::Link(Box::new(LinkUi::receive(path))));
                     }
                     ask => {
                         door.busy = Some(if ask == Ask::Create { "Making your vault…" } else { "Unlocking…" });
@@ -963,7 +951,7 @@ impl App {
             Command::Lock => self.lock("Locked"),
             Command::AddDevice => {
                 if let Screen::Vault(ui) = &self.screen {
-                    self.outside = Some(Outside::Send(ui.engine.path().to_owned()));
+                    self.overlay = Some(Overlay::Link(Box::new(LinkUi::send(ui.engine.path().to_owned()))));
                 }
             }
             Command::Quit => self.quit = true,
@@ -1325,6 +1313,10 @@ impl App {
                 }
                 _ => true,
             },
+            Overlay::Link(link) => match self.link_key(link, key) {
+                Some(keep) => keep,
+                None => return,
+            },
             Overlay::Editor(editor) => {
                 let row_multiline = editor.rows.get(editor.at).is_some_and(|r| r.value.multiline);
                 match key.code {
@@ -1653,58 +1645,274 @@ impl App {
         }
     }
 
-    fn mouse(&mut self, mouse: MouseEvent) {
-        if self.overlay.is_some() {
-            if let MouseEventKind::Down(MouseButton::Left) = mouse.kind
-                && matches!(self.overlay, Some(Overlay::Help))
-            {
-                self.overlay = None;
+    /// A key on the screen that moves a vault. Returns whether the screen stays, or `None` when
+    /// this has already decided what is open.
+    fn link_key(&mut self, link: &mut LinkUi, key: KeyEvent) -> Option<bool> {
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        match (&link.stage, key.code) {
+            (Stage::Received { path, .. }, KeyCode::Enter | KeyCode::Esc) => {
+                let path = path.clone();
+                if let Screen::Door(door) = &mut self.screen {
+                    if door.mode == door::Mode::Create {
+                        door.toggle_mode();
+                    }
+                    door.path.set(&path.to_string_lossy());
+                    door.focus = door::Field::Password;
+                    door.notice = Some("Your vault is here. Unlock it with its master password".into());
+                }
+                Some(false)
             }
-            return;
+            (Stage::Sent { .. }, KeyCode::Enter | KeyCode::Esc) => {
+                self.say(Level::Good, "Sent. Unlock it on the other device with the master password");
+                Some(false)
+            }
+            (Stage::Failed(_), KeyCode::Char('r') | KeyCode::Enter) => {
+                link.restart();
+                Some(true)
+            }
+            (Stage::Digits { .. }, KeyCode::Char('y' | 'Y') | KeyCode::Enter) => {
+                link.answer(true);
+                Some(true)
+            }
+            (Stage::Digits { .. }, KeyCode::Char('n' | 'N')) => {
+                link.answer(false);
+                Some(true)
+            }
+            (Stage::Waiting { code: Some(code), .. }, KeyCode::Char('c' | 'y')) if !ctrl => {
+                let code = code.clone();
+                let wait = self.clip_for();
+                let route = self.clip.copy(&code, true, wait);
+                self.copied("Code", route, true);
+                Some(true)
+            }
+            (Stage::Waiting { .. }, KeyCode::Char('z')) => {
+                // Flip whatever was drawn last; with no choice yet, that was what fitted.
+                let big = !link.big.unwrap_or(self.link_drew_big);
+                link.big = Some(big);
+                Some(true)
+            }
+            (Stage::Searching, KeyCode::Up) => {
+                link.at = link.at.saturating_sub(1);
+                Some(true)
+            }
+            (Stage::Searching, KeyCode::Down) => {
+                link.at = (link.at + 1).min(link.found.len().saturating_sub(1));
+                Some(true)
+            }
+            (Stage::Searching, KeyCode::Enter) => {
+                if link.code.is_empty() {
+                    link.send_to_picked();
+                } else {
+                    link.send_to_code();
+                }
+                Some(true)
+            }
+            (Stage::Searching, KeyCode::Esc) if !link.code.is_empty() => {
+                link.code.clear();
+                Some(true)
+            }
+            (_, KeyCode::Esc) => Some(false),
+            (Stage::Searching, _) => {
+                link.code.key(key);
+                Some(true)
+            }
+            _ => Some(true),
         }
-        let Screen::Vault(ui) = &mut self.screen else { return };
+    }
+
+    fn mouse(&mut self, mouse: MouseEvent) {
         let at = Position::new(mouse.column, mouse.row);
-        let inside = |r: Rect| r.contains(at);
+        let landed = crate::draw::hit_at(&self.hits, self.overlay_from, at);
         match mouse.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                let double = self
+                    .last_click
+                    .is_some_and(|(where_, when)| where_ == at && when.elapsed() < Duration::from_millis(400));
+                self.last_click = Some((at, Instant::now()));
+                match landed {
+                    // Outside an open overlay: the light ones close, the rest stay.
+                    Some(None) => {
+                        if matches!(self.overlay, Some(Overlay::Help | Overlay::Palette { .. } | Overlay::Pick { .. })) {
+                            self.overlay = None;
+                        }
+                    }
+                    Some(Some(hit)) => self.click(hit, double),
+                    None => {}
+                }
+            }
             MouseEventKind::ScrollDown | MouseEventKind::ScrollUp => {
-                let by = if mouse.kind == MouseEventKind::ScrollDown { 1 } else { -1 };
-                if ui.tab == Tab::Items {
-                    if inside(ui.areas.detail) {
-                        ui.move_line(by);
-                    } else if inside(ui.areas.sidebar) {
-                        ui.move_section(by);
-                    } else {
-                        ui.move_list(by);
+                let by: isize = if mouse.kind == MouseEventKind::ScrollDown { 1 } else { -1 };
+                let landed = landed.flatten();
+                self.scroll(by, landed, at);
+            }
+            _ => {}
+        }
+    }
+
+    /// A left click on something drawn.
+    fn click(&mut self, hit: Hit, double: bool) {
+        let plain = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        match hit {
+            Hit::Cover => {
+                if matches!(self.overlay, Some(Overlay::Help)) {
+                    self.overlay = None;
+                }
+            }
+            Hit::Key(key) => self.key(key),
+            Hit::DoorField(field) => {
+                if let Screen::Door(door) = &mut self.screen {
+                    door.focus = field;
+                }
+            }
+            Hit::Recent(n) => {
+                if let Screen::Door(door) = &mut self.screen {
+                    door.recent = Some(n);
+                }
+                self.key(plain(KeyCode::Enter));
+            }
+            Hit::PaletteRow(n) => {
+                if let Some(Overlay::Palette { at, .. }) = &mut self.overlay {
+                    *at = n;
+                }
+                self.key(plain(KeyCode::Enter));
+            }
+            Hit::PickRow(n) => {
+                if let Some(Overlay::Pick { at, .. }) = &mut self.overlay {
+                    *at = n;
+                }
+                self.key(plain(KeyCode::Enter));
+            }
+            Hit::EditorRow(n) => {
+                if let Some(Overlay::Editor(editor)) = &mut self.overlay {
+                    editor.at = n.min(editor.rows.len().saturating_sub(1));
+                    let row = editor.row();
+                    if double && matches!(row.input.as_str(), "toggle" | "choice") {
+                        self.key(plain(KeyCode::Char(' ')));
                     }
                 }
             }
-            MouseEventKind::Down(MouseButton::Left) => {
-                if let Some(n) = ui.areas.tabs.iter().position(|r| inside(*r)) {
-                    return self.switch_tab(Tab::ALL[n]);
+            Hit::LinkDevice(n) => {
+                if let Some(Overlay::Link(link)) = &mut self.overlay {
+                    link.at = n;
+                    link.send_to_picked();
                 }
-                if ui.tab != Tab::Items {
-                    return;
+            }
+            Hit::Section(n) => {
+                let Screen::Vault(ui) = &mut self.screen else { return };
+                ui.pane = Pane::Sidebar;
+                if n != ui.section {
+                    ui.section = n;
+                    ui.list.select(Some(0));
+                    ui.refresh_list(None);
                 }
-                if inside(ui.areas.list) {
-                    ui.pane = Pane::List;
-                    let row = usize::from(at.y.saturating_sub(ui.areas.list.y + 1)) / 2 + ui.list.offset();
-                    if row < ui.rows.len() && ui.list.selected() != Some(row) {
-                        ui.list.select(Some(row));
-                        ui.load_detail();
-                    }
-                } else if inside(ui.areas.sidebar) {
-                    ui.pane = Pane::Sidebar;
-                    let row = usize::from(at.y.saturating_sub(ui.areas.sidebar.y + 1));
-                    if ui.sections.get(row).is_some_and(|s| !s.heading) && row != ui.section {
-                        ui.section = row;
-                        ui.list.select(Some(0));
-                        ui.refresh_list(None);
-                    }
-                } else if inside(ui.areas.detail) {
+            }
+            Hit::Row(n) => {
+                let Screen::Vault(ui) = &mut self.screen else { return };
+                ui.pane = Pane::List;
+                if ui.list.selected() != Some(n) {
+                    ui.list.select(Some(n));
+                    ui.load_detail();
+                }
+                if double {
                     ui.pane = Pane::Detail;
                 }
             }
-            _ => {}
+            Hit::Line(n) => {
+                let Screen::Vault(ui) = &mut self.screen else { return };
+                ui.pane = Pane::Detail;
+                ui.line = n;
+                if double {
+                    self.copy_line();
+                }
+            }
+            Hit::Code(n) => {
+                let Screen::Vault(ui) = &mut self.screen else { return };
+                ui.code_at = n;
+                if double {
+                    self.codes_key(plain(KeyCode::Enter));
+                }
+            }
+            Hit::Knob(n) => {
+                let Screen::Vault(ui) = &mut self.screen else { return };
+                let same = ui.generator.at == n;
+                ui.generator.at = n;
+                if same || double {
+                    self.generator_key(plain(KeyCode::Char(' ')));
+                }
+            }
+            Hit::HealthGroup(n) => {
+                let Screen::Vault(ui) = &mut self.screen else { return };
+                ui.health_group = n;
+                ui.health_at = 0;
+            }
+            Hit::HealthEntry(n) => {
+                let Screen::Vault(ui) = &mut self.screen else { return };
+                ui.health_at = n;
+                if double {
+                    self.health_key(plain(KeyCode::Enter));
+                }
+            }
+        }
+    }
+
+    /// The wheel, over whatever is under the pointer.
+    fn scroll(&mut self, by: isize, over: Option<Hit>, at: Position) {
+        let step = |n: usize, by: isize, len: usize| n.saturating_add_signed(by).min(len.saturating_sub(1));
+        match &mut self.overlay {
+            Some(Overlay::Palette { input, at: picked }) => {
+                *picked = step(*picked, by, palette_matches(input.text()).len());
+                return;
+            }
+            Some(Overlay::Pick { items, at: picked, .. }) => {
+                *picked = step(*picked, by, items.len());
+                return;
+            }
+            Some(Overlay::Editor(editor)) => {
+                editor.at = step(editor.at, by, editor.rows.len());
+                return;
+            }
+            Some(Overlay::Link(link)) => {
+                link.at = step(link.at, by, link.found.len());
+                return;
+            }
+            Some(_) => return,
+            None => {}
+        }
+        let Screen::Vault(ui) = &mut self.screen else { return };
+        match ui.tab {
+            Tab::Items => {
+                if matches!(over, Some(Hit::Line(_))) || ui.areas.detail.contains(at) {
+                    ui.move_line(by);
+                } else if matches!(over, Some(Hit::Section(_))) || ui.areas.sidebar.contains(at) {
+                    ui.move_section(by);
+                } else {
+                    ui.move_list(by);
+                }
+            }
+            Tab::Codes => {
+                let cols = ui.areas.code_cols.max(1) as isize;
+                ui.code_at = step(ui.code_at, by * cols, ui.codes.len());
+            }
+            Tab::Generator => {
+                // Over a setting, the wheel changes it; elsewhere it moves between them.
+                if let Some(Hit::Knob(n)) = over {
+                    ui.generator.at = n;
+                    ui.generator.adjust(-by.signum() as i32);
+                    self.regenerate();
+                } else {
+                    let len = ui.generator.knobs().len();
+                    ui.generator.at = step(ui.generator.at, by, len);
+                }
+            }
+            Tab::Health => {
+                if let Some(Hit::HealthGroup(_)) = over {
+                    ui.health_group = step(ui.health_group, by, HEALTH_GROUPS.len());
+                    ui.health_at = 0;
+                } else {
+                    let len = ui.health_ids(ui.health_group).len();
+                    ui.health_at = step(ui.health_at, by, len);
+                }
+            }
         }
     }
 }

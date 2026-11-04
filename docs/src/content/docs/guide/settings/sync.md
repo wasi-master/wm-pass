@@ -151,7 +151,7 @@ See also [Your devices, on this network](/guide/settings/sync/#group-sync-lan), 
 
 ## Add a new device
 
-*Only in the desktop app and Android.*
+*In the desktop app, on Android and in the terminal app (**Add a new device** in its `:` palette).*
 
 Sends this vault to a phone or computer that has none yet, and pairs the two for syncing.
 
@@ -159,8 +159,9 @@ Sends this vault to a phone or computer that has none yet, and pairs the two for
 
 First, on the new device, choose **I already have a vault**, then Get it from another device. It shows a code and waits.
 
+- **Scan its code** reads the new device's QR code with the camera.
 - **Find it on this network** looks for it, then both screens show six digits. If they match, choose **They match** on both.
-- **Paste its code** takes the text under the new device's QR code, for a computer or the terminal app.
+- **Paste its code** takes the code's text. A computer and the terminal app show it under the code; a phone has **Copy the code**.
 
 The new device then asks for this vault's master password.
 

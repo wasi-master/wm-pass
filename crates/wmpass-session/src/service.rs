@@ -337,6 +337,32 @@ fn split_factors<'a>(
     Ok((outputs, rest))
 }
 
+/// Every QR code in a picture, as text.
+fn read_qr(pixels: &[u8], width: usize, height: usize, rgba: bool) -> Result<Zeroizing<Vec<String>>, SessionError> {
+    let per = if rgba { 4 } else { 1 };
+    if width == 0 || height == 0 || width.checked_mul(height).and_then(|n| n.checked_mul(per)) != Some(pixels.len()) {
+        return Err(invalid("the picture's size does not match its pixels"));
+    }
+    let grey = |x: usize, y: usize| -> u8 {
+        let at = (y * width + x) * per;
+        if rgba {
+            // Rec. 601 weights, in integers.
+            let (r, g, b) = (u32::from(pixels[at]), u32::from(pixels[at + 1]), u32::from(pixels[at + 2]));
+            u8::try_from((r * 299 + g * 587 + b * 114) / 1000).unwrap_or(u8::MAX)
+        } else {
+            pixels[at]
+        }
+    };
+    let mut image = rqrr::PreparedImage::prepare_from_greyscale(width, height, grey);
+    let mut out = Zeroizing::new(Vec::new());
+    for grid in image.detect_grids() {
+        if let Ok((_, text)) = grid.decode() {
+            out.push(text);
+        }
+    }
+    Ok(out)
+}
+
 fn blob<'a>(call: &Call<'a>, at: usize) -> Result<&'a [u8], SessionError> {
     call.blobs
         .get(at)
@@ -715,6 +741,24 @@ impl Service {
                     secret: Some(Zeroizing::new(value.expose().as_bytes().to_vec())),
                     blobs: Vec::new(),
                 })
+            }
+            "qr.read" => {
+                // A picture or a camera frame, as RGBA or one byte of grey per pixel. What the
+                // codes say often holds a secret, such as a one-time code's seed, so it comes
+                // back as the secret, a JSON list of texts.
+                #[derive(Deserialize)]
+                struct A {
+                    width: usize,
+                    height: usize,
+                    #[serde(default)]
+                    rgba: bool,
+                }
+                let a: A = parse(call.args)?;
+                let pixels = blob(&call, 0)?;
+                let codes = read_qr(pixels, a.width, a.height, a.rgba)?;
+                let found = codes.len();
+                let secret = (found > 0).then(|| Zeroizing::new(serde_json::to_vec(&*codes).unwrap_or_default()));
+                Ok(Reply { json: json!({"found": found}).to_string(), secret, blobs: Vec::new() })
             }
             "strength.assess" => {
                 #[derive(Deserialize, Default)]

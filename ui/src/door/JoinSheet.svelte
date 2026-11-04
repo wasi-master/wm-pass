@@ -84,10 +84,10 @@
       <p>On the device that has your vault, open <strong>Settings, Sync and accounts</strong> and choose <strong>Add a new device</strong>.</p>
       {#if qrText}
         <div style="display:flex;justify-content:center"><Qr text={qrText} /></div>
-        <p class="dim">A phone scans this code. A computer or the terminal app finds this one on the network and shows six digits to compare, or takes this code pasted in:</p>
+        <p class="dim">There, scan this code with a phone, or choose <strong>Find it on this network</strong> and compare six digits, or choose <strong>Paste its code</strong> and paste this:</p>
         <Field value={qrText} mono label="Code to paste" />
       {:else}
-        <p class="dim">This computer has no network address to show in a code, so the other device finds it on the network and you compare six digits.</p>
+        <p class="dim">This computer has no network address to show in a code. There, choose <strong>Find it on this network</strong>, then compare six digits on both screens.</p>
       {/if}
       <p class="dim small">Both devices need to be on the same network. The vault arrives encrypted and opens only with its master password.</p>
     {:else if phase === 'compare'}

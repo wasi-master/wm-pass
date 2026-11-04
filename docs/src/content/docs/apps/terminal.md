@@ -31,7 +31,13 @@ If your vault is on a phone or another computer, there is no need to copy the fi
 wmpass join ~/vaults/personal.wmvault
 ```
 
-It draws a QR code in the terminal and waits for two minutes. On the phone, open Settings, Sync and accounts, choose **Add a new device**, and scan it. A computer finds this one on the network instead and both show six digits; type `y` if they match. The vault arrives encrypted, and you open it with its master password. In the full-screen app, `Ctrl+G` at the unlock screen does the same.
+It opens a full screen with a QR code and waits for two minutes. On the device that has the vault, open Settings, Sync and accounts, and choose **Add a new device**. From there, any of three ways works:
+
+- **Scan its code** with a phone's camera.
+- **Find it on this network**, then check that both screens show the same six digits. Click **They match** or press `y`.
+- **Paste its code**: press `c` here to copy the code's text, then paste it on the other device.
+
+The vault arrives encrypted, and you open it with its master password. If the code is hard to scan, `z` switches between a big code and a small one. A big code needs a terminal about 45 lines tall. In the full-screen app, `Ctrl+G` at the unlock screen opens the same screen. Without a terminal, as in a script, `wmpass join` prints the same steps as plain lines.
 
 Going the other way, `wmpass add-device` sends a vault to a new device that is waiting to join:
 
@@ -39,7 +45,7 @@ Going the other way, `wmpass add-device` sends a vault to a new device that is w
 wmpass add-device ~/vaults/personal.wmvault
 ```
 
-It finds the device on the network and compares six digits, since a terminal cannot scan a code. Pass `--code` with the text under the new device's QR code to skip the comparison. From the full-screen app, it is **Add a new device** in the `:` palette. Both devices need to be on the same network.
+It lists the devices waiting on this network; pick one and compare six digits, since a terminal cannot scan a code. Or paste the text under the new device's QR code into the box on the same screen. With `--code` and that text, it sends without the full screen. From the full-screen app, it is **Add a new device** in the `:` palette. Both devices need to be on the same network.
 
 ## Finding your way
 
@@ -58,7 +64,7 @@ Press `?` for every key, or `:` for a list of commands you can search by name. T
 | `d` | Move to the trash; in the trash, `u` brings it back |
 | `Ctrl+L` | Lock now |
 
-Arrows and `h` `j` `k` `l` both move. The mouse works too: click a row, scroll a list.
+Arrows and `h` `j` `k` `l` both move. The mouse works everywhere too. Click a tab, a row, a field or a command in the `:` list. Double-click a row to open it, or a line in an item to copy it. The key hints along the bottom are buttons. The wheel scrolls whatever is under the pointer, and over a generator setting it changes the value.
 
 ## Editing
 

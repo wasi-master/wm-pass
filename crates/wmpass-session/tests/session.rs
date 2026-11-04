@@ -486,3 +486,39 @@ fn a_code_becomes_a_login_and_keeps_its_code() {
     let args = json!({"id": id, "kind": "login"}).to_string();
     assert!(s.call("entry.convert", Call { handle: h, args: &args, ..Call::default() }).is_err(), "a login is not converted again");
 }
+
+#[test]
+fn qr_codes_are_read_from_a_picture() {
+    let text = "otpauth://totp/GitHub:octo?secret=JBSWY3DPEHPK3PXP&issuer=GitHub";
+    let code = qrcode::QrCode::new(text.as_bytes()).expect("qr");
+    let width = code.width();
+    // Four pixels a module, with a light border, in RGBA as a camera frame comes.
+    let (scale, border) = (4, 4);
+    let side = (width + 2 * border) * scale;
+    let colours = code.to_colors();
+    let mut rgba = vec![255u8; side * side * 4];
+    for y in 0..side {
+        for x in 0..side {
+            let (mx, my) = ((x / scale).wrapping_sub(border), (y / scale).wrapping_sub(border));
+            if mx < width && my < width && colours[my * width + mx] == qrcode::Color::Dark {
+                rgba[(y * side + x) * 4..][..3].fill(0);
+            }
+        }
+    }
+    let mut s = Service::new(1);
+    let args = json!({"width": side, "height": side, "rgba": true}).to_string();
+    let reply = s
+        .call("qr.read", Call { args: &args, blobs: &[&rgba], ..Call::default() })
+        .expect("read");
+    assert_eq!(json_of(&reply)["found"], 1);
+    assert!(!reply.json.contains("JBSWY3DP"), "the code's text never rides in the view");
+    let found: Vec<String> = serde_json::from_slice(reply.secret.as_deref().expect("secret")).expect("list");
+    assert_eq!(found, vec![text.to_owned()]);
+    // A picture with no code finds nothing, and a wrong size is refused.
+    let blank = vec![200u8; 64 * 64];
+    let args = json!({"width": 64, "height": 64}).to_string();
+    let reply = s.call("qr.read", Call { args: &args, blobs: &[&blank], ..Call::default() }).expect("blank");
+    assert_eq!(json_of(&reply)["found"], 0);
+    let args = json!({"width": 65, "height": 64}).to_string();
+    assert!(s.call("qr.read", Call { args: &args, blobs: &[&blank], ..Call::default() }).is_err());
+}
