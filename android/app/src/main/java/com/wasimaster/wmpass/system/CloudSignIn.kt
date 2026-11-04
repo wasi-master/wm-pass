@@ -136,12 +136,17 @@ object CloudSignIn {
                 .appendQueryParameter("code_challenge_method", "S256")
                 // Without it Dropbox issues a four-hour token and no refresh token.
                 .appendQueryParameter("token_access_type", "offline")
+                // Without it a browser signed in to Dropbox that approved WM Pass before comes
+                // straight back, signed in to that account, with no page shown.
+                .appendQueryParameter("force_reapprove", "true")
             "onedrive" -> Uri.parse(OneDriveSink.AUTHORIZE_URL).buildUpon()
                 .appendQueryParameter("client_id", BackupClients.oneDriveClientId)
                 .appendQueryParameter("redirect_uri", REDIRECT)
                 .appendQueryParameter("scope", OneDriveSink.SCOPE)
                 .appendQueryParameter("code_challenge", challenge)
                 .appendQueryParameter("code_challenge_method", "S256")
+                // So the account is chosen, not taken from the browser without a word.
+                .appendQueryParameter("prompt", "select_account")
             // Box takes its client secret instead of PKCE; the state only comes back.
             "box" -> Uri.parse(BoxSink.AUTHORIZE_URL).buildUpon()
                 .appendQueryParameter("client_id", BackupClients.boxClientId)
@@ -155,7 +160,7 @@ object CloudSignIn {
                 .appendQueryParameter("code_challenge_method", "S256")
                 // Both, or Google issues no refresh token on a second sign-in.
                 .appendQueryParameter("access_type", "offline")
-                .appendQueryParameter("prompt", "consent")
+                .appendQueryParameter("prompt", "select_account consent")
             else -> return false
         }.appendQueryParameter("response_type", "code").build()
         val waiting = Pending(place.kind, place.id, verifier)

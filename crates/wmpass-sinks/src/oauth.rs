@@ -20,7 +20,10 @@ pub struct Service {
     pub token: &'static str,
     /// Scope to ask for.
     pub scope: &'static str,
-    /// Extra query for the sign-in page. Without these two, no refresh token is issued.
+    /// Extra query for the sign-in page: what gets a refresh token issued, and what makes the
+    /// service show its page every time. Without the latter, a browser already signed in to a
+    /// service that approved WM Pass before comes straight back, signed in to whichever account
+    /// that browser holds, with nothing shown.
     pub extra: &'static str,
 }
 
@@ -29,7 +32,7 @@ pub const DROPBOX: Service = Service {
     authorize: "https://www.dropbox.com/oauth2/authorize",
     token: "https://api.dropboxapi.com/oauth2/token",
     scope: "files.content.write files.content.read files.metadata.read",
-    extra: "token_access_type=offline",
+    extra: "token_access_type=offline&force_reapprove=true",
 };
 
 /// OneDrive, app folder only.
@@ -37,7 +40,7 @@ pub const ONEDRIVE: Service = Service {
     authorize: "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize",
     token: "https://login.microsoftonline.com/consumers/oauth2/v2.0/token",
     scope: "Files.ReadWrite.AppFolder offline_access",
-    extra: "",
+    extra: "prompt=select_account",
 };
 
 /// Google Drive, this app's own hidden folder only.
@@ -45,7 +48,7 @@ pub const DRIVE: Service = Service {
     authorize: "https://accounts.google.com/o/oauth2/v2/auth",
     token: "https://oauth2.googleapis.com/token",
     scope: "https://www.googleapis.com/auth/drive.appdata",
-    extra: "access_type=offline&prompt=consent",
+    extra: "access_type=offline&prompt=select_account%20consent",
 };
 
 /// Box, the whole account: Box has no app-folder scope. Scopes are set on the app in
@@ -236,6 +239,15 @@ mod tests {
         assert!(url.contains("redirect_uri=wmpass%3A%2F%2Foauth"));
         assert!(!url.contains(pair.verifier.expose()));
         assert!(ONEDRIVE.scope.contains("offline_access"));
+    }
+
+    #[test]
+    fn sign_in_pages_always_show() {
+        // A browser already signed in must still show the page, so the account is chosen, not assumed.
+        let pair = pkce().unwrap();
+        assert!(authorize_url(DROPBOX, "id", "r", &pair).contains("force_reapprove=true"));
+        assert!(authorize_url(ONEDRIVE, "id", "r", &pair).contains("prompt=select_account"));
+        assert!(authorize_url(DRIVE, "id", "r", &pair).contains("prompt=select_account%20consent"));
     }
 
     #[test]
