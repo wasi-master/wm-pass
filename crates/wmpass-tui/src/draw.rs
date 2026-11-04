@@ -19,6 +19,7 @@ use crate::engine::{Code, Secret};
 use crate::generator::Knob;
 use crate::glyphs::Glyph;
 use crate::input::Input;
+use crate::settings::{self, Look, Setting};
 use crate::join::{QUIET, Qr};
 use crate::link::{LinkUi, Role, Stage};
 use crate::theme::Theme;
@@ -40,9 +41,12 @@ pub enum Hit {
     Knob(usize),
     HealthGroup(usize),
     HealthEntry(usize),
+    Setting(usize),
     PaletteRow(usize),
     PickRow(usize),
     EditorRow(usize),
+    /// A custom field's name, or a security question's words.
+    EditorName(usize),
     LinkDevice(usize),
     /// An overlay's own area, so a click on it reaches nothing beneath.
     Cover,
@@ -145,7 +149,10 @@ fn draw_all(frame: &mut Frame, app: &mut App) {
     let clip_left = app.clip.seconds_left();
     match &mut app.screen {
         Screen::Door(door) => draw_door(frame, area, door, &theme, &app.prefs.recent),
-        Screen::Vault(ui) => draw_vault(frame, area, ui, &theme, lock_in, clip_left, app.toast.as_ref()),
+        Screen::Vault(ui) => {
+            let around = Around { lock_in, clip_left, toast: app.toast.as_ref(), prefs: &app.prefs };
+            draw_vault(frame, area, ui, &theme, &around);
+        }
     }
     if let Screen::Door(_) = app.screen
         && let Some(toast) = &app.toast
@@ -428,15 +435,16 @@ fn draw_door(frame: &mut Frame, area: Rect, door: &Door, theme: &Theme, recent: 
     }
 }
 
-fn draw_vault(
-    frame: &mut Frame,
-    area: Rect,
-    ui: &mut VaultUi,
-    theme: &Theme,
+/// What the vault screen shows besides the vault: timers, a message, the settings.
+struct Around<'a> {
     lock_in: Option<std::time::Duration>,
     clip_left: Option<u64>,
-    toast: Option<&crate::app::Toast>,
-) {
+    toast: Option<&'a crate::app::Toast>,
+    prefs: &'a crate::store::Prefs,
+}
+
+fn draw_vault(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme, around: &Around<'_>) {
+    let Around { lock_in, clip_left, toast, prefs } = *around;
     let [top, body, bottom] = Layout::vertical([Constraint::Length(1), Constraint::Min(0), Constraint::Length(1)]).areas(area);
     draw_top(frame, top, ui, theme, lock_in, clip_left);
     let cursor = match ui.tab {
@@ -448,6 +456,10 @@ fn draw_vault(
         }
         Tab::Health => {
             draw_health(frame, body, ui, theme);
+            None
+        }
+        Tab::Settings => {
+            draw_settings(frame, body, ui, theme, prefs);
             None
         }
     };
@@ -516,6 +528,7 @@ fn draw_bottom(frame: &mut Frame, area: Rect, ui: &VaultUi, theme: &Theme, toast
         Tab::Codes => vec![("Enter", "copy"), ("/", "filter"), ("o", "open item"), ("?", "keys")],
         Tab::Generator => vec![("←→", "change"), ("Enter", "again"), ("c", "copy"), ("?", "keys")],
         Tab::Health => vec![("←→", "group"), ("Enter", "open"), ("i", "ignore"), ("r", "check again"), ("?", "keys")],
+        Tab::Settings => vec![("↑↓", "move"), ("←→", "change"), ("Enter", "open"), ("?", "keys")],
     };
     let hint_w = (key_hint(theme, &hints).width() as u16 + 1).min(area.width);
     let left = match toast {
@@ -917,6 +930,15 @@ fn draw_detail(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme) {
                     None => lines.push(Line::from(vec![marker, label_span, Span::styled("…", theme.faint())])),
                 }
             }
+            DLine::Link(id) => {
+                let (title, kind) = ui.titles.get(id).cloned().unwrap_or_default();
+                lines.push(Line::from(vec![
+                    marker,
+                    Span::styled(format!("{} ", theme.g.kind(&kind)), base.fg(theme.label(None, &kind))),
+                    Span::styled(title, base.fg(theme.text)),
+                    Span::styled(if picked { "   Enter open" } else { "" }, base.fg(theme.low)),
+                ]));
+            }
             DLine::File(file) => lines.push(Line::from(vec![
                 marker,
                 Span::styled(format!("{} ", theme.g.get(Glyph::Attachment)), base.fg(theme.accent)),
@@ -1257,6 +1279,157 @@ fn draw_health(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme) {
     }
 }
 
+/// What a setting is set to now, as the list shows it.
+fn setting_value(setting: Setting, ui: &VaultUi, theme: &Theme, prefs: &crate::store::Prefs) -> (String, Option<bool>) {
+    let info = ui.info.as_ref();
+    match setting {
+        Setting::Theme => {
+            let mut name = theme.name.to_owned();
+            if let Some(first) = name.get_mut(0..1) {
+                first.make_ascii_uppercase();
+            }
+            (name, None)
+        }
+        Setting::Icons => (String::new(), Some(theme.g.nerd)),
+        Setting::LockAfter => (settings::minutes(prefs.lock_minutes), None),
+        Setting::ClipSeconds => (settings::seconds(prefs.clip_seconds), None),
+        Setting::RevealSeconds => (settings::seconds(prefs.reveal_seconds), None),
+        Setting::Shelf => (if ui.shelf_open { "open" } else { "closed" }.to_owned(), Some(ui.shelf_open)),
+        Setting::VaultName => (ui.engine.name.clone(), None),
+        Setting::TrashDays => (
+            info.map_or_else(String::new, |i| if i.trash_days == 0 { "never".to_owned() } else { format!("{} days", i.trash_days) }),
+            None,
+        ),
+        Setting::HistoryLimit => (
+            info.map_or_else(String::new, |i| if i.history_limit == 0 { "all".to_owned() } else { i.history_limit.to_string() }),
+            None,
+        ),
+        Setting::SyncSettings => (String::new(), Some(prefs.sync_settings)),
+        Setting::SkipLocal => (String::new(), Some(prefs.health_skip_local)),
+        Setting::IntoApp if ui.engine.app_folder().is_some() => ("already there".to_owned(), None),
+        Setting::Password | Setting::Import | Setting::Export | Setting::AddDevice | Setting::IntoApp => (String::new(), None),
+    }
+}
+
+fn draw_settings(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme, prefs: &crate::store::Prefs) {
+    ui.areas.settings = area;
+    let list = settings::all();
+    let at = ui.settings_at.min(list.len() - 1);
+    let wide = area.width >= 96;
+    let (left, right) = if wide {
+        let [l, r] = Layout::horizontal([Constraint::Length((area.width * 11 / 20).min(66)), Constraint::Min(30)]).areas(area);
+        (l, Some(r))
+    } else {
+        (area, None)
+    };
+    let block = panel(theme, Line::from(Span::styled(format!(" {} Settings ", theme.g.get(Glyph::Tab(4))).replace("  ", " "), theme.brand())), true);
+    let inner = block.inner(left).inner(Margin::new(1, 1));
+    frame.render_widget(block, left);
+    // Without room for the side panel, the picked setting's words go along the bottom.
+    let (list_area, about_area) = if wide || inner.height < 12 {
+        (inner, None)
+    } else {
+        let [l, a] = Layout::vertical([Constraint::Min(0), Constraint::Length(4)]).areas(inner);
+        (l, Some(a))
+    };
+
+    // Every line: a heading, a gap, or a setting.
+    let mut lines: Vec<(Line, Option<usize>)> = Vec::new();
+    for (n, setting) in list.iter().enumerate() {
+        if let Some(heading) = settings::heading_before(n) {
+            if n > 0 {
+                lines.push((Line::default(), None));
+            }
+            lines.push((Line::from(Span::styled(heading.to_uppercase(), theme.brand())), None));
+        }
+        let picked = n == at;
+        let base = if picked { theme.selected(true) } else { Style::new() };
+        let (value, flag) = setting_value(*setting, ui, theme, prefs);
+        let shown: Vec<Span> = match (setting.look(), flag) {
+            (Look::Toggle, Some(true)) => vec![Span::styled("● on  ", base.fg(theme.primary).add_modifier(Modifier::BOLD))],
+            (Look::Toggle, _) => vec![Span::styled("○ off  ", base.fg(theme.low))],
+            (Look::Steps, _) if picked => vec![
+                Span::styled("‹ ", base.fg(theme.low)),
+                Span::styled(value, base.fg(theme.accent)),
+                Span::styled(" ›", base.fg(theme.low)),
+            ],
+            (Look::Steps, _) => vec![Span::styled(format!("{value}  "), base.fg(theme.text))],
+            (Look::Action, _) if value.is_empty() => vec![Span::styled("›", base.fg(if picked { theme.accent } else { theme.low }))],
+            (Look::Action, _) => vec![Span::styled(format!("{value}  ›"), base.fg(if picked { theme.text } else { theme.mid }))],
+        };
+        let shown_w: usize = shown.iter().map(Span::width).sum();
+        let label = setting.label();
+        let gap = usize::from(list_area.width).saturating_sub(label.chars().count() + shown_w + 3);
+        let mut spans = vec![
+            Span::styled(if picked { "▌" } else { " " }, base.fg(theme.primary)),
+            Span::styled(format!("{label}{}", " ".repeat(gap)), base.fg(if picked { theme.text } else { theme.mid })),
+            Span::styled(" ", base),
+        ];
+        spans.extend(shown);
+        spans.push(Span::styled(" ", base));
+        lines.push((Line::from(spans), Some(n)));
+    }
+    let picked_line = lines.iter().position(|(_, n)| *n == Some(at)).unwrap_or(0);
+    let height = usize::from(list_area.height);
+    // Keep the group's heading in sight above the picked line when there is room.
+    let first = (picked_line + 3).saturating_sub(height).min(lines.len().saturating_sub(height));
+    for (row, (line, n)) in lines.iter().skip(first).take(height).enumerate() {
+        let rect = Rect { y: list_area.y + row as u16, height: 1, ..list_area };
+        frame.render_widget(Paragraph::new(line.clone()), rect);
+        if let Some(n) = n {
+            hit(rect, Hit::Setting(*n));
+        }
+    }
+
+    let setting = list[at];
+    let mut about = vec![Line::from(Span::styled(setting.about(), Style::new().fg(theme.text)))];
+    let app_timer = matches!(setting, Setting::LockAfter | Setting::ClipSeconds | Setting::RevealSeconds) && ui.engine.app_folder().is_some();
+    if app_timer {
+        about.push(Line::from(Span::styled("This vault is the WM Pass app's, so the app's own timer is taken each time it opens.", Style::new().fg(theme.warn))));
+    }
+    let keys: Vec<(&str, &str)> = match setting.look() {
+        Look::Toggle => vec![("Enter", "turn on or off")],
+        Look::Steps => vec![("←→", "change"), ("Enter", "type a value")],
+        Look::Action => vec![("Enter", "open")],
+    };
+    match (right, about_area) {
+        (Some(right), _) => {
+            let block = panel(theme, Line::from(Span::styled(format!(" {} ", setting.label()), theme.brand())), false);
+            let inner = block.inner(right).inner(Margin::new(2, 1));
+            frame.render_widget(block, right);
+            let mut text = about;
+            text.push(Line::default());
+            let used = text.len() as u16;
+            frame.render_widget(Paragraph::new(text).wrap(Wrap { trim: true }), inner);
+            // The vault itself, at the foot.
+            let path = ui.engine.path().display().to_string();
+            let mut foot = vec![
+                Line::from(Span::styled("THIS VAULT", theme.brand())),
+                Line::from(vec![Span::styled("Name   ", theme.faint()), Span::styled(ui.engine.name.clone(), Style::new().fg(theme.text))]),
+                Line::from(vec![Span::styled("Items  ", theme.faint()), Span::styled(ui.info.as_ref().map_or(ui.total, |i| i.entries).to_string(), Style::new().fg(theme.text))]),
+                Line::from(vec![Span::styled("File   ", theme.faint()), Span::styled(path, Style::new().fg(theme.mid))]),
+                Line::from(vec![Span::styled("App    ", theme.faint()), Span::styled(format!("WM Pass {}", env!("CARGO_PKG_VERSION")), Style::new().fg(theme.mid))]),
+            ];
+            if ui.engine.read_only {
+                foot.push(Line::from(Span::styled("Read-only: changes to the vault are turned off", Style::new().fg(theme.warn))));
+            }
+            let foot_h = foot.len() as u16;
+            if inner.height > foot_h + 6 {
+                let rect = Rect { y: inner.bottom() - foot_h, height: foot_h, ..inner };
+                frame.render_widget(Paragraph::new(foot).wrap(Wrap { trim: false }), rect);
+                hint_bar(frame, Rect { y: rect.y - 2, height: 1, ..inner }, theme, &keys, Alignment::Left);
+            } else if inner.height > used + 3 {
+                hint_bar(frame, Rect { y: inner.y + used + 2, height: 1, ..inner }, theme, &keys, Alignment::Left);
+            }
+        }
+        (None, Some(about_area)) => {
+            frame.render_widget(Paragraph::new(about).style(theme.faint()).wrap(Wrap { trim: true }), Rect { height: about_area.height.saturating_sub(1), ..about_area });
+            hint_bar(frame, Rect { y: about_area.bottom() - 1, height: 1, ..about_area }, theme, &keys, Alignment::Right);
+        }
+        (None, None) => {}
+    }
+}
+
 fn popup(frame: &mut Frame, area: Rect, width: u16, height: u16, theme: &Theme, title: &str, danger: bool) -> Rect {
     let rect = centered(area, width, height);
     frame.render_widget(Clear, rect);
@@ -1407,49 +1580,126 @@ fn draw_overlay(frame: &mut Frame, area: Rect, overlay: &Overlay, theme: &Theme,
     }
 }
 
+/// A saved app's package, with the name people know it by when there is one.
+fn app_names(packages: &str) -> String {
+    packages
+        .split([',', ' '])
+        .filter(|p| !p.is_empty())
+        .map(|p| match wmpass_core::related::app_name(p) {
+            Some(name) => format!("{name} ({p})"),
+            None => p.to_owned(),
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn draw_editor(frame: &mut Frame, area: Rect, editor: &Editor, theme: &Theme, ui: Option<&VaultUi>) {
     let title = match (&editor.id, ui.and_then(|u| u.detail.as_ref())) {
-        (Some(_), Some(detail)) => format!("Edit {}", detail.row.title),
-        _ => format!("New {}", vault::kind_name(&editor.kind).to_lowercase()),
+        (Some(_), Some(detail)) => format!("{}  Edit {}", theme.g.kind(&editor.kind), detail.row.title),
+        _ => format!("{}  New {}", theme.g.kind(&editor.kind), vault::kind_name(&editor.kind).to_lowercase()),
     };
-    let width = area.width.saturating_sub(8).min(86);
+    let width = area.width.saturating_sub(8).min(96);
     let height = area.height.saturating_sub(2);
     let inner = popup(frame, area, width, height, theme, &title, false);
     let [body, error, foot] = Layout::vertical([Constraint::Min(0), Constraint::Length(1), Constraint::Length(1)]).areas(inner);
 
-    // Each row is a label and a box; a multiline box gets more height when picked.
-    let label_w = 18u16;
-    let heights: Vec<u16> = editor.rows.iter().enumerate().map(|(n, r)| if r.multiline() && n == editor.at { 6 } else { 1 }).collect();
+    // Each row is a label and a box; a multiline box gets more height when picked, and a group
+    // of added fields or questions gets a heading above it.
+    let longest = editor
+        .rows
+        .iter()
+        .filter(|r| !r.is_action())
+        .map(|r| if r.is_named() { r.name.text().chars().count() + 2 } else { r.label.chars().count() })
+        .max()
+        .unwrap_or(10);
+    let label_w = (longest as u16 + 3).clamp(16, 28).min(body.width / 3);
+    let heights: Vec<u16> = editor
+        .rows
+        .iter()
+        .enumerate()
+        .map(|(n, r)| {
+            let own = if r.multiline() && n == editor.at { 6 } else { 1 };
+            own + 1 + u16::from(editor.heading(n).is_some())
+        })
+        .collect();
+    let at = editor.at.min(heights.len() - 1);
     let mut first = 0;
-    loop {
-        let used: u16 = heights[first..=editor.at.min(heights.len() - 1)].iter().map(|h| h + 1).sum();
-        if used <= body.height || first >= editor.at {
-            break;
-        }
+    while first < at && heights[first..=at].iter().sum::<u16>() > body.height {
         first += 1;
     }
     let mut y = body.y + 1;
     let mut cursor = None;
+    let mut last_drawn = first;
     for (n, row) in editor.rows.iter().enumerate().skip(first) {
-        let h = heights[n];
+        let h = heights[n] - 1 - u16::from(editor.heading(n).is_some());
+        if let Some(heading) = editor.heading(n) {
+            if y + 1 + h > body.bottom() {
+                break;
+            }
+            let rule = "─".repeat(usize::from(body.width.saturating_sub(heading.chars().count() as u16 + 4)));
+            frame.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::styled(format!(" {heading} "), theme.brand()),
+                    Span::styled(rule, theme.faint()),
+                ])),
+                Rect { x: body.x, y, width: body.width, height: 1 },
+            );
+            y += 1;
+        }
         if y + h > body.bottom() {
             break;
         }
+        last_drawn = n;
         let picked = n == editor.at;
-        let label_style = if picked { theme.brand() } else { theme.dim() };
-        let label: String = row.label.chars().take(usize::from(label_w) - 2).collect();
-        frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled(if picked { "▌" } else { " " }, Style::new().fg(theme.primary)),
-                Span::styled(label, label_style),
-            ])),
-            Rect { x: body.x, y, width: label_w, height: 1 },
-        );
-        let field = Rect { x: body.x + label_w, y, width: body.width.saturating_sub(label_w), height: h };
         hit(Rect { x: body.x, y, width: body.width, height: h }, Hit::EditorRow(n));
-        let bg = if picked { Style::new().bg(theme.select) } else { Style::new().bg(theme.surface) };
+        if row.is_action() {
+            let style = if picked { Style::new().fg(theme.primary).bg(theme.select).add_modifier(Modifier::BOLD) } else { Style::new().fg(theme.primary) };
+            let text = format!("  + {}", row.label);
+            let w = (text.chars().count() as u16 + 2).min(body.width);
+            frame.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::styled(if picked { "▌" } else { " " }, Style::new().fg(theme.primary)),
+                    Span::styled(text, style),
+                    Span::styled(" ", style),
+                ])),
+                Rect { x: body.x, y, width: w + 1, height: 1 },
+            );
+            y += h + 1;
+            continue;
+        }
+        let label_style = if picked { theme.brand() } else { theme.dim() };
+        frame.render_widget(Span::styled(if picked { "▌" } else { " " }, Style::new().fg(theme.primary)), Rect { x: body.x, y, width: 1, height: 1 });
+        let label_box = Rect { x: body.x + 1, y, width: label_w.saturating_sub(2), height: 1 };
+        if row.is_named() {
+            // The name is a box of its own.
+            let on = picked && editor.on_name;
+            let style = if on { Style::new().bg(theme.select).fg(theme.text) } else { Style::new().bg(theme.surface).fg(theme.mid) };
+            frame.render_widget(Block::new().style(style), label_box);
+            let text: Text = if row.name.is_empty() {
+                Text::from(Span::styled(if row.slot == Slot::Question { "Question" } else { "Name" }, theme.faint()))
+            } else {
+                Text::from(Span::styled(row.name.text().to_owned(), style))
+            };
+            let col = row.name.cursor() as u16;
+            let inner_w = label_box.width.saturating_sub(2);
+            let hscroll = if on { col.saturating_sub(inner_w.saturating_sub(1)) } else { 0 };
+            let text_box = Rect { x: label_box.x + 1, width: inner_w, ..label_box };
+            frame.render_widget(Paragraph::new(text).scroll((0, hscroll)), text_box);
+            hit(label_box, Hit::EditorName(n));
+            if on {
+                cursor = Some(Position::new(text_box.x + (col - hscroll).min(inner_w.saturating_sub(1)), y));
+            }
+        } else {
+            let label: String = row.label.chars().take(usize::from(label_box.width)).collect();
+            frame.render_widget(Span::styled(label, label_style), label_box);
+        }
+        let field = Rect { x: body.x + label_w, y, width: body.width.saturating_sub(label_w), height: h };
+        let on_value = picked && !editor.on_name;
+        let bg = if on_value { Style::new().bg(theme.select) } else { Style::new().bg(theme.surface) };
         frame.render_widget(Block::new().style(bg), field);
         let text_area = Rect { x: field.x + 1, width: field.width.saturating_sub(2), ..field };
+        let suggest_hint = format!("such as {}", row.suggestions.iter().take(3).cloned().collect::<Vec<_>>().join(", "));
+        let masked = |count: usize| Span::styled("•".repeat(count.min(64)), Style::new().fg(theme.text));
         let shown: Text = match row.input.as_str() {
             "toggle" => Text::from(Line::from(if row.flag {
                 Span::styled("● on", Style::new().fg(theme.primary).add_modifier(Modifier::BOLD))
@@ -1461,22 +1711,34 @@ fn draw_editor(frame: &mut Frame, area: Rect, editor: &Editor, theme: &Theme, ui
                 Span::styled(row.value.text().to_owned(), Style::new().fg(theme.text)),
                 Span::styled(" ›", theme.faint()),
             ])),
+            _ if row.unloaded() && row.value.is_empty() => {
+                let hint = match row.slot {
+                    Slot::Otp => "  saved · paste an otpauth:// link or seed to replace",
+                    _ if on_value => "  saved · type to edit, ^R to show",
+                    _ => "  saved",
+                };
+                Text::from(Line::from(vec![Span::styled(MASK, theme.dim()), Span::styled(hint, theme.faint())]))
+            }
             _ if row.secret && !editor.show && !row.value.is_empty() => {
-                Text::from(Span::styled("•".repeat(row.value.text().chars().count().min(64)), Style::new().fg(theme.text)))
+                let lines: Vec<Line> = row.value.text().split('\n').map(|l| Line::from(masked(l.chars().count().max(1)))).collect();
+                Text::from(lines)
             }
             _ if row.value.is_empty() => {
-                let placeholder = match (&row.slot, row.secret, row.had_value) {
-                    (Slot::Otp, _, true) => "unchanged · paste an otpauth:// link or seed to replace",
-                    (Slot::Otp, _, false) => "otpauth://… link or base32 seed",
-                    (_, true, true) => "unchanged · type to replace, ^R to load",
+                let placeholder = match (&row.slot, row.secret) {
+                    (Slot::Otp, _) => "otpauth://… link or base32 seed",
                     (Slot::Sites, ..) => "github.com, https://example.com/login",
+                    (Slot::Apps, ..) => "com.example.app",
                     (Slot::Tags, ..) => "work, family",
+                    (Slot::Question, _) => "the answer",
+                    (Slot::Custom, true) => "hidden value",
+                    _ if !row.suggestions.is_empty() => &suggest_hint,
                     _ if row.input == "date" => "2026-12-31",
                     _ if row.input == "password" => "^G makes a strong one",
                     _ => "",
                 };
                 Text::from(Span::styled(placeholder, theme.faint()))
             }
+            _ if row.slot == Slot::Apps && !on_value => Text::from(app_names(row.value.text())).style(Style::new().fg(theme.text)),
             _ => Text::from(row.value.text().to_owned()).style(Style::new().fg(theme.text)),
         };
         let (line, col) = row.value.cursor_line_col();
@@ -1484,21 +1746,89 @@ fn draw_editor(frame: &mut Frame, area: Rect, editor: &Editor, theme: &Theme, ui
         let hscroll = (col as u16).saturating_sub(text_area.width.saturating_sub(1));
         let hscroll = if row.multiline() { 0 } else { hscroll };
         frame.render_widget(Paragraph::new(shown).scroll((scroll, hscroll)), text_area);
-        if picked && !matches!(row.input.as_str(), "toggle" | "choice") {
-            let cx = if row.secret && !editor.show { (row.value.text().chars().count().min(64)) as u16 } else { col as u16 - hscroll };
+        // The rest of an offered value, faint after the cursor, and how strong a password is.
+        if on_value
+            && !row.multiline()
+            && row.value.cursor() == row.value.text().chars().count()
+            && let Some(offer) = row.suggestion()
+        {
+            let rest: String = offer.chars().skip(row.value.text().chars().count()).collect();
+            let x = text_area.x + (col as u16).saturating_sub(hscroll);
+            let w = (rest.chars().count() as u16 + 9).min(text_area.right().saturating_sub(x));
+            frame.render_widget(
+                Paragraph::new(Line::from(vec![Span::styled(rest, theme.faint()), Span::styled("  → take", theme.faint())])),
+                Rect { x, y: text_area.y, width: w, height: 1 },
+            );
+        }
+        if on_value
+            && row.input == "password"
+            && let Some(score) = editor.strength
+        {
+            let mut spans = meter(score, theme);
+            spans.push(Span::styled(format!(" {}", score_word(score)), Style::new().fg(theme.score(score))));
+            let line = Line::from(spans);
+            let w = line.width() as u16;
+            if text_area.width > w + 20 {
+                let at = Rect { x: text_area.right() - w, y: text_area.y, width: w, height: 1 };
+                frame.render_widget(Block::new().style(Style::new().bg(theme.select)), Rect { x: at.x - 1, width: w + 1, ..at });
+                frame.render_widget(Paragraph::new(line), at);
+            }
+        }
+        if on_value && !matches!(row.input.as_str(), "toggle" | "choice") && !(row.unloaded() && row.value.is_empty()) {
+            let cx = col as u16 - hscroll;
             cursor = Some(Position::new(text_area.x + cx.min(text_area.width.saturating_sub(1)), text_area.y + (line as u16 - scroll)));
+        } else if on_value && row.unloaded() {
+            cursor = Some(Position::new(text_area.x, text_area.y));
         }
         y += h + 1;
     }
-    if let Some(e) = &editor.error {
+    // Where the list goes on past the box.
+    let more_above = first > 0;
+    let more_below = last_drawn + 1 < editor.rows.len();
+    if more_above || more_below {
+        let text = match (more_above, more_below) {
+            (true, true) => "↑↓ more",
+            (true, false) => "↑ more",
+            _ => "↓ more",
+        };
+        let w = text.chars().count() as u16;
+        frame.render_widget(Span::styled(text, theme.faint()), Rect { x: body.right().saturating_sub(w), y: body.y, width: w, height: 1 });
+    }
+    if editor.confirm_discard {
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled("Discard your changes?  ", Style::new().fg(theme.warn).add_modifier(Modifier::BOLD)),
+                Span::styled("y", theme.key()),
+                Span::styled(" discard  ", theme.dim()),
+                Span::styled("^S", theme.key()),
+                Span::styled(" save  ", theme.dim()),
+                Span::styled("any other key", theme.key()),
+                Span::styled(" keep editing", theme.dim()),
+            ])),
+            error,
+        );
+    } else if let Some(e) = &editor.error {
         frame.render_widget(Paragraph::new(Span::styled(format!("✕ {e}"), Style::new().fg(theme.danger))), error);
     }
-    let mut keys = vec![("Tab", "next"), ("^S", "save"), ("Esc", "cancel")];
-    let row = &editor.rows[editor.at.min(editor.rows.len() - 1)];
+    let row = &editor.rows[at];
+    let mut keys = vec![("^S", "save"), ("Esc", "cancel")];
+    if row.is_action() {
+        keys.insert(0, ("Enter", "add"));
+    } else {
+        keys.insert(0, ("Tab", "next"));
+    }
+    if row.slot == Slot::Custom {
+        keys.insert(1, ("^O", if row.secret { "unhide" } else { "hide" }));
+        keys.insert(1, ("^X", "remove"));
+    } else if row.slot == Slot::Question && row.index.is_none() {
+        keys.insert(1, ("^X", "remove"));
+    } else if !row.is_action() {
+        keys.insert(1, ("^N", "add field"));
+    }
     if row.input == "password" {
         keys.insert(1, ("^G", "generate"));
     }
-    if row.secret {
+    if row.secret && !row.is_action() {
         keys.insert(1, ("^R", if editor.show { "hide" } else { "show" }));
     }
     if matches!(row.input.as_str(), "toggle" | "choice") {
@@ -1514,21 +1844,20 @@ fn draw_editor(frame: &mut Frame, area: Rect, editor: &Editor, theme: &Theme, ui
 }
 
 fn draw_help(frame: &mut Frame, area: Rect, theme: &Theme) {
-    let inner = popup(frame, area, 92, (area.height - 2).min(32), theme, "Keys", false);
-    let groups: [(&str, &[(&str, &str)]); 8] = [
-        ("Anywhere", &[("1-4", "Items, Codes, Generator, Health"), (": or ^K", "commands"), ("^L", "lock now"), ("^T", "next theme"), ("?", "this list"), ("q", "quit")]),
+    let inner = popup(frame, area, 96, (area.height - 2).min(36), theme, "Keys", false);
+    let groups: [(&str, &[(&str, &str)]); 7] = [
+        ("Anywhere", &[("1-5", "Items, Codes, Generator, Health, Settings"), (": or ^K", "commands"), ("^L", "lock now"), ("^T", "next theme"), ("?", "this list"), ("q", "quit")]),
         ("Moving", &[("↑↓ or j k", "move"), ("←→ or h l", "pane"), ("Tab", "next pane"), ("g G", "top, bottom"), ("Enter", "open")]),
         ("Search", &[("/", "search"), ("Esc", "clear"), ("tag:work", "by tag"), ("kind:card", "by kind"), ("has:otp", "with codes"), ("weak reused old", "health")]),
+        ("In the editor", &[("Tab ⇧Tab", "next, back"), ("^S Esc", "save, cancel"), ("^N ^X", "add or remove a field"), ("^O", "hide a field's value"), ("^G ^R", "generate, show"), ("→", "take the value offered")]),
         ("Item", &[("c", "copy password"), ("u", "copy username"), ("t", "copy code"), ("r", "show password"), ("e n", "edit, new"), ("d", "trash"), ("f p", "favorite, pin"), ("m + -", "folder, tags"), ("a", "attach a file"), ("w", "Wi-Fi QR code"), ("Space", "mark, to act on several")]),
         ("In an item", &[("r Space", "show or hide"), ("y Enter", "copy the line"), ("o", "save a file")]),
-        ("In the trash", &[("u", "restore"), ("D", "delete for good")]),
-        ("In Health", &[("i", "ignore for this check, or count again"), ("r", "check again")]),
-        ("On a tag in the sidebar", &[("R", "rename it everywhere"), ("D", "delete it everywhere")]),
+        ("Elsewhere", &[("u D", "trash: restore, delete for good"), ("i r", "Health: ignore, check again"), ("R D", "a sidebar tag: rename, delete"), ("←→ Enter", "Settings: change, open")]),
     ];
     let half = inner.width / 2;
     let mut col = [Vec::new(), Vec::new()];
     for (n, (title, keys)) in groups.iter().enumerate() {
-        let side = &mut col[usize::from(n >= 3)];
+        let side = &mut col[usize::from(n >= 4)];
         side.push(Line::from(Span::styled(title.to_uppercase(), theme.brand())));
         for (key, what) in keys.iter() {
             side.push(Line::from(vec![Span::styled(format!("  {key:<16}"), theme.key()), Span::styled(*what, Style::new().fg(theme.text))]));

@@ -14,7 +14,8 @@ use zeroize::Zeroizing;
 use crate::clip::{Clip, Route};
 use crate::door::{self, Ask, Door};
 use crate::editor::{Editor, Slot};
-use crate::engine::{self, ImportPreview, Secret, Unlock};
+use crate::engine::{self, ImportPreview, Secret, Unlock, Wiped};
+use crate::settings::{self, Look, Setting};
 use crate::draw::Hit;
 use crate::input::Input;
 use crate::link::{LinkUi, Role, Stage};
@@ -62,6 +63,15 @@ pub enum PromptFor {
     ShelfPassword,
     LockMinutes,
     ClipSeconds,
+    RevealSeconds,
+    TrashDays,
+    HistoryLimit,
+    VaultName,
+    /// The vault's password now, before a new one.
+    CurrentPassword,
+    NewPassword,
+    /// The new password again, to be sure of it.
+    ConfirmPassword(Wiped),
     RenameTag(String),
 }
 
@@ -125,6 +135,10 @@ pub enum Command {
     Codes,
     Generator,
     Health,
+    Settings,
+    RevealSeconds,
+    RenameVault,
+    ChangePassword,
     Help,
     Lock,
     Quit,
@@ -136,7 +150,7 @@ pub enum Command {
 const SYNCED: [&str; 5] = ["tui_theme", "tui_icons", "reveal_seconds", "health_ignored", "health_skip_local"];
 
 /// Every palette command, with its words and key.
-pub const COMMANDS: [(Command, &str, &str); 40] = [
+pub const COMMANDS: [(Command, &str, &str); 44] = [
     (Command::New, "New item", "n"),
     (Command::Edit, "Edit item", "e"),
     (Command::CopyPassword, "Copy password", "c"),
@@ -170,10 +184,14 @@ pub const COMMANDS: [(Command, &str, &str); 40] = [
     (Command::IntoApp, "Keep this vault in the WM Pass app on this computer", ""),
     (Command::LockAfter, "Lock after…", ""),
     (Command::ClearClipboard, "Clear the clipboard after…", ""),
+    (Command::RevealSeconds, "Hide a shown secret after…", ""),
+    (Command::RenameVault, "Rename the vault", ""),
+    (Command::ChangePassword, "Change the vault password", ""),
     (Command::Items, "Go to Items", "1"),
     (Command::Codes, "Go to Codes", "2"),
     (Command::Generator, "Go to Generator", "3"),
     (Command::Health, "Go to Health", "4"),
+    (Command::Settings, "Go to Settings", "5"),
     (Command::Help, "Keys", "?"),
     (Command::Lock, "Lock now", "ctrl+l"),
     (Command::Quit, "Quit", "q"),
@@ -215,6 +233,13 @@ fn link_together(engine: &mut engine::Engine, ids: &[String]) -> Result<(), Stri
         }
     }
     Ok(())
+}
+
+/// What the editor does after a key.
+enum EditorDo {
+    Stay,
+    Close,
+    Save,
 }
 
 /// Something drawn over the screen.
@@ -764,7 +789,7 @@ impl App {
             KeyCode::Char('d') if ctrl => return self.command(Command::Duplicate),
             KeyCode::Char('?') => return self.command(Command::Help),
             KeyCode::Char('q') => return self.command(Command::Quit),
-            KeyCode::Char(n @ '1'..='4') => {
+            KeyCode::Char(n @ '1'..='5') => {
                 let tab = Tab::ALL[(n as usize) - ('1' as usize)];
                 return self.switch_tab(tab);
             }
@@ -779,6 +804,7 @@ impl App {
             Tab::Codes => self.codes_key(key),
             Tab::Generator => self.generator_key(key),
             Tab::Health => self.health_key(key),
+            Tab::Settings => self.settings_key(key),
         }
     }
 
@@ -789,6 +815,7 @@ impl App {
             Tab::Codes => ui.refresh_codes(),
             Tab::Generator if ui.generator.value.is_empty() => self.regenerate(),
             Tab::Health if ui.health.is_none() => self.refresh_health(),
+            Tab::Settings => ui.info = ui.engine.info().ok(),
             _ => {}
         }
     }
@@ -932,7 +959,9 @@ impl App {
             }
             Command::Edit => {
                 if let Some(detail) = ui.detail.clone() {
-                    self.overlay = Some(Overlay::Editor(Box::new(Editor::edit(&detail))));
+                    let mut editor = Editor::open(&detail, &mut ui.engine);
+                    editor.organize(&ui.folders, Some(&detail));
+                    self.overlay = Some(Overlay::Editor(Box::new(editor)));
                 } else {
                     self.say(Level::Info, "Pick an item first");
                 }
@@ -1212,6 +1241,33 @@ impl App {
             Command::Codes => self.switch_tab(Tab::Codes),
             Command::Generator => self.switch_tab(Tab::Generator),
             Command::Health => self.switch_tab(Tab::Health),
+            Command::Settings => self.switch_tab(Tab::Settings),
+            Command::RevealSeconds => {
+                let input = Input::with(&self.prefs.reveal_seconds.to_string());
+                self.overlay = Some(Overlay::Prompt {
+                    title: "Hide a shown secret after".into(),
+                    hint: "Seconds a password stays on the screen once shown".into(),
+                    input,
+                    secret: false,
+                    then: PromptFor::RevealSeconds,
+                });
+            }
+            Command::RenameVault => {
+                let input = Input::with(&ui.engine.name);
+                self.overlay = Some(Overlay::Prompt {
+                    title: "Rename the vault".into(),
+                    hint: "Its name here and on your other devices".into(),
+                    input,
+                    secret: false,
+                    then: PromptFor::VaultName,
+                });
+            }
+            Command::ChangePassword => {
+                if ui.engine.read_only {
+                    return self.say(Level::Info, "This vault is read-only");
+                }
+                self.prompt("Change the vault password", "First, the password it opens with now", true, PromptFor::CurrentPassword);
+            }
             Command::Help => self.overlay = Some(Overlay::Help),
             Command::Lock => self.lock("Locked"),
             Command::IntoApp => {
@@ -1366,6 +1422,10 @@ impl App {
             Line::Code => self.copy_code(),
             Line::Past { index, field, .. } => self.copy_secret(&format!("Earlier {field}"), &Secret::History(index)),
             Line::File(_) => self.save_attachment(),
+            Line::Link(id) => {
+                let Screen::Vault(ui) = &mut self.screen else { return };
+                ui.show_entry(&id);
+            }
             _ => {}
         }
     }
@@ -1552,7 +1612,6 @@ impl App {
 
     fn overlay_key(&mut self, key: KeyEvent) {
         let Some(mut overlay) = self.overlay.take() else { return };
-        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         let mut save = false;
         let keep = match &mut overlay {
             Overlay::Help => !matches!(key.code, KeyCode::Esc | KeyCode::Char('?' | 'q') | KeyCode::Enter),
@@ -1638,72 +1697,12 @@ impl App {
                 None => return,
             },
             Overlay::Editor(editor) => {
-                let row_multiline = editor.rows.get(editor.at).is_some_and(|r| r.value.multiline);
-                match key.code {
-                    KeyCode::Esc => false,
-                    KeyCode::Char('s') if ctrl => {
+                let Screen::Vault(ui) = &mut self.screen else { return };
+                match Self::editor_key(editor, ui, key) {
+                    EditorDo::Stay => true,
+                    EditorDo::Close => false,
+                    EditorDo::Save => {
                         save = true;
-                        true
-                    }
-                    KeyCode::Enter if !row_multiline && editor.at + 1 == editor.rows.len() => {
-                        save = true;
-                        true
-                    }
-                    KeyCode::Tab | KeyCode::Down => {
-                        editor.at = (editor.at + 1).min(editor.rows.len() - 1);
-                        true
-                    }
-                    KeyCode::Enter if !row_multiline => {
-                        editor.at = (editor.at + 1).min(editor.rows.len() - 1);
-                        true
-                    }
-                    KeyCode::BackTab | KeyCode::Up => {
-                        editor.at = editor.at.saturating_sub(1);
-                        true
-                    }
-                    KeyCode::Char('r') if ctrl => {
-                        editor.show = !editor.show;
-                        if editor.show
-                            && let Screen::Vault(ui) = &mut self.screen
-                            && let Err(e) = editor.load_secret(&mut ui.engine)
-                        {
-                            editor.error = Some(e);
-                        }
-                        true
-                    }
-                    KeyCode::Char('g') if ctrl => {
-                        let row = editor.row();
-                        if row.input == "password"
-                            && let Screen::Vault(ui) = &mut self.screen
-                        {
-                            let recipe = ui.generator.recipe();
-                            if let Ok((value, _)) = ui.engine.generate(&recipe) {
-                                row.value.set(&value);
-                                editor.show = true;
-                            }
-                        }
-                        true
-                    }
-                    _ => {
-                        let row = editor.row();
-                        match row.input.as_str() {
-                            "toggle" if matches!(key.code, KeyCode::Char(' ') | KeyCode::Left | KeyCode::Right) => {
-                                row.flag = !row.flag;
-                            }
-                            "choice" if matches!(key.code, KeyCode::Char(' ') | KeyCode::Left | KeyCode::Right) => {
-                                let at = row.choices.iter().position(|c| c == row.value.text()).unwrap_or(0);
-                                let len = row.choices.len().max(1);
-                                let next = if key.code == KeyCode::Left { (at + len - 1) % len } else { (at + 1) % len };
-                                if let Some(choice) = row.choices.get(next).cloned() {
-                                    row.value.set(&choice);
-                                }
-                            }
-                            "toggle" | "choice" => {}
-                            _ => {
-                                row.value.key(key);
-                            }
-                        }
-                        editor.error = None;
                         true
                     }
                 }
@@ -1718,6 +1717,118 @@ impl App {
         if keep && self.overlay.is_none() {
             self.overlay = Some(overlay);
         }
+    }
+
+    /// What a key does in the editor.
+    fn editor_key(editor: &mut Editor, ui: &mut VaultUi, key: KeyEvent) -> EditorDo {
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        if std::mem::take(&mut editor.confirm_discard) {
+            editor.error = None;
+            return match key.code {
+                KeyCode::Char('y' | 'Y' | 'd' | 'D') | KeyCode::Esc => EditorDo::Close,
+                KeyCode::Char('s') if ctrl => EditorDo::Save,
+                _ => EditorDo::Stay,
+            };
+        }
+        let at = editor.at.min(editor.rows.len() - 1);
+        let (multiline, named, action, slot) = {
+            let row = &editor.rows[at];
+            (row.value.multiline && !editor.on_name, row.is_named(), row.is_action(), row.slot.clone())
+        };
+        let last = at + 1 == editor.rows.len();
+        match key.code {
+            KeyCode::Esc if editor.dirty() => {
+                editor.confirm_discard = true;
+                return EditorDo::Stay;
+            }
+            KeyCode::Esc => return EditorDo::Close,
+            KeyCode::Char('s') if ctrl => return EditorDo::Save,
+            KeyCode::Enter | KeyCode::Char(' ') if action => editor.add(slot == Slot::AddQuestion),
+            KeyCode::Char('n') if ctrl => editor.add(false),
+            KeyCode::Char('x') if ctrl => match editor.remove() {
+                Ok(_) => editor.error = None,
+                Err(e) => editor.error = Some(e),
+            },
+            KeyCode::Char('o') if ctrl => {
+                if let Err(e) = editor.toggle_hidden(&mut ui.engine) {
+                    editor.error = Some(e);
+                }
+            }
+            KeyCode::Enter if !multiline && last => return EditorDo::Save,
+            KeyCode::Tab => editor.forward(),
+            KeyCode::Enter if !multiline => editor.forward(),
+            KeyCode::BackTab => editor.back(),
+            KeyCode::Down => editor.step(true),
+            KeyCode::Up => editor.step(false),
+            KeyCode::Char('r') if ctrl => {
+                editor.show = !editor.show;
+                if editor.show
+                    && let Err(e) = editor.load_secret(&mut ui.engine)
+                {
+                    editor.error = Some(e);
+                }
+            }
+            KeyCode::Char('g') if ctrl => {
+                let row = editor.row();
+                if row.input == "password" {
+                    let recipe = ui.generator.recipe();
+                    if let Ok((value, _)) = ui.engine.generate(&recipe) {
+                        row.value.set(&value);
+                        row.loaded = true;
+                        editor.show = true;
+                    }
+                }
+            }
+            // A named row's name and value sit side by side, so the arrows cross between them.
+            KeyCode::Left if named && !editor.on_name && editor.rows[at].value.cursor() == 0 => editor.on_name = true,
+            KeyCode::Right if named && editor.on_name && editor.rows[at].name.cursor() == editor.rows[at].name.text().chars().count() => {
+                editor.on_name = false;
+            }
+            _ if action => {}
+            _ if named && editor.on_name => {
+                editor.row().name.key(key);
+                editor.error = None;
+            }
+            _ => {
+                // The first key in a saved secret brings its value in, to be edited like any
+                // other text.
+                if editor.rows[at].unloaded()
+                    && slot != Slot::Otp
+                    && let Err(e) = editor.load_secret(&mut ui.engine)
+                {
+                    editor.error = Some(e);
+                    return EditorDo::Stay;
+                }
+                let row = editor.row();
+                match row.input.as_str() {
+                    "toggle" if matches!(key.code, KeyCode::Char(' ') | KeyCode::Left | KeyCode::Right) => {
+                        row.flag = !row.flag;
+                    }
+                    "choice" if matches!(key.code, KeyCode::Char(' ') | KeyCode::Left | KeyCode::Right) => {
+                        let at = row.choices.iter().position(|c| c == row.value.text()).unwrap_or(0);
+                        let len = row.choices.len().max(1);
+                        let next = if key.code == KeyCode::Left { (at + len - 1) % len } else { (at + 1) % len };
+                        if let Some(choice) = row.choices.get(next).cloned() {
+                            row.value.set(&choice);
+                        }
+                    }
+                    "toggle" | "choice" => {}
+                    _ => {
+                        // Right at the end takes the value offered.
+                        let at_end = row.value.cursor() == row.value.text().chars().count();
+                        match row.suggestion() {
+                            Some(offer) if key.code == KeyCode::Right && at_end => row.value.set(&offer),
+                            _ => {
+                                row.value.key(key);
+                            }
+                        }
+                    }
+                }
+                editor.error = None;
+            }
+        }
+        editor.rate(&mut ui.engine);
+        EditorDo::Stay
     }
 
     /// Saves the editor. Returns whether it is done with.
@@ -1793,15 +1904,25 @@ impl App {
                         input: serde_json::to_value(f.input).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default(),
                         secret: f.secret,
                         choices: f.choices.iter().map(|c| (*c).to_owned()).collect(),
+                        suggestions: f.suggestions.iter().map(|c| (*c).to_owned()).collect(),
                         has_value: false,
                         value: None,
                     })
                     .collect();
                 let mut editor = Editor::new(&choice, &fields);
-                if let Some(tag) = ui.sections.get(ui.section).filter(|s| s.query.starts_with("tag:"))
+                editor.organize(&ui.folders, None);
+                let section = ui.sections.get(ui.section);
+                if let Some(tag) = section.filter(|s| s.query.starts_with("tag:"))
                     && let Some(row) = editor.rows.iter_mut().find(|r| r.slot == Slot::Tags)
                 {
                     row.value.set(&tag.label);
+                }
+                // A new item made while a folder is listed goes into it.
+                if let Some(folder) = section.filter(|s| s.query.starts_with("folder:"))
+                    && let Some(row) = editor.rows.iter_mut().find(|r| r.slot == Slot::Folder)
+                    && row.choices.contains(&folder.label)
+                {
+                    row.value.set(&folder.label);
                 }
                 self.overlay = Some(Overlay::Editor(Box::new(editor)));
             }
@@ -2007,6 +2128,176 @@ impl App {
                 }
                 Err(_) => self.say(Level::Bad, "That is not a number of seconds"),
             },
+            PromptFor::RevealSeconds => match text.parse::<u32>() {
+                Ok(seconds) => self.set_reveal(seconds),
+                Err(_) => self.say(Level::Bad, "That is not a number of seconds"),
+            },
+            PromptFor::TrashDays | PromptFor::HistoryLimit => match text.parse::<u32>() {
+                Ok(n) => {
+                    let trash = matches!(then, PromptFor::TrashDays);
+                    self.set_vault_pref(trash, n);
+                }
+                Err(_) => self.say(Level::Bad, "That is not a whole number"),
+            },
+            PromptFor::VaultName => {
+                if text.is_empty() {
+                    return self.say(Level::Info, "A vault needs a name");
+                }
+                match ui.engine.rename(text) {
+                    Ok(()) => {
+                        ui.info = ui.engine.info().ok();
+                        self.say(Level::Good, format!("Renamed {text}"));
+                    }
+                    Err(e) => self.say(Level::Bad, e),
+                }
+            }
+            PromptFor::CurrentPassword => match ui.engine.verify(answer.as_bytes()) {
+                Ok(true) => self.prompt("Change the vault password", "The new password. A few random words work well", true, PromptFor::NewPassword),
+                Ok(false) => self.say(Level::Bad, "That is not the vault's password"),
+                Err(e) => self.say(Level::Bad, e),
+            },
+            PromptFor::NewPassword => {
+                if answer.chars().count() < 8 {
+                    self.say(Level::Bad, "Use at least 8 characters; a few random words work well");
+                    return self.prompt("Change the vault password", "The new password. A few random words work well", true, PromptFor::NewPassword);
+                }
+                self.prompt("Change the vault password", "The new password again", true, PromptFor::ConfirmPassword(Wiped::new(&answer)));
+            }
+            PromptFor::ConfirmPassword(first) => {
+                if first.as_str() != answer.as_str() {
+                    self.say(Level::Bad, "Those passwords do not match. Nothing was changed");
+                    return;
+                }
+                match ui.engine.change_password(answer.as_bytes()) {
+                    Ok(()) => self.say(Level::Good, "Password changed. Your other devices take the new one with the next sync"),
+                    Err(e) => self.say(Level::Bad, e),
+                }
+            }
+        }
+    }
+
+    fn set_reveal(&mut self, seconds: u32) {
+        self.prefs.reveal_seconds = seconds.clamp(5, 3600);
+        self.prefs.save();
+        self.push_setting("reveal_seconds");
+        let seconds = self.prefs.reveal_seconds;
+        self.say(Level::Good, format!("A shown secret hides again after {}", settings::seconds(seconds)));
+    }
+
+    /// Sets how long the trash keeps things, or how many past values a field keeps.
+    fn set_vault_pref(&mut self, trash: bool, n: u32) {
+        let Screen::Vault(ui) = &mut self.screen else { return };
+        let result = if trash { ui.engine.set_vault_prefs(Some(n), None) } else { ui.engine.set_vault_prefs(None, Some(n)) };
+        match result {
+            Ok(()) => {
+                ui.info = ui.engine.info().ok();
+                let text = match (trash, n) {
+                    (true, 0) => "The trash keeps things until you empty it".to_owned(),
+                    (true, n) => format!("The trash empties itself after {n} days"),
+                    (false, 0) => "Every past value is kept".to_owned(),
+                    (false, n) => format!("Each field keeps its last {n} values"),
+                };
+                self.say(Level::Good, text);
+            }
+            Err(e) => self.say(Level::Bad, e),
+        }
+    }
+
+    /// The Settings tab.
+    fn settings_key(&mut self, key: KeyEvent) {
+        let Screen::Vault(ui) = &mut self.screen else { return };
+        let list = settings::all();
+        let at = ui.settings_at.min(list.len() - 1);
+        match key.code {
+            KeyCode::Down | KeyCode::Char('j') => ui.settings_at = (at + 1).min(list.len() - 1),
+            KeyCode::Up | KeyCode::Char('k') => ui.settings_at = at.saturating_sub(1),
+            KeyCode::Home | KeyCode::Char('g') => ui.settings_at = 0,
+            KeyCode::End | KeyCode::Char('G') => ui.settings_at = list.len() - 1,
+            KeyCode::Left | KeyCode::Right | KeyCode::Char('h' | 'l') => {
+                let up = matches!(key.code, KeyCode::Right | KeyCode::Char('l'));
+                self.adjust(list[at], up);
+            }
+            KeyCode::Enter | KeyCode::Char(' ') => self.open_setting(list[at]),
+            _ => {}
+        }
+    }
+
+    /// Moves a setting one step with the arrows. A toggle flips either way.
+    fn adjust(&mut self, setting: Setting, up: bool) {
+        let Screen::Vault(ui) = &mut self.screen else { return };
+        match setting {
+            Setting::Theme => {
+                let at = crate::theme::ALL.iter().position(|t| t.name == self.theme.name).unwrap_or(0);
+                let len = crate::theme::ALL.len();
+                let next = crate::theme::ALL[if up { (at + 1) % len } else { (at + len - 1) % len }];
+                self.theme = Theme { g: self.theme.g, ..next };
+                self.prefs.theme = self.theme.name.to_owned();
+                self.prefs.save();
+                self.push_setting("tui_theme");
+            }
+            Setting::LockAfter => {
+                self.prefs.lock_minutes = settings::step(&settings::LOCK_MINUTES, self.prefs.lock_minutes, up);
+                self.prefs.save();
+            }
+            Setting::ClipSeconds => {
+                self.prefs.clip_seconds = settings::step(&settings::CLIP_SECONDS, self.prefs.clip_seconds, up);
+                self.prefs.save();
+            }
+            Setting::RevealSeconds => {
+                self.prefs.reveal_seconds = settings::step(&settings::REVEAL_SECONDS, self.prefs.reveal_seconds, up);
+                self.prefs.save();
+                self.push_setting("reveal_seconds");
+            }
+            Setting::TrashDays | Setting::HistoryLimit => {
+                let trash = setting == Setting::TrashDays;
+                let Some(info) = &ui.info else { return };
+                let n = if trash {
+                    settings::step(&settings::TRASH_DAYS, info.trash_days, up)
+                } else {
+                    settings::step(&settings::HISTORY, info.history_limit, up)
+                };
+                if n != if trash { info.trash_days } else { info.history_limit } {
+                    self.set_vault_pref(trash, n);
+                }
+            }
+            _ if setting.look() == Look::Toggle => self.open_setting(setting),
+            _ => {}
+        }
+    }
+
+    /// What Enter does on a setting: flips a toggle, asks for a value, or opens what it names.
+    fn open_setting(&mut self, setting: Setting) {
+        let Screen::Vault(ui) = &mut self.screen else { return };
+        let number = |title: &str, hint: &str, now: u32, then: PromptFor| Overlay::Prompt {
+            title: title.into(),
+            hint: hint.into(),
+            input: Input::with(&now.to_string()),
+            secret: false,
+            then,
+        };
+        match setting {
+            Setting::Theme => self.adjust(setting, true),
+            Setting::Icons => self.command(Command::Icons),
+            Setting::LockAfter => self.command(Command::LockAfter),
+            Setting::ClipSeconds => self.command(Command::ClearClipboard),
+            Setting::RevealSeconds => self.command(Command::RevealSeconds),
+            Setting::Shelf => self.command(Command::Shelf),
+            Setting::Password => self.command(Command::ChangePassword),
+            Setting::VaultName => self.command(Command::RenameVault),
+            Setting::TrashDays => {
+                let now = ui.info.as_ref().map_or(0, |i| i.trash_days);
+                self.overlay = Some(number("Empty the trash after", "Days. 0 keeps things until you empty it", now, PromptFor::TrashDays));
+            }
+            Setting::HistoryLimit => {
+                let now = ui.info.as_ref().map_or(0, |i| i.history_limit);
+                self.overlay = Some(number("Past values kept per field", "How many. 0 keeps them all", now, PromptFor::HistoryLimit));
+            }
+            Setting::SyncSettings => self.command(Command::SyncSettings),
+            Setting::SkipLocal => self.command(Command::SkipLocal),
+            Setting::Import => self.command(Command::Import),
+            Setting::Export => self.command(Command::Export),
+            Setting::AddDevice => self.command(Command::AddDevice),
+            Setting::IntoApp => self.command(Command::IntoApp),
         }
     }
 
@@ -2148,11 +2439,12 @@ impl App {
                 }
                 self.key(plain(KeyCode::Enter));
             }
-            Hit::EditorRow(n) => {
+            Hit::EditorRow(n) | Hit::EditorName(n) => {
                 if let Some(Overlay::Editor(editor)) = &mut self.overlay {
                     editor.at = n.min(editor.rows.len().saturating_sub(1));
+                    editor.on_name = matches!(hit, Hit::EditorName(_));
                     let row = editor.row();
-                    if double && matches!(row.input.as_str(), "toggle" | "choice") {
+                    if row.is_action() || (double && matches!(row.input.as_str(), "toggle" | "choice")) {
                         self.key(plain(KeyCode::Char(' ')));
                     }
                 }
@@ -2218,6 +2510,14 @@ impl App {
                     self.health_key(plain(KeyCode::Enter));
                 }
             }
+            Hit::Setting(n) => {
+                let Screen::Vault(ui) = &mut self.screen else { return };
+                let same = ui.settings_at == n;
+                ui.settings_at = n;
+                if same || double {
+                    self.settings_key(plain(KeyCode::Enter));
+                }
+            }
         }
     }
 
@@ -2235,6 +2535,7 @@ impl App {
             }
             Some(Overlay::Editor(editor)) => {
                 editor.at = step(editor.at, by, editor.rows.len());
+                editor.on_name = false;
                 return;
             }
             Some(Overlay::Link(link)) => {
@@ -2279,6 +2580,7 @@ impl App {
                     ui.health_at = step(ui.health_at, by, len);
                 }
             }
+            Tab::Settings => ui.settings_at = step(ui.settings_at, by, settings::all().len()),
         }
     }
 }

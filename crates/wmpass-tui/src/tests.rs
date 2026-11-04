@@ -79,7 +79,7 @@ fn a_secret_shows_only_when_asked_and_hides_on_lock() {
 fn every_tab_and_size_draws() {
     let dir = tempfile::tempdir().expect("dir");
     let mut app = App::over(vault(dir.path()));
-    for tab in ['1', '2', '3', '4'] {
+    for tab in ['1', '2', '3', '4', '5'] {
         press(&mut app, KeyCode::Char(tab));
         for (w, h) in [(160, 48), (100, 30), (70, 24), (44, 14), (30, 8)] {
             let shown = screen(&mut app, w, h);
@@ -280,10 +280,26 @@ fn snapshots() {
     std::fs::write(out.join("generator.html"), html(&mut app, 150, 40)).expect("write");
     press(&mut app, KeyCode::Char('4'));
     std::fs::write(out.join("health.html"), html(&mut app, 150, 40)).expect("write");
+    press(&mut app, KeyCode::Char('5'));
+    std::fs::write(out.join("settings.html"), html(&mut app, 150, 40)).expect("write");
+    std::fs::write(out.join("settings-narrow.html"), html(&mut app, 80, 30)).expect("write");
     press(&mut app, KeyCode::Char('1'));
     press(&mut app, KeyCode::Char('e'));
     std::fs::write(out.join("editor.html"), html(&mut app, 150, 40)).expect("write");
+    ctrl(&mut app, 'n');
+    typed(&mut app, "Recovery email");
+    press(&mut app, KeyCode::Tab);
+    typed(&mut app, "backup@example.com");
+    std::fs::write(out.join("editor-custom.html"), html(&mut app, 150, 40)).expect("write");
+    {
+        let Some(Overlay::Editor(editor)) = &mut app.overlay else { panic!("no editor") };
+        editor.at = editor.rows.iter().position(|r| r.key == "password").expect("password");
+    }
+    typed(&mut app, "x");
+    std::fs::write(out.join("editor-password.html"), html(&mut app, 150, 40)).expect("write");
     press(&mut app, KeyCode::Esc);
+    std::fs::write(out.join("editor-discard.html"), html(&mut app, 150, 40)).expect("write");
+    press(&mut app, KeyCode::Char('y'));
     press(&mut app, KeyCode::Char(':'));
     std::fs::write(out.join("palette.html"), html(&mut app, 150, 40)).expect("write");
     press(&mut app, KeyCode::Esc);
@@ -594,4 +610,270 @@ fn marked_items_are_acted_on_together() {
     press(&mut app, KeyCode::Char('y'));
     let Screen::Vault(ui) = &app.screen else { panic!("locked") };
     assert!(ui.rows.is_empty() && ui.marked.is_empty(), "both in the trash");
+}
+
+/// Moves the editor's cursor to the first row that `wanted` picks.
+fn editor_to(app: &mut App, wanted: impl Fn(&crate::editor::Row) -> bool) {
+    let Some(Overlay::Editor(editor)) = &mut app.overlay else { panic!("no editor") };
+    editor.at = editor.rows.iter().position(wanted).expect("row");
+    editor.on_name = false;
+}
+
+fn current_detail(app: &mut App) -> engine::Detail {
+    let Screen::Vault(ui) = &mut app.screen else { panic!("locked") };
+    let id = ui.current_id().expect("picked");
+    ui.engine.detail(&id).expect("detail")
+}
+
+#[test]
+fn custom_fields_apps_and_questions_are_edited_in_place() {
+    use crate::editor::Slot;
+    let dir = tempfile::tempdir().expect("dir");
+    let mut engine = vault(dir.path());
+    let site = json!({"AndroidApp": {"package": "com.facebook.orca", "cert_sha256": "ab:cd"}});
+    let id = engine.create("login", "Chat", &serde_json::Map::new(), &[json!({"Domain": "messenger.com"}), site]).expect("login");
+    engine.set_custom(&id, None, "Account number", "text", b"12345").expect("custom");
+    engine.set_custom(&id, None, "Recovery PIN", "hidden", b"9999").expect("hidden");
+    engine.set_custom(&id, None, "Old", "url", b"https://old.example").expect("third");
+    engine.set_question(&id, None, "First pet?", b"Rex").expect("question");
+    let mut app = App::over(engine);
+    pick(&mut app, "Chat");
+    press(&mut app, KeyCode::Char('e'));
+
+    let shown = screen(&mut app, 140, 50);
+    assert!(shown.contains("Account number") && shown.contains("12345"), "a custom field shows its value\n{shown}");
+    assert!(shown.contains("Messenger (com.facebook.orca)"), "an app shows by name\n{shown}");
+    assert!(shown.contains("More fields") && shown.contains("Security questions") && shown.contains("First pet?"), "{shown}");
+    assert!(!shown.contains("9999") && !shown.contains("Rex"), "hidden values stay hidden until edited");
+
+    // A plain custom field takes typing like any other.
+    editor_to(&mut app, |r| r.slot == Slot::Custom && r.name.text() == "Account number");
+    typed(&mut app, "-6");
+    // A hidden one is loaded by the first key, then edited.
+    editor_to(&mut app, |r| r.slot == Slot::Custom && r.name.text() == "Recovery PIN");
+    press(&mut app, KeyCode::Backspace);
+    typed(&mut app, "8");
+    // Renaming the third keeps its kind; it is then taken away.
+    editor_to(&mut app, |r| r.slot == Slot::Custom && r.name.text() == "Old");
+    ctrl(&mut app, 'x');
+    // A new field: the cursor starts in its name, Tab goes to its value.
+    ctrl(&mut app, 'n');
+    typed(&mut app, "Member since");
+    press(&mut app, KeyCode::Tab);
+    typed(&mut app, "2019");
+    // The question's answer is changed; the apps lose one and gain one.
+    editor_to(&mut app, |r| r.slot == Slot::Question);
+    ctrl(&mut app, 'u');
+    typed(&mut app, "Max");
+    editor_to(&mut app, |r| r.slot == Slot::Apps);
+    ctrl(&mut app, 'e');
+    typed(&mut app, ", org.example.chat");
+    ctrl(&mut app, 's');
+    assert!(app.overlay.is_none(), "saved");
+
+    let detail = current_detail(&mut app);
+    let customs: Vec<(String, String, Option<String>)> =
+        detail.custom_fields.iter().map(|c| (c.name.clone(), c.kind.clone(), c.value.clone())).collect();
+    assert_eq!(
+        customs,
+        vec![
+            ("Account number".into(), "text".into(), Some("12345-6".into())),
+            ("Recovery PIN".into(), "hidden".into(), None),
+            ("Member since".into(), "text".into(), Some("2019".into())),
+        ]
+    );
+    let Screen::Vault(ui) = &mut app.screen else { panic!("locked") };
+    assert_eq!(ui.engine.reveal(&engine::Secret::Custom(1), &id).expect("pin").as_str(), "9998");
+    assert_eq!(ui.engine.reveal(&engine::Secret::Question(0), &id).expect("answer").as_str(), "Max");
+    let apps: Vec<&serde_json::Value> = detail.sites.iter().filter(|s| s.get("AndroidApp").is_some()).collect();
+    assert_eq!(apps.len(), 2);
+    assert_eq!(apps[0]["AndroidApp"]["cert_sha256"], "ab:cd", "a kept app keeps its certificate");
+    assert_eq!(apps[1]["AndroidApp"]["package"], "org.example.chat");
+    assert!(detail.sites.iter().any(|s| s["Domain"] == "messenger.com"));
+}
+
+#[test]
+fn a_saved_password_is_edited_not_replaced_and_a_note_opens_with_its_text() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut engine = vault(dir.path());
+    let note = engine.list("", "title").expect("list").into_iter().find(|r| r.kind == "note").expect("note").id;
+    engine.set_secret(&note, "body", b"router: admin / sticker on the back").expect("body");
+    let mut app = App::over(engine);
+    press(&mut app, KeyCode::Char('e'));
+    editor_to(&mut app, |r| r.key == "password");
+    let shown = screen(&mut app, 140, 40);
+    assert!(shown.contains("saved") && !shown.contains(PASSWORD), "{shown}");
+    typed(&mut app, "!");
+    ctrl(&mut app, 's');
+    let Screen::Vault(ui) = &mut app.screen else { panic!("locked") };
+    let id = ui.current_id().expect("picked");
+    let password = ui.engine.reveal(&engine::Secret::Field("password".into()), &id).expect("reveal");
+    assert_eq!(password.as_str(), format!("{PASSWORD}!"), "typing adds to what was there");
+
+    pick(&mut app, "Wi-Fi at home");
+    press(&mut app, KeyCode::Char('e'));
+    let Some(Overlay::Editor(editor)) = &app.overlay else { panic!("no editor") };
+    let body = editor.rows.iter().find(|r| r.key == "body").expect("body");
+    assert_eq!(body.value.text(), "router: admin / sticker on the back");
+    assert!(!editor.dirty(), "loading is not a change");
+}
+
+#[test]
+fn leaving_the_editor_with_changes_asks_first() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    press(&mut app, KeyCode::Char('e'));
+    press(&mut app, KeyCode::Esc);
+    assert!(app.overlay.is_none(), "nothing changed, nothing to ask");
+    press(&mut app, KeyCode::Char('e'));
+    typed(&mut app, "!");
+    press(&mut app, KeyCode::Esc);
+    assert!(screen(&mut app, 140, 40).contains("Discard your changes?"));
+    press(&mut app, KeyCode::Char('n'));
+    assert!(matches!(app.overlay, Some(Overlay::Editor(_))), "any other key goes back to editing");
+    press(&mut app, KeyCode::Esc);
+    press(&mut app, KeyCode::Char('y'));
+    assert!(app.overlay.is_none());
+    let Screen::Vault(ui) = &app.screen else { panic!("locked") };
+    assert_eq!(ui.current().expect("row").title, "GitHub");
+}
+
+#[test]
+fn settings_has_a_tab_of_its_own() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    press(&mut app, KeyCode::Char('5'));
+    let shown = screen(&mut app, 140, 40);
+    for words in ["Settings", "Theme", "Lock after", "Clear the clipboard after", "Vault name", "Empty the trash after", "Import from another app", "THIS VAULT"] {
+        assert!(shown.contains(words), "{words}\n{shown}");
+    }
+    assert!(screen(&mut app, 80, 30).contains("Lock after"), "narrow too");
+
+    let to = |app: &mut App, label: &str| {
+        let Screen::Vault(ui) = &mut app.screen else { panic!("locked") };
+        ui.settings_at = crate::settings::all().iter().position(|s| s.label() == label).expect("setting");
+    };
+    to(&mut app, "Lock after");
+    assert_eq!(app.prefs.lock_minutes, 5);
+    press(&mut app, KeyCode::Right);
+    assert_eq!(app.prefs.lock_minutes, 10);
+    press(&mut app, KeyCode::Left);
+    press(&mut app, KeyCode::Left);
+    assert_eq!(app.prefs.lock_minutes, 2);
+
+    to(&mut app, "Empty the trash after");
+    press(&mut app, KeyCode::Enter);
+    ctrl(&mut app, 'u');
+    typed(&mut app, "45");
+    press(&mut app, KeyCode::Enter);
+    let Screen::Vault(ui) = &mut app.screen else { panic!("locked") };
+    assert_eq!(ui.engine.info().expect("info").trash_days, 45);
+
+    to(&mut app, "Vault name");
+    press(&mut app, KeyCode::Enter);
+    ctrl(&mut app, 'u');
+    typed(&mut app, "Family");
+    press(&mut app, KeyCode::Enter);
+    assert!(screen(&mut app, 140, 40).contains("Family"));
+
+    to(&mut app, "Settings follow the vault");
+    let before = app.prefs.sync_settings;
+    press(&mut app, KeyCode::Enter);
+    assert_ne!(app.prefs.sync_settings, before);
+}
+
+#[test]
+fn the_vault_password_is_changed_from_settings() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    press(&mut app, KeyCode::Char('5'));
+    {
+        let Screen::Vault(ui) = &mut app.screen else { panic!("locked") };
+        ui.settings_at = crate::settings::all().iter().position(|s| *s == crate::settings::Setting::Password).expect("setting");
+    }
+    press(&mut app, KeyCode::Enter);
+    typed(&mut app, "not-it");
+    press(&mut app, KeyCode::Enter);
+    assert!(app.overlay.is_none(), "a wrong password ends it");
+    press(&mut app, KeyCode::Enter);
+    typed(&mut app, "master-pw");
+    press(&mut app, KeyCode::Enter);
+    typed(&mut app, "a brand new pass");
+    press(&mut app, KeyCode::Enter);
+    typed(&mut app, "a brand new pass");
+    press(&mut app, KeyCode::Enter);
+    let Screen::Vault(ui) = &mut app.screen else { panic!("locked") };
+    assert!(ui.engine.verify(b"a brand new pass").expect("verify"));
+    assert!(!ui.engine.verify(b"master-pw").expect("verify"));
+    let path = ui.engine.path().to_owned();
+    ctrl(&mut app, 'l');
+    assert!(matches!(engine::unlock(&path, b"a brand new pass", None, 3), Ok(engine::Unlock::Opened(..))));
+}
+
+#[test]
+fn the_editor_files_colors_and_favors_an_item() {
+    use crate::editor::Slot;
+    let dir = tempfile::tempdir().expect("dir");
+    let mut engine = vault(dir.path());
+    let work = engine.add_folder("Work").expect("folder");
+    let mut app = App::over(engine);
+    pick(&mut app, "Wi-Fi at home");
+    press(&mut app, KeyCode::Char('e'));
+    editor_to(&mut app, |r| r.slot == Slot::Folder);
+    press(&mut app, KeyCode::Right);
+    editor_to(&mut app, |r| r.slot == Slot::Color);
+    press(&mut app, KeyCode::Right);
+    editor_to(&mut app, |r| r.slot == Slot::Favourite);
+    press(&mut app, KeyCode::Char(' '));
+    ctrl(&mut app, 's');
+    let detail = current_detail(&mut app);
+    assert_eq!(detail.row.folder.as_deref(), Some(work.as_str()));
+    assert_eq!(detail.row.color.as_deref(), Some(crate::app::HUES[0].0));
+    assert!(detail.row.favourite);
+
+    // Opened again, it shows what it was saved with, and nothing counts as changed.
+    press(&mut app, KeyCode::Char('e'));
+    let Some(Overlay::Editor(editor)) = &app.overlay else { panic!("no editor") };
+    assert_eq!(editor.rows.iter().find(|r| r.slot == Slot::Folder).expect("folder").value.text(), "Work");
+    assert!(!editor.dirty());
+}
+
+#[test]
+fn a_database_engine_is_offered_as_it_is_typed() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    press(&mut app, KeyCode::Char('n'));
+    let Some(Overlay::Pick { items, at, .. }) = &mut app.overlay else { panic!("no pick") };
+    *at = items.iter().position(|i| i.0 == "database").expect("database");
+    press(&mut app, KeyCode::Enter);
+    typed(&mut app, "Main db");
+    press(&mut app, KeyCode::Tab);
+    typed(&mut app, "Postg");
+    assert!(screen(&mut app, 140, 40).contains("reSQL"), "the rest is offered");
+    press(&mut app, KeyCode::Right);
+    let Some(Overlay::Editor(editor)) = &app.overlay else { panic!("no editor") };
+    assert_eq!(editor.rows[1].value.text(), "PostgreSQL");
+}
+
+#[test]
+fn linked_items_show_and_open() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    let note = {
+        let Screen::Vault(ui) = &mut app.screen else { panic!("locked") };
+        let github = ui.current_id().expect("picked");
+        let note = ui.rows.iter().find(|r| r.kind == "note").expect("note").id.clone();
+        ui.engine.set_common(&github, json!({"links": [note]})).expect("link");
+        ui.reload();
+        ui.load_detail();
+        note
+    };
+    let shown = screen(&mut app, 140, 40);
+    assert!(shown.contains("LINKED"), "{shown}");
+    let Screen::Vault(ui) = &mut app.screen else { panic!("locked") };
+    ui.pane = crate::vault::Pane::Detail;
+    ui.line = ui.lines.iter().position(|l| matches!(l, crate::vault::Line::Link(_))).expect("link line");
+    press(&mut app, KeyCode::Enter);
+    let Screen::Vault(ui) = &app.screen else { panic!("locked") };
+    assert_eq!(ui.current_id().as_deref(), Some(note.as_str()));
 }
