@@ -169,6 +169,24 @@ fn the_palette_finds_and_runs() {
 }
 
 #[test]
+fn the_palette_sets_how_long_the_clipboard_keeps_a_secret() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    assert_eq!(app.prefs.clip_seconds, 60);
+    press(&mut app, KeyCode::Char(':'));
+    typed(&mut app, "clear the clipboard");
+    press(&mut app, KeyCode::Enter);
+    assert!(screen(&mut app, 120, 30).contains("Clear the clipboard after"));
+    for _ in 0..2 {
+        press(&mut app, KeyCode::Backspace);
+    }
+    typed(&mut app, "45");
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(app.prefs.clip_seconds, 45);
+    assert!(screen(&mut app, 120, 30).contains("cleared after 45 seconds"));
+}
+
+#[test]
 fn nerd_font_icons_from_the_palette() {
     let dir = tempfile::tempdir().expect("dir");
     let mut app = App::over(vault(dir.path()));

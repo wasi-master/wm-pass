@@ -37,7 +37,7 @@ Type your master password here and choose **Open the shelf** to see what is on i
 
 The shelf closes when you choose **Close the shelf**, and whenever the vault locks. Every unlock starts with it closed. Autofill never offers shelf items, even while the shelf is open.
 
-Settings, Sidebar can add a Hidden shelf tab, which opens the same shelf from the sidebar.
+Settings, Appearance, Sidebar can add a Hidden shelf tab, which opens the same shelf from the sidebar.
 
 #### When to use it
 

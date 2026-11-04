@@ -3,56 +3,14 @@
   import Dialog from '../parts/Dialog.svelte';
   import Icon from '../parts/Icon.svelte';
   import PasswordField from '../parts/PasswordField.svelte';
-  import Tile from '../parts/Tile.svelte';
+  import ScanDialog from '../parts/ScanDialog.svelte';
+  import { qrInPicture } from '../parts/qr';
   import { bytesOf, pass } from '../engine/pass.svelte';
   import { host } from '../engine/host';
-  import type { ImportPreview } from '../engine/types';
+  import type { ImportPreview, LinkedView } from '../engine/types';
+  import GuideSheet from './GuideSheet.svelte';
 
   const FORMATS = '1Password, Apple Passwords, Avast, Avira, Bitwarden, Buttercup, Chrome and other Chromium browsers, Dashlane, Enpass, Firefox, Kaspersky, KeePass and KeePassXC, Keeper, LastPass, mSecure, NordPass, Password Safe, Proton Pass, Psono, RoboForm, SafeInCloud, Sticky Password and Zoho Vault. Authenticators: Aegis, 2FAS, andOTP, Authenticator Pro, Bitwarden Authenticator, Ente Auth, FreeOTP+, LastPass Authenticator, Proton Authenticator, Raivo, and Google’s export QR code.';
-
-  // Each app's export steps, on the website, with the mark the vault would give it.
-  const GUIDES = 'https://wmpass.pages.dev/guides/import/';
-  const GUIDE_LIST: { page: string; name: string; brand?: string }[] = [
-    { page: '1password', name: '1Password', brand: '1password' },
-    { page: 'apple-passwords', name: 'Apple Passwords', brand: 'apple' },
-    { page: 'avast-passwords', name: 'Avast Passwords', brand: 'avast' },
-    { page: 'avira-password-manager', name: 'Avira Password Manager', brand: 'avira' },
-    { page: 'bitwarden', name: 'Bitwarden', brand: 'bitwarden' },
-    { page: 'brave', name: 'Brave', brand: 'brave' },
-    { page: 'buttercup', name: 'Buttercup' },
-    { page: 'dashlane', name: 'Dashlane', brand: 'dashlane' },
-    { page: 'enpass', name: 'Enpass', brand: 'enpass' },
-    { page: 'firefox', name: 'Firefox', brand: 'firefox' },
-    { page: 'chrome', name: 'Google Password Manager', brand: 'googlechrome' },
-    { page: 'kaspersky-password-manager', name: 'Kaspersky Password Manager', brand: 'kaspersky' },
-    { page: 'keepass', name: 'KeePass and KeePassXC', brand: 'keepassxc' },
-    { page: 'keepass2android', name: 'Keepass2Android' },
-    { page: 'keepassdx', name: 'KeePassDX' },
-    { page: 'keeper', name: 'Keeper', brand: 'keeper' },
-    { page: 'lastpass', name: 'LastPass', brand: 'lastpass' },
-    { page: 'microsoft-edge', name: 'Microsoft Edge' },
-    { page: 'msecure', name: 'mSecure' },
-    { page: 'nordpass', name: 'NordPass' },
-    { page: 'opera', name: 'Opera', brand: 'opera' },
-    { page: 'password-safe', name: 'Password Safe' },
-    { page: 'proton-pass', name: 'Proton Pass', brand: 'proton' },
-    { page: 'psono', name: 'Psono' },
-    { page: 'roboform', name: 'RoboForm' },
-    { page: 'safeincloud', name: 'SafeInCloud' },
-    { page: 'sticky-password', name: 'Sticky Password' },
-    { page: 'zoho-vault', name: 'Zoho Vault', brand: 'zoho' },
-    { page: 'google-authenticator', name: 'Google Authenticator', brand: 'googleauthenticator' },
-    { page: '2fas', name: '2FAS', brand: '2fas' },
-    { page: 'aegis', name: 'Aegis', brand: 'aegisauthenticator' },
-    { page: 'andotp', name: 'andOTP' },
-    { page: 'authenticator-pro', name: 'Authenticator Pro' },
-    { page: 'bitwarden-authenticator', name: 'Bitwarden Authenticator', brand: 'bitwarden' },
-    { page: 'ente-auth', name: 'Ente Auth', brand: 'ente' },
-    { page: 'freeotp-plus', name: 'FreeOTP+' },
-    { page: 'lastpass-authenticator', name: 'LastPass Authenticator', brand: 'lastpass' },
-    { page: 'proton-authenticator', name: 'Proton Authenticator', brand: 'proton' },
-    { page: 'raivo', name: 'Raivo' },
-  ];
 
   let guides = $state(false);
   let preview = $state<ImportPreview | null>(null);
@@ -61,6 +19,70 @@
   let password = $state('');
   let error = $state<string | null>(null);
   let result = $state<string | null>(null);
+
+  // Where the items go: this vault, or a nested one stepped into for the import and left after.
+  // A shared vault lives at a place of its own, set up from its page, so it is not offered.
+  const insideAlready = pass.child !== null || pass.account !== null;
+  const home = pass.state.kind === 'unlocked' ? pass.state.name : '';
+  let nested = $state<LinkedView[]>([]);
+  let enteredFor = $state<string | null>(null);
+  if (!insideAlready) {
+    void pass
+      .view<LinkedView[]>('linked.list')
+      .then((list) => (nested = list.filter((l) => !l.shared)))
+      .catch(() => (nested = []));
+  }
+
+  // Leaving the page part-way puts the vault back as it was.
+  $effect(() => () => {
+    if (enteredFor !== null) void pass.leaveChild();
+  });
+
+  async function importInto(file: string | null) {
+    if (file === enteredFor) return;
+    if (preview) await pass.engine('import.cancel', {}, { handle: pass.handle });
+    preview = null;
+    error = null;
+    try {
+      if (enteredFor !== null) {
+        await pass.leaveChild();
+        enteredFor = null;
+      }
+      if (file !== null) {
+        const sealed = await pass.readLinked(file);
+        const reply = await pass.engine('linked.open', { file }, { handle: pass.handle, blobs: [sealed] });
+        await pass.enterChild(file, reply, (data) => pass.writeLinked(file, data));
+        enteredFor = file;
+      }
+      if (bytes) await read();
+    } catch (failure: any) {
+      error = failure?.message ?? 'That vault could not be opened.';
+    }
+  }
+
+  // Google Authenticator's export links, scanned or read from pictures. A long list comes as
+  // several codes, and one import takes them all.
+  let codes = $state<string[]>([]);
+  let scanning = $state(false);
+
+  async function takeCodes(found: string[]) {
+    const links = found.filter((text) => text.startsWith('otpauth'));
+    if (links.length === 0) {
+      error = found.length === 0 ? 'No QR code was found in that picture.' : 'That code is not an export from an authenticator app.';
+      return;
+    }
+    codes = [...new Set([...codes, ...links])];
+    bytes?.fill(0);
+    bytes = new TextEncoder().encode(codes.join('\n'));
+    preview = null;
+    result = null;
+    await read();
+  }
+
+  function scanCode() {
+    error = null;
+    scanning = true;
+  }
 
   async function read() {
     if (!bytes) return;
@@ -77,9 +99,26 @@
     }
   }
 
+  const PICTURE = /\.(png|jpe?g|gif|webp|bmp|heic|heif|avif)$/i;
+
   async function pick() {
     const file = await host().pickFile('Choose a file to import');
     if (!file) return;
+    error = null;
+    // A screenshot or photo of an export code, rather than an export file.
+    if (PICTURE.test(file.name)) {
+      let found: string[] = [];
+      try {
+        found = await qrInPicture(new Blob([file.bytes as BlobPart]));
+      } catch {
+        error = 'That picture could not be read.';
+      }
+      file.bytes.fill(0);
+      if (!error) await takeCodes(found);
+      return;
+    }
+    codes = [];
+    bytes?.fill(0);
     bytes = file.bytes;
     preview = null;
     result = null;
@@ -89,20 +128,36 @@
 
   async function apply() {
     const reply = await pass.change<{ added: number; duplicates: number }>('import.apply');
-    result = `Added ${reply.json.added}. Skipped ${reply.json.duplicates} already here.`;
+    const into = nested.find((n) => n.file === enteredFor)?.name;
+    result = `Added ${reply.json.added}${into ? ` to ${into}` : ''}. Skipped ${reply.json.duplicates} already there.`;
     bytes?.fill(0);
     bytes = null;
+    codes = [];
     preview = null;
   }
 
   async function another() {
     await pass.engine('import.cancel', {}, { handle: pass.handle });
     preview = null;
+    codes = [];
     await pick();
   }
 </script>
 
 <div class="stack" style="max-width:520px">
+  {#if (result === null && !insideAlready && nested.length > 0) || enteredFor !== null}
+    <div class="stack" style="gap:6px">
+      <span class="dim small" style="font-weight:600">Import into</span>
+      <div class="gap" style="flex-wrap:wrap;gap:6px">
+        <button type="button" class="chip" aria-pressed={enteredFor === null} onclick={() => void importInto(null)}><Icon name="lock" size={14} />{home || 'This vault'}</button>
+        {#each nested as link (link.file)}
+          <button type="button" class="chip" aria-pressed={enteredFor === link.file} onclick={() => void importInto(link.file)}><Icon name="layers" size={14} />{link.name}</button>
+        {/each}
+      </div>
+    </div>
+  {:else if pass.child && result === null}
+    <p class="dim">Importing into {pass.child}, the nested vault you are inside.</p>
+  {/if}
   {#if result}
     <div class="gap"><span class="ok-text" style="display:flex"><Icon name="check_circle" size={22} /></span><span>{result}</span></div>
     <div><Btn label="Import another file" onclick={pick} /></div>
@@ -110,8 +165,13 @@
     <p style="font-size:var(--fs-l);font-weight:600">{preview.count} items from {preview.format}</p>
     <p class="dim">{preview.titles.slice(0, 6).join(', ')}{preview.count > 6 ? ' and more' : ''}</p>
     {#if preview.skipped.length > 0}<p class="warn-text">{preview.skipped.length} could not be read: {preview.skipped.slice(0, 3).join(', ')}</p>{/if}
-    <div class="gap">
+    {#if codes.length > 0}
+      <p class="dim">{codes.length} {codes.length === 1 ? 'code' : 'codes'} read. Google splits a long list across several codes, so scan each one before importing.</p>
+      {#if error}<p class="danger-text">{error}</p>{/if}
+    {/if}
+    <div class="gap" style="flex-wrap:wrap">
       <Btn label="Import {preview.count} items" icon="download" variant="primary" onclick={apply} />
+      {#if codes.length > 0}<Btn label="Scan the next code" icon="qr_code_scanner" onclick={scanCode} />{/if}
       <Btn label="Choose another file" onclick={another} />
     </div>
   {:else if needsPassword}
@@ -123,24 +183,27 @@
     <p style="font-size:var(--fs-l);font-weight:600">Bring everything over</p>
     <p class="dim">{FORMATS}</p>
     {#if error}<p class="danger-text">{error}</p>{/if}
-    <div><Btn label="Choose a file" icon="file_open" variant="primary" onclick={pick} /></div>
+    <div class="gap" style="flex-wrap:wrap">
+      <Btn label="Choose a file" icon="file_open" variant="primary" onclick={pick} />
+      <Btn label="Scan Google Authenticator’s code" icon="qr_code_scanner" onclick={scanCode} />
+    </div>
     <p class="dimmer small">Delete the exported file afterwards. It holds your passwords in plain text.</p>
-    <div><Btn label="How to export from your old app" icon="open_in_new" onclick={() => (guides = true)} /></div>
+    <div><Btn label="How to export from your old app" icon="menu_book" onclick={() => (guides = true)} /></div>
   {/if}
 </div>
 
 {#if guides}
-  <Dialog title="Export from your old app" onclose={() => (guides = false)}>
-    <div class="set-group" style="margin-bottom:0;max-height:60vh;overflow-y:auto">
-      <div class="body">
-        {#each GUIDE_LIST as guide (guide.page)}
-          <button type="button" class="set-row" onclick={() => void host().openUrl(`${GUIDES}${guide.page}/`)}>
-            <Tile title={guide.name} icon={guide.brand ? `brand:${guide.brand}` : null} size={28} />
-            <span class="text"><span class="ell" style="display:block;font-weight:500">{guide.name}</span></span>
-            <span class="dimmer" style="display:flex"><Icon name="open_in_new" size={16} /></span>
-          </button>
-        {/each}
-      </div>
-    </div>
-  </Dialog>
+  <GuideSheet onclose={() => (guides = false)} />
+{/if}
+
+{#if scanning}
+  <ScanDialog
+    title="Scan Google Authenticator’s code"
+    hint="In Google Authenticator, choose Transfer codes, then Export codes. A screenshot of each code works too."
+    onfound={(texts) => {
+      scanning = false;
+      void takeCodes(texts);
+    }}
+    onclose={() => (scanning = false)}
+  />
 {/if}

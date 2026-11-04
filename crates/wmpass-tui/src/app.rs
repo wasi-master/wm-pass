@@ -60,6 +60,7 @@ pub enum PromptFor {
     AttachSave { id: String, blob: String, name: String },
     ShelfPassword,
     LockMinutes,
+    ClipSeconds,
 }
 
 /// What a confirmation does on yes.
@@ -106,6 +107,7 @@ pub enum Command {
     AddDevice,
     IntoApp,
     LockAfter,
+    ClearClipboard,
     Items,
     Codes,
     Generator,
@@ -120,7 +122,7 @@ pub enum Command {
 const SYNCED: [&str; 3] = ["tui_theme", "tui_icons", "reveal_seconds"];
 
 /// Every palette command, with its words and key.
-pub const COMMANDS: [(Command, &str, &str); 30] = [
+pub const COMMANDS: [(Command, &str, &str); 31] = [
     (Command::New, "New item", "n"),
     (Command::Edit, "Edit item", "e"),
     (Command::CopyPassword, "Copy password", "c"),
@@ -144,6 +146,7 @@ pub const COMMANDS: [(Command, &str, &str); 30] = [
     (Command::AddDevice, "Add a new device: send this vault to it", ""),
     (Command::IntoApp, "Keep this vault in the WM Pass app on this computer", ""),
     (Command::LockAfter, "Lock after…", ""),
+    (Command::ClearClipboard, "Clear the clipboard after…", ""),
     (Command::Items, "Go to Items", "1"),
     (Command::Codes, "Go to Codes", "2"),
     (Command::Generator, "Go to Generator", "3"),
@@ -965,6 +968,17 @@ impl App {
                     then: PromptFor::LockMinutes,
                 });
             }
+            Command::ClearClipboard => {
+                let mut input = Input::with(&self.prefs.clip_seconds.to_string());
+                input.multiline = false;
+                self.overlay = Some(Overlay::Prompt {
+                    title: "Clear the clipboard after".into(),
+                    hint: "Seconds before a copied secret is cleared. 0 leaves it".into(),
+                    input,
+                    secret: false,
+                    then: PromptFor::ClipSeconds,
+                });
+            }
             Command::Items => self.switch_tab(Tab::Items),
             Command::Codes => self.switch_tab(Tab::Codes),
             Command::Generator => self.switch_tab(Tab::Generator),
@@ -1681,6 +1695,15 @@ impl App {
                     self.say(Level::Good, text);
                 }
                 Err(_) => self.say(Level::Bad, "That is not a number of minutes"),
+            },
+            PromptFor::ClipSeconds => match text.parse::<u32>() {
+                Ok(seconds) => {
+                    self.prefs.clip_seconds = seconds.min(3600);
+                    self.prefs.save();
+                    let text = if seconds == 0 { "Copied secrets stay on the clipboard".to_owned() } else { format!("Copied secrets are cleared after {} seconds", seconds.min(3600)) };
+                    self.say(Level::Good, text);
+                }
+                Err(_) => self.say(Level::Bad, "That is not a number of seconds"),
             },
         }
     }

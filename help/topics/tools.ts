@@ -1,8 +1,32 @@
-// Settings, Tools: email aliases, the disposable inbox, the username checker and comparing two passwords.
+// Settings, Tools: the hub, email aliases, the disposable inbox, the username checker and comparing two passwords.
 
 import type { Topic } from '../schema.ts';
 
 export const tools = [
+  // ---- the hub ----
+
+  {
+    id: 'page.tools',
+    kind: 'page',
+    title: 'Tools',
+    page: 'tools',
+    what: 'Small tools that sit beside the vault: email aliases, a throwaway inbox, a username checker and a way to compare two passwords.',
+    how: '**Addresses and names** holds [[page.aliases|Email aliases]], [[page.inbox|Disposable inbox]] and [[page.usernames|Username checker]]. **Passwords** holds [[page.compare|Compare two passwords]].',
+    caveats: 'Email aliases, the disposable inbox and the username checker reach the internet. Until you allow network features, each of those pages says what it would send, and to whom, and sends nothing. Comparing two passwords stays on this computer.',
+    related: ['page.aliases', 'page.inbox', 'page.usernames', 'page.compare', 'page.breaches', 'setting.network_allowed'],
+    words: 'aliases inbox username compare utilities',
+    on: {
+      android: {
+        how: [
+          '**Addresses and names** holds [[page.aliases|Email aliases]], [[page.inbox|Disposable inbox]] and [[page.usernames|Username checker]]. **Passwords** holds [[page.compare|Compare two passwords]].',
+          'The same tools, with Breaches and a way into Settings, can also be a page of their own in the navigation bar: tap **Add Tools** under Settings, Appearance, Navigation.',
+        ],
+        caveats: 'Email aliases, the disposable inbox and the username checker reach the internet. Until you allow network features, each of those pages says what it would send, and to whom, and sends nothing. Comparing two passwords stays on the phone.',
+        related: ['page.aliases', 'page.inbox', 'page.usernames', 'page.compare', 'page.breaches', 'page.navigation', 'setting.network_allowed'],
+      },
+    },
+  },
+
   // ---- aliases ----
 
   {
@@ -183,7 +207,7 @@ export const tools = [
     what: 'The button beside a login\'s username in the editor. It makes a new alias at a service you have set up and puts it in the field.',
     how: [
       'Every service with a key kept in the vault is offered. The item\'s name is sent as the alias\'s note, so you can tell later which site it is for.',
-      'With no service set up yet, it offers **Set one up**, which opens Settings, Email aliases.',
+      'With no service set up yet, it offers **Set one up**, which opens Settings, Tools, Email aliases.',
     ],
     when: 'When you sign up somewhere new and want the site never to have your real address.',
     caveats: 'Needs [[setting.network_allowed]].',

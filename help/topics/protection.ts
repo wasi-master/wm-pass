@@ -16,7 +16,7 @@ export const protection = [
       'To put an item on the shelf, choose **Move to hidden shelf** from its menu. To move several at once, select them and choose **Put on the hidden shelf**.',
       'Type your master password here and choose **Open the shelf** to see what is on it. Open an item to change it, or choose **Remove from hidden shelf** from its menu to put it back in the list.',
       'The shelf closes when you choose **Close the shelf**, and whenever the vault locks. Every unlock starts with it closed. Autofill never offers shelf items, even while the shelf is open.',
-      'Settings, Sidebar can add a Hidden shelf tab, which opens the same shelf from the sidebar.',
+      'Settings, Appearance, Sidebar can add a Hidden shelf tab, which opens the same shelf from the sidebar.',
     ],
     when: 'For items you would rather nobody saw over your shoulder. If you might be made to unlock the vault and show what is in it, a [[action.decoy_vault|decoy vault]] fits better.',
     caveats: [
