@@ -20059,7 +20059,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Lets the WM Pass tool in WM Keyboard list your logins and type them, while the vault is open."
+       "s": "Lets the WM Pass tool in WM Keyboard browse your vault, type from it, add logins to it and change passwords in it, while the vault is open."
       }
      ]
     }
@@ -20079,7 +20079,59 @@
      "runs": [
       {
        "t": "text",
-       "s": "It is shown the logins that match the app in front first, then the rest: each one's name and username, and whether it has a password or a code. A password or code is sent only when the keyboard asks for that one login's."
+       "s": "It is shown every item that is not in the trash or on the hidden shelf, those saved for the app in front first: each one's name, the line under it, and whether it has a password or a code. Its search goes through the vault's own search."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Opening an item there shows its fields. A plain field, such as a username or a website, is shown as it is; a secret is only named. A secret is sent only when you tap to type that one field."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Copying a field from the keyboard is done here: WM Pass puts it on the clipboard itself, marked sensitive and cleared after the time set under "
+      },
+      {
+       "t": "link",
+       "id": "setting.clipboard_seconds"
+      },
+      {
+       "t": "text",
+       "s": ", so a copied secret never passes through the keyboard."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "The keyboard can add a login, with a name, username, password and website, and change an item's password. The old password stays in the item's history. A login added from an app is tied to that app by its signing certificate, so it comes first there next time, unless the app is a browser."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Its "
+      },
+      {
+       "t": "strong",
+       "s": "New password"
+      },
+      {
+       "t": "text",
+       "s": " makes one with the generator as you set it up here."
       }
      ]
     },
@@ -20117,7 +20169,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "A password typed this way passes through the keyboard's process, as anything you type does. To keep it out of there, use the "
+       "s": "A password typed this way passes through the keyboard's process, as anything you type does, and so does one you type into the keyboard's own form to save here. To keep passwords out of there, use the "
       },
       {
        "t": "link",
@@ -20129,15 +20181,139 @@
        "s": " instead."
       }
      ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "The keyboard types and copies nothing into a field that asks it not to learn, such as a private browser tab."
+      }
+     ]
     }
    ],
    "related": [
     "action.autofill_service",
-    "setting.autofill_inline"
+    "setting.autofill_inline",
+    "feature.keyboard_chips"
    ],
    "docs": "/apps/keyboard/",
    "words": "wm keyboard ime type fill",
-   "plain": "Lets the WM Pass tool in WM Keyboard list your logins and type them, while the vault is open."
+   "plain": "Lets the WM Pass tool in WM Keyboard browse your vault, type from it, add logins to it and change passwords in it, while the vault is open."
+  },
+  {
+   "id": "feature.keyboard_chips",
+   "kind": "feature",
+   "title": "Buttons on WM Keyboard's strip",
+   "page": "security",
+   "what": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "While you type in some of WM Pass's own fields with WM Keyboard, the keyboard offers the buttons next to that field as chips above its keys."
+      }
+     ]
+    }
+   ],
+   "how": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "In a card's number, it offers "
+      },
+      {
+       "t": "strong",
+       "s": "Scan the card"
+      },
+      {
+       "t": "text",
+       "s": ". In the name on the card and the expiry date it does too, when the card scanner is Google's, since only that one reads them."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "In a Wi-Fi network's name and password, it offers "
+      },
+      {
+       "t": "strong",
+       "s": "Fill in from a QR code"
+      },
+      {
+       "t": "text",
+       "s": " and "
+      },
+      {
+       "t": "strong",
+       "s": "Pick a network saved on this phone"
+      },
+      {
+       "t": "text",
+       "s": "."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "A tap on a chip does exactly what the button on the screen does."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Each screen gets a fresh name for its fields, and the keyboard sends that name back with the tap. A tap meant for a screen that has closed does nothing."
+      }
+     ]
+    }
+   ],
+   "caveats": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "The fields tell the keyboard only which buttons they have, never what they hold. WM Pass takes a tap only from the real WM Keyboard, checked by its signing certificate, and the keyboard reads the fields only of the real WM Pass."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "It does not need "
+      },
+      {
+       "t": "link",
+       "id": "setting.keyboard_access"
+      },
+      {
+       "t": "text",
+       "s": ": a chip only presses a button here, and nothing from the vault goes to the keyboard."
+      }
+     ]
+    }
+   ],
+   "related": [
+    "setting.keyboard_access",
+    "setting.card_reader"
+   ],
+   "docs": "/apps/keyboard/",
+   "words": "wm keyboard chip strip suggestion scan card wifi qr",
+   "plain": "While you type in some of WM Pass's own fields with WM Keyboard, the keyboard offers the buttons next to that field as chips above its keys."
   },
   {
    "id": "action.place_from_keyboard",

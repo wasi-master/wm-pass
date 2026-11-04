@@ -10,8 +10,14 @@ import android.os.Process
 import com.wasimaster.wmpass.app.Prefs
 import com.wasimaster.wmpass.core.LockState
 import com.wasimaster.wmpass.core.Pass
+import com.wasimaster.wmpass.core.SecretBytes
+import com.wasimaster.wmpass.core.SecureClipboard
 import com.wasimaster.wmpass.core.Summary
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -25,8 +31,12 @@ import org.json.JSONObject
  * alone proves nothing, and a manifest permission would lock out Android 11 and below, where
  * `knownSigner` does not exist.
  *
- * The one write is an API key: a key field in the keyboard's settings can keep what it holds as an
- * API key item here, when the person presses Save in WM Pass beside it.
+ * The keyboard's WM Pass tool browses the vault, types or copies one field at a time, adds a login
+ * and changes a password; [VaultWire] sets out each call. A key field in the keyboard's settings
+ * can keep what it holds as an API key item here, when the person presses Save in WM Pass beside it.
+ *
+ * One call needs no vault access at all: [FieldWire.ACTION_CALL] presses a button on the screen
+ * the person is typing on here, which the keyboard offers as a chip on its strip.
  */
 class KeyboardProvider : ContentProvider() {
     override fun onCreate() = true
@@ -34,6 +44,12 @@ class KeyboardProvider : ContentProvider() {
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle {
         val context = context ?: return Bundle()
         if (!callerIsKeyboard()) throw SecurityException("Only WM Keyboard may ask.")
+        // A button on one of this app's own screens: nothing leaves the vault, and a screen with
+        // fields to tag shows only while the vault is open.
+        if (method == FieldWire.ACTION_CALL) {
+            val done = Pass.state.value is LockState.Unlocked && FieldActions.run(extras?.getString(FieldWire.TOKEN).orEmpty(), arg.orEmpty())
+            return Bundle().apply { putBoolean(FieldWire.DONE, done) }
+        }
         val prefs = Prefs(context)
         prefs.switchOnFirstTime(prefs.keyboardAccess)
         if (!prefs.keyboardAccess.value) return status("off")
@@ -41,9 +57,17 @@ class KeyboardProvider : ContentProvider() {
         if (Pass.state.value !is LockState.Unlocked) return status("locked")
         return runBlocking {
             when (method) {
-                "status" -> status("open")
+                VaultWire.STATUS -> status("open")
                 "logins" -> status("open").apply { putString("rows", logins(arg.orEmpty())) }
-                "value" -> status("open").apply { value(arg.orEmpty(), extras?.getString("field").orEmpty())?.let { putString("value", it) } }
+                VaultWire.ITEMS -> status("open").apply { putString(VaultWire.ROWS, items(arg.orEmpty(), extras?.getString(VaultWire.QUERY).orEmpty())) }
+                VaultWire.ITEM -> status("open").apply { page(arg.orEmpty())?.let { putString(VaultWire.PAGE, it) } }
+                VaultWire.VALUE -> status("open").apply {
+                    value(arg.orEmpty(), extras?.getString(VaultWire.FIELD).orEmpty())?.let { putString(VaultWire.VALUE, it.text()) }
+                }
+                VaultWire.COPY -> status("open").apply { putBoolean(VaultWire.COPIED, copy(arg.orEmpty(), extras?.getString(VaultWire.FIELD).orEmpty())) }
+                VaultWire.ADD_LOGIN -> status("open").apply { addLogin(extras)?.let { putString(VaultWire.ID, it) } }
+                VaultWire.SET_PASSWORD -> status("open").apply { putBoolean(VaultWire.SAVED, setPassword(arg.orEmpty(), extras?.getString(VaultWire.PASSWORD).orEmpty())) }
+                VaultWire.GENERATE -> status("open").apply { putString(VaultWire.VALUE, generate(prefs)) }
                 "code" -> status("open").apply { code(arg.orEmpty(), this) }
                 "api_keys" -> status("open").apply { putString("rows", apiKeys(arg.orEmpty())) }
                 "save_api_key" -> status("open").apply { saveApiKey(extras, this) }
@@ -52,7 +76,7 @@ class KeyboardProvider : ContentProvider() {
         }
     }
 
-    private fun status(state: String) = Bundle().apply { putString("state", state) }
+    private fun status(state: String) = Bundle().apply { putString(VaultWire.STATE, state) }
 
     private fun callerIsKeyboard(): Boolean {
         val context = context ?: return false
@@ -67,14 +91,23 @@ class KeyboardProvider : ContentProvider() {
         }
     }
 
-    /** What matches the app in front, or every login when nothing does, as in a browser. */
+    /** An item the keyboard may see: not in the trash, and not on the hidden shelf. */
+    private fun visible(id: String): Summary? = Pass.entries.value.firstOrNull { it.id == id && !it.trashed && !it.hidden }
+
+    /** The ids of what is saved for the app in front, best first; none for a guess. */
+    private suspend fun matched(focused: String): List<String> {
+        val context = context ?: return emptyList()
+        val cert = focused.takeIf { it.isNotEmpty() }?.let { Trust.certOf(context, it) } ?: return emptyList()
+        return runCatching { Pass.matchApp(focused, cert).map { it.entry.id } }.getOrDefault(emptyList())
+    }
+
+    /** What matches the app in front, or every login when nothing does, as in a browser. Kept for keyboards from before [VaultWire.ITEMS]. */
     private suspend fun logins(focused: String): String {
-        val context = context ?: return "[]"
-        val cert = focused.takeIf { it.isNotEmpty() }?.let { Trust.certOf(context, it) }
-        val matched = if (cert != null) runCatching { Pass.matchApp(focused, cert).map { it.entry } }.getOrDefault(emptyList()) else emptyList()
+        val matched = matched(focused)
         val rows = JSONArray()
-        val logins = Pass.entries.value.filter { it.kind == "login" }.sortedBy { it.title.lowercase() }
-        (matched + logins.filter { login -> matched.none { it.id == login.id } }).take(MOST_ROWS).forEach { rows.put(row(it, it in matched)) }
+        val logins = Pass.entries.value.filter { it.kind == "login" && !it.trashed && !it.hidden }.sortedBy { it.title.lowercase() }
+        val (first, rest) = logins.partition { it.id in matched }
+        (first.sortedBy { matched.indexOf(it.id) } + rest).take(MOST_ROWS).forEach { rows.put(row(it, it.id in matched)) }
         return rows.toString()
     }
 
@@ -86,16 +119,155 @@ class KeyboardProvider : ContentProvider() {
         .put("has_code", entry.hasOtp)
         .put("matches", matches)
 
-    private suspend fun value(id: String, field: String): String? = when (field) {
-        "username" -> Pass.entries.value.firstOrNull { it.id == id && it.kind == "login" }?.subtitle
-        "password" -> Pass.reveal(id, "password").consume { String(it) }
-        "code" -> Pass.code(id).consume { String(it) }
-        API_KEY, API_SECRET -> if (Pass.entries.value.any { it.id == id && it.kind == "api" }) {
-            runCatching { Pass.reveal(id, field).consume { String(it) } }.getOrNull()?.takeIf { it.isNotEmpty() }
+    /** Every kind of item, what matches the app in front first, narrowed by [query] when there is one. */
+    private suspend fun items(focused: String, query: String): String {
+        val matched = matched(focused)
+        val shown = if (query.isBlank()) {
+            Pass.entries.value.sortedBy { it.title.lowercase() }
         } else {
-            null
+            runCatching { Pass.search(query.trim()) }.getOrDefault(emptyList())
+        }.filter { !it.trashed && !it.hidden }
+        val (first, rest) = shown.partition { it.id in matched }
+        return VaultWire.rows((first.sortedBy { matched.indexOf(it.id) } + rest).take(MOST_ROWS), matched.toSet())
+    }
+
+    private suspend fun page(id: String): String? {
+        val summary = visible(id) ?: return null
+        return VaultWire.page(Pass.detail(id), summary.hasOtp)
+    }
+
+    /** One value of one item, as the keyboard names it in [VaultWire.FIELD]. */
+    private sealed interface Found {
+        fun text(): String
+
+        class Plain(val label: String, val value: String) : Found {
+            override fun text() = value
         }
-        else -> null
+
+        class Secret(val label: String, val bytes: SecretBytes) : Found {
+            override fun text() = bytes.consumeText()
+        }
+    }
+
+    private suspend fun value(id: String, field: String): Found? {
+        val summary = visible(id) ?: return null
+        return runCatching {
+            when {
+                field == VaultWire.CODE -> if (summary.hasOtp) Found.Secret("Code", Pass.code(id)) else null
+                field == VaultWire.NOTES -> if (Pass.detail(id).hasNotes) Found.Secret("Notes", Pass.reveal(id, VaultWire.NOTES)) else null
+                field.startsWith(VaultWire.SITE) -> {
+                    val index = field.removePrefix(VaultWire.SITE).toIntOrNull() ?: return null
+                    Pass.detail(id).sites.getOrNull(index)?.let(VaultWire::siteUrl)?.let { Found.Plain("Website", it) }
+                }
+                field.startsWith(VaultWire.CUSTOM) -> {
+                    val index = field.removePrefix(VaultWire.CUSTOM).toIntOrNull() ?: return null
+                    val custom = Pass.detail(id).customFields.firstOrNull { it.index == index } ?: return null
+                    val plain = custom.value
+                    if (custom.kind != "hidden" && plain != null) Found.Plain(custom.name, plain) else Found.Secret(custom.name, Pass.revealCustom(id, index))
+                }
+                else -> {
+                    val spec = Pass.detail(id).fields.firstOrNull { it.key == field } ?: return null
+                    if (spec.secret) {
+                        if (spec.hasValue) Found.Secret(spec.label, Pass.reveal(id, field)) else null
+                    } else {
+                        VaultWire.plain(spec)?.let { Found.Plain(spec.label, it) }
+                    }
+                }
+            }
+        }.getOrNull()
+    }
+
+    /** Copies one value here, the way a copy in WM Pass is made: a secret marked sensitive and wiped after a while. */
+    private suspend fun copy(id: String, field: String): Boolean {
+        val context = context ?: return false
+        val found = value(id, field) ?: return false
+        withContext(Dispatchers.Main) {
+            when (found) {
+                is Found.Plain -> SecureClipboard.copyPlain(context, found.label, found.value)
+                is Found.Secret -> SecureClipboard.copy(context, found.label, found.bytes)
+            }
+        }
+        return true
+    }
+
+    /**
+     * A new login from the keyboard's form. The app in front is linked by its certificate, so the
+     * login comes first there next time, unless it is a browser, which shows every site, or one of
+     * the two apps themselves.
+     */
+    private suspend fun addLogin(extras: Bundle?): String? {
+        val context = context ?: return null
+        val title = extras?.getString(VaultWire.TITLE)?.trim().orEmpty()
+        val username = extras?.getString(VaultWire.USERNAME)?.trim().orEmpty()
+        val password = extras?.getString(VaultWire.PASSWORD).orEmpty()
+        val website = extras?.getString(VaultWire.WEBSITE)?.trim().orEmpty()
+        val app = extras?.getString(VaultWire.APP)?.trim().orEmpty()
+        if (title.isEmpty() && username.isEmpty() && password.isEmpty() && website.isEmpty()) return null
+        val linked = app.takeIf {
+            it.isNotEmpty() && it != context.packageName && it !in KEYBOARD_PACKAGES && !Trust.isVerifiedBrowser(context, it)
+        }
+        val cert = linked?.let { Trust.certOf(context, it) }
+        val appName = if (linked != null && cert != null) Trust.labelOf(context, linked) else ""
+        val name = title.ifEmpty { VaultWire.titleFromSite(website) }.ifEmpty { appName }.ifEmpty { "Untitled" }
+        val id = Pass.change("entry.create") {
+            put("kind", "login")
+            put("title", name)
+            put("fields", buildJsonObject { if (username.isNotEmpty()) put("username", username) })
+            put(
+                "sites",
+                buildJsonArray {
+                    if (website.isNotEmpty()) addJsonObject { put("Url", if ("://" in website) website else "https://$website") }
+                    if (linked != null && cert != null) {
+                        addJsonObject {
+                            put(
+                                "AndroidApp",
+                                buildJsonObject {
+                                    put("package", linked)
+                                    put("cert_sha256", cert)
+                                },
+                            )
+                        }
+                    }
+                },
+            )
+        }.obj["id"]!!.jsonPrimitive.content
+        if (password.isNotEmpty()) {
+            val bytes = password.toByteArray()
+            try {
+                Pass.change("entry.set_secret", secret = bytes) {
+                    put("id", id)
+                    put("field", VaultWire.PASSWORD)
+                }
+            } finally {
+                bytes.fill(0)
+            }
+        }
+        Pass.flush()
+        return id
+    }
+
+    /** Puts [password] on an item that holds one. The one it had stays in the item's history. */
+    private suspend fun setPassword(id: String, password: String): Boolean {
+        if (password.isEmpty() || visible(id) == null) return false
+        if (Pass.detail(id).fields.none { it.key == VaultWire.PASSWORD && it.secret }) return false
+        val bytes = password.toByteArray()
+        try {
+            Pass.change("entry.set_secret", secret = bytes) {
+                put("id", id)
+                put("field", VaultWire.PASSWORD)
+            }
+        } finally {
+            bytes.fill(0)
+        }
+        Pass.flush()
+        return true
+    }
+
+    /** A password from the generator, made the way the person set it up here. */
+    private suspend fun generate(prefs: Prefs): String {
+        val made = com.wasimaster.wmpass.ui.vault.GenState.fromPrefs(prefs)
+        made.roll()
+        return made.value
     }
 
     /**
