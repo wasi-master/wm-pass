@@ -22,17 +22,18 @@ On a computer, choose **XML**. SafeInCloud also exports CSV and plain text. On A
 
 SafeInCloud's Android app can't export XML, CSV or text, but it keeps its own encrypted database file, and WM Pass opens that. SafeInCloud's newer help pages call the app Safe, so your menus may use that name. There are two ways to get the file.
 
-The first way is the app's own backup. SafeInCloud's help does not name the format of the file it writes, so if WM Pass will not open that file, use the cloud copy described after the steps.
+The first way is the app's own backup. It writes the same encrypted database file, named after the day, such as `SafeInCloud_2026-11-05.db`, and WM Pass opens it with your SafeInCloud password. We checked this with SafeInCloud 27.14.4 on Android.
 
 <Steps>
 
 1. Open the app and unlock it.
 2. Tap the Safe icon at the top right, then **Manage databases**.
-3. Tap your database, then **backup to a local file**.
-4. Or, for a scheduled copy, go to **Settings**, then **Auto Backup**, and tap **Backup now**. Tap **Backup location**, choose a file, and pick an app to open or share it with.
-5. Move the file to a place you can pick it from inside WM Pass.
+3. Tap your database, then **Backup**.
+4. Tap **Choose location**, pick a folder such as Downloads, and tap **Save**.
 
 </Steps>
+
+The file stays where you saved it, so WM Pass can pick it from there. For a scheduled copy, SafeInCloud's help points to **Settings**, then **Auto Backup**, where **Backup now** and **Backup location** live.
 
 The second way is your cloud storage. If cloud sync is on, SafeInCloud keeps its database there as `SafeInCloud.db`. An extra database is `SafeInCloud(name).db`.
 
