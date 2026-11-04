@@ -40,6 +40,24 @@ Turning checks off under [Problems to list](/guide/settings/health/#group-health
 
 See also [Problems to list](/guide/settings/health/#group-health-problems), [Health screen](/guide/screens/#screen-health).
 
+<a id="setting-health-skip-local"></a>
+
+## Leave out local addresses
+
+*Only in Android.*
+
+Leaves logins for devices on your own network out of the Health checks: a router, a NAS, a printer.
+
+#### Why it is there
+
+These sit behind your router, out of reach of the leaks and guessing the checks warn about, and many cannot use https or a second factor at all.
+
+#### How it works
+
+A login counts as local when every address saved on it is a private or loopback IP, or a name with no dot or one ending in .local, .lan, .home, .internal or .localhost.
+
+See also [Problems to list](/guide/settings/health/#group-health-problems), [Health screen](/guide/screens/#screen-health).
+
 <a id="group-health-problems"></a>
 
 ## Problems to list

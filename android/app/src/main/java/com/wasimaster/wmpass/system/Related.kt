@@ -58,6 +58,32 @@ object Related {
     }
 
     /** The part of an address a sign-in belongs to: `m.facebook.com/login` is facebook.com. */
+    /** First labels of package names as people write them: a top-level domain, reversed. */
+    private val PackageRoots = setOf(
+        "com", "org", "net", "io", "app", "dev", "me", "co", "de", "uk", "bd", "in", "us", "tv", "info", "ru", "fr",
+        "jp", "cn", "br", "edu", "gov", "nl", "it", "es", "ca", "au", "kr", "tw", "pl", "ch", "se", "at", "be",
+    )
+
+    /** Last labels that say website, for the guess below. */
+    private val CommonTlds = setOf("com", "org", "net", "io", "app", "dev", "me", "co", "info", "xyz", "tv", "gg", "ai", "uk", "bd", "in", "us", "de")
+
+    /**
+     * The Android app an address names, in the forms exports write one: `androidapp://package`,
+     * `android://<digest>@package/`, or a bare package name such as `com.bkash.customerapp` that
+     * is installed here or starts the way package names do. The engine reads the same forms.
+     */
+    fun app(address: String, context: android.content.Context? = null): String? {
+        val text = address.trim()
+        val lower = text.lowercase()
+        if (lower.startsWith("androidapp://")) return text.substring(13).trimEnd('/').ifEmpty { null }
+        if (lower.startsWith("android://")) return text.substring(10).trimEnd('/').substringAfterLast('@').ifEmpty { null }
+        if (text.isEmpty() || text.any { it in "/:@?#" || it.isWhitespace() }) return null
+        val labels = text.split('.')
+        if (labels.size < 2 || labels.any { label -> label.isEmpty() || !label.all { it.isLetterOrDigit() || it == '_' } }) return null
+        if (context != null && runCatching { context.packageManager.getPackageInfo(text, 0) }.isSuccess) return text
+        return text.takeIf { labels.first().lowercase() in PackageRoots && labels.last().lowercase() !in CommonTlds }
+    }
+
     fun registrable(address: String): String? {
         val host = address.trim().lowercase().substringAfter("://").substringBefore('/').substringBefore(':').removePrefix("www.")
         val labels = host.split('.').filter { it.isNotEmpty() }

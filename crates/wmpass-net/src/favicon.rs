@@ -12,6 +12,8 @@ pub enum IconSource {
     Off,
     /// The site's own `/favicon.ico`.
     Site,
+    /// The site's own `/apple-touch-icon.png`: larger than a favicon where a site has one.
+    SiteTouch,
     /// DuckDuckGo's icon service.
     DuckDuckGo,
 }
@@ -39,6 +41,7 @@ pub fn fetch(source: IconSource, host: &str) -> Result<Call<Vec<u8>>, NetError> 
     let url = match source {
         IconSource::Off => return Err(NetError::Blocked),
         IconSource::Site => format!("https://{host}/favicon.ico"),
+        IconSource::SiteTouch => format!("https://{host}/apple-touch-icon.png"),
         IconSource::DuckDuckGo => format!("https://icons.duckduckgo.com/ip3/{host}.ico"),
     };
     Ok(Call::new(Request::get(url), |response| {

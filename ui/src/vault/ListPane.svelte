@@ -123,6 +123,17 @@
       }
       return out;
     }
+    if (prefs.v.grouping === 'types') {
+      // The phone opens on types, then folders; here the sidebar has both, so the list keeps
+      // one part for each type.
+      const groups = new Map<string, Summary[]>();
+      for (const entry of rest) groups.set(entry.kind, [...(groups.get(entry.kind) ?? []), entry]);
+      for (const kind of [...groups.keys()].sort((a, b) => kindPlural(a).localeCompare(kindPlural(b)))) {
+        if (headings) out.push({ type: 'heading', text: kindPlural(kind) });
+        groups.get(kind)!.forEach((entry) => out.push({ type: 'one', entry }));
+      }
+      return out;
+    }
     if (pinned.length && headings) out.push({ type: 'heading', text: 'All items' });
     const bySite = new Map<string, Summary[]>();
     if (prefs.v.group_sites) {
@@ -211,6 +222,7 @@
         { separator: true },
         { id: 'group:smart', label: 'Group by site', checked: v.grouping === 'smart' },
         { id: 'group:folder', label: 'Group by folder', checked: v.grouping === 'folder' },
+        { id: 'group:types', label: 'Group by type', checked: v.grouping === 'types' },
       ],
       box.left,
       box.bottom + 2,

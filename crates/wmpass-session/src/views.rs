@@ -21,6 +21,8 @@ pub struct Summary {
     pub subtitle: String,
     /// Registrable domain of its first site, for grouping and icons.
     pub site: Option<String>,
+    /// Package of the first Android app it is for, for the app's icon.
+    pub app: Option<String>,
     /// Icon override.
     pub icon: Option<String>,
     /// Colour label.
@@ -70,6 +72,12 @@ pub fn summary(entry: &Entry) -> Summary {
         title: entry.common.title.v.clone(),
         subtitle: fields::subtitle(entry),
         site: health::entry_domains(entry).into_iter().next(),
+        app: entry.login().and_then(|login| {
+            login.site_matchers.v.iter().find_map(|matcher| match wmpass_core::matching::normalized_matcher(matcher) {
+                SiteMatcher::AndroidApp { package, .. } => Some(package),
+                _ => None,
+            })
+        }),
         icon: entry.common.icon.v.clone(),
         color: entry.common.color.v.clone(),
         folder: entry.common.folder.v.clone(),
@@ -289,7 +297,8 @@ pub fn detail(entry: &Entry) -> Detail {
         .collect();
     let (sites, otp, passkeys, alias, questions) = match &entry.kind {
         Kind::Login(login) => (
-            login.site_matchers.v.clone(),
+            // An app saved as a website address, as some exports do, shows as the app.
+            login.site_matchers.v.iter().map(wmpass_core::matching::normalized_matcher).collect(),
             login.otp.v.as_ref().map(otp_view),
             login
                 .passkeys

@@ -399,6 +399,10 @@ Problems are listed from the most serious down, so start at the top. [Health che
 
 For duplicate items, the button that merges each set asks **Which one stays?** The others fold into it: their passwords move to its history and their extra fields come along, so nothing is lost.
 
+Under **Used more than once**, the logins are grouped by the password they share, so each group is one password to change.
+
+Tapping an item offers what fixes it: **Change the password** opens the site's own page for that, from a list of known pages or the address a site lists at /.well-known/change-password, and a missing second factor offers the site's settings. **Ignore for this check** takes the item off that list only, for sites with a second factor of their own and the like. **Ignored** lists them again, to put any back.
+
 **Check for breaches** opens Settings, Breaches, and **Compare two passwords** opens a side-by-side comparison.
 
 See also [Password health](/guide/how-it-works/#feature-health), [Health checks](/guide/settings/health/), [Breach checks](/guide/how-it-works/#feature-breaches), [Compare two passwords](/guide/settings/compare/).

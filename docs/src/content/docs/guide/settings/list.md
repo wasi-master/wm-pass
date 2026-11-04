@@ -58,7 +58,7 @@ See also [Second line](/guide/settings/list/#setting-row-subtitle), [Grouping](/
 
 ## Grouping
 
-Whether the list runs as one, with logins for the same site folded together, or splits into one part for each folder.
+Whether the list runs as one, with logins for the same site folded together, or splits into one part for each folder or each type.
 
 #### What each choice does
 
@@ -66,6 +66,7 @@ Whether the list runs as one, with logins for the same site folded together, or 
 | --- | --- |
 | By site | One list in the order you sort by. Several logins for one website fold into a single row when [Fold logins on one site](/guide/settings/list/#setting-group-sites) is on. |
 | By folder | A part for each folder, in alphabetical order, and **No folder** for items in none. Each part follows the sort order. Sites are not folded. |
+| By type | A part for each type of item, such as logins, cards and notes, in alphabetical order. |
 
 #### On Android
 
@@ -73,6 +74,7 @@ Whether the list runs as one, with logins for the same site folded together, or 
 | --- | --- |
 | By site | One list in the order you sort by. Several logins for one website fold into a single row when [Fold logins on one site](/guide/settings/list/#setting-group-sites) is on. |
 | By folder | Each folder is one row, in alphabetical order, that opens in place to show its items. Items in no folder come after the folders. Sites are not folded. |
+| Types, then folders | The default. A row for each type you have, with its count, then a row for each folder and **No folder**. Each opens in place. An item is under both its type and its folder. Picking a type chip above the list shows that type as one list. |
 
 See also [Section headings](/guide/settings/list/#setting-list-headings), [Sort by](/guide/settings/list/#setting-sort), [Folders](/guide/settings/folders/).
 

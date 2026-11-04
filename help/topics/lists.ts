@@ -57,10 +57,11 @@ export const lists = [
     title: 'Grouping',
     page: 'list',
     pref: 'grouping',
-    what: 'Whether the list runs as one, with logins for the same site folded together, or splits into one part for each folder.',
+    what: 'Whether the list runs as one, with logins for the same site folded together, or splits into one part for each folder or each type.',
     effects: [
       { value: 'smart', label: 'By site', text: 'One list in the order you sort by. Several logins for one website fold into a single row when [[setting.group_sites]] is on.' },
       { value: 'folder', label: 'By folder', text: 'A part for each folder, in alphabetical order, and **No folder** for items in none. Each part follows the sort order. Sites are not folded.' },
+      { value: 'types', label: 'By type', text: 'A part for each type of item, such as logins, cards and notes, in alphabetical order.' },
     ],
     related: ['setting.list_headings', 'setting.sort', 'page.folders'],
     words: 'folders sites sections',
@@ -69,6 +70,7 @@ export const lists = [
         effects: [
           { value: 'smart', label: 'By site', text: 'One list in the order you sort by. Several logins for one website fold into a single row when [[setting.group_sites]] is on.' },
           { value: 'folder', label: 'By folder', text: 'Each folder is one row, in alphabetical order, that opens in place to show its items. Items in no folder come after the folders. Sites are not folded.' },
+          { value: 'types', label: 'Types, then folders', text: 'The default. A row for each type you have, with its count, then a row for each folder and **No folder**. Each opens in place. An item is under both its type and its folder. Picking a type chip above the list shows that type as one list.' },
         ],
       },
     },

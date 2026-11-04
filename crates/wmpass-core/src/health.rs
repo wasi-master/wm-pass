@@ -1,6 +1,6 @@
 //! The vault's health report: weak, reused, old, breached, duplicated and more.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::matching::{host_of, registrable_domain};
 use crate::model::{Entry, Id, Kind, Lww, SiteMatcher};
@@ -19,6 +19,46 @@ pub struct HealthInput {
     pub old_after_days: u32,
     /// Breach counts by entry id, from an opt-in check.
     pub breached: BTreeMap<Id, u64>,
+    /// Entries the person has said to leave out of one check, by check: `weak`, `reused`,
+    /// `old`, `breached`, `twofactor`, `insecure`, `expiring` or `duplicates`. Such an entry
+    /// no longer counts against the score for that check.
+    pub ignored: BTreeMap<String, BTreeSet<Id>>,
+    /// Leaves out logins saved only for addresses on the local network, such as a router's
+    /// page, which a firewall already keeps from the internet.
+    pub skip_local: bool,
+}
+
+/// Whether a host is on the local network: a private, loopback or link-local address, a name
+/// without a dot, or a name under one of the suffixes home networks use.
+pub fn is_local_host(host: &str) -> bool {
+    let host = host.trim_end_matches('.').trim_start_matches('[').trim_end_matches(']').to_ascii_lowercase();
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        return match ip {
+            std::net::IpAddr::V4(v4) => v4.is_private() || v4.is_loopback() || v4.is_link_local(),
+            std::net::IpAddr::V6(v6) => v6.is_loopback() || (v6.segments()[0] & 0xfe00) == 0xfc00 || (v6.segments()[0] & 0xffc0) == 0xfe80,
+        };
+    }
+    !host.contains('.')
+        || [".local", ".lan", ".home", ".home.arpa", ".internal", ".localhost", ".localdomain"]
+            .iter()
+            .any(|suffix| host.ends_with(suffix))
+}
+
+/// Whether every address a login is saved for is on the local network. One with no address,
+/// or with an app, is not.
+fn local_only(entry: &Entry) -> bool {
+    let Some(login) = entry.login() else { return false };
+    let hosts: Vec<Option<String>> = login
+        .site_matchers
+        .v
+        .iter()
+        .map(|matcher| match matcher {
+            SiteMatcher::Url(text) if crate::matching::app_of_address(text).is_some() => None,
+            SiteMatcher::Domain(text) | SiteMatcher::Host(text) | SiteMatcher::Url(text) => host_of(text),
+            _ => None,
+        })
+        .collect();
+    !hosts.is_empty() && hosts.iter().all(|host| host.as_deref().is_some_and(is_local_host))
 }
 
 /// The report.
@@ -46,6 +86,7 @@ pub struct HealthReport {
 
 fn matcher_domain(matcher: &SiteMatcher) -> Option<String> {
     match matcher {
+        SiteMatcher::Url(text) if crate::matching::app_of_address(text).is_some() => None,
         SiteMatcher::Domain(text) | SiteMatcher::Host(text) | SiteMatcher::Url(text) => {
             Some(registrable_domain(&host_of(text)?))
         }
@@ -109,6 +150,9 @@ pub fn report(vault: &Vault, input: &HealthInput) -> HealthReport {
         let Kind::Login(login) = &entry.kind else {
             continue;
         };
+        if input.skip_local && local_only(entry) {
+            continue;
+        }
         let password = login.password.v.expose();
         if password.is_empty() {
             continue;
@@ -150,6 +194,21 @@ pub fn report(vault: &Vault, input: &HealthInput) -> HealthReport {
     }
     out.reused = groups(by_password);
     out.duplicates = groups(by_identity);
+    let skip = |check: &str, id: &Id| input.ignored.get(check).is_some_and(|ids| ids.contains(id));
+    out.weak.retain(|id| !skip("weak", id));
+    out.old.retain(|id| !skip("old", id));
+    out.breached.retain(|(id, _)| !skip("breached", id));
+    out.missing_two_factor.retain(|id| !skip("twofactor", id));
+    out.insecure_url.retain(|id| !skip("insecure", id));
+    out.expiring.retain(|id| !skip("expiring", id));
+    let keep = |check: &str, sets: Vec<Vec<Id>>| -> Vec<Vec<Id>> {
+        sets.into_iter()
+            .map(|set| set.into_iter().filter(|id| !skip(check, id)).collect::<Vec<_>>())
+            .filter(|set| set.len() > 1)
+            .collect()
+    };
+    out.reused = keep("reused", std::mem::take(&mut out.reused));
+    out.duplicates = keep("duplicates", std::mem::take(&mut out.duplicates));
 
     let bad: HashSet<&Id> = out
         .weak
@@ -357,6 +416,28 @@ mod tests {
         let result = run(&vault);
         assert_eq!(result.insecure_url, vec![http]);
         assert_eq!(result.expiring, vec![expiring]);
+    }
+
+    #[test]
+    fn local_logins_can_be_left_out_and_items_ignored_per_check() {
+        let mut vault = fast_vault(1);
+        let router = add(&mut vault, "Router", Some("http://192.168.0.1"), "admin", "admin");
+        let nas = add(&mut vault, "NAS", Some("http://nas.local:5000"), "me", "admin");
+        let site = add(&mut vault, "Shop", Some("http://shop.example"), "me", STRONG);
+        let all = run(&vault);
+        assert!(all.insecure_url.contains(&router) && all.weak.contains(&nas));
+        let input = HealthInput {
+            now_ms: NOW,
+            skip_local: true,
+            ignored: BTreeMap::from([("insecure".to_owned(), BTreeSet::from([site.clone()]))]),
+            ..HealthInput::default()
+        };
+        let trimmed = report(&vault, &input);
+        assert!(trimmed.weak.is_empty() && trimmed.reused.is_empty());
+        assert!(trimmed.insecure_url.is_empty());
+        assert_eq!(trimmed.score, 100);
+        assert!(is_local_host("localhost") && is_local_host("10.0.0.2") && is_local_host("fd00::1"));
+        assert!(!is_local_host("example.com") && !is_local_host("8.8.8.8"));
     }
 
     #[test]

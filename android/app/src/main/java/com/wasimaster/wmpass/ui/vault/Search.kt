@@ -283,7 +283,7 @@ internal fun SearchRow(entry: Summary, query: String, modifier: Modifier = Modif
                 .padding(start = 16.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            SiteTile(entry.title, entry.site, entry.kind, Modifier.sharedEntry("tile-${entry.id}", inSearch = true), 40.dp, entry.color, entry.icon)
+            SiteTile(entry.title, entry.site, entry.kind, Modifier.sharedEntry("tile-${entry.id}", inSearch = true), 40.dp, entry.color, entry.icon, app = entry.app)
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
                 Text(highlighted(entry.title.ifEmpty { "Untitled" }, query, colors.primary), color = colors.text, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.sharedEntry("title-${entry.id}", inSearch = true))
@@ -306,7 +306,7 @@ internal fun SearchRow(entry: Summary, query: String, modifier: Modifier = Modif
             .padding(start = 12.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SiteTile(entry.title, entry.site, entry.kind, Modifier.sharedEntry("tile-${entry.id}", inSearch = true), 44.dp, entry.color, entry.icon)
+        SiteTile(entry.title, entry.site, entry.kind, Modifier.sharedEntry("tile-${entry.id}", inSearch = true), 44.dp, entry.color, entry.icon, app = entry.app)
         Spacer(Modifier.width(13.dp))
         Column(Modifier.weight(1f)) {
             Text(

@@ -107,6 +107,14 @@ class Prefs(context: Context) {
     val siteIconStyle = word("site_icon_style", if (store.getBoolean("coloured_icons", true)) "brand" else "uniform", "brand", "tinted", "uniform", "letters")
     val siteIconShape = word("site_icon_shape", "circle", "circle", "rounded", "square", "none")
 
+    /** Where an item's picture comes from, in order, before its letter: `brand`, `app` and `site`. */
+    private val iconSourcesOpt = word("icon_sources", "brand,app")
+    val iconSources: List<String> get() = iconSourcesOpt.value.split(",").filter { it in IconSources }.distinct()
+    fun updateIconSources(value: List<String>) = iconSourcesOpt.set(value.joinToString(","))
+
+    /** Where website icons are fetched from: each `site` itself, or `duckduckgo`. */
+    val siteIconFrom = word("site_icon_from", "site", "site", "duckduckgo")
+
     /** Settings rows: `coloured`, `mono`, `bare` or `off`. */
     val settingsIcons = word("settings_icons", "coloured", "coloured", "mono", "bare", "off")
     val settingsCards = flag("settings_cards", true)
@@ -115,7 +123,8 @@ class Prefs(context: Context) {
 
     val layoutOpt = word("layout", "list", "list", "compact", "grid")
     val layout: String get() = layoutOpt.value
-    val groupingOpt = word("grouping", "smart", "smart", "folder")
+    // Types, then folders, as Bitwarden and Apple Passwords open: a vault reads in one screen.
+    val groupingOpt = word("grouping", "types", "smart", "folder", "types")
     val grouping: String get() = groupingOpt.value
     val sort = word("sort", "name", "name", "changed", "kind", "site")
     val groupSites = flag("group_sites", true)
@@ -194,6 +203,22 @@ class Prefs(context: Context) {
     private val healthHiddenOpt = word("health_hidden", "")
     val healthHidden: Set<String> get() = healthHiddenOpt.value.split(",").filter { it.isNotEmpty() }.toSet()
     val healthScore = flag("health_score", true)
+    private val healthIgnoredOpt = word("health_ignored", "")
+
+    /** Items left out of one health check, by check, as the person chose them. */
+    val healthIgnored: Map<String, Set<String>>
+        get() = healthIgnoredOpt.value.split(",").filter { ':' in it }
+            .groupBy({ it.substringBefore(':') }, { it.substringAfter(':') })
+            .mapValues { it.value.toSet() }
+
+    /** When the last password breach check ran, as `ms|source|found|checked`. Never which passwords. */
+    val breachLast = local("breach_last", "")
+
+    /** Leaves logins for addresses on the local network, such as a router's page, out of Health. */
+    val healthSkipLocal = flag("health_skip_local", true)
+
+    /** How many problems the vault list's health row showed when it was put away; it comes back above that. */
+    val healthBannerSeen = whole("health_banner_seen", -1)
 
     // ---- settings pages ----
 
@@ -344,6 +369,12 @@ class Prefs(context: Context) {
         editorOpenOpt.set(next.joinToString(","))
     }
 
+    fun ignoreHealth(check: String, id: String, ignore: Boolean) {
+        val all = healthIgnoredOpt.value.split(",").filter { it.isNotEmpty() }.toSet()
+        val next = if (ignore) all + "$check:$id" else all - "$check:$id"
+        healthIgnoredOpt.set(next.sorted().joinToString(","))
+    }
+
     fun setHealthShown(check: String, shown: Boolean) {
         val next = if (shown) healthHidden - check else healthHidden + check
         healthHiddenOpt.set(next.joinToString(","))
@@ -490,3 +521,6 @@ class Prefs(context: Context) {
         }
     }
 }
+
+/** The places an item's picture can come from. */
+val IconSources = listOf("brand", "app", "site")

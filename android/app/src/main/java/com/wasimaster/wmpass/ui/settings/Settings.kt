@@ -3,6 +3,7 @@ package com.wasimaster.wmpass.ui.settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.biometric.BiometricPrompt
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -29,6 +30,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -58,6 +60,7 @@ import com.wasimaster.wmpass.ui.help.Help
 import com.wasimaster.wmpass.ui.help.helpAnchor
 import com.wasimaster.wmpass.ui.icons.PassIcons
 import com.wasimaster.wmpass.ui.parts.GlyphTile
+import com.wasimaster.wmpass.ui.parts.Pill
 import com.wasimaster.wmpass.ui.parts.PrimaryButton
 import com.wasimaster.wmpass.ui.parts.QuietButton
 import com.wasimaster.wmpass.ui.parts.SiteTile
@@ -135,13 +138,30 @@ private fun back(): () -> Unit {
 
 @Composable
 fun SettingsRoot() {
+    // Search opens here, over the same page, rather than as a page of its own; it is saved with
+    // the page, so a result that was not the one comes back to the same list.
+    var searching by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    androidx.compose.animation.AnimatedContent(
+        searching,
+        transitionSpec = {
+            androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(180)) togetherWith
+                androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(120))
+        },
+        label = "settingsSearch",
+    ) { open ->
+        if (open) SettingsSearchPane { searching = false } else SettingsHome { searching = true }
+    }
+}
+
+@Composable
+private fun SettingsHome(onSearch: () -> Unit) {
     val shell = LocalShell.current
     val nav = shell.nav
     WmScreen(
         "Settings",
         onBack = back(),
         actions = {
-            androidx.compose.material3.IconButton(onClick = { nav.navigate("settings/search") }) { Icon(PassIcons.Search, "Search settings") }
+            androidx.compose.material3.IconButton(onClick = onSearch) { Icon(PassIcons.Search, "Search settings") }
         },
     ) {
         SettingsGroup("Protection") {
@@ -834,7 +854,7 @@ private fun EntryLine(entry: Summary, onClick: () -> Unit) {
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SiteTile(entry.title, entry.site, entry.kind, size = 42.dp, label = entry.color, icon = entry.icon)
+        SiteTile(entry.title, entry.site, entry.kind, size = 42.dp, label = entry.color, icon = entry.icon, app = entry.app)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(entry.title, color = colors.text, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold), maxLines = 1)
@@ -1115,12 +1135,36 @@ private fun ExportGuideSheet(onDismiss: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ImportScreen() {
     val shell = LocalShell.current
     val colors = palette
     val context = LocalContext.current
     var preview by remember { mutableStateOf<ImportPreview?>(null) }
+    // Where the items go: this vault, or a nested one stepped into for the import and left after.
+    val child by Pass.child.collectAsStateWithLifecycle()
+    val state by Pass.state.collectAsStateWithLifecycle()
+    var nested by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var enteredFor by remember { mutableStateOf<String?>(null) }
+    var home by remember { mutableStateOf("") }
+    LaunchedEffect(Unit) {
+        if (child != null) return@LaunchedEffect
+        home = (state as? com.wasimaster.wmpass.core.LockState.Unlocked)?.name.orEmpty()
+        nested = runCatching {
+            (Pass.plainCall("linked.list").json as kotlinx.serialization.json.JsonArray)
+                .map { it as kotlinx.serialization.json.JsonObject }
+                // A shared vault lives at a place of its own, set up from its page.
+                .filter { it["shared"]?.jsonPrimitive?.content != "true" }
+                .map { it["file"]!!.jsonPrimitive.content to it["name"]!!.jsonPrimitive.content }
+        }.getOrDefault(emptyList())
+    }
+    // Leaving the page part-way puts the vault back as it was.
+    DisposableEffect(Unit) {
+        onDispose {
+            if (enteredFor != null) shell.launch { Pass.leaveChild() }
+        }
+    }
     var bytes by remember { mutableStateOf<ByteArray?>(null) }
     var needsPassword by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -1211,9 +1255,43 @@ private fun ImportScreen() {
     }
     var guides by remember { mutableStateOf(false) }
     if (guides) ExportGuideSheet { guides = false }
+    suspend fun importInto(file: String?) {
+        if (file == enteredFor) return
+        if (preview != null) Pass.plainCall("import.cancel")
+        preview = null
+        error = null
+        try {
+            if (enteredFor != null) {
+                Pass.leaveChild()
+                enteredFor = null
+            }
+            if (file != null) {
+                val sealed = Pass.linkedFile(file).readBytes()
+                val reply = Pass.plainCall("linked.open", blobs = listOf(sealed)) { put("file", file) }
+                Pass.enterChild(file, reply) { bytes -> Pass.writeLinked(file, bytes) }
+                enteredFor = file
+            }
+            if (bytes != null) read()
+        } catch (failure: Exception) {
+            error = failure.message ?: "That vault could not be opened."
+        }
+    }
     WmScreen("Import", route = "settings/import", onBack = back()) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val shown = preview
+            if (result == null && child == null || enteredFor != null) {
+                if (nested.isNotEmpty()) {
+                    Text("Import into", color = colors.textMid, style = MaterialTheme.typography.labelLarge)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Pill(home.ifEmpty { "This vault" }, enteredFor == null, icon = PassIcons.Lock) { shell.launch { importInto(null) } }
+                        nested.forEach { (file, name) ->
+                            Pill(name, enteredFor == file, icon = PassIcons.Layers) { shell.launch { importInto(file) } }
+                        }
+                    }
+                }
+            } else if (child != null && result == null) {
+                Text("Importing into ${child.orEmpty()}, the nested vault you are inside.", color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
+            }
             when {
                 result != null -> {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1221,7 +1299,13 @@ private fun ImportScreen() {
                         Spacer(Modifier.width(14.dp))
                         Text(result!!, color = colors.text, style = MaterialTheme.typography.bodyLarge)
                     }
-                    PrimaryButton("Done", Modifier.fillMaxWidth()) { shell.nav.popBackStack() }
+                    PrimaryButton("Done", Modifier.fillMaxWidth()) {
+                        shell.launch {
+                            if (enteredFor != null) Pass.leaveChild()
+                            enteredFor = null
+                            shell.nav.popBackStack()
+                        }
+                    }
                 }
                 shown != null -> {
                     Text("${shown.count} items from ${shown.format}", color = colors.text, style = MaterialTheme.typography.titleLarge)
@@ -1235,7 +1319,8 @@ private fun ImportScreen() {
                             val added = reply.obj["added"]?.jsonPrimitive?.content ?: "0"
                             val dupes = reply.obj["duplicates"]?.jsonPrimitive?.content ?: "0"
                             shell.haptics.confirm()
-                            result = "Added $added. Skipped $dupes already here."
+                            val into = nested.firstOrNull { it.first == enteredFor }?.second?.let { " to $it" }.orEmpty()
+                            result = "Added $added$into. Skipped $dupes already there."
                             bytes?.fill(0)
                             bytes = null
                             codes = emptyList()

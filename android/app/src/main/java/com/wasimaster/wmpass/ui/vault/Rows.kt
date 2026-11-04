@@ -375,7 +375,7 @@ private fun FlipTile(entry: Summary, selected: Boolean, size: Dp) {
             },
     ) {
         if (turn < 90f) {
-            SiteTile(entry.title, entry.site, entry.kind, Modifier.sharedEntry("tile-${entry.id}"), size, entry.color, entry.icon)
+            SiteTile(entry.title, entry.site, entry.kind, Modifier.sharedEntry("tile-${entry.id}"), size, entry.color, entry.icon, app = entry.app)
         } else {
             Box(
                 Modifier
@@ -439,13 +439,15 @@ fun SiteStackRow(
 /** How far in the items under an open folder start, so they read as inside it. */
 val FolderIndent = 24.dp
 
-/** A folder in the list, as one row that opens in place to show what is in it. */
+/** A folder in the list, or a type in the types view, as one row that opens in place to show what is in it. */
 @Composable
 fun FolderRow(
     name: String,
     count: Int,
     shape: Shape,
     expanded: Boolean,
+    // A type's glyph; a folder shows a folder, open or shut.
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
     onToggle: () -> Unit,
 ) {
     val colors = palette
@@ -466,7 +468,7 @@ fun FolderRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(tile), contentAlignment = Alignment.Center) {
-            com.wasimaster.wmpass.ui.parts.GlyphTile(if (expanded) PassIcons.FolderOpen else PassIcons.Folder, colors.primary, size = tile)
+            com.wasimaster.wmpass.ui.parts.GlyphTile(icon ?: if (expanded) PassIcons.FolderOpen else PassIcons.Folder, colors.primary, size = tile)
         }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {

@@ -190,7 +190,7 @@ impl Session {
                 &health::HealthInput {
                     now_ms,
                     old_after_days,
-                    breached: BTreeMap::new(),
+                    ..health::HealthInput::default()
                 },
             )
         })
@@ -1428,6 +1428,8 @@ impl Service {
                 struct A {
                     old_after_days: Option<u32>,
                     breached: BTreeMap<String, u64>,
+                    ignored: BTreeMap<String, std::collections::BTreeSet<String>>,
+                    skip_local: bool,
                 }
                 let a: A = parse(call.args)?;
                 session.health = Some(health::report(
@@ -1436,6 +1438,8 @@ impl Service {
                         now_ms: now,
                         old_after_days: a.old_after_days.unwrap_or(365),
                         breached: a.breached,
+                        ignored: a.ignored,
+                        skip_local: a.skip_local,
                     },
                 ));
                 let report = session.report(now, 365);

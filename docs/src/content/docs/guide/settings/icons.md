@@ -78,6 +78,45 @@ The logos remain their owners' trademarks. WM Pass shows them only to say which 
 
 See also [Shape](/guide/settings/icons/#setting-site-icon-shape), [Icons](/guide/settings/list/#setting-row-icons).
 
+<a id="setting-icon-sources"></a>
+
+## Pictures, in order
+
+*Only in Android.*
+
+Where the picture beside each item comes from, tried from the top down until one has a picture.
+
+#### How it works
+
+**Brand marks** are the logos that ship with the app. **App icons** are the icons of apps installed on this phone, for items saved for an app. **Website icons** are fetched from each site.
+
+Drag to change the order, and remove any you do not want. An item none of them has a picture for shows its first letter, in a soft color of its own when [Site icons](/guide/settings/icons/#setting-site-icon-style) is on brand colors.
+
+A color or symbol you chose for one item always wins.
+
+#### Limits
+
+Website icons are the only ones that go online. They are fetched once per site through the same network switch as everything else, kept encrypted on this phone, and never asked for addresses on your own network.
+
+See also [Website icons from](/guide/settings/icons/#setting-site-icon-from), [Site icons](/guide/settings/icons/#setting-site-icon-style), [Allow network features](/guide/settings/security/#setting-network-allowed).
+
+<a id="setting-site-icon-from"></a>
+
+## Website icons from
+
+*Only in Android.*
+
+Who is asked for a website's icon, when website icons are in [the order](/guide/settings/icons/#setting-icon-sources).
+
+#### What each choice does
+
+| Choice | What it does |
+| --- | --- |
+| Each site | Asks each site for its own icon, so only that site learns that it was asked. |
+| DuckDuckGo | Asks icons.duckduckgo.com, which has icons for more sites. DuckDuckGo then sees the name of each site you have a login for. |
+
+See also [Pictures, in order](/guide/settings/icons/#setting-icon-sources).
+
 <a id="setting-site-icon-shape"></a>
 
 ## Shape

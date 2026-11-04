@@ -56,7 +56,7 @@ const DEFS = {
 
   // ---- vault list ----
   layout: { value: 'list', allowed: ['list', 'compact', 'grid'] },
-  grouping: { value: 'smart', allowed: ['smart', 'folder'] },
+  grouping: { value: 'smart', allowed: ['smart', 'folder', 'types'] },
   sort: { value: 'name', allowed: ['name', 'changed', 'kind', 'site'] },
   group_sites: { value: true },
   pinned_on_top: { value: true },

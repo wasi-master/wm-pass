@@ -22,6 +22,7 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 sha1.workspace = true
+sha3.workspace = true
 zeroize.workspace = true
 url = "2.5.8"
 # The pinned client builds on ureq's `unversioned` transport API, which may change in a minor release.

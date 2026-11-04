@@ -9,6 +9,10 @@ The Android app is the fullest version of WM Pass.
 
 Settings, Import reads exports from other password managers and authenticators, and scans Google Authenticator's transfer codes. **How to export from your old app** lists each app and opens its steps in WM Pass, with a tab for each device, Android first. The same pages are [on this site](/guides/import-export/#exporting-from-your-old-app), with their pictures.
 
+**Import into** picks where the items go: this vault, or one of the vaults nested inside it.
+
+Exports write an app in several ways: `androidapp://com.example.app`, the `android://<certificate>@com.example.app/` form Google Password Manager uses, or a bare package name typed where a website goes. WM Pass reads all three as apps, so they fill in that app and are listed under the item's apps, not as a website. A bare name counts as a package when it is installed on the phone, or when it starts the way package names do (`com.`, `org.`, `io.` and the like) and does not end in a common web ending such as `.com`. The guess can be wrong for an odd name, and the editor shows which way it went.
+
 ## Autofill
 
 Set WM Pass as your autofill service in Settings, or tap **Turn on** on the card the vault list shows until you do. It matches apps by package name and signing certificate, not by name alone, and matches browsers by web address only for browsers it knows. A login never fills without your tap, and a WebView inside another app asks first and names what it is filling.
@@ -16,6 +20,8 @@ Set WM Pass as your autofill service in Settings, or tap **Turn on** on the card
 With inline suggestions on, saved logins also show in the suggestion row of any keyboard that has one, such as Gboard or WM Keyboard, and not only in a dropdown under the field.
 
 A login can name the apps it is for as well as its websites. In the editor, open **Websites and apps** and tap **Add an app** to pick from the apps on your phone. WM Pass saves the app's package name and signing certificate, so a different app wearing the same name does not match.
+
+When WM Pass offers to save a login you just typed somewhere, the name, username, password and website can all be changed before it is kept. A login typed into an app with no website of its own gets the sites that go with that app offered, the first one filled in, and is linked to the app as well.
 
 The name, the websites and the apps suggest each other. Type facebook.com and **Goes with this login** offers Facebook, Facebook Lite and Messenger if they are installed, messenger.com, and Facebook as the name; start from the name or from an app and the rest follow the same way. The families come from Apple's list of sites that share one sign-in, with a few of WM Pass's own added.
 
@@ -52,6 +58,10 @@ Tag names and their icons are stored inside the encrypted vault.
 
 ## Icons
 
+The picture beside each item comes from the sources under Settings, Icons, **Pictures, in order**, tried from the top: the brand marks that ship with the app, then the icon of the app an item is for if it is installed. **Website icons** can be added to the order; they are fetched once per site, from the site itself or from DuckDuckGo, kept encrypted on the phone, and never asked for local addresses. An item none of them covers shows its first letter on a soft color of its own.
+
+The item's page lists **Websites and apps** together, each app with its name and icon, and opens an installed app when you tap it. For a login it also has **Change the password**, which opens the site's own page for that.
+
 The icon picker shows what Automatic would draw, then every symbol and every brand in one grid that fills the screen's width. Search narrows both. Hold an icon to see its name and where it comes from: symbols come from the icon style you picked, and brand marks come from Simple Icons (CC0) and belong to their owners.
 
 Settings, Icons has eight styles for the app's own symbols: four versions of Material Symbols (Apache License 2.0), Phosphor in regular, bold and light (MIT), and Lucide (ISC). All of them are in the app, so switching needs no download. Lucide is drawn in lines only, so a selected tab keeps its outline instead of filling in.
@@ -68,6 +78,8 @@ A mail opens the way a mail app shows it, with its layout and links, but no scri
 
 On Android 14 and up, WM Pass can be your passkey provider. Apps other than known browsers get a confirmation that names them, in place of a check against the site's published app list.
 
+A site adds a passkey itself, when you create one there with WM Pass chosen as the provider. The editor's **Passkeys** section lists the ones a login has, with the site and the account each is for, but cannot add or change one: its private half never leaves WM Pass.
+
 ## Other ways in
 
 - A Quick Settings tile that locks everything at once.
@@ -79,9 +91,25 @@ On Android 14 and up, WM Pass can be your passkey provider. Apps other than know
 
 Settings, Security, **When a panic app signals** starts at None, so no other app can act on WM Pass until you choose. **Lock** locks it when any panic app signals, or only the ones you pick under **Panic apps**. **Wipe** deletes the vault on this phone, and only for an app you picked, so choosing it with none picked opens the list. Apps known to send panic signals, such as Ripple and Panic Button, come first in the list.
 
-## Folders in the vault list
+## The vault list
 
-With Grouping set to **By folder** under Settings, Vault list, each folder is one row that opens in place to show what is in it, and items in no folder follow the folders. **Compact** fits more rows on screen, with a small icon and the second line beside the name.
+The list opens on types, then folders, the way Bitwarden's vault does: a row for each type of item you have (logins, cards, notes and the rest) with its count, then a row for each folder and **No folder**. Each row opens in place. An item shows under its type and under its folder, and tapping a type chip above the list shows that type as one plain list. Settings, Vault list, **Grouping** changes this to **By site**, one list with several logins for one site folded into a row, or to **By folder**. Logins listed under an open site, type or folder are set in a little, so they read as inside it.
+
+A scroll bar runs down the right edge of the vault list and the Health page. Drag it to move through a long list fast; while it is held, a label says which letter or part you are in.
+
+Hold an item to start choosing several. With two or more chosen, **More**, **Link together** links each to the others, so every one lists the rest under **Linked**.
+
+**Compact** fits more rows on screen, with a small icon and the second line beside the name.
+
+## Health and breaches
+
+The vault list's health row can be put away until something new needs attention, or for good. On the Health page, **Used more than once** groups logins by the password they share, and tapping a login offers **Change the password** on its site, **Ignore for this check**, or opening it. Settings, Health checks, **Leave out local addresses** keeps routers, printers and other devices on your own network out of the checks, and is on to start with.
+
+Settings, Breaches checks every password against Have I Been Pwned or XposedOrNot. The check keeps running after you leave the page, with a notification and a **Stop** button, and the page says when it last ran and lets you sort what it found by how often each password was seen.
+
+## Settings search
+
+The search button on the Settings page turns its bar into a search field. Each result is a card with the icon of the page it opens and where it lives, and the words you typed in bold. Back out of a result and the same results are still there.
 
 ## QR codes
 

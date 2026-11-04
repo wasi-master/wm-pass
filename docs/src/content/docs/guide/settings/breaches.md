@@ -75,6 +75,16 @@ Items in the trash and on the hidden shelf are not checked.
 
 The results are never saved. After the vault locks, run the check again to see them on the Health page.
 
+#### On Android
+
+Pick the service first. **Have I Been Pwned** gets the first five characters of each password's SHA-1 hash from api.pwnedpasswords.com and checks the answer here. **XposedOrNot** gets the first ten characters of its Keccak-512 hash from passwords.xposedornot.com and answers with a count.
+
+Neither service gets your passwords or their full hashes, so neither can tell which password you asked about.
+
+The check keeps going after you leave the page, with a notification that counts the passwords and has a **Stop** button. Android 13 and later ask once whether WM Pass may post it.
+
+The page then says when the last check ran, with which service, and how many of how many were found. Found items sort by **Most seen** or by **Name**, and lead the Health page under [In a known breach](/guide/settings/health/#action-health-check-breached) until the vault locks.
+
 See also [Health screen](/guide/screens/#screen-health), [In a known breach](/guide/settings/health/#action-health-check-breached), [Allow network features](/guide/settings/security/#setting-network-allowed).
 
 <a id="group-breaches-emails"></a>

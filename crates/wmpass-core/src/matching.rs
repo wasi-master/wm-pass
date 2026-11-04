@@ -1,6 +1,7 @@
 //! Which saved logins may be offered where. Getting this wrong hands a password to
 //! the wrong site, so the rules lean towards offering less.
 
+use base64::Engine;
 use regex::Regex;
 use url::Url;
 
@@ -34,6 +35,80 @@ pub enum MatchLevel {
     Domain,
     /// Exactly the saved host, or the saved app with its certificate.
     Exact,
+}
+
+/// First labels of package names as people write them: a top-level domain, reversed.
+const PACKAGE_ROOTS: &[&str] = &[
+    "com", "org", "net", "io", "app", "dev", "me", "co", "de", "uk", "bd", "in", "us", "tv", "info", "ru", "fr",
+    "jp", "cn", "br", "edu", "gov", "nl", "it", "es", "ca", "au", "kr", "tw", "pl", "ch", "se", "at", "be", "mobi",
+    "ai", "gg", "xyz", "eu", "id", "my", "pk", "vn", "tr", "ir", "mx", "ar", "za", "ua", "cz", "fi", "no", "dk",
+    "gr", "hu", "ro", "pt", "il", "sg", "hk", "th", "ph", "nz",
+];
+
+/// Whether text saved where a website goes is really an Android package name, such as
+/// `com.bkash.customerapp`: no scheme, path or port, a top-level domain first and a last label
+/// that is no top-level domain. A guess, so it only decides when nothing else says.
+pub fn looks_like_package(text: &str) -> bool {
+    let text = text.trim();
+    if text.is_empty() || !text.is_ascii() || text.contains(['/', ':', '@', '?', '#']) || text.contains(char::is_whitespace) {
+        return false;
+    }
+    let labels: Vec<&str> = text.split('.').collect();
+    if labels.len() < 2
+        || labels
+            .iter()
+            .any(|label| label.is_empty() || !label.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'))
+    {
+        return false;
+    }
+    let first = labels[0].to_ascii_lowercase();
+    let last = labels[labels.len() - 1].to_ascii_lowercase();
+    PACKAGE_ROOTS.contains(&first.as_str()) && !psl::suffix(last.as_bytes()).is_some_and(|suffix| suffix.is_known())
+}
+
+/// The Android app an address saved for a login names, in the forms exports write it:
+/// `androidapp://package` (Bitwarden), `android://<certificate digest>@package/` (Google
+/// Password Manager, the digest in base64) and a bare package name. The digest comes back as
+/// lowercase hex, as the system reports it.
+pub fn app_of_address(address: &str) -> Option<(String, Option<String>)> {
+    let address = address.trim();
+    let lower = address.to_ascii_lowercase();
+    if lower.starts_with("androidapp://") {
+        let package = address["androidapp://".len()..].trim_end_matches('/');
+        return (!package.is_empty()).then(|| (package.to_owned(), None));
+    }
+    if lower.starts_with("android://") {
+        let rest = address["android://".len()..].trim_end_matches('/');
+        let (digest, package) = rest.rsplit_once('@').unwrap_or(("", rest));
+        if package.is_empty() {
+            return None;
+        }
+        let engines = [base64::engine::general_purpose::STANDARD, base64::engine::general_purpose::URL_SAFE];
+        let cert = engines
+            .iter()
+            .find_map(|engine| engine.decode(digest).ok())
+            .filter(|bytes| bytes.len() == 32)
+            .map(|bytes| crate::vault::hex(&bytes));
+        return Some((package.to_owned(), cert));
+    }
+    looks_like_package(address).then(|| (address.to_owned(), None))
+}
+
+/// What an importer saves for an address: the app it names, or the address as a website.
+pub fn matcher_from_address(address: &str) -> SiteMatcher {
+    match app_of_address(address) {
+        Some((package, cert_sha256)) => SiteMatcher::AndroidApp { package, cert_sha256 },
+        None => SiteMatcher::Url(address.to_owned()),
+    }
+}
+
+/// A matcher as it is meant: an app saved as a website address reads as the app. Entries
+/// imported before importers knew these forms keep them, so they are read this way.
+pub fn normalized_matcher(matcher: &SiteMatcher) -> SiteMatcher {
+    match matcher {
+        SiteMatcher::Url(address) => matcher_from_address(address),
+        other => other.clone(),
+    }
 }
 
 /// The host of a saved value that may lack a scheme.
@@ -79,7 +154,7 @@ fn web_level(matcher: &SiteMatcher, page: &Url, url: &str) -> Option<MatchLevel>
         }
         SiteMatcher::Host(host) => (host_of(host)? == page_host).then_some(MatchLevel::Exact),
         SiteMatcher::Url(saved) => {
-            if scheme_downgrade(saved, page) {
+            if scheme_downgrade(saved, page) || app_of_address(saved).is_some() {
                 return None;
             }
             let host = host_of(saved)?;
@@ -102,14 +177,14 @@ fn app_level(matcher: &SiteMatcher, package: &str, cert: &str) -> Option<MatchLe
     let SiteMatcher::AndroidApp {
         package: saved,
         cert_sha256,
-    } = matcher
+    } = normalized_matcher(matcher)
     else {
         return None;
     };
     if saved != package {
         return None;
     }
-    match cert_sha256 {
+    match &cert_sha256 {
         Some(digest) => digest
             .eq_ignore_ascii_case(cert)
             .then_some(MatchLevel::Exact),
@@ -329,5 +404,38 @@ mod tests {
         let found = matches_for([&a, &b], web("https://sso.example.com/"));
         assert_eq!(found[0].0.common.title.v, "B");
         assert_eq!(found[0].1, MatchLevel::Exact);
+    }
+
+    #[test]
+    fn apps_saved_as_addresses_read_as_apps() {
+        assert_eq!(app_of_address("androidapp://com.discord"), Some(("com.discord".into(), None)));
+        // Google Password Manager writes the certificate digest in base64 before the package.
+        let digest = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
+        let (package, cert) = app_of_address(&format!("android://{digest}@com.twitter.android/")).unwrap();
+        assert_eq!(package, "com.twitter.android");
+        assert_eq!(cert.as_deref(), Some("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"));
+        for package in ["com.bkash.customerapp", "bd.com.sonalibank.sw", "us.zoom.videomeetings"] {
+            assert_eq!(app_of_address(package).map(|(p, _)| p).as_deref(), Some(package), "{package}");
+        }
+        for site in ["x.com", "payment.bkash.app", "co.uk", "me.com", "https://com.example.org/", "github.com/login", "localhost"] {
+            assert_eq!(app_of_address(site), None, "{site}");
+        }
+    }
+
+    #[test]
+    fn an_app_saved_as_an_address_fills_the_app_and_no_site() {
+        let entry = login(vec![SiteMatcher::Url("android://AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=@com.example.app/".into())]);
+        let cert = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+        assert_eq!(
+            match_entry(&entry, Target::App { package: "com.example.app", cert_sha256: cert }),
+            Some(MatchLevel::Exact)
+        );
+        assert_eq!(match_entry(&entry, Target::App { package: "com.example.app", cert_sha256: "ff" }), None);
+        let bare = login(vec![SiteMatcher::Url("com.example.wallet".into())]);
+        assert_eq!(match_entry(&bare, web("https://wallet.example.com/")), None);
+        assert_eq!(
+            match_entry(&bare, Target::App { package: "com.example.wallet", cert_sha256: cert }),
+            Some(MatchLevel::Unverified)
+        );
     }
 }

@@ -1,6 +1,7 @@
 //! Breach checks. All opt-in, and each one states what leaves the device:
 //!
 //! - HIBP passwords: five characters of a SHA-1. The password stays here.
+//! - XposedOrNot passwords: ten characters of a Keccak-512. The password stays here.
 //! - HIBP accounts and LeakCheck: the email address, sent to that service.
 //! - Proxynova: the email address. Its answers hold stolen plaintext passwords, so the
 //!   code here only takes emails from the vault, keeps nothing, and reports whether a
@@ -16,6 +17,8 @@ use crate::http::{Call, NetError, Request, Response};
 
 /// Pwned Passwords' address.
 pub const HIBP_RANGE: &str = "https://api.pwnedpasswords.com/range/";
+/// XposedOrNot's anonymous password lookup.
+pub const XON_PASSWORDS: &str = "https://passwords.xposedornot.com/api/v1/pass/anon/";
 /// HIBP's account API.
 pub const HIBP_ACCOUNT: &str = "https://haveibeenpwned.com/api/v3/breachedaccount/";
 /// LeakCheck's free endpoint.
@@ -52,6 +55,30 @@ pub fn password_count(password: &Secret) -> Call<u64> {
             }
         }
         Ok(0)
+    })
+}
+
+fn keccak_prefix(text: &str) -> String {
+    use sha3::Digest as _;
+    sha3::Keccak512::digest(text.as_bytes()).iter().take(5).map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// How many times a password appears in XposedOrNot's collection, a second count drawn from
+/// other leaks than Pwned Passwords'. Only the first ten characters of its Keccak-512 hash
+/// are sent; the service answers for whatever password has that start.
+pub fn password_count_xon(password: &Secret) -> Call<u64> {
+    let request = Request::get(format!("{XON_PASSWORDS}{}", keccak_prefix(password.expose())));
+    Call::new(request, move |response| {
+        if response.status == 404 {
+            return Ok(0);
+        }
+        response.ok()?;
+        let body = response.json()?;
+        let count = body.pointer("/SearchPassAnon/count").ok_or(NetError::BadAnswer)?;
+        count
+            .as_u64()
+            .or_else(|| count.as_str().and_then(|text| text.trim().parse().ok()))
+            .ok_or(NetError::BadAnswer)
     })
 }
 
@@ -229,6 +256,12 @@ pub fn proxynova_check(email: &VaultEmail, candidates: Vec<Secret>) -> Call<Comb
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn xposedornot_takes_ten_characters_of_keccak() {
+        // The service's own sample answer is for this prefix, seen nearly twelve million times.
+        assert_eq!(super::keccak_prefix("123456"), "808d63ba47");
+    }
+
     use super::*;
     use crate::http::NetPolicy;
     use crate::http::fake::FakeHttp;

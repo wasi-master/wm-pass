@@ -6,7 +6,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,7 +55,14 @@ fun oklch(l: Float, c: Float, hueDegrees: Float): Color {
 
 /** How entries' icons are drawn. See Settings, Icons. */
 @androidx.compose.runtime.Immutable
-data class SiteIconLook(val style: String = "brand", val shape: String = "circle")
+data class SiteIconLook(
+    val style: String = "brand",
+    val shape: String = "circle",
+    /** Where a picture comes from, in order, before the letter: `brand`, `app` and `site`. */
+    val sources: List<String> = listOf("brand", "app"),
+    /** Where website icons come from: each `site` itself, or `duckduckgo`. */
+    val from: String = "site",
+)
 
 val LocalSiteIcons = androidx.compose.runtime.staticCompositionLocalOf { SiteIconLook() }
 
@@ -73,15 +83,20 @@ private fun FlatTile(face: TileFace, name: String, label: String?, modifier: Mod
     val letter = face.letter ?: name.firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString().orEmpty()
     val brandShown = face.brand && hue == null && look.style != "uniform" && look.style != "letters"
     val neutral = scheme.surfaceContainerHighest
+    // With brand colours on, a site without a mark still gets a colour of its own, soft as in
+    // Contacts, rather than every letter on the same grey.
+    val ownHue = face.hue?.takeIf { hue == null && !face.brand && look.style == "brand" }
     val fill = when {
         bare -> Color.Transparent
         hue != null -> oklch(0.58f, 0.11f, hue)
+        ownHue != null -> oklch(if (colors.dark) 0.40f else 0.86f, if (colors.dark) 0.07f else 0.06f, ownHue)
         brandShown && look.style == "brand" && com.wasimaster.wmpass.ui.theme.contrast(brandColour, colors.ground) >= 1.3f -> brandColour
         brandShown && look.style == "tinted" -> neutral
         else -> scheme.secondaryContainer
     }
     val ink = when {
         hue != null -> if (bare) oklch(0.62f, 0.14f, hue) else Color.White
+        ownHue != null -> oklch(if (colors.dark) 0.90f else 0.36f, 0.09f, ownHue)
         brandShown && !bare && fill == brandColour -> face.glyphTint
         brandShown && com.wasimaster.wmpass.ui.theme.contrast(brandColour, if (bare) colors.ground else neutral) >= 2.2f -> brandColour
         bare -> scheme.onSurfaceVariant
@@ -143,7 +158,16 @@ fun brandColors(brand: Color): Pair<Color, Color> {
 }
 
 /** What an entry looks like: its colours, and a mark or a letter. */
-class TileFace(val from: Color, val to: Color, val glyph: ImageVector?, val letter: String?, val glyphTint: Color = Color.White, val brand: Boolean = false)
+class TileFace(
+    val from: Color,
+    val to: Color,
+    val glyph: ImageVector?,
+    val letter: String?,
+    val glyphTint: Color = Color.White,
+    val brand: Boolean = false,
+    /** The site's or name's own hue, for a face that has no brand colour of its own. */
+    val hue: Float? = null,
+)
 
 /** Everything an entry's look depends on, worked out once. */
 @Composable
@@ -163,10 +187,10 @@ fun rememberFace(title: String, site: String?, kind: String, label: String? = nu
         when {
             chosenGlyph != null -> TileFace(colors.first, colors.second, chosenGlyph, null, tint)
             brand != null -> TileFace(colors.first, colors.second, brand.glyph, null, tint, brand = true)
-            kind != "login" && site == null -> TileFace(colors.first, colors.second, kindIcon(kind), null, tint)
+            kind != "login" && site == null -> TileFace(colors.first, colors.second, kindIcon(kind), null, tint, hue = label?.toFloatOrNull() ?: hueOf(seed))
             else -> {
                 val letter = (site ?: title).firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString()
-                TileFace(colors.first, colors.second, if (letter == null) kindIcon(kind) else null, letter, tint)
+                TileFace(colors.first, colors.second, if (letter == null) kindIcon(kind) else null, letter, tint, hue = label?.toFloatOrNull() ?: hueOf(seed))
             }
         }
     }
@@ -463,9 +487,16 @@ fun SiteTile(
     size: Dp = 46.dp,
     label: String? = null,
     icon: String? = null,
+    /** The package of the app the item is for, so its icon can stand in. */
+    app: String? = null,
 ) {
     val colors = palette
     val face = rememberFace(title, site, kind, label, icon)
+    val picture = rememberPicture(site, app, face.brand, chosen = icon != null)
+    if (picture != null) {
+        PictureTile(picture.first, isApp = picture.second, modifier, size)
+        return
+    }
     if (colors.flat) {
         FlatTile(face, title, label, modifier, size)
         return
@@ -488,5 +519,73 @@ fun SiteTile(
                 style = TextStyle(fontSize = (size.value * 0.44f).sp, fontWeight = FontWeight.Bold),
             )
         }
+    }
+}
+
+/**
+ * The app's or the website's own picture, when the order under Settings, Icons reaches one
+ * before a brand mark that is already drawn. Null while it loads, and for anything with an
+ * icon chosen by hand. The second value says whether it is an app's icon.
+ */
+@Composable
+private fun rememberPicture(site: String?, app: String?, brand: Boolean, chosen: Boolean): Pair<androidx.compose.ui.graphics.ImageBitmap, Boolean>? {
+    val look = LocalSiteIcons.current
+    if (chosen || look.style == "letters") return null
+    val context = LocalContext.current
+    val plan = remember(look.sources, site, app, brand) {
+        look.sources
+            .takeWhile { !(it == "brand" && brand) }
+            .filter { (it == "app" && app != null) || (it == "site" && site != null) }
+    }
+    if (plan.isEmpty()) return null
+    fun known(): Pair<androidx.compose.ui.graphics.ImageBitmap, Boolean>? = plan.firstNotNullOfOrNull { source ->
+        if (source == "app") com.wasimaster.wmpass.system.ItemIcons.remembered(com.wasimaster.wmpass.system.ItemIcons.appKey(app!!))?.let { it to true }
+        else com.wasimaster.wmpass.system.ItemIcons.remembered(com.wasimaster.wmpass.system.ItemIcons.siteKey(site!!))?.let { it to false }
+    }
+    var picture by remember(plan, look.from) { mutableStateOf(known()) }
+    androidx.compose.runtime.LaunchedEffect(plan, look.from) {
+        if (picture != null) return@LaunchedEffect
+        for (source in plan) {
+            val found = if (source == "app") {
+                com.wasimaster.wmpass.system.ItemIcons.app(context, app!!)?.let { it to true }
+            } else {
+                com.wasimaster.wmpass.system.ItemIcons.site(context, site!!, look.from)?.let { it to false }
+            }
+            if (found != null) {
+                picture = found
+                return@LaunchedEffect
+            }
+        }
+    }
+    return picture
+}
+
+/**
+ * An app's icon as the launcher shows it, already shaped; or a website's, set on a light tile
+ * of the chosen shape, because most are drawn for a white browser tab.
+ */
+@Composable
+private fun PictureTile(picture: androidx.compose.ui.graphics.ImageBitmap, isApp: Boolean, modifier: Modifier, size: Dp) {
+    if (isApp) {
+        androidx.compose.foundation.Image(picture, null, modifier.size(size), filterQuality = androidx.compose.ui.graphics.FilterQuality.High)
+        return
+    }
+    val look = LocalSiteIcons.current
+    val shape = if (!palette.flat) {
+        remember(size) { SquircleShape(size * 0.30f) }
+    } else {
+        when (look.shape) {
+            "rounded" -> androidx.compose.foundation.shape.RoundedCornerShape(size * 0.28f)
+            "square" -> androidx.compose.foundation.shape.RoundedCornerShape(size * 0.12f)
+            else -> androidx.compose.foundation.shape.CircleShape
+        }
+    }
+    Box(modifier.size(size).clip(shape).background(Color(0xFFF6F6F7)), contentAlignment = Alignment.Center) {
+        androidx.compose.foundation.Image(
+            picture,
+            null,
+            Modifier.size(size * 0.6f),
+            filterQuality = androidx.compose.ui.graphics.FilterQuality.High,
+        )
     }
 }

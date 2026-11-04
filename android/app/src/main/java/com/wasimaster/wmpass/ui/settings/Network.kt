@@ -1,5 +1,6 @@
 package com.wasimaster.wmpass.ui.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
@@ -22,7 +24,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.foundation.text.input.clearText
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -112,73 +113,73 @@ internal fun Page(title: String, content: @Composable () -> Unit) {
 @Composable
 fun BreachScreen() {
     val colors = palette
-    val shell = LocalShell.current
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val entries by Pass.entries.collectAsStateWithLifecycle()
-    var running by remember { mutableStateOf(false) }
-    var done by remember { mutableStateOf(0) }
-    var total by remember { mutableStateOf(0) }
+    val progress by com.wasimaster.wmpass.system.BreachCheck.progress.collectAsStateWithLifecycle()
     val found by BreachCounts.counts.collectAsStateWithLifecycle()
-    var problem by remember { mutableStateOf<String?>(null) }
+    val running = progress.running
+    var source by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("hibp") }
+    var byCount by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(true) }
+    // Asked once, as the first check starts; the check runs whatever the answer.
+    val askNotify = rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { }
     Page("Breaches") {
-        NetGate("Checks your passwords against Have I Been Pwned. Only the first five characters of each password's SHA-1 hash are sent, so the service cannot tell which password you asked about. Checking an email address sends that address.") {
+        NetGate("Checks your passwords against Have I Been Pwned or XposedOrNot. Only the start of each password's hash is sent: five characters of SHA-1, or ten of Keccak-512. Neither service can tell which password you asked about. Checking an email address sends that address.") {
             Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Eyebrow("Your passwords")
-                val checkable = entries.count { it.hasPassword }
+                val checkable = entries.filter { it.hasPassword }
+                val last = remember(progress.running, progress.done) { com.wasimaster.wmpass.system.BreachCheck.last(context) }
                 Text(
-                    if (checkable == 0) {
-                        "No item in this vault holds a password yet, so there is nothing to check."
-                    } else if (found.isEmpty() && !running) {
-                        "See whether any password in this vault has appeared in a known leak."
-                    } else if (running) {
-                        "Checked $done of $total."
-                    } else {
-                        "${found.size} of them have appeared in leaks. They now lead the list on the Health page."
+                    when {
+                        checkable.isEmpty() -> "No item in this vault holds a password yet, so there is nothing to check."
+                        running -> "Checked ${progress.done} of ${progress.total} with ${com.wasimaster.wmpass.system.BreachCheck.sourceName(progress.source)}. You can leave this page; the notification shows how far it has got."
+                        found.isNotEmpty() -> "${found.size} of them have appeared in leaks. They now lead the list on the Health page."
+                        else -> "See whether any password in this vault has appeared in a known leak."
                     },
                     color = if (found.isNotEmpty() && !running) colors.danger else colors.textMid,
                     style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.padding(horizontal = 6.dp),
                 )
+                if (last != null && !running) {
+                    Text(
+                        "Last checked ${com.wasimaster.wmpass.ui.vault.whenText(last.atMs)} at ${java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(last.atMs))} with ${com.wasimaster.wmpass.system.BreachCheck.sourceName(last.source)}: ${last.found} of ${last.checked} found. What it found is kept only until WM Pass closes.",
+                        color = colors.textLow,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 6.dp),
+                    )
+                }
                 AnimatedVisibility(running) {
                     LinearProgressIndicator(
-                        progress = { if (total == 0) 0f else done.toFloat() / total },
+                        progress = { if (progress.total == 0) 0f else progress.done.toFloat() / progress.total },
                         color = colors.primary,
                         trackColor = colors.surface3,
                         modifier = Modifier.fillMaxWidth().clip(CircleShape).padding(vertical = 4.dp),
                     )
                 }
-                if (checkable > 0) PrimaryButton(if (running) "Checking…" else "Check every password", Modifier.fillMaxWidth(), enabled = !running, icon = PassIcons.GppGood) {
-                    running = true
-                    problem = null
-                    scope.launch {
-                        val targets = entries.filter { it.hasPassword }
-                        total = targets.size
-                        done = 0
-                        val counts = mutableMapOf<String, Long>()
-                        try {
-                            for (entry in targets) {
-                                val secret = Pass.reveal(entry.id, "password")
-                                val reply = secret.consume { bytes ->
-                                    Engine.net("breach.password", online = NetAccess.allowed(context), secret = bytes)
-                                }
-                                val count = reply.obj["count"]?.jsonPrimitive?.long ?: 0
-                                if (count > 0) counts[entry.id] = count
-                                done++
-                            }
-                            BreachCounts.counts.value = counts
-                            shell.haptics.confirm()
-                        } catch (failure: NativeFailure) {
-                            problem = failure.message
+                if (checkable.isNotEmpty() && !running) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Pill("Have I Been Pwned", source == "hibp") { source = "hibp" }
+                        Pill("XposedOrNot", source == "xon") { source = "xon" }
+                    }
+                    PrimaryButton(if (last == null) "Check every password" else "Check again", Modifier.fillMaxWidth(), icon = PassIcons.GppGood) {
+                        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+                            context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                        ) {
+                            askNotify.launch(android.Manifest.permission.POST_NOTIFICATIONS)
                         }
-                        running = false
+                        com.wasimaster.wmpass.system.BreachCheck.start(context, checkable.map { it.id }, source)
                     }
                 }
-                problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
+                if (running) QuietButton("Stop", Modifier.fillMaxWidth(), PassIcons.Close) { com.wasimaster.wmpass.system.BreachCheck.stop() }
+                progress.problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
                 val breached = entries.filter { it.id in found }
                 if (breached.isNotEmpty()) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Pill("Most seen", byCount, icon = PassIcons.Sort) { byCount = true }
+                        Pill("Name", !byCount, icon = PassIcons.Abc) { byCount = false }
+                    }
+                    val ordered = if (byCount) breached.sortedByDescending { found[it.id] ?: 0 } else breached.sortedBy { it.title.lowercase() }
                     GroupCard {
-                        breached.forEachIndexed { index, entry ->
+                        ordered.forEachIndexed { index, entry ->
                             if (index > 0) Hairline(inset = 70.dp)
                             EntryLineCounted(entry, found[entry.id] ?: 0)
                         }
@@ -199,7 +200,7 @@ private fun EntryLineCounted(entry: Summary, count: Long) {
         Modifier.fillMaxWidth().clickable { shell.open(entry.id) }.padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SiteTile(entry.title, entry.site, entry.kind, size = 40.dp, label = entry.color, icon = entry.icon)
+        SiteTile(entry.title, entry.site, entry.kind, size = 40.dp, label = entry.color, icon = entry.icon, app = entry.app)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(entry.title, color = colors.text, style = MaterialTheme.typography.bodyLarge, maxLines = 1)

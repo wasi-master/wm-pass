@@ -12,7 +12,7 @@
 
 <Group title="Layout">
   <Choice title="Layout" icon="view_agenda" pref="layout" options={[['list', 'List'], ['compact', 'Compact'], ['grid', 'Grid']]} />
-  <Choice title="Grouping" icon="layers" pref="grouping" options={[['smart', 'By site'], ['folder', 'By folder']]} />
+  <Choice title="Grouping" icon="layers" pref="grouping" options={[['smart', 'By site'], ['folder', 'By folder'], ['types', 'By type']]} />
   <Choice title="Sort by" icon="sort" pref="sort" options={[['name', 'Name'], ['changed', 'Last changed'], ['kind', 'Type'], ['site', 'Website']]} />
   <Toggle title="Pinned items first" sub="Keep pinned items above the rest." icon="keep" pref="pinned_on_top" />
   <Toggle title="Fold logins on one site" sub="Show several logins for a site as one row." icon="layers" pref="group_sites" />

@@ -84,7 +84,17 @@ export const protection = [
       'The results are never saved. After the vault locks, run the check again to see them on the Health page.',
     ],
     related: ['screen.health', 'action.health_check_breached', 'setting.network_allowed'],
-    words: 'pwned passwords k-anonymity sha1 hash range',
+    words: 'pwned passwords k-anonymity sha1 hash range xposedornot keccak',
+    on: {
+      android: {
+        how: [
+          'Pick the service first. **Have I Been Pwned** gets the first five characters of each password\'s SHA-1 hash from api.pwnedpasswords.com and checks the answer here. **XposedOrNot** gets the first ten characters of its Keccak-512 hash from passwords.xposedornot.com and answers with a count.',
+          'Neither service gets your passwords or their full hashes, so neither can tell which password you asked about.',
+          'The check keeps going after you leave the page, with a notification that counts the passwords and has a **Stop** button. Android 13 and later ask once whether WM Pass may post it.',
+          'The page then says when the last check ran, with which service, and how many of how many were found. Found items sort by **Most seen** or by **Name**, and lead the Health page under [[action.health_check_breached|In a known breach]] until the vault locks.',
+        ],
+      },
+    },
   },
   {
     id: 'group.breaches.emails',
@@ -202,6 +212,19 @@ export const protection = [
     caveats: 'Turning checks off under [[group.health.problems|Problems to list]] hides them from the page but does not change the score. The other checks, such as unencrypted sites, never change it.',
     related: ['group.health.problems', 'screen.health'],
     words: 'score percent number',
+  },
+  {
+    id: 'setting.health_skip_local',
+    kind: 'setting',
+    title: 'Leave out local addresses',
+    page: 'health',
+    pref: 'health_skip_local',
+    shells: ['android'],
+    what: 'Leaves logins for devices on your own network out of the Health checks: a router, a NAS, a printer.',
+    how: 'A login counts as local when every address saved on it is a private or loopback IP, or a name with no dot or one ending in .local, .lan, .home, .internal or .localhost.',
+    why: 'These sit behind your router, out of reach of the leaks and guessing the checks warn about, and many cannot use https or a second factor at all.',
+    related: ['group.health.problems', 'screen.health'],
+    words: 'local lan router nas intranet private ip firewall',
   },
   {
     id: 'group.health.problems',

@@ -505,7 +505,11 @@ object Pass {
 
     suspend fun code(id: String): SecretBytes = Engine.call("otp.code", handle, { put("id", id) }).secret!!
 
-    suspend fun health(breached: Map<String, Long> = emptyMap()): HealthView = Engine.view(
+    suspend fun health(
+        breached: Map<String, Long> = emptyMap(),
+        ignored: Map<String, Set<String>> = emptyMap(),
+        skipLocal: Boolean = false,
+    ): HealthView = Engine.view(
         "health.report",
         HealthView.serializer(),
         handle,
@@ -514,6 +518,13 @@ object Pass {
                 "breached",
                 kotlinx.serialization.json.buildJsonObject { breached.forEach { (k, v) -> put(k, v) } },
             )
+            put(
+                "ignored",
+                kotlinx.serialization.json.buildJsonObject {
+                    ignored.forEach { (check, ids) -> put(check, kotlinx.serialization.json.JsonArray(ids.map { kotlinx.serialization.json.JsonPrimitive(it) })) }
+                },
+            )
+            put("skip_local", skipLocal)
         },
     )
 

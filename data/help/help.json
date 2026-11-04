@@ -5344,6 +5344,56 @@
      "t": "p",
      "runs": [
       {
+       "t": "text",
+       "s": "Under "
+      },
+      {
+       "t": "strong",
+       "s": "Used more than once"
+      },
+      {
+       "t": "text",
+       "s": ", the logins are grouped by the password they share, so each group is one password to change."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Tapping an item offers what fixes it: "
+      },
+      {
+       "t": "strong",
+       "s": "Change the password"
+      },
+      {
+       "t": "text",
+       "s": " opens the site's own page for that, from a list of known pages or the address a site lists at /.well-known/change-password, and a missing second factor offers the site's settings. "
+      },
+      {
+       "t": "strong",
+       "s": "Ignore for this check"
+      },
+      {
+       "t": "text",
+       "s": " takes the item off that list only, for sites with a second factor of their own and the like. "
+      },
+      {
+       "t": "strong",
+       "s": "Ignored"
+      },
+      {
+       "t": "text",
+       "s": " lists them again, to put any back."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
        "t": "strong",
        "s": "Check for breaches"
       },
@@ -7044,7 +7094,23 @@
      "runs": [
       {
        "t": "text",
-       "s": "For each password, WM Pass works out its SHA-1 hash on this device and sends only the first five characters of that hash to api.pwnedpasswords.com."
+       "s": "Pick the service first. "
+      },
+      {
+       "t": "strong",
+       "s": "Have I Been Pwned"
+      },
+      {
+       "t": "text",
+       "s": " gets the first five characters of each password's SHA-1 hash from api.pwnedpasswords.com and checks the answer here. "
+      },
+      {
+       "t": "strong",
+       "s": "XposedOrNot"
+      },
+      {
+       "t": "text",
+       "s": " gets the first ten characters of its Keccak-512 hash from passwords.xposedornot.com and answers with a count."
       }
      ]
     },
@@ -7053,7 +7119,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "The service answers with every leaked hash that starts with those five characters, padded with dummy entries so the answer does not show how many real ones there are. WM Pass looks for the rest of the hash in that answer here."
+       "s": "Neither service gets your passwords or their full hashes, so neither can tell which password you asked about."
       }
      ]
     },
@@ -7062,7 +7128,15 @@
      "runs": [
       {
        "t": "text",
-       "s": "Neither your passwords nor their full hashes leave the device, so the service cannot tell which password you asked about."
+       "s": "The check keeps going after you leave the page, with a notification that counts the passwords and has a "
+      },
+      {
+       "t": "strong",
+       "s": "Stop"
+      },
+      {
+       "t": "text",
+       "s": " button. Android 13 and later ask once whether WM Pass may post it."
       }
      ]
     },
@@ -7071,7 +7145,23 @@
      "runs": [
       {
        "t": "text",
-       "s": "Each password is one request, so a large vault takes a while. The items found also lead the Health page, under "
+       "s": "The page then says when the last check ran, with which service, and how many of how many were found. Found items sort by "
+      },
+      {
+       "t": "strong",
+       "s": "Most seen"
+      },
+      {
+       "t": "text",
+       "s": " or by "
+      },
+      {
+       "t": "strong",
+       "s": "Name"
+      },
+      {
+       "t": "text",
+       "s": ", and lead the Health page under "
       },
       {
        "t": "link",
@@ -7080,7 +7170,7 @@
       },
       {
        "t": "text",
-       "s": ", until the vault locks."
+       "s": " until the vault locks."
       }
      ]
     }
@@ -7110,7 +7200,7 @@
     "action.health_check_breached",
     "setting.network_allowed"
    ],
-   "words": "pwned passwords k-anonymity sha1 hash range",
+   "words": "pwned passwords k-anonymity sha1 hash range xposedornot keccak",
    "plain": "Looks up each password in this vault in Have I Been Pwned's list of leaked passwords, and lists the items whose password has been seen, with how many times."
   },
   {
@@ -7539,6 +7629,52 @@
    ],
    "words": "score percent number",
    "plain": "Shows a score out of 100 at the top of the Health page."
+  },
+  {
+   "id": "setting.health_skip_local",
+   "kind": "setting",
+   "title": "Leave out local addresses",
+   "page": "health",
+   "pref": "health_skip_local",
+   "what": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Leaves logins for devices on your own network out of the Health checks: a router, a NAS, a printer."
+      }
+     ]
+    }
+   ],
+   "why": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "These sit behind your router, out of reach of the leaks and guessing the checks warn about, and many cannot use https or a second factor at all."
+      }
+     ]
+    }
+   ],
+   "how": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "A login counts as local when every address saved on it is a private or loopback IP, or a name with no dot or one ending in .local, .lan, .home, .internal or .localhost."
+      }
+     ]
+    }
+   ],
+   "related": [
+    "group.health.problems",
+    "screen.health"
+   ],
+   "words": "local lan router nas intranet private ip firewall",
+   "plain": "Leaves logins for devices on your own network out of the Health checks: a router, a NAS, a printer."
   },
   {
    "id": "group.health.problems",
@@ -14207,6 +14343,164 @@
    "plain": "How the mark beside each item is drawn: in the site's own colors, in one color, or as a letter."
   },
   {
+   "id": "setting.icon_sources",
+   "kind": "setting",
+   "title": "Pictures, in order",
+   "page": "icons",
+   "pref": "icon_sources",
+   "what": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Where the picture beside each item comes from, tried from the top down until one has a picture."
+      }
+     ]
+    }
+   ],
+   "how": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "strong",
+       "s": "Brand marks"
+      },
+      {
+       "t": "text",
+       "s": " are the logos that ship with the app. "
+      },
+      {
+       "t": "strong",
+       "s": "App icons"
+      },
+      {
+       "t": "text",
+       "s": " are the icons of apps installed on this phone, for items saved for an app. "
+      },
+      {
+       "t": "strong",
+       "s": "Website icons"
+      },
+      {
+       "t": "text",
+       "s": " are fetched from each site."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Drag to change the order, and remove any you do not want. An item none of them has a picture for shows its first letter, in a soft color of its own when "
+      },
+      {
+       "t": "link",
+       "id": "setting.site_icon_style",
+       "s": "Site icons"
+      },
+      {
+       "t": "text",
+       "s": " is on brand colors."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "A color or symbol you chose for one item always wins."
+      }
+     ]
+    }
+   ],
+   "caveats": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Website icons are the only ones that go online. They are fetched once per site through the same network switch as everything else, kept encrypted on this phone, and never asked for addresses on your own network."
+      }
+     ]
+    }
+   ],
+   "related": [
+    "setting.site_icon_from",
+    "setting.site_icon_style",
+    "setting.network_allowed"
+   ],
+   "words": "favicon app icon picture logo fallback order",
+   "plain": "Where the picture beside each item comes from, tried from the top down until one has a picture."
+  },
+  {
+   "id": "setting.site_icon_from",
+   "kind": "setting",
+   "title": "Website icons from",
+   "page": "icons",
+   "pref": "site_icon_from",
+   "what": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Who is asked for a website's icon, when website icons are in "
+      },
+      {
+       "t": "link",
+       "id": "setting.icon_sources",
+       "s": "the order"
+      },
+      {
+       "t": "text",
+       "s": "."
+      }
+     ]
+    }
+   ],
+   "effects": [
+    {
+     "value": "site",
+     "label": "Each site",
+     "text": [
+      {
+       "t": "p",
+       "runs": [
+        {
+         "t": "text",
+         "s": "Asks each site for its own icon, so only that site learns that it was asked."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "value": "duckduckgo",
+     "label": "DuckDuckGo",
+     "text": [
+      {
+       "t": "p",
+       "runs": [
+        {
+         "t": "text",
+         "s": "Asks icons.duckduckgo.com, which has icons for more sites. DuckDuckGo then sees the name of each site you have a login for."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "related": [
+    "setting.icon_sources"
+   ],
+   "words": "favicon duckduckgo source",
+   "plain": "Who is asked for a website's icon, when website icons are in the order."
+  },
+  {
    "id": "setting.site_icon_shape",
    "kind": "setting",
    "title": "Shape",
@@ -14565,7 +14859,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Whether the list runs as one, with logins for the same site folded together, or splits into one part for each folder."
+       "s": "Whether the list runs as one, with logins for the same site folded together, or splits into one part for each folder or each type."
       }
      ]
     }
@@ -14608,6 +14902,29 @@
        ]
       }
      ]
+    },
+    {
+     "value": "types",
+     "label": "Types, then folders",
+     "text": [
+      {
+       "t": "p",
+       "runs": [
+        {
+         "t": "text",
+         "s": "The default. A row for each type you have, with its count, then a row for each folder and "
+        },
+        {
+         "t": "strong",
+         "s": "No folder"
+        },
+        {
+         "t": "text",
+         "s": ". Each opens in place. An item is under both its type and its folder. Picking a type chip above the list shows that type as one list."
+        }
+       ]
+      }
+     ]
     }
    ],
    "related": [
@@ -14616,7 +14933,7 @@
     "page.folders"
    ],
    "words": "folders sites sections",
-   "plain": "Whether the list runs as one, with logins for the same site folded together, or splits into one part for each folder."
+   "plain": "Whether the list runs as one, with logins for the same site folded together, or splits into one part for each folder or each type."
   },
   {
    "id": "setting.sort",

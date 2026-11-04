@@ -14,6 +14,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,7 +28,10 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -48,7 +54,9 @@ import com.wasimaster.wmpass.core.Detail
 import com.wasimaster.wmpass.core.Pass
 import com.wasimaster.wmpass.core.SecureClipboard
 import com.wasimaster.wmpass.core.Summary
+import com.wasimaster.wmpass.ui.door.PasswordPill
 import com.wasimaster.wmpass.ui.fx.rim
+import com.wasimaster.wmpass.ui.parts.Pill
 import com.wasimaster.wmpass.ui.parts.PrimaryButton
 import com.wasimaster.wmpass.ui.parts.QuietButton
 import com.wasimaster.wmpass.ui.parts.SiteTile
@@ -241,13 +249,26 @@ class AutofillActivity : SecureActivity() {
         }
     }
 
-    /** After a form is sent: a new login, or a changed password on one already here. */
+    /**
+     * After a form is sent: a new login, or a changed password on one already here. Everything
+     * can be changed before it is kept, and an app with no website of its own is offered the
+     * sites that go with it.
+     */
+    @OptIn(ExperimentalLayoutApi::class)
     @Composable
     private fun SaveStep() {
         val colors = palette
         val scope = rememberCoroutineScope()
         val parsed = PendingSave.form
         var candidates by remember { mutableStateOf<List<Summary>?>(null) }
+        var offers by remember { mutableStateOf<List<String>>(emptyList()) }
+        val appLabel = remember(parsed) { parsed?.takeIf { it.webDomain == null }?.let { Trust.labelOf(this, it.packageName) } }
+        val name = rememberTextFieldState(
+            parsed?.webDomain?.removePrefix("www.")?.substringBefore('.')?.replaceFirstChar { it.uppercase() } ?: appLabel.orEmpty(),
+        )
+        val user = rememberTextFieldState(parsed?.usernameValue.orEmpty())
+        val password = rememberTextFieldState(parsed?.passwordValue.orEmpty())
+        val website = rememberTextFieldState(parsed?.webDomain?.removePrefix("www.").orEmpty())
         LaunchedEffect(Unit) {
             if (parsed == null) {
                 finish()
@@ -263,29 +284,52 @@ class AutofillActivity : SecureActivity() {
                     finish()
                 } else {
                     candidates = sameUser
+                    if (parsed.webDomain == null) {
+                        offers = Related.find(this@AutofillActivity, "", emptyList(), listOf(parsed.packageName)).sites
+                        if (website.text.isEmpty()) offers.firstOrNull()?.let { website.setTextAndPlaceCursorAtEnd(it) }
+                    }
                 }
             }
         }
         val list = candidates ?: return
-        val where = parsed?.webDomain ?: parsed?.let { Trust.labelOf(this, it.packageName) }.orEmpty()
+        val where = parsed?.webDomain ?: appLabel.orEmpty()
+        val savePassword: suspend (String) -> Unit = { id ->
+            val bytes = password.text.toString().toByteArray()
+            Pass.change("entry.set_secret", secret = bytes) {
+                put("id", id)
+                put("field", "password")
+            }
+            bytes.fill(0)
+        }
         Panel {
             Text(if (list.isEmpty()) "Save this login?" else "Update the saved password?", color = colors.text, style = MaterialTheme.typography.titleLarge)
-            Spacer(Modifier.height(6.dp))
-            Text(
-                listOfNotNull(parsed?.usernameValue, where.takeIf { it.isNotEmpty() }).joinToString(" on "),
-                color = colors.textMid,
-                style = MaterialTheme.typography.bodyMedium,
-            )
+            if (where.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                Text(if (appLabel != null) "From the $appLabel app" else "From $where", color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
+            }
+            Spacer(Modifier.height(16.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (list.isEmpty()) SheetField(name, "Name")
+                if (list.isEmpty()) SheetField(user, "Username or email")
+                PasswordPill(password, "Password", imeAction = ImeAction.Next)
+                if (list.isEmpty()) {
+                    SheetField(website, "Website")
+                    val more = offers.filter { it != website.text.toString().trim() }
+                    if (more.isNotEmpty()) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            more.forEach { site -> Pill(site, selected = false) { website.setTextAndPlaceCursorAtEnd(site) } }
+                        }
+                    }
+                    if (appLabel != null) {
+                        Text("Linked to the $appLabel app, so it fills there too.", color = colors.textLow, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
             Spacer(Modifier.height(18.dp))
             list.forEach { entry ->
-                PrimaryButton("Update ${entry.title}", Modifier.fillMaxWidth()) {
+                PrimaryButton("Update ${entry.title}", Modifier.fillMaxWidth(), enabled = password.text.isNotEmpty()) {
                     scope.launch {
-                        val bytes = parsed?.passwordValue.orEmpty().toByteArray()
-                        Pass.change("entry.set_secret", secret = bytes) {
-                            put("id", entry.id)
-                            put("field", "password")
-                        }
-                        bytes.fill(0)
+                        savePassword(entry.id)
                         Pass.flush()
                         PendingSave.clear()
                         finish()
@@ -296,17 +340,16 @@ class AutofillActivity : SecureActivity() {
             val saveNew: () -> Unit = {
                 scope.launch {
                     val form = parsed ?: return@launch
-                    val title = form.webDomain?.removePrefix("www.")?.substringBefore('.')?.replaceFirstChar { it.uppercase() }
-                        ?: Trust.labelOf(this@AutofillActivity, form.packageName)
+                    val title = name.text.toString().trim().ifEmpty { where.ifEmpty { "Login" } }
+                    val site = website.text.toString().trim().lowercase()
+                        .substringAfter("://").substringBefore('/').removePrefix("www.")
                     val id = Pass.change("entry.create") {
                         put("kind", "login")
                         put("title", title)
-                        put("fields", buildJsonObject { form.usernameValue?.let { put("username", it) } })
+                        put("fields", buildJsonObject { user.text.toString().trim().takeIf { it.isNotEmpty() }?.let { put("username", it) } })
                         putJsonArray("sites") {
-                            val domain = form.webDomain
-                            if (domain != null) {
-                                addJsonObject { put("Domain", domain.removePrefix("www.")) }
-                            } else {
+                            if (site.isNotEmpty()) addJsonObject { put("Domain", site) }
+                            if (form.webDomain == null) {
                                 Trust.certOf(this@AutofillActivity, form.packageName)?.let { cert ->
                                     addJsonObject {
                                         putJsonObject("AndroidApp") {
@@ -318,18 +361,17 @@ class AutofillActivity : SecureActivity() {
                             }
                         }
                     }.obj["id"]!!.jsonPrimitive.content
-                    val bytes = form.passwordValue.orEmpty().toByteArray()
-                    Pass.change("entry.set_secret", secret = bytes) {
-                        put("id", id)
-                        put("field", "password")
-                    }
-                    bytes.fill(0)
+                    savePassword(id)
                     Pass.flush()
                     PendingSave.clear()
                     finish()
                 }
             }
-            if (list.isEmpty()) PrimaryButton("Save", Modifier.fillMaxWidth(), onClick = saveNew) else QuietButton("Save as a new login", Modifier.fillMaxWidth(), onClick = saveNew)
+            if (list.isEmpty()) {
+                PrimaryButton("Save", Modifier.fillMaxWidth(), enabled = password.text.isNotEmpty(), onClick = saveNew)
+            } else {
+                QuietButton("Save as a new login", Modifier.fillMaxWidth(), onClick = saveNew)
+            }
             Spacer(Modifier.height(10.dp))
             QuietButton("Not now", Modifier.fillMaxWidth()) {
                 PendingSave.clear()
@@ -341,8 +383,8 @@ class AutofillActivity : SecureActivity() {
     @Composable
     private fun Panel(content: @Composable () -> Unit) {
         val colors = palette
-        Box(Modifier.fillMaxSize().background(colors.ground).navigationBarsPadding(), contentAlignment = Alignment.BottomCenter) {
-            Column(Modifier.fillMaxWidth().padding(22.dp)) { content() }
+        Box(Modifier.fillMaxSize().background(colors.ground).navigationBarsPadding().imePadding(), contentAlignment = Alignment.BottomCenter) {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(22.dp)) { content() }
         }
     }
 

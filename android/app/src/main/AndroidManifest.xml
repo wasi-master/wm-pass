@@ -12,6 +12,8 @@
     <!-- Asked for only when scanning a QR code or a card. The camera is optional: both can be typed. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <!-- Asked for only when a breach check starts, to show its progress while you are elsewhere. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Hardware keys, optional. -->
     <uses-permission android:name="android.permission.NFC" />
     <uses-feature android:name="android.hardware.nfc" android:required="false" />
@@ -44,6 +46,9 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.WmPass"
         tools:targetApi="36">
+
+        <!-- The breach check notification's Stop button. Not exported: only that notification sends it. -->
+        <receiver android:name=".system.BreachCheck$StopReceiver" android:exported="false" />
 
         <activity
             android:name=".app.MainActivity"

@@ -48,7 +48,7 @@ fn walk(
         let mut matchers = Vec::new();
         let url = get(kp::URL);
         if !url.trim().is_empty() {
-            matchers.push(SiteMatcher::Url(url));
+            matchers.push(crate::matching::matcher_from_address(&url));
         }
         let otp = item
             .get(kp::OTP)

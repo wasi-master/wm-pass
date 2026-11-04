@@ -344,6 +344,8 @@ export const screens = [
       android: {
         how: [
           ...HEALTH_PARTS,
+          'Under **Used more than once**, the logins are grouped by the password they share, so each group is one password to change.',
+          'Tapping an item offers what fixes it: **Change the password** opens the site\'s own page for that, from a list of known pages or the address a site lists at /.well-known/change-password, and a missing second factor offers the site\'s settings. **Ignore for this check** takes the item off that list only, for sites with a second factor of their own and the like. **Ignored** lists them again, to put any back.',
           '**Check for breaches** opens Settings, Breaches, and **Compare two passwords** opens a side-by-side comparison.',
         ],
         when: 'Look after an import, and whenever the score drops.',

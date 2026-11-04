@@ -130,14 +130,7 @@ impl Draft {
     pub fn into_login(self, at: Hlc, skipped: &mut Vec<String>) -> ImportedEntry {
         let mut matchers: Vec<SiteMatcher> = Vec::new();
         for url in self.urls.iter().map(|u| u.trim()).filter(|u| !u.is_empty()) {
-            if url.starts_with("androidapp://") {
-                matchers.push(SiteMatcher::AndroidApp {
-                    package: url.trim_start_matches("androidapp://").to_owned(),
-                    cert_sha256: None,
-                });
-            } else {
-                matchers.push(SiteMatcher::Url(url.to_owned()));
-            }
+            matchers.push(crate::matching::matcher_from_address(url));
         }
         let otp = parse_otp(&self.otp, &self.title, &self.username, skipped);
         let login = Login {

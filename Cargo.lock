@@ -9938,6 +9938,7 @@ dependencies = [
  "serde_json",
  "sha1 0.11.0",
  "sha2 0.11.1",
+ "sha3",
  "thiserror 2.0.21",
  "ureq",
  "url",

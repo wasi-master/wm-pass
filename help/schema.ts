@@ -111,7 +111,10 @@ export type AndroidPref =
   | 'wear_access'
   | 'panic_action'
   | 'panic_app'
-  | 'shortcuts';
+  | 'shortcuts'
+  | 'icon_sources'
+  | 'site_icon_from'
+  | 'health_skip_local';
 
 // ---- tours ----
 

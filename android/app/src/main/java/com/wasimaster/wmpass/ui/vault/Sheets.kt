@@ -736,6 +736,28 @@ fun BulkActions() {
                     bulk("pin") { put("flag", !allPin) }
                     sheet = null
                 }
+                if (chosen.size > 1) {
+                    Hairline(inset = 60.dp)
+                    SheetRow(PassIcons.Link, "Link together", "Each one lists the others under Linked") {
+                        val ids = chosen.map { it.id }
+                        shell.launch {
+                            suspend fun setLinks(id: String, links: List<String>) = Pass.change("entry.common") {
+                                put("id", id)
+                                putJsonArray("links") { links.forEach { add(it) } }
+                            }
+                            val before = ids.associateWith { Pass.detail(it).links }
+                            before.forEach { (id, have) ->
+                                val next = (have + ids.filter { it != id }).distinct()
+                                if (next.size != have.size) setLinks(id, next)
+                            }
+                            shell.undo = UndoOffer(if (ids.size == 2) "Linked the two" else "Linked all ${ids.size}") {
+                                before.forEach { (id, have) -> setLinks(id, have) }
+                            }
+                        }
+                        shell.selection.clear()
+                        sheet = null
+                    }
+                }
                 Hairline(inset = 60.dp)
                 SheetRow(PassIcons.VisibilityLock, "Put on the hidden shelf", "Out of lists and autofill until you open the shelf") {
                     bulk("hide", "Moved to the hidden shelf", null) { put("flag", true) }

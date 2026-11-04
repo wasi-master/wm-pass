@@ -54,6 +54,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.wasimaster.wmkeyboard.core.ui.RailBucket
+import com.wasimaster.wmkeyboard.core.ui.ScrollRailBox
+import com.wasimaster.wmkeyboard.core.ui.rememberScrollRailState
+import com.wasimaster.wmkeyboard.core.ui.scrollRailColors
 import com.wasimaster.wmpass.core.HealthView
 import com.wasimaster.wmpass.core.LockState
 import com.wasimaster.wmpass.core.OtpRow
@@ -93,12 +97,17 @@ private sealed interface Item {
         override val key = "gap"
     }
 
-    /** [inside] marks an item shown under its open folder. */
-    data class One(val entry: Summary, val first: Boolean, val last: Boolean, val inside: Boolean = false) : Item {
-        override val key = entry.id
+    /**
+     * [under] is the open row an item is listed under, a folder or a type. One item can show
+     * under both at once, so the row it is under is part of its key.
+     */
+    data class One(val entry: Summary, val first: Boolean, val last: Boolean, val under: String? = null) : Item {
+        override val key = if (under == null) entry.id else "$under/${entry.id}"
+        val inside: Boolean get() = under != null
     }
 
-    data class Folder(val id: String, val name: String, val entries: List<Summary>, val first: Boolean, val last: Boolean) : Item {
+    /** A row that opens in place: a folder, or in the types view a type. [kind] is null for a folder. */
+    data class Folder(val id: String, val name: String, val entries: List<Summary>, val first: Boolean, val last: Boolean, val kind: String? = null) : Item {
         override val key = "f:$id"
     }
 
@@ -107,13 +116,28 @@ private sealed interface Item {
     }
 }
 
-/** A folder's row in a run of rows, and an item listed under it while it is open. */
-private class FolderRun(val id: String, val name: String, val entries: List<Summary>)
+/** A folder's or a type's row in a run of rows, and an item listed under it while it is open. */
+private class FolderRun(val id: String, val name: String, val entries: List<Summary>, val kind: String? = null)
 
-private class Inside(val entry: Summary)
+private class Inside(val entry: Summary, val under: String)
 
 /** Where an open folder is kept among the open sites, which can never look like this. */
 private fun folderOpenKey(id: String) = "folder:$id"
+
+/** The same for a type in the types view. */
+private fun kindOpenKey(kind: String) = "kind:$kind"
+
+/** A folder id no folder has, for the row of items in none. */
+private const val NoFolder = "~none"
+
+/** A type's name as a heading over many of them. */
+internal fun kindPlural(kind: String): String = when (kind) {
+    "identity" -> "Identities"
+    "recovery" -> "Recovery phrases"
+    "wifi" -> "Wi-Fi networks"
+    "otp" -> "Codes"
+    else -> com.wasimaster.wmpass.ui.parts.kindName(kind) + "s"
+}
 
 private fun filtered(entries: List<Summary>, filter: String): List<Summary> = when (filter) {
     "all" -> entries
@@ -144,8 +168,8 @@ private fun arrange(
             val last = index == run.lastIndex
             when (value) {
                 is Summary -> into += Item.One(value, first, last)
-                is Inside -> into += Item.One(value.entry, first, last, inside = true)
-                is FolderRun -> into += Item.Folder(value.id, value.name, value.entries, first, last)
+                is Inside -> into += Item.One(value.entry, first, last, under = value.under)
+                is FolderRun -> into += Item.Folder(value.id, value.name, value.entries, first, last, value.kind)
                 is Pair<*, *> -> {
                     @Suppress("UNCHECKED_CAST")
                     val group = value as Pair<String, List<Summary>>
@@ -161,6 +185,38 @@ private fun arrange(
         card(pinned, out)
     }
     if (rest.isEmpty()) return out
+    if (grouping == "types") {
+        // Each type that has items, then each folder, as rows that open in place: the shape
+        // Bitwarden's vault opens on, which reads a large vault in a screen.
+        val byKind = rest.groupBy { it.kind }
+        val kinds = KindOrder.filter { it in byKind } + byKind.keys.filter { it !in KindOrder }
+        val types = mutableListOf<Any>()
+        kinds.forEach { kind ->
+            val inside = byKind.getValue(kind)
+            types += FolderRun(kindOpenKey(kind), kindPlural(kind), inside, kind)
+            if (kindOpenKey(kind) in open) inside.mapTo(types) { Inside(it, kindOpenKey(kind)) }
+        }
+        if (headings) out += Item.Heading("Types") else if (out.isNotEmpty()) out += Item.Gap
+        card(types, out)
+        val folders = Pass.folders.value.sortedBy { it.name.lowercase() }
+        if (folders.isNotEmpty()) {
+            val byFolder = rest.groupBy { it.folder }
+            val known = folders.mapTo(HashSet()) { it.id }
+            val loose = rest.filter { it.folder == null || it.folder !in known }
+            val run = mutableListOf<Any>()
+            (folders.map { it.id to it.name } + (NoFolder to "No folder")).forEach { (id, name) ->
+                val inside = if (id == NoFolder) loose else byFolder[id].orEmpty()
+                if (inside.isEmpty()) return@forEach
+                run += FolderRun(id, name, inside)
+                if (folderOpenKey(id) in open) inside.mapTo(run) { Inside(it, folderOpenKey(id)) }
+            }
+            if (run.isNotEmpty()) {
+                out += if (headings) Item.Heading("Folders") else Item.Gap
+                card(run, out)
+            }
+        }
+        return out
+    }
     if (grouping == "folder") {
         // Each folder is one row that opens in place, with the items in no folder after them.
         val folders = Pass.folders.value.sortedBy { it.name.lowercase() }
@@ -169,7 +225,7 @@ private fun arrange(
         folders.forEach { folder ->
             val inside = byFolder[folder.id] ?: return@forEach
             run += FolderRun(folder.id, folder.name, inside)
-            if (folderOpenKey(folder.id) in open) inside.mapTo(run, ::Inside)
+            if (folderOpenKey(folder.id) in open) inside.mapTo(run) { Inside(it, folderOpenKey(folder.id)) }
         }
         val known = folders.mapTo(HashSet()) { it.id }
         val loose = rest.filter { it.folder == null || it.folder !in known }
@@ -193,7 +249,7 @@ private fun arrange(
             if (site !in done) {
                 done += site
                 row += site to group
-                if (site in open) row.addAll(group)
+                if (site in open) group.mapTo(row) { Inside(it, "site:$site") }
             }
         } else {
             row += entry
@@ -215,9 +271,11 @@ fun VaultTab() {
     var filter by rememberSaveable { mutableStateOf("all") }
     val openSites = remember { mutableStateListOf<String>() }
     val shown = remember(entries, filter) { filtered(entries, filter) }
-    fun arranged(list: List<Summary>) =
-        arrange(list, prefs.grouping, openSites.toSet(), colors.flat, prefs.sort.value, prefs.pinnedOnTop.value, prefs.listHeadings.value, prefs.groupSites.value)
-    val items = remember(shown, prefs.grouping, openSites.toList(), colors.flat, prefs.sort.value, prefs.pinnedOnTop.value, prefs.listHeadings.value, prefs.groupSites.value) {
+    // A type chip already narrows the list to one type, so the types view lists it plainly.
+    fun groupingFor(chip: String) = if (prefs.grouping == "types" && chip != "all") "smart" else prefs.grouping
+    fun arranged(list: List<Summary>, chip: String = filter) =
+        arrange(list, groupingFor(chip), openSites.toSet(), colors.flat, prefs.sort.value, prefs.pinnedOnTop.value, prefs.listHeadings.value, prefs.groupSites.value)
+    val items = remember(shown, filter, prefs.grouping, openSites.toList(), colors.flat, prefs.sort.value, prefs.pinnedOnTop.value, prefs.listHeadings.value, prefs.groupSites.value) {
         arranged(shown)
     }
     val listState = rememberLazyListState()
@@ -244,7 +302,7 @@ fun VaultTab() {
             val visible = listState.layoutInfo.visibleItemsInfo.any { it.key == "grid" }
             if (visible && lost > 0) with(density) { (146.dp * lost).roundToPx() } else 0
         } else {
-            val kept = arranged(filtered(entries, next)).mapTo(HashSet()) { it.key }
+            val kept = arranged(filtered(entries, next), next).mapTo(HashSet()) { it.key }
             val old = items.mapTo(HashSet()) { it.key }
             listState.layoutInfo.visibleItemsInfo.filter { it.key in old && it.key !in kept }.sumOf { it.size }
         }
@@ -283,46 +341,83 @@ fun VaultTab() {
                 .height(420.dp)
                 .background(Brush.verticalGradient(0.45f to Color.Transparent, 1f to colors.ground)),
         )
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = if (colors.flat) {
-                PaddingValues(bottom = 96.dp)
-            } else {
-                PaddingValues(top = top + 8.dp, bottom = 190.dp, start = 16.dp, end = 16.dp)
-            },
-        ) {
-            if (!colors.flat) {
-                item("header") {
-                    Header((state as? LockState.Unlocked)?.name.orEmpty(), entries.size)
+        // The rows before the list's own, so the rail's stops land on the right ones.
+        val lead = (if (colors.flat) 0 else 1) + 1 + (if (entries.isNotEmpty()) 1 else 0) + (if (prefs.filterChips.value) 1 else 0) + (if (entries.isEmpty()) 1 else 0)
+        val letters = groupingFor(filter) == "smart" && prefs.sort.value == "name"
+        val stops = remember(items, lead, letters) { railStops(items, lead, letters, prefs.pinnedOnTop.value) }
+        ScrollRailBox(
+            rememberScrollRailState(listState),
+            Modifier.fillMaxSize(),
+            fadeColor = colors.ground,
+            colors = scrollRailColors(track = colors.textLow.copy(alpha = 0.25f), live = colors.primary.copy(alpha = 0.32f), thumb = colors.primary, pill = colors.surface3, onPill = colors.text),
+            buckets = if (prefs.layout == "grid") emptyList() else stops,
+            peek = false,
+            reserveGutter = colors.flat,
+        ) { railModifier ->
+            LazyColumn(
+                state = listState,
+                modifier = railModifier.fillMaxSize(),
+                contentPadding = if (colors.flat) {
+                    PaddingValues(bottom = 96.dp)
+                } else {
+                    PaddingValues(top = top + 8.dp, bottom = 190.dp, start = 16.dp, end = 16.dp)
+                },
+            ) {
+                if (!colors.flat) {
+                    item("header") {
+                        Header((state as? LockState.Unlocked)?.name.orEmpty(), entries.size)
+                    }
                 }
-            }
-            item("widgets") {
-                Dashboard(entries)
-            }
-            if (entries.isNotEmpty()) {
-                item("autofill") { AutofillNudge() }
-            }
-            if (prefs.filterChips.value) {
-                item("filters") {
-                    Filters(entries, filter) { pick(it) }
+                item("widgets") {
+                    Dashboard(entries)
                 }
-            }
-            if (entries.isEmpty()) {
-                item("empty") { EmptyVault() }
-            }
-            if (prefs.layout == "grid") {
-                item("grid") {
-                    EntryGrid(shown, arrived, Modifier.helpAnchor("list.rows"))
+                if (entries.isNotEmpty()) {
+                    item("autofill") { AutofillNudge() }
                 }
-            } else {
-                itemsIndexedStable(items, arrived, openSites, prefs.layout == "compact")
-            }
-            item("hold") {
-                Spacer(Modifier.height(with(density) { hold.toDp() }))
+                if (prefs.filterChips.value) {
+                    item("filters") {
+                        Filters(entries, filter) { pick(it) }
+                    }
+                }
+                if (entries.isEmpty()) {
+                    item("empty") { EmptyVault() }
+                }
+                if (prefs.layout == "grid") {
+                    item("grid") {
+                        EntryGrid(shown, arrived, Modifier.helpAnchor("list.rows"))
+                    }
+                } else {
+                    itemsIndexedStable(items, arrived, openSites, prefs.layout == "compact")
+                }
+                item("hold") {
+                    Spacer(Modifier.height(with(density) { hold.toDp() }))
+                }
             }
         }
     }
+}
+
+/**
+ * The rail's stops: each heading, and with the list sorted by name each first letter, so a drag
+ * down the rail says where it is. [lead] is how many rows come before the list's own.
+ */
+private fun railStops(items: List<Item>, lead: Int, letters: Boolean, pinnedFirst: Boolean): List<RailBucket> {
+    val stops = mutableListOf<RailBucket>()
+    var last: String? = null
+    fun initial(text: String): String = text.firstOrNull()?.let { if (it.isLetter()) it.uppercaseChar().toString() else "#" } ?: "#"
+    items.forEachIndexed { index, item ->
+        val label = when (item) {
+            is Item.Heading -> item.text
+            is Item.One -> if (letters && !item.inside && !(pinnedFirst && item.entry.pinned)) initial(item.entry.title) else null
+            is Item.Stack -> if (letters) initial(item.entries.map { it.title }.distinct().singleOrNull()?.takeIf { it.isNotEmpty() } ?: item.site) else null
+            else -> null
+        }
+        if (label != null && label != last) {
+            stops += RailBucket(label, lead + index)
+            last = label
+        }
+    }
+    return stops
 }
 
 private fun androidx.compose.foundation.lazy.LazyListScope.itemsIndexedStable(
@@ -371,13 +466,14 @@ private fun androidx.compose.foundation.lazy.LazyListScope.itemsIndexedStable(
                     if (!item.last) Hairline(Modifier.background(palette.surface1), inset = 74.dp)
                 }
                 is Item.Folder -> Column(modifier) {
-                    val key = folderOpenKey(item.id)
+                    val key = if (item.kind != null) item.id else folderOpenKey(item.id)
                     val open = key in openSites
                     FolderRow(
                         item.name,
                         item.entries.size,
                         if (palette.flat) androidx.compose.ui.graphics.RectangleShape else remember(item.first, item.last) { SegmentShape(28.dp, item.first, item.last) },
                         open,
+                        icon = item.kind?.let(::kindIcon),
                     ) { if (open) openSites.remove(key) else openSites.add(key) }
                     if (!item.last) Hairline(Modifier.background(palette.surface1), inset = 74.dp)
                 }
@@ -469,20 +565,40 @@ private fun FlatDashboard(entries: List<Summary>) {
     LaunchedEffect(entries.size, entries.maxOfOrNull { it.modifiedMs }) {
         if ("health" in shell.prefs.widgets) {
             delay(600)
-            health = runCatching { Pass.health() }.getOrNull()
+            health = runCatching { healthNow(shell.prefs) }.getOrNull()
         }
     }
+    var putAway by remember { mutableStateOf(false) }
     for (widget in shell.prefs.widgets) {
         when (widget) {
             "health" -> health?.let { h ->
                 val issues = h.weak.size + h.reused.sumOf { it.size } + h.breached.size
-                if (issues > 0) {
-                    com.wasimaster.wmpass.ui.parts.NavRow(
-                        if (issues == 1) "1 password needs attention" else "$issues passwords need attention",
-                        "Password health",
-                        icon = PassIcons.EcgHeart,
-                        tint = colors.warn,
-                    ) { shell.tab = "health" }
+                val seen = shell.prefs.healthBannerSeen
+                // Fewer problems than when it was put away: the next new one brings it back.
+                LaunchedEffect(issues) { if (seen.value >= 0 && issues < seen.value) seen.set(issues) }
+                if (issues > 0 && issues > seen.value) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        com.wasimaster.wmpass.ui.parts.NavRow(
+                            if (issues == 1) "1 password needs attention" else "$issues passwords need attention",
+                            "Password health",
+                            icon = PassIcons.EcgHeart,
+                            tint = colors.warn,
+                            modifier = Modifier.weight(1f),
+                        ) { shell.tab = "health" }
+                        com.wasimaster.wmpass.ui.parts.RowIconButton(PassIcons.Close, "Put this away", Modifier.padding(end = 8.dp)) { putAway = true }
+                    }
+                    if (putAway) {
+                        PassSheet({ putAway = false }, "Put this away?") {
+                            SheetRow(PassIcons.VisibilityOff, "Until something new needs attention", "Comes back when a problem is added, not for these $issues") {
+                                seen.set(issues)
+                                putAway = false
+                            }
+                            SheetRow(PassIcons.Close, "For good", "Health stays a tab away. Above the list, in Settings, brings this back") {
+                                shell.prefs.updateWidgets(shell.prefs.widgets - "health")
+                                putAway = false
+                            }
+                        }
+                    }
                 }
             }
             "codes" -> {
@@ -524,7 +640,7 @@ private fun HealthWidget(modifier: Modifier, entries: List<Summary>) {
     var health by remember { mutableStateOf<HealthView?>(null) }
     LaunchedEffect(entries.size, entries.maxOfOrNull { it.modifiedMs }) {
         delay(600)
-        health = runCatching { Pass.health() }.getOrNull()
+        health = runCatching { healthNow(shell.prefs) }.getOrNull()
     }
     WidgetCard(modifier, { shell.tab = "health" }) {
         Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
@@ -611,7 +727,7 @@ private fun TileShelf(title: String, entries: List<Summary>) {
                     .clickable(source, androidx.compose.material3.ripple()) { shell.open(entry.id) },
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                SiteTile(entry.title, entry.site, entry.kind, size = 56.dp, label = entry.color, icon = entry.icon)
+                SiteTile(entry.title, entry.site, entry.kind, size = 56.dp, label = entry.color, icon = entry.icon, app = entry.app)
                 Spacer(Modifier.height(6.dp))
                 Text(
                     entry.title,

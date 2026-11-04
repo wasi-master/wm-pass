@@ -19,6 +19,7 @@ data class Summary(
     val title: String = "",
     val subtitle: String = "",
     val site: String? = null,
+    val app: String? = null,
     val icon: String? = null,
     val color: String? = null,
     val folder: String? = null,

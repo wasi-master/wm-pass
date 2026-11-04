@@ -109,7 +109,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 
 /** What a site matcher says, in a form fit for a row. */
-data class SiteLine(val label: String, val openable: String?)
+data class SiteLine(val label: String, val openable: String?, val app: String? = null)
 
 fun siteLine(element: JsonElement): SiteLine? {
     val obj = element as? JsonObject
@@ -118,11 +118,17 @@ fun siteLine(element: JsonElement): SiteLine? {
     return when (kind) {
         "Domain", "Host" -> value.jsonPrimitive.contentOrNull?.let { SiteLine(it, it) }
         "Url" -> value.jsonPrimitive.contentOrNull?.let { SiteLine(it.removePrefix("https://").removeSuffix("/"), it) }
-        "AndroidApp" -> (value as? JsonObject)?.get("package")?.jsonPrimitive?.contentOrNull?.let { SiteLine(it, null) }
+        "AndroidApp" -> (value as? JsonObject)?.get("package")?.jsonPrimitive?.contentOrNull?.let { SiteLine(it, null, app = it) }
         "Regex" -> value.jsonPrimitive.contentOrNull?.let { SiteLine(it, null) }
         else -> null
     }
 }
+
+/** The package of the first app an item is for, for that app's icon. */
+val Detail.app: String?
+    get() = sites.firstNotNullOfOrNull { site ->
+        ((site as? JsonObject)?.get("AndroidApp") as? JsonObject)?.get("package")?.jsonPrimitive?.contentOrNull
+    }
 
 fun whenText(ms: Long): String {
     if (ms <= 0) return "never"
@@ -199,7 +205,7 @@ fun EntryScreen(id: String) {
             ) {
                 Spacer(Modifier.height(66.dp))
                 val inSearch = shell.searching
-                SiteTile(entry.title, entry.site, entry.kind, Modifier.sharedEntryWhileShown("tile-$id", inSearch), 84.dp, entry.color, entry.icon)
+                SiteTile(entry.title, entry.site, entry.kind, Modifier.sharedEntryWhileShown("tile-$id", inSearch), 84.dp, entry.color, entry.icon, app = entry.app)
                 Spacer(Modifier.height(14.dp))
                 Text(
                     entry.title.ifEmpty { "Untitled" },
@@ -285,7 +291,7 @@ private fun StandardEntry(id: String, entry: Detail?, revealed: MutableMap<Strin
             ) {
                 Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     val inSearch = shell.searching
-                    SiteTile(entry.title, entry.site, entry.kind, Modifier.sharedEntryWhileShown("tile-$id", inSearch), 56.dp, entry.color, entry.icon)
+                    SiteTile(entry.title, entry.site, entry.kind, Modifier.sharedEntryWhileShown("tile-$id", inSearch), 56.dp, entry.color, entry.icon, app = entry.app)
                     Spacer(Modifier.width(16.dp))
                     Column(Modifier.weight(1f)) {
                         Text(entry.title.ifEmpty { "Untitled" }, color = colors.text, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.sharedEntryWhileShown("title-$id", inSearch))
@@ -545,9 +551,18 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
     if (entry.otp != null && colors.flat) OtpCard(entry)
 
     val sites = entry.sites.mapNotNull(::siteLine)
+    val webs = sites.filter { it.app == null }
+    val apps = sites.mapNotNull { it.app }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val change = remember(webs.firstOrNull()?.label) { com.wasimaster.wmpass.system.ChangePassword.url(context, webs.firstOrNull { it.openable != null }?.openable) }
+    val heading = when {
+        webs.isNotEmpty() && apps.isNotEmpty() -> "Websites and apps"
+        apps.isNotEmpty() -> if (apps.size == 1) "App" else "Apps"
+        else -> if (webs.size == 1) "Website" else "Websites"
+    }
     if (sites.isNotEmpty() && colors.flat) {
         GroupCard(plain = true) {
-            sites.forEach { site ->
+            webs.forEach { site ->
                 val open = site.openable?.let { url -> { shell.openUrl(url) } }
                 Row(
                     Modifier
@@ -564,13 +579,23 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
                     if (open != null) RowIconButton(PassIcons.OpenInNew, "Open ${site.label}", onClick = open)
                 }
             }
+            apps.forEach { pkg -> AppLine(pkg) }
+            if (change != null && entry.kind == "login") ChangePasswordLine(change)
         }
     } else if (sites.isNotEmpty()) {
-        Eyebrow(if (sites.size == 1) "Website" else "Websites")
+        Eyebrow(heading)
         GroupCard(plain = true) {
-            sites.forEachIndexed { index, site ->
+            webs.forEachIndexed { index, site ->
                 if (index > 0) Hairline()
                 PlainRow(site.label, PassIcons.Language, site.openable?.let { url -> { shell.openUrl(url) } })
+            }
+            apps.forEachIndexed { index, pkg ->
+                if (index > 0 || webs.isNotEmpty()) Hairline()
+                AppLine(pkg)
+            }
+            if (change != null && entry.kind == "login") {
+                Hairline()
+                ChangePasswordLine(change)
             }
         }
     }
@@ -982,6 +1007,61 @@ private fun SecretRow(
             RowIconButton(PassIcons.ContentCopy, "Copy $label", onClick = onCopy)
         }
         footer?.let { Box(Modifier.padding(end = 8.dp)) { it() } }
+    }
+}
+
+/** An app a login is for: its name and icon when it is installed here, its package either way. */
+@Composable
+private fun AppLine(pkg: String) {
+    val colors = palette
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val label = remember(pkg) {
+        runCatching { context.packageManager.run { getApplicationLabel(getApplicationInfo(pkg, 0)).toString() } }.getOrNull()
+    }
+    val launch = remember(pkg) { context.packageManager.getLaunchIntentForPackage(pkg) }
+    var icon by remember(pkg) { mutableStateOf(com.wasimaster.wmpass.system.ItemIcons.remembered(com.wasimaster.wmpass.system.ItemIcons.appKey(pkg))) }
+    LaunchedEffect(pkg) { if (icon == null) icon = com.wasimaster.wmpass.system.ItemIcons.app(context, pkg) }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .then(if (launch != null) Modifier.clickable { runCatching { context.startActivity(launch) } } else Modifier)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val picture = icon
+        if (picture != null) {
+            androidx.compose.foundation.Image(picture, null, Modifier.size(28.dp))
+        } else {
+            Icon(PassIcons.Smartphone, null, tint = colors.textMid, modifier = Modifier.size(24.dp))
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(if (palette.flat) "App" else label ?: pkg, color = if (palette.flat) colors.textMid else colors.text, style = if (palette.flat) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyLarge, maxLines = 1)
+            if (palette.flat) Text(label ?: pkg, color = colors.text, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(if (label == null) "Not installed on this phone" else pkg, color = colors.textLow, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (launch != null) Icon(PassIcons.OpenInNew, "Open ${label ?: pkg}", tint = colors.textLow, modifier = Modifier.size(18.dp))
+    }
+}
+
+/** The site's own page for a new password, from Apple's list or the standard address. */
+@Composable
+private fun ChangePasswordLine(url: String) {
+    val colors = palette
+    val shell = LocalShell.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable { shell.openUrl(url) }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(PassIcons.LockReset, null, tint = colors.primary, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Change the password on the site", color = colors.primary, style = MaterialTheme.typography.bodyLarge)
+            Text(url.removePrefix("https://"), color = colors.textLow, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
     }
 }
 

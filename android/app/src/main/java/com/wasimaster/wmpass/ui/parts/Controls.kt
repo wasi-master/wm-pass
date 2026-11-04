@@ -381,12 +381,13 @@ fun NavRow(
     trailing: String? = null,
     /** The guide's topic for what the row does, drawn as a "?" before the chevron. */
     help: String? = null,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     val colors = palette
     val haptics = rememberHaptics()
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
             .clickable {
                 haptics.tick()

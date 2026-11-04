@@ -28,7 +28,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wasimaster.wmpass.app.Prefs
 import com.wasimaster.wmpass.core.Pass
@@ -68,7 +67,6 @@ import com.wasimaster.wmsuite.settings.NavRow
 import com.wasimaster.wmsuite.settings.ReorderableColumn
 import com.wasimaster.wmsuite.settings.ScreenExtras
 import com.wasimaster.wmsuite.settings.SettingsGroup
-import com.wasimaster.wmsuite.settings.SettingsHighlight
 import com.wasimaster.wmsuite.settings.SettingsTables
 import com.wasimaster.wmsuite.settings.ToggleSetting
 import com.wasimaster.wmsuite.settings.WmScreen
@@ -258,6 +256,7 @@ private fun SiteSamples() {
 internal fun IconsScreen() {
     val shell = LocalShell.current
     val prefs = shell.prefs
+    val context = androidx.compose.ui.platform.LocalContext.current
     // Glass keeps its own layout for these, so the rows only show where they do something.
     val flat = palette.flat
     val colors = palette
@@ -288,6 +287,44 @@ internal fun IconsScreen() {
                     PassIcons.Image,
                     options = listOf("circle" to "Circle", "rounded" to "Rounded", "square" to "Square", "none" to "No background"),
                 )
+            }
+        }
+        SettingsGroup("Pictures, in order", info = infoFor("icon_sources"), modifier = Modifier.animateContentSize(Springs.glide())) {
+            val names = mapOf("brand" to "Brand marks", "app" to "App icons", "site" to "Website icons")
+            val about = mapOf(
+                "brand" to "Marks for well-known sites, built into the app",
+                "app" to "The icon of the app a login is for, when it is installed",
+                "site" to "Fetched once from each site or DuckDuckGo. Needs network features",
+            )
+            item {
+                ReorderableColumn(
+                    // The rows run to their edges; the card around them wants the usual inset.
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    items = prefs.iconSources,
+                    label = { names[it] ?: it },
+                    onReorder = { prefs.updateIconSources(it) },
+                    onDelete = { source ->
+                        prefs.updateIconSources(prefs.iconSources - source)
+                        if (source == "site") com.wasimaster.wmpass.system.ItemIcons.forgetSites(context)
+                    },
+                    keepLast = false,
+                )
+            }
+            com.wasimaster.wmpass.app.IconSources.filter { it !in prefs.iconSources }.forEach { source ->
+                item {
+                    NavRow(
+                        "Add ${names[source]!!.lowercase()}",
+                        about[source],
+                        icon = when (source) {
+                            "app" -> PassIcons.Smartphone
+                            "site" -> PassIcons.Language
+                            else -> PassIcons.Star
+                        },
+                    ) { prefs.updateIconSources(prefs.iconSources + source) }
+                }
+            }
+            if ("site" in prefs.iconSources) item {
+                ChoiceRow("Website icons from", prefs.siteIconFrom, PassIcons.Public, options = listOf("site" to "Each site", "duckduckgo" to "DuckDuckGo"))
             }
         }
         SettingsGroup("Settings icons") {
@@ -336,7 +373,7 @@ internal fun ListSettingsScreen() {
                 ChoiceSetting(
                     "Grouping",
                     info = infoFor("grouping"),
-                    options = listOf("smart" to "By site", "folder" to "By folder"),
+                    options = listOf("types" to "Types, then folders", "smart" to "By site", "folder" to "By folder"),
                     selected = prefs.grouping,
                     icon = PassIcons.Layers,
                     detail = choiceDetail("grouping"),
@@ -647,6 +684,7 @@ internal fun HealthSettingsScreen() {
     WmScreen("Health checks", route = "settings/health", onBack = back()) {
         SettingsGroup("Page") {
             item { SwitchRow("Show the score", null, prefs.healthScore, PassIcons.EcgHeart) }
+            item { SwitchRow("Leave out local addresses", "Logins only for your router, NAS or other devices at home.", prefs.healthSkipLocal, PassIcons.Router) }
         }
         SettingsGroup("Problems to list", info = Help.info("group.health.problems")) {
             listOf(
@@ -733,21 +771,24 @@ internal fun SettingsFileScreen() {
 
 // ---- search ----
 
-private class Found(val title: String, val where: String, val route: String, val words: String = "")
+internal class Found(val title: String, val where: String, val route: String, val words: String = "")
 
-private val SearchIndex = listOf(
+internal val SearchIndex = listOf(
     Found("Style", "Appearance › Style and theme", "settings/look", "standard glass interface"),
     Found("Theme", "Appearance › Style and theme", "settings/look", "dracula catppuccin nord solarized gruvbox colours colors dark colors colors"),
     Found("Dark mode", "Appearance › Style and theme", "settings/look", "light black amoled system"),
     Found("Animations", "Appearance › Style and theme", "settings/look", "motion reduce"),
     Found("Vibration", "Appearance › Style and theme", "settings/look", "haptics feedback"),
     Found("App icons", "Appearance › Icons", "settings/icons", "material symbols rounded sharp light phosphor lucide glyphs"),
+    Found("Pictures, in order", "Appearance › Icons", "settings/icons", "favicon app icon website logo fallback"),
+    Found("Website icons from", "Appearance › Icons", "settings/icons", "favicon duckduckgo"),
+    Found("Leave out local addresses", "Health checks", "settings/health", "lan router nas intranet private ip firewall"),
     Found("Site icons", "Appearance › Icons", "settings/icons", "brand logo simple icons favicon letters"),
     Found("Shape", "Appearance › Icons", "settings/icons", "circle square rounded"),
     Found("Settings icons", "Appearance › Icons", "settings/icons", "tile coloured background colored colored"),
     Found("Cards", "Appearance › Icons", "settings/icons", "settings groups"),
     Found("Layout", "Appearance › Vault list", "settings/list", "grid compact list density"),
-    Found("Grouping", "Appearance › Vault list", "settings/list", "folder site"),
+    Found("Grouping", "Appearance › Vault list", "settings/list", "folder site type types bitwarden"),
     Found("Sort by", "Appearance › Vault list", "settings/list", "order name changed type"),
     Found("Pinned items first", "Appearance › Vault list", "settings/list"),
     Found("Fold logins on one site", "Appearance › Vault list", "settings/list", "multiple accounts"),
@@ -820,52 +861,3 @@ private val SearchIndex = listOf(
     Found("Help buttons", "Guide", "settings/guide", "question mark explain"),
     Found("Tips on new pages", "Guide", "settings/guide", "hints first time"),
 )
-
-@Composable
-internal fun SettingsSearchScreen() {
-    val shell = LocalShell.current
-    val colors = palette
-    val field = rememberTextFieldState()
-    val query = field.text.toString().trim().lowercase()
-    val found = if (query.isEmpty()) {
-        emptyList()
-    } else {
-        val words = query.split(' ').filter { it.isNotEmpty() }
-        SearchIndex.filter { item ->
-            val text = "${item.title} ${item.where} ${item.words}".lowercase()
-            words.all { it in text }
-        }.sortedBy { if (it.title.lowercase().startsWith(query)) 0 else if (query in it.title.lowercase()) 1 else 2 }
-    }
-    // What the guide has on the same words: screens, buttons and ideas the rows above do not name.
-    // A plain setting is left out, since its row is already listed.
-    val guide = if (query.isEmpty()) emptyList() else Help.search(query).filter { topic -> topic.kind != "setting" && found.none { it.title == topic.title } }
-    WmScreen("Search settings", onBack = back()) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) { SheetField(field, "Search settings") }
-        if (query.isNotEmpty() && found.isEmpty() && guide.isEmpty()) {
-            Text("No settings match.", color = colors.textMid, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(16.dp))
-        }
-        found.forEach { item ->
-            SearchResult(item.title, item.where) {
-                SettingsHighlight.requestTitle(item.title)
-                shell.nav.navigate(item.route)
-            }
-        }
-        guide.forEach { topic ->
-            SearchResult(topic.title, "Guide, ${Help.where(topic)}") { Guide.open(topic.id) }
-        }
-    }
-}
-
-@Composable
-private fun SearchResult(title: String, where: String, onClick: () -> Unit) {
-    val colors = palette
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-    ) {
-        Text(title, color = colors.text, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(where, color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
-    }
-}

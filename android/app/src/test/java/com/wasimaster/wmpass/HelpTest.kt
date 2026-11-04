@@ -99,6 +99,12 @@ class HelpTest {
             "help_welcome_seen",
             "help_seen",
             "help_tours_done",
+            // Items left out of one Health check, taken back under Ignored on the Health page.
+            "health_ignored",
+            // How many problems the vault banner was put away at, so a new one brings it back.
+            "health_banner_seen",
+            // When the last breach check ran, shown on the Breaches page.
+            "breach_last",
         )
     }
 }

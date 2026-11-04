@@ -19,6 +19,7 @@ use wmpass_lan::sync::{self, BlobStore};
 use wmpass_lan::{Identity, LanError, Peer, Role};
 use wmpass_net::aliases::{self, Alias, Provider};
 use wmpass_net::breach;
+use wmpass_net::favicon::{self, IconSource};
 use wmpass_net::http::{Call as NetCall, NativeHttp, NetError, NetPolicy};
 use wmpass_net::inbox;
 use wmpass_net::usernames::{self, Availability};
@@ -302,8 +303,45 @@ pub fn call(
     match method {
         // ---- breaches ----
         "breach.password" => {
-            let count = run(breach::password_count(&secret_text(secret)?), online)?;
+            #[derive(Deserialize, Default)]
+            #[serde(default)]
+            struct A {
+                source: String,
+            }
+            let a: A = parse(args)?;
+            let password = secret_text(secret)?;
+            let count = match a.source.as_str() {
+                "" | "hibp" => run(breach::password_count(&password), online)?,
+                "xon" => run(breach::password_count_xon(&password), online)?,
+                _ => return Err(failed("invalid", "unknown source")),
+            };
             Ok(view(json!({"count": count})))
+        }
+        "icon.fetch" => {
+            #[derive(Deserialize, Default)]
+            #[serde(default)]
+            struct A {
+                host: String,
+                source: String,
+            }
+            let a: A = parse(args)?;
+            let host = a.host.trim().trim_end_matches('.').to_ascii_lowercase();
+            // A router's or NAS's page is nobody else's business, and often has no certificate.
+            if wmpass_core::health::is_local_host(&host) {
+                return Err(failed("invalid", "no icons for local addresses"));
+            }
+            let tries: &[IconSource] = match a.source.as_str() {
+                "duckduckgo" => &[IconSource::DuckDuckGo],
+                _ => &[IconSource::SiteTouch, IconSource::Site],
+            };
+            let mut last = failed("not_found", "no icon");
+            for source in tries {
+                match favicon::fetch(*source, &host).map_err(net_error).and_then(|call| run(call, online)) {
+                    Ok(bytes) => return Ok(Reply { json: json!({}).to_string(), blobs: vec![bytes], ..Reply::default() }),
+                    Err(error) => last = error,
+                }
+            }
+            Err(last)
         }
         "breach.account" => {
             #[derive(Deserialize, Default)]

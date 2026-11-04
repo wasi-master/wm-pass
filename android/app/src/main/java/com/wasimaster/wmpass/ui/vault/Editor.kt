@@ -796,6 +796,29 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                             }
                         }
                     }
+                    // Passkeys are made by the site, so they are shown here but cannot be typed in.
+                    if (kind == "login") {
+                        val keys = detail?.passkeys.orEmpty()
+                        EditorFold("passkeys", "Passkeys", if (keys.isEmpty()) "None" else "${keys.size}", false) {
+                            Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                keys.forEach { key ->
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(PassIcons.KeyVertical, null, tint = colors.textMid, modifier = Modifier.size(20.dp))
+                                        Spacer(Modifier.width(12.dp))
+                                        Column(Modifier.weight(1f)) {
+                                            Text(key.rpId, color = colors.text, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
+                                            Text(listOf(key.userName, if (key.createdMs > 0) "made ${whenText(key.createdMs)}" else "").filter { it.isNotEmpty() }.joinToString(", "), color = colors.textMid, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                                        }
+                                    }
+                                }
+                                Text(
+                                    "A site adds a passkey when you create one there with WM Pass as your passkey provider, on Android 14 and up. A passkey cannot be typed in, copied or changed, since its private half never leaves WM Pass.",
+                                    color = colors.textLow,
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        }
+                    }
                     val otpShown = kind == "otp" || otpOpen || detail?.otp != null || "otp" in added || "otp" in opened
                     if (kind == "login" || kind == "otp") Appear(otpShown) {
                         EditorFold("otp", "One-time code", if (detail?.otp != null) "Saved" else null, kind == "otp" || otpOpen || "otp" in added) {

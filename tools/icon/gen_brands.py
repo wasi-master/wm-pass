@@ -30,7 +30,7 @@ messenger messenger.com
 x x.com,twitter.com
 linkedin linkedin.com
 reddit reddit.com
-discord discord.com
+discord discord.com,discordapp.com
 telegram telegram.org
 signal signal.org
 slack slack.com
@@ -41,7 +41,7 @@ hulu hulu.com
 twitch twitch.tv
 steam steampowered.com,steamcommunity.com
 epicgames epicgames.com
-playstation playstation.com
+playstation playstation.com,sonyentertainmentnetwork.com
 ea ea.com
 battledotnet battle.net,blizzard.com
 paypal paypal.com
@@ -139,7 +139,7 @@ nordvpn nordvpn.com
 expressvpn expressvpn.com
 mullvad mullvad.net
 surfshark surfshark.com
-namecheap namecheap.com
+namecheap namecheap.com,nc.me
 godaddy godaddy.com
 hetzner hetzner.com
 ovh ovh.com
@@ -147,7 +147,7 @@ linode linode.com
 sentry sentry.io
 datadog datadoghq.com
 grafana grafana.com
-postman postman.com
+postman postman.com,getpostman.com,postman.co
 jetbrains jetbrains.com
 codeberg codeberg.org
 sourceforge sourceforge.net
@@ -176,6 +176,36 @@ bitwarden bitwarden.com
 1password 1password.com
 lastpass lastpass.com
 dashlane dashlane.com
+epson epson.com,global.epson.com,epsonconnect.com
+freepik freepik.com,freepikcompany.com
+gogdotcom gog.com
+pubg pubg.com
+lastdotfm last.fm
+lg lg.com,lgaccount.com
+paradoxinteractive paradoxinteractive.com,paradoxplaza.com
+stremio stremio.com,strem.io
+tplink tp-link.com,tplinkcloud.com
+themoviedatabase themoviedb.org
+xdadevelopers xda-developers.com,xdaforums.com
+supercell supercell.com,brawlstars.com,clashroyale.com
+keybase keybase.io
+musicbrainz musicbrainz.org
+readthedocs readthedocs.org,readthedocs.io
+algolia algolia.com
+stackexchange stackexchange.com
+xiaomi xiaomi.com,mi.com
+mega mega.io,mega.nz
+replit replit.com,repl.it
+porkbun porkbun.com
+dribbble dribbble.com
+microsoft microsoft.com,live.com,outlook.com,office.com
+pokemon pokemon.com
+shutterstock shutterstock.com
+fedora fedoraproject.org
+nexusmods nexusmods.com
+monkeytype monkeytype.com
+greasyfork greasyfork.org
+anki ankiweb.net,apps.ankiweb.net
 """.strip().splitlines()
 
 def load(package):

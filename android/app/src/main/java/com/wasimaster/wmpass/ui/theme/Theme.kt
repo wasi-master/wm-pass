@@ -482,7 +482,7 @@ fun PassTheme(
     val prefs = com.wasimaster.wmpass.app.Prefs.of(context)
     CompositionLocalProvider(
         LocalPalette provides resolved.first,
-        com.wasimaster.wmpass.ui.parts.LocalSiteIcons provides com.wasimaster.wmpass.ui.parts.SiteIconLook(prefs.siteIconStyle.value, prefs.siteIconShape.value),
+        com.wasimaster.wmpass.ui.parts.LocalSiteIcons provides com.wasimaster.wmpass.ui.parts.SiteIconLook(prefs.siteIconStyle.value, prefs.siteIconShape.value, prefs.iconSources, prefs.siteIconFrom.value),
         com.wasimaster.wmsuite.settings.LocalWmPlainGroups provides (flat && !prefs.settingsCards.value),
         com.wasimaster.wmsuite.settings.LocalWmBareTiles provides (prefs.settingsIcons.value == "bare"),
     ) {
