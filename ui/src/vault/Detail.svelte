@@ -1,4 +1,32 @@
+<script lang="ts" module>
+  import { pass as engine } from '../engine/pass.svelte';
+  import type { Detail as DetailView, OtpRow as CodeRow } from '../engine/types';
+
+  /** Everything an item's page shows on its first frame. */
+  export type Loaded = { revision: number; detail: DetailView; suggested: string[] | null; row: CodeRow | null };
+
+  /**
+   * Fetches an item's page before it is shown, so the page that is already there stays until the
+   * new one can be drawn whole, rather than going blank for the round trip to the engine.
+   */
+  export async function loadDetail(id: string): Promise<Loaded> {
+    const revision = engine.revision;
+    const detail = await engine.detail(id);
+    const [suggested, row] = await Promise.all([
+      detail.trashed
+        ? null
+        : engine
+            .view<{ categories: string[] }>('categorise.suggest', { id })
+            .then((r) => r.categories ?? [])
+            .catch(() => null),
+      detail.otp ? engine.codes([id]).then((rows) => rows[0] ?? null, () => null) : null,
+    ]);
+    return { revision, detail, suggested, row };
+  }
+</script>
+
 <script lang="ts">
+  import { untrack } from 'svelte';
   import HelpButton from '../help/HelpButton.svelte';
   import Btn from '../parts/Btn.svelte';
   import Dialog from '../parts/Dialog.svelte';
@@ -22,24 +50,33 @@
   import Pickers, { type PickerKind } from './Pickers.svelte';
   import SendItem from './SendItem.svelte';
 
-  let { id }: { id: string } = $props();
+  let { id, initial = null }: { id: string; initial?: Loaded | null } = $props();
 
-  let detail = $state<Detail | null>(null);
+  // Only the first frame comes from `initial`, and only while it is current; from then on the page
+  // keeps itself up to date.
+  const start = untrack(() => (initial && initial.revision === pass.revision ? initial : null));
+  let detail = $state<Detail | null>(start?.detail ?? null);
   let revealed = $state<Record<string, string>>({});
-  let row = $state<OtpRow | null>(null);
+  let row = $state<OtpRow | null>(start?.row ?? null);
   let hotp = $state<string | null>(null);
   let holds = $state<StrengthView | null>(null);
   let historyOpen = $state(false);
   let picker = $state<PickerKind | null>(null);
   /** Tags the item's site and kind suggest. */
-  let suggested = $state<string[]>([]);
+  let suggested = $state<string[]>(start?.suggested ?? []);
+  // Set from `initial` for the first detail; asked again when the item changes.
+  let suggestedReady = start?.suggested != null;
   let sending = $state(false);
   let image = $state<{ name: string; url: string } | null>(null);
   let wifiCode = $state(false);
 
+  // A page that came with `initial` already has this revision; it fetches again once it changes.
+  let fetched = start ? start.revision : -1;
   $effect(() => {
-    void pass.revision;
+    const revision = pass.revision;
     const current = id;
+    if (revision === fetched) return;
+    fetched = -1;
     pass
       .detail(current)
       .then((d) => {
@@ -54,8 +91,10 @@
   });
 
   // Leaving an item takes its secrets off the screen.
+  let shownId = untrack(() => id);
   $effect(() => {
-    void id;
+    if (id === shownId) return;
+    shownId = id;
     revealed = {};
     hotp = null;
     holds = null;
@@ -99,6 +138,10 @@
       const current = detail.id;
       void detail.title;
       void detail.sites;
+      if (suggestedReady) {
+        suggestedReady = false;
+        return;
+      }
       pass
         .view<{ categories: string[] }>('categorise.suggest', { id: current })
         .then((r) => {
