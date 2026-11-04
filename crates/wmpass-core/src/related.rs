@@ -3,8 +3,8 @@
 //!
 //! Families of sites come from `data/related/accounts.txt` and Apple's
 //! `shared-credentials.json`. Apps are matched to a family by the company in their package name,
-//! by their own name and by the website `data/related/apps.tsv` gives them. A phone passes the
-//! apps it has installed; elsewhere the apps in that table are offered.
+//! by their own name and by the website `data/related/apps.tsv` and `data/wikidata/apps.tsv` give
+//! them. A phone passes the apps it has installed; elsewhere the apps in those tables are offered.
 
 use std::collections::BTreeSet;
 use std::sync::OnceLock;
@@ -14,6 +14,8 @@ use crate::matching::{host_of, registrable_domain};
 static ACCOUNTS: &str = include_str!("../../../data/related/accounts.txt");
 static SHARED: &str = include_str!("../../../data/related/shared-credentials.json");
 static APPS: &str = include_str!("../../../data/related/apps.tsv");
+/// More apps, from Wikidata, after the hand-written ones.
+static MORE_APPS: &str = include_str!("../../../data/wikidata/apps.tsv");
 
 /// The most of each kind of suggestion offered at once.
 const MOST: usize = 6;
@@ -95,6 +97,7 @@ fn known() -> &'static [KnownApp] {
     static KNOWN: OnceLock<Vec<KnownApp>> = OnceLock::new();
     KNOWN.get_or_init(|| {
         APPS.lines()
+            .chain(MORE_APPS.lines())
             .filter(|line| !line.trim().is_empty() && !line.starts_with('#'))
             .filter_map(|line| {
                 let mut parts = line.split('\t');
@@ -179,8 +182,12 @@ pub fn find(have: &Have<'_>) -> Found {
             }
         }
     }
-    let sites: Vec<String> = family
-        .iter()
+    // Other names before the same name under other endings: youtube.com before google.de.
+    let seed_words: BTreeSet<&str> = seeds.iter().map(|d| d.split('.').next().unwrap_or("")).collect();
+    let mut ordered: Vec<&String> = family.iter().collect();
+    ordered.sort_by_key(|d| !seeds.contains(*d) && seed_words.contains(d.split('.').next().unwrap_or("")));
+    let sites: Vec<String> = ordered
+        .into_iter()
         .filter(|d| !had.contains(d) && registrable(d).as_deref() == Some(d.as_str()))
         .take(MOST)
         .cloned()
@@ -201,9 +208,11 @@ pub fn find(have: &Have<'_>) -> Found {
         Some(installed) => installed.iter().map(|app| (app.clone(), "")).collect(),
         None => known_apps,
     };
+    // A short word must be the name's whole first word: "one" is not OneDrive's.
     let named = |app: &App| {
         let label = squeeze(&app.name);
-        words.iter().any(|w| label.starts_with(w.as_str()))
+        let first = app.name.split_whitespace().next().map(squeeze).unwrap_or_default();
+        words.iter().any(|w| label.starts_with(w.as_str()) && (w.chars().count() >= 5 || first == *w))
     };
     let mut apps: Vec<App> = candidates
         .into_iter()
@@ -292,6 +301,22 @@ mod tests {
         let sites = vec!["facebook.com".to_owned()];
         let found = find(&Have { sites: &sites, installed: Some(&installed), ..Have::default() });
         assert_eq!(names(&found), vec!["Facebook"]);
+    }
+
+    #[test]
+    fn other_names_come_before_other_endings() {
+        let sites = vec!["google.com".to_owned()];
+        let found = find(&Have { sites: &sites, ..Have::default() });
+        assert!(found.sites.contains(&"youtube.com".to_owned()), "{:?}", found.sites);
+        assert!(found.sites.contains(&"gmail.com".to_owned()), "{:?}", found.sites);
+    }
+
+    #[test]
+    fn a_short_word_names_only_a_whole_word() {
+        let installed = vec![App { package: "com.microsoft.skydrive".into(), name: "OneDrive".into() }, App { package: "com.one.app".into(), name: "One App".into() }];
+        let sites = vec!["one.com".to_owned()];
+        let found = find(&Have { sites: &sites, installed: Some(&installed), ..Have::default() });
+        assert_eq!(names(&found), vec!["One App"]);
     }
 
     #[test]

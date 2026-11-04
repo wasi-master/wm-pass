@@ -82,3 +82,706 @@ gas energy	Utilities
 internet provider	Utilities
 telecom	Utilities
 mobile carrier	Utilities
+# Banking, in other words and languages.
+bank account	Banking
+online banking	Banking
+mobile banking	Banking
+netbanking	Banking
+internet banking	Banking
+ebanking	Banking
+checking account	Banking
+current account	Banking
+savings account	Banking
+debit card	Banking
+building society	Banking
+federal credit union	Banking
+trust company	Banking
+bancorp	Banking
+bancshares	Banking
+banque	Banking
+banco	Banking
+banca	Banking
+banka	Banking
+banken	Banking
+bankası	Banking
+sparkasse	Banking
+volksbank	Banking
+raiffeisen	Banking
+caixa	Banking
+caisse d'epargne	Banking
+crédit agricole	Banking
+banque populaire	Banking
+cajamar	Banking
+kutxa	Banking
+spaarbank	Banking
+sparbank	Banking
+pankki	Banking
+bankowość	Banking
+bancaire	Banking
+bancario	Banking
+bankovní	Banking
+ngân hàng	Banking
+ธนาคาร	Banking
+銀行	Banking
+은행	Banking
+банк	Banking
+बैंक	Banking
+ব্যাংক	Banking
+بنك	Banking
+بانک	Banking
+# Finance: money that is not a bank account.
+finance	Finance
+financial	Finance
+money transfer	Finance
+remittance	Finance
+send money	Finance
+payment gateway	Finance
+payment app	Finance
+mobile money	Finance
+digital wallet	Finance
+credit card	Finance
+credit score	Finance
+credit report	Finance
+mortgage	Finance
+lending	Finance
+loans	Finance
+microfinance	Finance
+investing	Finance
+investment	Finance
+investments	Finance
+brokerage	Finance
+stock trading	Finance
+stocks	Finance
+trading	Finance
+securities	Finance
+mutual fund	Finance
+etf	Finance
+retirement	Finance
+pension	Finance
+401k	Finance
+ira account	Finance
+wealth management	Finance
+asset management	Finance
+capital	Finance
+fintech	Finance
+budget	Finance
+budgeting	Finance
+accounting	Finance
+bookkeeping	Finance
+invoice	Finance
+invoicing	Finance
+taxes	Finance
+tax return	Finance
+life insurance	Finance
+car insurance	Finance
+home insurance	Finance
+assurance	Finance
+versicherung	Finance
+seguros	Finance
+assicurazioni	Finance
+verzekering	Finance
+försäkring	Finance
+страхование	Finance
+保险	Finance
+保険	Finance
+보험	Finance
+bolsa	Finance
+borsa	Finance
+börse	Finance
+stock exchange	Finance
+crowdfunding	Finance
+paylater	Finance
+buy now pay later	Finance
+cashback	Finance
+# Crypto.
+bitcoin	Crypto
+ethereum	Crypto
+btc	Crypto
+eth	Crypto
+usdt	Crypto
+stablecoin	Crypto
+defi	Crypto
+nft	Crypto
+web3	Crypto
+dex	Crypto
+crypto exchange	Crypto
+cryptocurrency	Crypto
+crypto wallet	Crypto
+hardware wallet	Crypto
+seed phrase	Crypto
+metamask	Crypto
+ledger live	Crypto
+staking	Crypto
+mining pool	Crypto
+altcoin	Crypto
+solana	Crypto
+dogecoin	Crypto
+litecoin	Crypto
+monero	Crypto
+cardano	Crypto
+# Developer.
+github	Developer
+repository	Developer
+repo	Developer
+git server	Developer
+source code	Developer
+developer	Developer
+developers	Developer
+devops	Developer
+ci cd	Developer
+build server	Developer
+package registry	Developer
+registry	Developer
+npm	Developer
+pypi	Developer
+maven	Developer
+docker	Developer
+container registry	Developer
+kubernetes	Developer
+k8s	Developer
+sdk	Developer
+dashboard	Developer
+admin panel	Developer
+cpanel	Developer
+web hosting	Developer
+vps	Developer
+dedicated server	Developer
+domains	Developer
+dns	Developer
+ssl certificate	Developer
+deploy	Developer
+staging	Developer
+localhost	Developer
+database	Developer
+sql	Developer
+postgres	Developer
+mysql	Developer
+redis	Developer
+jenkins	Developer
+sentry	Developer
+monitoring	Developer
+analytics	Developer
+api key	Developer
+programming	Developer
+coding	Developer
+hackathon	Developer
+leetcode	Developer
+# Cloud, security and storage.
+cloud storage	Cloud
+file sync	Cloud
+online backup	Cloud
+photos backup	Cloud
+nas	Cloud
+synology	Cloud
+icloud	Cloud
+onedrive	Cloud
+google drive	Cloud
+dropbox	Cloud
+password manager	Cloud
+antivirus	Cloud
+security	Cloud
+firewall	Cloud
+router	Cloud
+wifi	Cloud
+smart home	Cloud
+camera	Cloud
+home assistant	Cloud
+iot	Cloud
+proxy	Cloud
+remote desktop	Cloud
+authenticator	Cloud
+identity	Cloud
+sso	Cloud
+# Email.
+email	Email
+e-mail	Email
+mailbox	Email
+mail server	Email
+imap	Email
+smtp	Email
+gmail	Email
+outlook	Email
+hotmail	Email
+yahoo mail	Email
+protonmail	Email
+mail.ru	Email
+correo	Email
+courriel	Email
+posteingang	Email
+почта	Email
+邮箱	Email
+メール	Email
+메일	Email
+# Social.
+social network	Social
+social media	Social
+dating	Social
+dating app	Social
+meet people	Social
+friends	Social
+followers	Social
+profile	Social
+messaging	Social
+chat app	Social
+group chat	Social
+discussion board	Social
+message board	Social
+imageboard	Social
+microblog	Social
+blog	Social
+blogging	Social
+photo sharing	Social
+fediverse	Social
+mastodon	Social
+reddit	Social
+whatsapp	Social
+telegram	Social
+signal	Social
+dating site	Social
+социальная сеть	Social
+社交	Social
+# Shopping, food and deliveries.
+online shop	Shopping
+online store	Shopping
+webshop	Shopping
+e-shop	Shopping
+eshop	Shopping
+ecommerce	Shopping
+e-commerce	Shopping
+marketplace	Shopping
+mall	Shopping
+outlet	Shopping
+retail	Shopping
+supermarket	Shopping
+grocery	Shopping
+groceries	Shopping
+hypermarket	Shopping
+department store	Shopping
+fashion	Shopping
+clothing	Shopping
+apparel	Shopping
+shoes	Shopping
+sneakers	Shopping
+furniture	Shopping
+electronics store	Shopping
+bookstore	Shopping
+books	Shopping
+toys	Shopping
+pet store	Shopping
+beauty	Shopping
+cosmetics	Shopping
+jewelry	Shopping
+deals	Shopping
+coupons	Shopping
+discount	Shopping
+loyalty	Shopping
+rewards	Shopping
+gift card	Shopping
+auction	Shopping
+classifieds	Shopping
+second hand	Shopping
+resale	Shopping
+food delivery	Shopping
+takeaway	Shopping
+takeout	Shopping
+restaurant	Shopping
+pizza	Shopping
+burger	Shopping
+coffee	Shopping
+cafe	Shopping
+bakery	Shopping
+order food	Shopping
+parcel	Shopping
+courier	Shopping
+shipping	Shopping
+post office	Shopping
+tienda	Shopping
+boutique	Shopping
+magasin	Shopping
+negozio	Shopping
+laden	Shopping
+winkel	Shopping
+sklep	Shopping
+магазин	Shopping
+商城	Shopping
+購物	Shopping
+ショップ	Shopping
+쇼핑	Shopping
+# Gaming.
+video game	Gaming
+video games	Gaming
+gamer	Gaming
+esports	Gaming
+e-sports	Gaming
+mmo	Gaming
+mmorpg	Gaming
+rpg	Gaming
+fps	Gaming
+moba	Gaming
+battle royale	Gaming
+game launcher	Gaming
+game store	Gaming
+console	Gaming
+playstation	Gaming
+xbox	Gaming
+nintendo	Gaming
+switch online	Gaming
+steam	Gaming
+game server	Gaming
+minecraft server	Gaming
+mods	Gaming
+modding	Gaming
+clan	Gaming
+guild	Gaming
+raid	Gaming
+arcade	Gaming
+poker	Gaming
+betting	Gaming
+sportsbook	Gaming
+bookmaker	Gaming
+lottery	Gaming
+bingo	Gaming
+slots	Gaming
+chess	Gaming
+puzzle	Gaming
+online game	Gaming
+mobile game	Gaming
+gacha	Gaming
+spiele	Gaming
+juegos	Gaming
+jeux	Gaming
+giochi	Gaming
+игры	Gaming
+游戏	Gaming
+ゲーム	Gaming
+게임	Gaming
+# Entertainment.
+streaming	Entertainment
+video streaming	Entertainment
+music streaming	Entertainment
+movie	Entertainment
+film	Entertainment
+films	Entertainment
+cinema	Entertainment
+series	Entertainment
+tv shows	Entertainment
+anime	Entertainment
+manga	Entertainment
+comics	Entertainment
+podcast	Entertainment
+podcasts	Entertainment
+radio	Entertainment
+audiobooks	Entertainment
+ebooks	Entertainment
+reading	Entertainment
+concerts	Entertainment
+events	Entertainment
+theatre	Entertainment
+festival	Entertainment
+live tv	Entertainment
+iptv	Entertainment
+on demand	Entertainment
+listen	Entertainment
+playlist	Entertainment
+lyrics	Entertainment
+karaoke	Entertainment
+photography	Entertainment
+art	Entertainment
+fernsehen	Entertainment
+televisión	Entertainment
+télévision	Entertainment
+кино	Entertainment
+电视	Entertainment
+動画	Entertainment
+# Work.
+work	Work
+business	Work
+company	Work
+corporate	Work
+enterprise	Work
+intranet	Work
+employee	Work
+employee portal	Work
+staff	Work
+payroll	Work
+hr	Work
+human resources	Work
+timesheet	Work
+time tracking	Work
+expenses	Work
+recruiting	Work
+jobs	Work
+job search	Work
+careers	Work
+resume	Work
+freelance	Work
+freelancer	Work
+clients	Work
+erp	Work
+helpdesk	Work
+ticketing system	Work
+customer support	Work
+project	Work
+projects	Work
+tasks	Work
+todo	Work
+kanban	Work
+wiki	Work
+docs	Work
+documents	Work
+spreadsheet	Work
+presentation	Work
+whiteboard	Work
+calendar	Work
+meeting	Work
+meetings	Work
+video conferencing	Work
+webinar	Work
+design	Work
+newsletter	Work
+email marketing	Work
+seo	Work
+ads	Work
+advertising	Work
+e-signature	Work
+contracts	Work
+legal	Work
+slack	Work
+teams	Work
+# Education.
+school portal	Education
+student	Education
+students	Education
+student portal	Education
+teacher	Education
+classroom	Education
+course	Education
+online course	Education
+lessons	Education
+tutoring	Education
+exam	Education
+exams	Education
+homework	Education
+library	Education
+campus	Education
+faculty	Education
+institute	Education
+institute of technology	Education
+polytechnic	Education
+lms	Education
+moodle	Education
+canvas lms	Education
+blackboard	Education
+alumni	Education
+scholarship	Education
+admissions	Education
+language learning	Education
+universität	Education
+universidad	Education
+université	Education
+università	Education
+universiteit	Education
+universidade	Education
+uniwersytet	Education
+hochschule	Education
+fachhochschule	Education
+école	Education
+escuela	Education
+colegio	Education
+liceo	Education
+gymnasium	Education
+университет	Education
+大学	Education
+대학교	Education
+विश्वविद्यालय	Education
+বিশ্ববিদ্যালয়	Education
+جامعة	Education
+دانشگاه	Education
+# Government.
+federal	Government
+state government	Government
+city council	Government
+municipality	Government
+county	Government
+council tax	Government
+tax office	Government
+revenue agency	Government
+irs	Government
+social security	Government
+passport	Government
+visa application	Government
+immigration	Government
+embassy	Government
+consulate	Government
+driving licence	Government
+driver license	Government
+dmv	Government
+vehicle registration	Government
+national id	Government
+e-government	Government
+public services	Government
+election	Government
+voter	Government
+court	Government
+police	Government
+customs	Government
+census	Government
+benefits	Government
+unemployment	Government
+pensions office	Government
+ministère	Government
+ministerio	Government
+ministero	Government
+ministerium	Government
+bundesamt	Government
+agencia tributaria	Government
+gouvernement	Government
+gobierno	Government
+regierung	Government
+правительство	Government
+政府	Government
+정부	Government
+সরকার	Government
+सरकार	Government
+# Health.
+doctor	Health
+doctors	Health
+patient portal	Health
+patient	Health
+telehealth	Health
+telemedicine	Health
+dentist	Health
+dental	Health
+optician	Health
+vision	Health
+eye care	Health
+therapy	Health
+mental health	Health
+health insurance	Health
+medicare	Health
+medicaid	Health
+nhs	Health
+prescriptions	Health
+drugstore	Health
+lab results	Health
+fitness	Health
+gym	Health
+workout	Health
+running	Health
+yoga	Health
+nutrition	Health
+diet	Health
+sleep	Health
+meditation	Health
+period tracker	Health
+wellness	Health
+vaccination	Health
+krankenkasse	Health
+krankenhaus	Health
+hôpital	Health
+hospital universitario	Health
+ospedale	Health
+ziekenhuis	Health
+apotheke	Health
+farmacia	Health
+pharmacie	Health
+больница	Health
+医院	Health
+病院	Health
+병원	Health
+# Travel and getting around.
+airlines	Travel
+airport	Travel
+frequent flyer	Travel
+miles	Travel
+booking	Travel
+hotels	Travel
+hostel	Travel
+resort	Travel
+vacation	Travel
+holiday	Travel
+holidays	Travel
+cruise	Travel
+car rental	Travel
+rent a car	Travel
+taxi	Travel
+ride sharing	Travel
+rideshare	Travel
+bike share	Travel
+scooter	Travel
+parking	Travel
+toll	Travel
+railway	Travel
+railways	Travel
+train	Travel
+trains	Travel
+metro	Travel
+transit	Travel
+bus	Travel
+coach	Travel
+ferry	Travel
+tours	Travel
+trip	Travel
+trips	Travel
+travel agency	Travel
+maps	Travel
+navigation	Travel
+fuel	Travel
+ev charging	Travel
+aerolíneas	Travel
+aerolineas	Travel
+companhia aérea	Travel
+compagnie aérienne	Travel
+bahn	Travel
+ferrocarriles	Travel
+chemins de fer	Travel
+ferrovie	Travel
+spoorwegen	Travel
+железные дороги	Travel
+航空	Travel
+鉄道	Travel
+항공	Travel
+# Utilities and home.
+electricity	Utilities
+power company	Utilities
+energy	Utilities
+energy supplier	Utilities
+gas	Utilities
+natural gas	Utilities
+water	Utilities
+water bill	Utilities
+sewer	Utilities
+waste collection	Utilities
+utility bill	Utilities
+broadband	Utilities
+fiber	Utilities
+fibre	Utilities
+internet	Utilities
+isp	Utilities
+cable	Utilities
+cellular	Utilities
+wireless	Utilities
+sim	Utilities
+prepaid	Utilities
+telecommunications	Utilities
+telephone	Utilities
+phone bill	Utilities
+landline	Utilities
+satellite tv	Utilities
+solar	Utilities
+home security	Utilities
+rent	Utilities
+landlord	Utilities
+tenant portal	Utilities
+property management	Utilities
+hoa	Utilities
+stadtwerke	Utilities
+energie	Utilities
+electricidad	Utilities
+électricité	Utilities
+telekom	Utilities
+telefónica	Utilities
+связь	Utilities
+电信	Utilities
+電力	Utilities
+통신	Utilities

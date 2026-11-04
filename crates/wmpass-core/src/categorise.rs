@@ -2,6 +2,9 @@
 //! offline classifier. An AI provider is only ever asked at the owner's request,
 //! and that code is not here, because this crate has no network.
 
+use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
+
 use crate::health::entry_domains;
 use crate::model::{Entry, Kind};
 
@@ -43,6 +46,8 @@ pub const KIND_CATEGORIES: [&str; 11] = [
 static DOMAINS: &str = include_str!("../../../data/domains.tsv");
 /// Games people keep accounts for, by name: "Genshin Impact" has no domain to go by.
 static GAMES: &str = include_str!("../../../data/games.tsv");
+/// More of them, by how widely they are known, from Wikidata.
+static MORE_GAMES: &str = include_str!("../../../data/wikidata/games.tsv");
 static MODEL: &[u8] = include_bytes!("../../../data/categoriser.bin");
 
 /// Buckets in the hashed feature space.
@@ -150,26 +155,69 @@ pub fn classify_with(model: &[u8], text: &str) -> Option<(usize, f32)> {
     Some((best, ((score - top) / damp).exp() / total))
 }
 
+/// The bundled list as a table, built on first use: it holds tens of thousands of sites.
+fn listed() -> &'static HashMap<&'static str, &'static str> {
+    static LISTED: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
+    LISTED.get_or_init(|| {
+        DOMAINS
+            .lines()
+            .filter_map(|line| {
+                let mut columns = line.split('\t');
+                let domain = columns.next()?;
+                let category = known_category(columns.next()?)?;
+                Some((domain, category))
+            })
+            .collect()
+    })
+}
+
+fn known_category(name: &str) -> Option<&'static str> {
+    CATEGORIES.iter().find(|known| **known == name).copied()
+}
+
+/// The category of each first label on the list: `pypi` for pypi.org. Where several sites share
+/// a label, one the 2FA directory lists wins, then one under .com, then the first. Sites only
+/// Wikidata files, marked `w`, are left out: among fifty thousand colleges and hospitals some
+/// label is every word, and a name is not an address.
+fn labels() -> &'static HashMap<&'static str, &'static str> {
+    static LABELS: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
+    LABELS.get_or_init(|| {
+        let mut best: HashMap<&'static str, ((bool, bool), &'static str)> = HashMap::new();
+        for line in DOMAINS.lines() {
+            let mut columns = line.split('\t');
+            let (Some(domain), Some(category)) = (columns.next(), columns.next()) else {
+                continue;
+            };
+            let Some(category) = known_category(category) else {
+                continue;
+            };
+            let Some((label, _)) = domain.split_once('.') else {
+                continue;
+            };
+            let methods = columns.next();
+            if columns.next() == Some("w") {
+                continue;
+            }
+            let rank = (methods.is_some_and(|methods| methods != "-"), domain.ends_with(".com"));
+            match best.get(label) {
+                Some((held, _)) if *held >= rank => {}
+                _ => {
+                    best.insert(label, (rank, category));
+                }
+            }
+        }
+        best.into_iter().map(|(label, (_, category))| (label, category)).collect()
+    })
+}
+
 /// The category the bundled list gives a domain.
 pub fn listed_category(domain: &str) -> Option<&'static str> {
-    let line = DOMAINS
-        .lines()
-        .find(|line| line.split('\t').next() == Some(domain))?;
-    let category = line.split('\t').nth(1)?;
-    CATEGORIES.iter().find(|name| **name == category).copied()
+    listed().get(domain).copied()
 }
 
 /// The category of a listed domain whose first label is `label`: `pypi` finds pypi.org.
 fn label_category(label: &str) -> Option<&'static str> {
-    DOMAINS.lines().find_map(|line| {
-        let mut parts = line.split('\t');
-        let domain = parts.next()?;
-        let category = parts.next()?;
-        if domain.split('.').next() != Some(label) {
-            return None;
-        }
-        CATEGORIES.iter().find(|name| **name == category).copied()
-    })
+    labels().get(label).copied()
 }
 
 /// Names people give a service that are not its domain's first label.
@@ -185,9 +233,35 @@ const NAME_LABELS: &[(&str, &str)] = &[
     ("chatgpt", "openai"),
 ];
 
+/// Words that begin the names of many things, so say nothing as a name's first word: "State
+/// University" is no account at state.gov.
+const OPENING_WORDS: &[&str] = &[
+    "air", "all", "american", "bank", "best", "big", "central", "city", "civil", "college", "community",
+    "county", "credit", "digital", "direct", "east", "express", "family", "federal", "first", "free",
+    "general", "get", "global", "great", "health", "home", "international", "just", "medical", "mobile",
+    "my", "national", "new", "north", "one", "online", "open", "plus", "prime", "private", "pro", "public",
+    "royal", "school", "simple", "smart", "social", "south", "state", "super", "the", "united",
+    "university", "west", "world",
+];
+
 /// Letters and digits only, lowercased: "Honkai: Star Rail" and "honkai star rail" meet.
 fn squeeze(text: &str) -> String {
     text.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect()
+}
+
+/// The bundled games by name, squeezed.
+fn games() -> &'static HashSet<String> {
+    static GAME_NAMES: OnceLock<HashSet<String>> = OnceLock::new();
+    GAME_NAMES.get_or_init(|| {
+        GAMES
+            .lines()
+            .chain(MORE_GAMES.lines())
+            .filter(|line| !line.starts_with('#'))
+            .filter_map(|line| line.split('\t').next())
+            .map(squeeze)
+            .filter(|name| !name.is_empty())
+            .collect()
+    })
 }
 
 /// Whether a name is a game on the bundled list, as typed or before a note such as
@@ -196,18 +270,10 @@ pub fn is_game(title: &str) -> bool {
     let whole = squeeze(title);
     let lead = squeeze(title.split(['(', '[', '|', '-', '\u{2013}', '\u{2014}']).next().unwrap_or(""));
     // A name of one or two letters says nothing on its own.
-    let names: Vec<&String> = [&whole, &lead].into_iter().filter(|n| n.chars().count() >= 3).collect();
-    if names.is_empty() {
-        return false;
-    }
-    GAMES
-        .lines()
-        .filter(|line| !line.starts_with('#'))
-        .filter_map(|line| line.split('\t').next())
-        .any(|game| {
-            let game = squeeze(game);
-            names.iter().any(|name| **name == game)
-        })
+    [whole, lead]
+        .iter()
+        .filter(|name| name.chars().count() >= 3)
+        .any(|name| games().contains(name))
 }
 
 /// What a name alone says, the way a code's issuer or a bare login's title is usually the
@@ -230,7 +296,10 @@ fn name_category(title: &str) -> Option<&'static str> {
     // A game's whole name comes before its first word: "Mobile Legends" is not about phones.
     by_label(&words.concat())
         .or_else(|| is_game(title).then_some("Gaming"))
-        .or_else(|| (2..=3).contains(&words.len()).then(|| by_label(words[0])).flatten())
+        .or_else(|| {
+            let first = words.first().filter(|w| !OPENING_WORDS.contains(w))?;
+            (2..=3).contains(&words.len()).then(|| by_label(first)).flatten()
+        })
 }
 
 /// The classifier's opinion of a name, if it is confident enough.
@@ -418,6 +487,10 @@ mod tests {
         ] {
             assert_eq!(filed(name), Some(category), "{name}");
         }
+        // A generic first word is not a service, and Wikidata's sites are matched by address.
+        assert_eq!(name_category("State Library"), None);
+        assert_eq!(name_category("Rgsu"), None);
+        assert_eq!(listed_category("rgsu.ru"), Some("Education"));
         // A word that happens to be a short label says nothing on its own.
         assert_eq!(name_category("my"), None);
     }

@@ -116,17 +116,27 @@ object Related {
         have.forEach { domain -> Brands.find(context, domain, "")?.let { brandNames += it.name } }
         val family = LinkedHashSet<String>(seeds)
         families(context).filter { group -> group.any { it in seeds } }.forEach { family += it }
-        val siteOffers = family.filter { it !in have && registrable(it) == it }.take(6)
+        // Other names before the same name under other endings: youtube.com before google.de.
+        val seedWords = seeds.map { it.substringBefore('.') }.toSet()
+        val siteOffers = family
+            .sortedBy { it !in seeds && it.substringBefore('.') in seedWords }
+            .filter { it !in have && registrable(it) == it }
+            .take(6)
         // Each site's own word, and each brand's name, to know its apps by.
         val words = (family.map { it.substringBefore('.') } + brandNames.map(::squeeze)).filter { it.length >= 3 }.toSet()
         val installed = installed(context)
+        // A short word must be the name's whole first word: "one" is not OneDrive's.
+        val named = { app: App ->
+            val label = squeeze(app.label)
+            val first = squeeze(app.label.trim().substringBefore(' '))
+            words.any { label.startsWith(it) && (it.length >= 5 || first == it) }
+        }
         val appOffers = installed.filter { app ->
             if (app.pkg in apps) return@filter false
             val parts = app.pkg.split('.')
             val company = parts.getOrNull(1).orEmpty()
-            val label = squeeze(app.label)
-            company in words || words.any { label.startsWith(it) }
-        }.sortedByDescending { app -> words.any { squeeze(app.label).startsWith(it) } }.take(6)
+            company in words || named(app)
+        }.sortedByDescending(named).take(6)
         val name = if (title.isNotBlank()) {
             null
         } else {

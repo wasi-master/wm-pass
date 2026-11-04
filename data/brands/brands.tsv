@@ -189,14 +189,14 @@ anki	Anki	80C2EE	ankiweb.net,apps.ankiweb.net
 2fas	2FAS	EC1C24	2fas.com	
 2k	2K	DD0700		
 365datascience	365 Data Science	000C1F	365datascience.com	
-3m	3M	FF0000		
+3m	3M	FF0000	3m.com	
 42	42	000000	42network.org	
 4chan	4chan	006600	4chan.org	
 4d	4D	004088		
 500px	500px	222222	500px.com	
 7zip	7Zip	000000		
 99designs	99designs	FE5F50	99designs.com	
-9gag	9GAG	000000		
+9gag	9GAG	000000	9gag.com	
 abb	ABB	FF000F		
 abbott	Abbott	008FC7		
 abbvie	Abbvie	071D49	abbvie.com	
@@ -219,7 +219,7 @@ actualbudget	Actual Budget	6B46C1
 acura	Acura	000000	acura.com	
 ada	Ada	000000		
 adafruit	Adafruit	000000	adafruit.com	
-adaway	AdAway	B71C1C		
+adaway	AdAway	B71C1C	adaway.org	
 adblock	AdBlock	F40D12	getadblock.com	
 adblockplus	Adblock Plus	C70D2C	adblockplus.org	
 addydotio	addy.io	19216C	addy.io	
@@ -241,7 +241,7 @@ aftership	AfterShip	FF6B2B	aftership.com
 agentskills	Agent Skills	000000		
 agora	Agora	099DFD		
 aib	AIB	7F2B7B	aib.ie	Allied Irish Banks
-aidungeon	AI Dungeon	000000		
+aidungeon	AI Dungeon	000000	aidungeon.io	
 aiqfome	Aiqfome	7A1FA2		
 airasia	AirAsia	FF0000	airasia.com	
 airbus	Airbus	00205B	airbus.com	
@@ -289,7 +289,7 @@ americanairlines	American Airlines	0078D2
 amg	AMG	000000	mercedes-amg.com	
 amp	AMP	005AF0	amp.dev	
 amul	Amul	ED1D24	amul.com	
-ana	ANA	13448F		
+ana	ANA	13448F	ana.co.jp	
 anaconda	Anaconda	44A833	anaconda.com	
 analogue	Analogue	1A1A1A	analogue.co	
 andela	Andela	173B3F	andela.com	
@@ -306,7 +306,7 @@ ansys	Ansys	FFB71B	ansys.com
 anta	Anta	D70010	anta.com	
 antdesign	Ant Design	0170FE	ant.design	
 antena3	Antena 3	FF7328	antena3.com	
-antennapod	AntennaPod	364FF3		
+antennapod	AntennaPod	364FF3	antennapod.org	
 antv	AntV	8B5DFF	antv.vision	
 anycubic	Anycubic	476695	store.anycubic.com	
 anydesk	AnyDesk	EF443B	anydesk.com	
@@ -339,10 +339,10 @@ arcgis	ArcGIS	2C7AC3
 archicad	Archicad	2D50A5		
 archiveofourown	Archive of Our Own	990000	archiveofourown.org	
 archlinux	Arch Linux	1793D1	archlinux.org	
-ardour	Ardour	C61C3E		
+ardour	Ardour	C61C3E	ardour.org	
 arduino	Arduino	00878F	arduino.cc	
 argo	Argo	EF7B4D		
-argos	Argos	DA291C		
+argos	Argos	DA291C	argos.co.uk	
 ariakit	Ariakit	007ACC		
 arkecosystem	ARK Ecosystem	C9292C	ark.io	
 arlo	Arlo	49B48A	arlo.com	
@@ -353,7 +353,7 @@ artifacthub	Artifact Hub	417598
 artixlinux	Artix Linux	10A0CC	gitea.artixlinux.org	
 artstation	ArtStation	13AFF0	artstation.com	
 arxiv	arXiv	B31B1B	arxiv.org	
-asahilinux	Asahi Linux	A61200		
+asahilinux	Asahi Linux	A61200	asahilinux.org	
 asciidoctor	Asciidoctor	E40046		
 asciinema	asciinema	D40000		
 asda	ASDA	68A51C	asda.com	
@@ -366,7 +366,7 @@ astra	Astra	5C2EDE	wpastra.com
 astral	Astral	261230		
 astro	Astro	BC52EE	astro.build	
 asus	ASUS	000000	asus.com	
-atandt	AT&T	009FDB		
+atandt	AT&T	009FDB	att.com	
 atari	Atari	E4202E	atarivcs.com	
 atlasos	AtlasOS	1A91FF	atlasos.net	
 atomgit	AtomGit	DA203E		GitCode
@@ -377,7 +377,7 @@ audible	Audible	F8991C
 audiobookshelf	Audiobookshelf	82612C		
 audioboom	Audioboom	007CE2	audioboom.com	
 audiomack	Audiomack	FFA200	styleguide.audiomack.com	
-audiotechnica	Audio-Technica	000000		
+audiotechnica	Audio-Technica	000000	audio-technica.com,audio-technica.co.jp	
 aurelia	Aurelia	ED2B88	aurelia.io	
 autentique	Autentique	3379F2		
 authentik	Authentik	FD4B2D		
@@ -401,12 +401,12 @@ await	Await	9973FF	awaitwidget.com
 awesomelists	Awesome Lists	FC60A8		
 awesomewm	awesomeWM	535D6C	awesomewm.org	
 awwwards	Awwwards	222222	awwwards.com	
-axios	Axios	5A29E4		
+axios	Axios	5A29E4	axios.com	
 axisbank	Axis Bank	971A4D	axisbank.com	
 b4x	B4X	14AECB	b4x.com	
 babel	Babel	F9DC3E		
 babelio	Babelio	FBB91E	babelio.com	
-babylondotjs	Babylon.js	BB464B		
+babylondotjs	Babylon.js	BB464B	babylonjs.com	
 backblaze	Backblaze	E21E29	backblaze.com	
 backbone	Backbone	000000	backbone.com	
 backendless	Backendless	1D77BD	backendless.com	
@@ -437,7 +437,7 @@ beats	Beats	005571
 beatsbydre	Beats by Dre	E01F3D	beatsbydre.com	
 beatstars	BeatStars	EB0000	beatstars.world	
 beekeeperstudio	Beekeeper Studio	FAD83B	beekeeperstudio.io	
-behance	Behance	1769FF		
+behance	Behance	1769FF	behance.net	
 beijingsubway	Beijing Subway	004A9D		
 bem	BEM	000000	bem.info	
 bentley	Bentley	333333		
@@ -451,7 +451,7 @@ betterdiscord	BetterDiscord	3E82E5
 betterstack	Better Stack	000000	betterstack.com	
 bevy	Bevy	232326		
 bigbasket	bigbasket	A5CD39	bigbasket.com	
-bigbluebutton	BigBlueButton	283274		
+bigbluebutton	BigBlueButton	283274	bigbluebutton.org	
 bigcartel	Big Cartel	222222	bigcartel.com	
 bigcommerce	BigCommerce	121118		
 bilibili	Bilibili	00A1D6	bilibili.com	
@@ -464,7 +464,7 @@ bit	Bit	592EC1	bit.dev
 bitcoin	Bitcoin	F7931A	bitcoin.org	
 bitcoincash	Bitcoin Cash	0AC18E	bitcoincash.org	
 bitcoinsv	Bitcoin SV	EAB300	bitcoinsv.com	
-bitcomet	BitComet	F49923		
+bitcomet	BitComet	F49923	bitcomet.com	
 bitdefender	Bitdefender	ED1C24	bitdefender.com	
 bitly	Bitly	EE6123	bitly.com	
 bitrise	Bitrise	683D87	bitrise.io	
@@ -475,7 +475,7 @@ black	Black	000000
 blackberry	Blackberry	000000	blackberry.com	
 blackmagicdesign	Blackmagic Design	FFA200	blackmagicdesign.com	
 blazemeter	Blazemeter	CA2133	blazemeter.com	
-blazor	Blazor	512BD4		
+blazor	Blazor	512BD4	blazor.net	
 blender	Blender	E87D0D	blender.org	
 blibli	Blibli	0072FF	blibli.com	
 blockbench	Blockbench	1E93D9	blockbench.net	
@@ -491,7 +491,7 @@ bnbchain	BNB Chain	F0B90B	bnbchain.org
 boardgamegeek	BoardGameGeek	FF5100	boardgamegeek.com	
 boat	boAt	E20722	boat-lifestyle.com	
 boehringeringelheim	Boehringer Ingelheim	00E47C	boehringer-ingelheim.com	
-boeing	Boeing	1D439C		
+boeing	Boeing	1D439C	boeing.com	
 bohemiainteractive	Bohemia Interactive	6BA539	bohemia.net	
 bombardier	Bombardier	000000	bombardier.com	
 bookalope	Bookalope	DC2829	bookalope.net	
@@ -550,12 +550,12 @@ byjus	Byju's	813588	byjus.com
 bytedance	ByteDance	3C8CFF	bytedance.com	
 c	C	A8B9CC		
 cachet	Cachet	7ED321	cachethq.io	
-cachyos	CachyOS	00AA88		
+cachyos	CachyOS	00AA88	cachyos.org	
 caddy	Caddy	1F88C0	caddyserver.com	
 cadillac	Cadillac	000000	cadillac.com	
 cafepress	CafePress	58A616		
 cairographics	Cairo Graphics	F39914		
-cairometro	Cairo Metro	C10C0C		
+cairometro	Cairo Metro	C10C0C	cairometro.gov.eg	
 caixabank	CaixaBank	007EAE	caixabank.es	
 cakephp	CakePHP	D33C43	cakephp.org	
 caldotcom	Cal.com	292929	cal.com	
@@ -570,7 +570,7 @@ cardano	Cardano	0133AD	cardano.org
 cardmarket	Cardmarket	012169		
 carlsberggroup	Carlsberg Group	00321E	carlsberggroup.com	
 carrd	Carrd	596CAF	carrd.co	
-carrefour	Carrefour	004E9F		
+carrefour	Carrefour	004E9F	carrefour.com	
 carthrottle	Car Throttle	FF9C42	carthrottle.com	
 carto	Carto	EB1510	carto.com	
 cashapp	Cash App	00C244	cash.app	
@@ -587,7 +587,7 @@ ce	CE	000000
 celery	Celery	37814A		
 celestron	Celestron	F47216	celestron.com	
 centos	CentOS	262577	wiki.centos.org	
-ceph	Ceph	EF5C55		
+ceph	Ceph	EF5C55	ceph.io	
 cesium	Cesium	6CADDF	cesium.com	
 chai	Chai	A30701		
 chainguard	Chainguard	4445E7	chainguard.dev	
@@ -596,7 +596,7 @@ chakraui	Chakra UI	1BB2A9
 changedetection	Change Detection	3056D3	changedetection.io	
 channel4	Channel 4	AAFF89	mediaassets.channel4.com	
 charles	Charles	F3F5F5	charlesproxy.com	
-chartdotjs	Chart.js	FF6384		
+chartdotjs	Chart.js	FF6384	chartjs.org	
 chartmogul	ChartMogul	13324B	chartmogul.com	
 chase	Chase	117ACA		
 chatbot	ChatBot	0066FF	chatbot.design	
@@ -604,7 +604,7 @@ chatwoot	Chatwoot	1F93FF	chatwoot.com
 checkio	CheckiO	008DB6	py.checkio.org	
 checkmarx	Checkmarx	54B848	checkmarx.com	
 checkmk	Checkmk	15D1A0	checkmk.com	
-chedraui	Chedraui	E0832F		
+chedraui	Chedraui	E0832F	chedraui.com.mx	
 chef	Chef	F09820	chef.io	
 chemex	Chemex	4D2B1A		
 chessdotcom	Chess.com	81B64C	chess.com	
@@ -637,12 +637,12 @@ claude	Claude	D97757	claude.ai
 claudecode	Claude Code	D97757	code.claude.com	
 clerk	Clerk	6C47FF	clerk.com	
 clevercloud	Clever Cloud	171C36	clever-cloud.com	
-clickhouse	ClickHouse	FFCC01		
+clickhouse	ClickHouse	FFCC01	clickhouse.com	
 clickup	ClickUp	7B68EE	clickup.com	
 cline	Cline	18181B	cline.bot	
 clion	CLion	000000		
 clockify	Clockify	03A9F4	clockify.me	
-clojure	Clojure	5881D8		
+clojure	Clojure	5881D8	clojure.org	
 cloud66	Cloud 66	3C72B9	cloud66.com	
 cloudbees	CloudBees	1997B5	cloudbees.com	
 cloudcannon	CloudCannon	407AFC	cloudcannon.com	
@@ -659,12 +659,12 @@ clubforce	Clubforce	191176	clubforce.com
 clubhouse	Clubhouse	FFE450	clubhouse.com	
 clyp	Clyp	3CBDB1	clyp.it	
 cmake	CMake	064F8C		
-cncf	CNCF	231F20		
-cnes	CNES	204F8C		
+cncf	CNCF	231F20	cncf.io	
+cnes	CNES	204F8C	cnes.fr	
 cnet	CNET	E71D1D	cnet.com	
 cnn	CNN	CC0000	edition.cnn.com	
 cobalt	cobalt	FFFFFF	cobalt.tools	
-cocacola	Coca-Cola	D00013		
+cocacola	Coca-Cola	D00013	coca-cola.com	
 cockpit	Cockpit	2A7AE2		
 cockroachlabs	Cockroach Labs	6933FF	cockroachlabs.com	
 cocos	Cocos	55C2E1	cocos.com	
@@ -695,7 +695,7 @@ codesandbox	CodeSandbox	151515	codesandbox.io
 codeship	Codeship	004466	app.codeship.com	
 codesignal	CodeSignal	1062FB	codesignal.com	
 codestream	CodeStream	008C99	codestream.com	
-codewars	Codewars	B1361E		
+codewars	Codewars	B1361E	codewars.com	
 codingame	CodinGame	F2BB13	codingame.com	
 codingninjas	Coding Ninjas	DD6620	codingninjas.com	
 codio	Codio	4574E0	codio.com	
@@ -708,7 +708,7 @@ comma	comma	51FF00	comma.ai
 commerzbank	Commerzbank	FFCC33		
 commitlint	commitlint	000000		
 commodore	Commodore	1E2A4E	commodore.inc	
-commonlisp	Common Lisp	000000		
+commonlisp	Common Lisp	000000	common-lisp.net	
 commonworkflowlanguage	Common Workflow Language	B5314C		
 compilerexplorer	Compiler Explorer	67C52A		
 composer	Composer	885630	getcomposer.org	
@@ -767,7 +767,7 @@ crowdin	Crowdin	2E3340	crowdin.com
 crowdsource	Crowdsource	4285F4		
 crunchbase	Crunchbase	0288D1	crunchbase.com	
 cryengine	CRYENGINE	000000	cryengine.com	
-cryptomator	Cryptomator	49B04A		
+cryptomator	Cryptomator	49B04A	cryptomator.org	
 cryptpad	CryptPad	0087FF	cryptpad.org	
 crystal	Crystal	000000	crystal-lang.org	
 csdn	CSDN	FC5531	csdn.net	
@@ -795,7 +795,7 @@ dailymotion	Dailymotion	0A0A0A	careers.dailymotion.com
 daisyui	daisyUI	FFC63A	daisyui.com	
 dapr	Dapr	0D2192		
 darkreader	Dark Reader	141E24		
-dart	Dart	0175C2		
+dart	Dart	0175C2	dart.dev	
 darty	Darty	EB1B23	darty.com	
 daserste	Das Erste	001A4B		
 dash	Dash	008DE4	dash.org	
@@ -820,11 +820,11 @@ dblp	dblp	004F9F	dblp.org
 dcentertainment	DC Entertainment	0078F0		
 debridlink	Debrid-Link	264E70	debrid-link.com	
 decapcms	Decap CMS	FF0082		
-decentraland	Decentraland	FF2D55		
+decentraland	Decentraland	FF2D55	decentraland.org	
 dedge	D-EDGE	432975		
 deepcool	DeepCool	068584	deepcool.com	
 deepgram	Deepgram	13EF93	deepgram.com	
-deepin	deepin	007CFF		
+deepin	deepin	007CFF	deepin.com,deepin.org	
 deepl	DeepL	0F2B46	deepl.com	
 deepmind	DeepMind	4285F4	deepmind.google	Google DeepMind
 deepnote	Deepnote	3793EF	deepnote.com	
@@ -873,7 +873,7 @@ distrokid	Distrokid	231F20	distrokid.com
 django	Django	092E20	djangoproject.com	
 dji	DJI	000000	dji.com	
 dlib	Dlib	008000		
-dlna	DLNA	48A842		
+dlna	DLNA	48A842	dlna.org	
 dlthub	dlthub	59C1D5		
 dm	dm	002878		dm-drogerie markt
 dmm	DMM	000000	dmm-corp.com	
@@ -882,11 +882,11 @@ docsify	Docsify	2ECE53
 doctrine	Doctrine	FC6A31	doctrine-project.org	
 docusaurus	Docusaurus	3ECC5F		
 dodopayments	Dodo Payments	C6FE1E	dodopayments.com	
-dogecoin	Dogecoin	C2A633		
+dogecoin	Dogecoin	C2A633	dogecoin.com	
 doi	DOI	FAB70C	doi.org	
 dolby	Dolby	000000	dolby.com	
 dolphin	Dolphin	00AAFF		
-dota2	Dota 2	BF2E1A		
+dota2	Dota 2	BF2E1A	dota2.com	
 dotenv	.ENV	ECD53F		Dotenv
 dotnet	.NET	512BD4		
 dovecot	Dovecot	54BCAB		
@@ -904,7 +904,7 @@ drupal	Drupal	0678BE	drupal.org
 dsautomobiles	DS Automobiles	1D1717		
 dts	DTS	F98B2B		
 dtube	DTube	F01A30		
-ducati	Ducati	CC0000		
+ducati	Ducati	CC0000	ducati.com	
 duckdb	DuckDB	FFF000	duckdb.org	
 dungeonsanddragons	Dungeons & Dragons	ED1C24		D&D
 dunked	Dunked	2DA9D7	dunked.com	
@@ -961,7 +961,7 @@ elm	Elm	1293D8
 elsevier	Elsevier	FF6C00	elsevier.com	
 embarcadero	Embarcadero	ED1F35	embarcadero.com	
 embark	Embark	000000	embark-studios.com	
-emberdotjs	Ember.js	E04E39		
+emberdotjs	Ember.js	E04E39	emberjs.com	
 emby	Emby	52B54B	emby.media	
 emirates	Emirates	D71921	emirates.com	
 emlakjet	Emlakjet	0AE524	emlakjet.com	
@@ -977,7 +977,7 @@ equinixmetal	Equinix Metal	ED2224	metal.equinix.com
 eraser	Eraser	EC2C40	eraser.io	
 ericsson	Ericsson	0082F0	ericsson.com	
 erlang	Erlang	A90533		
-erpnext	ERPNext	0089FF		
+erpnext	ERPNext	0089FF	erpnext.com	
 esbuild	esbuild	FFCF00		
 esea	ESEA	0E9648	play.esea.net	
 eslgaming	ESLGaming	FFFF09	eslgaming.com	
@@ -1039,9 +1039,9 @@ ffmpeg	FFmpeg	007808
 fi	Fi	00B899		epiFi,Fi.Money
 fiat	Fiat	941711		
 fidoalliance	Fido Alliance	FFBF3B	fidoalliance.org	
-fifa	FIFA	326295		
+fifa	FIFA	326295	fifa.com	
 fig	Fig	000000	fig.io	
-figshare	figshare	556472		
+figshare	figshare	556472	figshare.com	
 fila	Fila	002D62	fila.com	
 filament	Filament	FDAE4B	filamentphp.com	
 filedotio	File.io	3D3C9D	file.io	
@@ -1082,7 +1082,7 @@ fnac	Fnac	E1A925	fnac.com
 folium	Folium	77B829		
 folo	Folo	FF5C00		
 fonoma	Fonoma	02B78F	fonoma.com	
-fontawesome	Font Awesome	538DD7		
+fontawesome	Font Awesome	538DD7	fontawesome.com	
 fontbase	FontBase	3D03A7	fontba.se	
 fontforge	FontForge	F2712B	fontforge.org	
 foobar2000	foobar2000	000000		
@@ -1100,7 +1100,7 @@ fossilscm	Fossil SCM	548294	fossil-scm.org
 foundryvirtualtabletop	Foundry Virtual Tabletop	FE6A1F		
 foursquare	Foursquare	3333FF	foursquare.com	
 fox	FOX	000000	fox.com	
-foxtel	Foxtel	EB5205		
+foxtel	Foxtel	EB5205	foxtel.com.au	
 fozzy	Fozzy	F15B29	fozzy.com	
 framer	Framer	0055FF	framer.com	
 framework	Framework	000000	frame.work	
@@ -1185,7 +1185,7 @@ gltf	glTF	87C540
 gmail	Gmail	EA4335		
 gmx	GMX	1C449B		
 gnome	GNOME	4A86CF	wiki.gnome.org	
-gnometerminal	GNOME Terminal	241F31		
+gnometerminal	GNOME Terminal	241F31	gnome.org	
 gnuicecat	GNU IceCat	002F5B	git.savannah.gnu.org	
 gnusocial	GNU social	A22430	gnu.org	
 go	Go	00ADD8	golang.org	
@@ -1248,7 +1248,7 @@ googlesearchconsole	Google Search Console	458CF5	search.google.com
 googlesheets	Google Sheets	34A853	sheets.google.com	
 googleslides	Google Slides	FBBC04	slides.google.com	
 googlestreetview	Google Street View	FEC111	google.com	
-googlesummerofcode	Google Summer of Code	F9AB00		GSoC
+googlesummerofcode	Google Summer of Code	F9AB00	summerofcode.withgoogle.com	GSoC
 googletagmanager	Google Tag Manager	246FDB	tagmanager.google.com	
 googletasks	Google Tasks	2684FC	assistant.google.com	
 googletranslate	Google Translate	4285F4		
@@ -1280,15 +1280,15 @@ gsap	GSAP	0AE448	gsap.com	GreenSock Animation Platform
 gsk	GSK	F36633	gskbrandhub.com	GlaxoSmithKline
 gsma	GSMA	DC002B	gsma.com	
 gsmarenadotcom	GSMArena.com	D50000	gsmarena.com	
-gstreamer	GStreamer	FF3131		
+gstreamer	GStreamer	FF3131	gstreamer.freedesktop.org	
 guangzhoumetro	Guangzhou Metro	C51935		
 guilded	Guilded	F5C400	guilded.gg	
 guitarpro	Guitar Pro	569FFF	guitar-pro.com	
 gulp	gulp	CF4647		
 gumroad	Gumroad	FF90E8	gumroad.com	
 gumtree	Gumtree	72EF36	gumtree.com	
-gunicorn	Gunicorn	499848		
-gurobi	Gurobi	EE3524		
+gunicorn	Gunicorn	499848	gunicorn.org	
+gurobi	Gurobi	EE3524	gurobi.com	
 gusto	Gusto	F45D48	gusto.com	
 gutenberg	Gutenberg	000000		
 h2database	H2 Database	09476B		
@@ -1309,7 +1309,7 @@ handm	H&M	E50010
 handshake	Handshake	D3FB52	joinhandshake.com	
 handshake_protocol	Handshake	000000	handshake.org	
 happycow	HappyCow	7C4EC4	happycow.net	
-haproxy	HAProxy	169BD6		
+haproxy	HAProxy	169BD6	haproxy.org	
 harmonyos	HarmonyOS	000000	harmonyos.com	HMOS
 hashcat	Hashcat	FFFFFF	hashcat.net	
 hashicorp	HashiCorp	000000	hashicorp.com	
@@ -1321,7 +1321,7 @@ havells	Havells	ED1C24	havells.com
 haxe	Haxe	EA8220	haxe.org	
 haystack	Haystack	0EAF9C		
 hbo	HBO	000000	hbo.com	
-hbomax	HBO Max	000000		
+hbomax	HBO Max	000000	hbomax.com	
 hcl	HCL	006BB6	hcl.com	
 hdfcbank	HDFC Bank	004B8D		HDB
 headlessui	Headless UI	66E3FF	headlessui.dev	
@@ -1351,15 +1351,15 @@ hibernate	Hibernate	59666C	hibernate.org
 hibob	Hi Bob	E42C51	hibob.com	Bob
 hilton	Hilton	231F20	hilton.com	
 hiltonhotelsandresorts	Hilton Hotels & Resorts	1E4380	hilton.com	
-hitachi	Hitachi	E60027		
+hitachi	Hitachi	E60027	hitachi.com	
 hive	Hive	FF7A00	hivehome.com	
 hive_blockchain	Hive	E31337	hive.io	
 hivemq	HiveMQ	FFC000	hivemq.com	
 homarr	Homarr	FA5252		
 homeadvisor	HomeAdvisor	F68315	homeadvisor.com	
-homeassistant	Home Assistant	18BCF2		
+homeassistant	Home Assistant	18BCF2	home-assistant.io	
 homeassistantcommunitystore	Home Assistant Community Store	41BDF5		
-homebrew	Homebrew	FBB040		
+homebrew	Homebrew	FBB040	brew.sh	
 homebridge	Homebridge	491F59		
 homepage	Homepage	009BD5		
 homify	homify	7DCDA3	homify.com	
@@ -1383,14 +1383,14 @@ htc	HTC	A5CF4C	htc.com
 htcvive	HTC Vive	00B2E3	vive.com	
 html5	HTML5	E34F26		
 htmlacademy	HTML Academy	302683	htmlacademy.ru	
-htmx	htmx	3366CC		
-htop	htop	009020		
+htmx	htmx	3366CC	htmx.org	
+htop	htop	009020	htop.dev	
 httpie	HTTPie	73DC8C		
 huawei	Huawei	FF0000	e.huawei.com	
 hugo	Hugo	FF4088	gohugo.io	
 humblebundle	Humble Bundle	CC2929	humblebundle.com	
 humhub	HumHub	1B8291		
-hungryjacks	Hungry Jack's	D0021B		
+hungryjacks	Hungry Jack's	D0021B	hungryjacks.com.au	
 husqvarna	Husqvarna	273A60	husqvarna.com	
 hyper	Hyper	000000	hyper.is	
 hyperskill	Hyperskill	8C5AFF	hyperskill.org	
@@ -1401,20 +1401,20 @@ hyprland	Hyprland	58E1FF	hyprland.org
 hyundai	Hyundai	002C5E	hyundai.com	
 i18next	i18next	26A69A		
 i3	i3	52C0FF		
-iata	IATA	004E81		
+iata	IATA	004E81	iata.org	
 ibeacon	iBeacon	3D7EBB		
 iberia	Iberia	D7192D	iberia.com	
 iced	Iced	3645FF	iced.rs	
 iceland	Iceland	CC092F		
 icicibank	ICICI Bank	AE282E	icicibank.com	
-icinga	Icinga	06062C		
+icinga	Icinga	06062C	icinga.com	
 icloud	iCloud	3693F3		
 icomoon	IcoMoon	825794	icomoon.io	
 icon	ICON	31B8BB	icon.foundation	
 iconfinder	Iconfinder	1A1B1F	iconfinder.com	
 iconjar	IconJar	16A5F3	geticonjar.com	
 icons8	Icons8	1FB141		
-icq	ICQ	24FF00		
+icq	ICQ	24FF00	icq.com	
 ieee	IEEE	00629B	brand-experience.ieee.org	
 ifixit	iFixit	0071CE	ifixit.com	
 ifood	iFood	EA1D2C		
@@ -1425,11 +1425,11 @@ iheartradio	iHeartRadio	C6002B	iheart.com
 iledefrancemobilites	Île-de-France Mobilités	67B4E7	iledefrance-mobilites.fr	
 ilovepdf	iLovePDF	E5322D	ilovepdf.com	iLoveAPI,iLoveIMG
 imagedotsc	Image.sc	039CB2	forum.image.sc	
-imagej	ImageJ	00D8E0		
+imagej	ImageJ	00D8E0	imagej.net	
 imagetoolbox	Image Toolbox	60EA78		
 imdb	IMDb	F5C518	imdb.com	
 imessage	iMessage	34DA50		
-imgur	Imgur	1BB76E		
+imgur	Imgur	1BB76E	imgur.com	
 immer	Immer	00E7C3		
 immersivetranslate	Immersive Translate	EA4C89	immersivetranslate.com	
 immich	Immich	4250AF		
@@ -1480,11 +1480,11 @@ ios	iOS	000000
 iris	IRIS	25313C		
 irobot	iRobot	6CB86A	irobot.com	
 isc2	ISC2	468145	isc2.org	(ISC)²
-isro	ISRO	F58220		Indian Space Research Organization
+isro	ISRO	F58220	isro.gov.in	Indian Space Research Organization
 issuu	Issuu	F36D5D	issuu.com	
 istio	Istio	466BB0		
 itchdotio	Itch.io	FA5C5C	itch.io	
-iterm2	iTerm2	000000		
+iterm2	iTerm2	000000	iterm2.com	
 itunes	iTunes	FB5BC5		
 itvx	ITVx	DEEB52		
 iveco	IVECO	1554FF	iveco.com	
@@ -1496,7 +1496,7 @@ jasmine	Jasmine	8A4182
 jbl	JBL	FF3300	jbl.com	
 jcb	JCB	0B4EA2		
 jdoodle	JDoodle	FD5200	jdoodle.com	
-jeep	Jeep	000000		
+jeep	Jeep	000000	jeep.com	
 jellyfin	Jellyfin	00A4DC	jellyfin.org	
 jest	Jest	C21325	jestjs.io	
 jet	JET	FBBA00		
@@ -1508,7 +1508,7 @@ jinja	Jinja	7E0C1B
 jio	Jio	0A2885		
 jirasoftware	Jira Software	0052CC		
 jitpack	JitPack	000000	jitpack.io	
-jitsi	Jitsi	97979A		
+jitsi	Jitsi	97979A	jitsi.org	
 johndeere	John Deere	367C2B		
 joomla	Joomla	5091CD	joomla.org	
 joplin	Joplin	1071D3		
@@ -1519,7 +1519,7 @@ jquery	jQuery	0769AD	jquery.org
 jrgroup	JR Group	44AF35		
 jsdelivr	jsDelivr	E84D3D		
 jsfiddle	JSFiddle	0084FF	jsfiddle.net	
-json	JSON	000000		
+json	JSON	000000	json.org	
 jsonwebtokens	JSON Web Tokens	000000		
 jsr	JSR	F7DF1E		
 jss	JSS	F7DF1E		
@@ -1558,7 +1558,7 @@ keenetic	Keenetic	009EE2	keenetic.com
 keepachangelog	Keep a Changelog	E05735	keepachangelog.com	
 keepassxc	KeePassXC	6CAC4D		
 keeper	Keeper	FFC700	keeper.io	
-keeweb	KeeWeb	528BFF		
+keeweb	KeeWeb	528BFF	keeweb.info	
 kenmei	Kenmei	545C64	kenmei.co	
 kentico	Kentico	F05A22	kentico.com	
 keploy	Keploy	FF914D	keploy.io	
@@ -1572,7 +1572,7 @@ kibana	Kibana	005571
 kick	Kick	53FC19	kick.com	
 kickstarter	Kickstarter	05CE78	kickstarter.com	
 kik	Kik	82BC23	kik.com	
-kimi	Kimi	000000		
+kimi	Kimi	000000	kimi.com	
 kingstontechnology	Kingston Technology	000000	kingston.com	Kingston
 kinopoisk	Kinopoisk	FF5500	kinopoisk.ru	КиноПоиск
 kinsta	Kinsta	5333ED	kinsta.com	
@@ -1597,7 +1597,7 @@ kodular	Kodular	4527A0	kodular.io
 koenigsegg	Koenigsegg	000000	koenigsegg.com	
 kofax	Kofax	00558C	kofax.com	
 komoot	Komoot	6AA127	komoot.com	
-konami	Konami	B60014		
+konami	Konami	B60014	konami.com	
 kong	Kong	003459	konghq.com	
 kongregate	Kongregate	F04438	kongregate.com	
 konva	Konva	0D83CD		
@@ -1609,7 +1609,7 @@ krita	Krita	3BABFF	krita.org
 ktm	KTM	FF6600	ktm.com	
 ktor	Ktor	087CFA		
 kuaishou	Kuaishou	FF4906	kuaishou.com	
-kubernetes	Kubernetes	326CE5		
+kubernetes	Kubernetes	326CE5	kubernetes.io	
 kubespray	Kubespray	3D647F		
 kubuntu	Kubuntu	0079C1	kubuntu.org	
 kucoin	KuCoin	01BC8D	kucoin.com	
@@ -1630,7 +1630,7 @@ langgraph	LangGraph	7FC8FF
 languagetool	LanguageTool	45A1FC	languagetool.org	
 lapce	Lapce	3B82F6		
 laragon	Laragon	0E83CD	laragon.org	
-laravel	Laravel	FF2D20		
+laravel	Laravel	FF2D20	laravel.com	
 laravelhorizon	Laravel Horizon	405263		
 laravelnova	Laravel Nova	252D37	nova.laravel.com	
 latex	LaTeX	008080		
@@ -1650,7 +1650,7 @@ lemonsqueezy	Lemon Squeezy	FFC233	lemonsqueezy.com
 lenovo	Lenovo	E2231A	news.lenovo.com	
 lens	Lens	3D90CE		
 leptos	Leptos	EF3939		
-lequipe	L'Équipe	E42829		
+lequipe	L'Équipe	E42829	lequipe.fr	
 lerna	Lerna	C084FC		
 leroymerlin	Leroy Merlin	78BE20	leroymerlin.fr	
 leslibraires	Les libraires	CF4A0C	leslibraires.ca	
@@ -1665,7 +1665,7 @@ libreoffice	LibreOffice	18A303
 libretranslate	LibreTranslate	1565C0	libretranslate.com	
 libretube	LibreTube	FF9699		
 librewolf	LibreWolf	00ACFF	librewolf.net	
-libuv	libuv	403C3D		
+libuv	libuv	403C3D	libuv.org	
 lichess	Lichess	000000	lichess.org	
 lidl	Lidl	0050AA	lidl.de	
 lifx	LIFX	000000	lifx.com	
@@ -1681,7 +1681,7 @@ linkfire	Linkfire	FF3850	linkfire.com
 linksys	Linksys	000000	linksys.com	
 linktree	Linktree	43E55E	linktr.ee	
 linkvertise	Linkvertise	FF8114	linkvertise.com	
-linphone	Linphone	FF5E00		
+linphone	Linphone	FF5E00	linphone.org	
 lintcode	LintCode	13B4FF	lintcode.com	
 linux	Linux	FCC624	linuxfoundation.org	
 linuxcontainers	Linux Containers	333333		
@@ -1710,7 +1710,7 @@ localxpose	LocalXpose	6023C0	localxpose.io
 locust	Locust	B8EE4B		
 lodash	Lodash	3492FF		
 logmein	LogMeIn	45B6F2	logmein.com	
-logseq	Logseq	85C8C8		
+logseq	Logseq	85C8C8	logseq.com	
 logstash	Logstash	005571		
 longhorn	Longhorn	5F224B		
 looker	Looker	4285F4	looker.com	
@@ -1734,7 +1734,7 @@ lufthansa	Lufthansa	05164D	lufthansa.com
 lumen	Lumen	E74430		
 lunacy	Lunacy	179DE3		
 luogu	Luogu	5B9BD5		
-lutris	Lutris	FF9900		
+lutris	Lutris	FF9900	lutris.net	
 lvgl	LVGL	343839	lvgl.io	Light and Versatile Graphics Library
 lydia	Lydia	0180FF	lydia-app.com	
 m5stack	M5Stack	0077C8		
@@ -1807,7 +1807,7 @@ medusa	Medusa	000000
 meetup	Meetup	ED1C40	meetup.com	
 meilisearch	Meilisearch	FF5CAA	meilisearch.com	
 meituan	Meituan	FFD100	meituan.com	美团
-meizu	Meizu	FF4132		魅族
+meizu	Meizu	FF4132	meizu.com	魅族
 mendeley	Mendeley	9D1620	mendeley.com	
 mentorcruise	MentorCruise	172E59	mentorcruise.com	
 mercadopago	Mercado Pago	00B1EA	mercadopago.com	
@@ -1819,7 +1819,7 @@ metabase	Metabase	509EE3	metabase.com
 metacritic	Metacritic	000000	metacritic.com	
 metafilter	MetaFilter	065A8F	metafilter.com	
 metager	MetaGer	F47216	metager.de	
-metasploit	Metasploit	2596CD		
+metasploit	Metasploit	2596CD	metasploit.com	
 meteor	Meteor	DE4F4F	meteor.com	
 metro	Metro	EF4242		
 metrodelaciudaddemexico	Metro de la Ciudad de México	F77E1C		
@@ -1831,10 +1831,10 @@ mg	MG	FF0000		Morris Garages
 microbit	micro:bit	00ED00	microbit.org	
 microdotblog	Micro.blog	FF8800	micro.blog	
 microeditor	Micro Editor	2E3192		
-micropython	MicroPython	2B2728		
+micropython	MicroPython	2B2728	micropython.org	
 microstation	Microstation	62BB47		
 microstrategy	MicroStrategy	D9232E	microstrategy.com	
-midi	MIDI	000000		
+midi	MIDI	000000	midi.org	
 migadu	Migadu	0043CE	migadu.com	
 mihon	Mihon	0058A0		
 mihoyo	miHoYo	4EA4DD		
@@ -1860,7 +1860,7 @@ mobxstatetree	MobX-State-Tree	FF7102
 mocha	Mocha	8D6748	mochajs.org	
 mockserviceworker	Mock Service Worker	FF6A33		
 modal	Modal	7FEE64	modal.com	
-modelcontextprotocol	Model Context Protocol	000000		MCP
+modelcontextprotocol	Model Context Protocol	000000	modelcontextprotocol.io	MCP
 modelscope	ModelScope	624AFF	modelscope.cn	
 modin	Modin	001729	modin.org	
 modrinth	Modrinth	00AF5C		
@@ -1893,7 +1893,7 @@ mqtt	MQTT	660066	mqtt.org
 msi	MSI	FF0000	msi.com	Micro-Star International
 msibusiness	MSI Business	9A8555	msi.com	
 mta	MTA	0039A6	mta.info	
-mtr	MTR	AC2E45		
+mtr	MTR	AC2E45	mtr.com.hk	
 mubi	MUBI	000000	mubi.com	
 mui	MUI	007FFF		Material-UI
 muller	Müller	F46519		
@@ -1915,7 +1915,7 @@ namesilo	NameSilo	031B4E	namesilo.com
 namuwiki	Namu Wiki	008275	namu.wiki	나무위키
 nano	Nano	209CE9	nano.org	
 napster	Napster	2259FF	napster.com	
-nasa	NASA	E03C31		
+nasa	NASA	E03C31	nasa.gov	
 nationalgrid	National Grid	00148C	nationalgrid.com	
 nationalrail	National Rail	003366		
 nativescript	NativeScript	65ADF1	nativescript.org	
@@ -1928,7 +1928,7 @@ ndi	NDI	000000	ndi.video
 ndr	NDR	0C1754	ndr.de	
 near	NEAR	000000	near.org	
 nebula	Nebula	2CADFE	nebula.tv	
-nec	NEC	1414A0		
+nec	NEC	1414A0	nec.com	
 nederlandsespoorwegen	Nederlandse Spoorwegen	003082		
 neo4j	Neo4j	4581C3	neo4j.com	
 neon	Neon	34D59A	neon.com	
@@ -1948,7 +1948,7 @@ newbalance	New Balance	CF0A2C	newbalance.com
 newegg	Newegg	E05E00	newegg.com	
 newgrounds	Newgrounds	FDA238	newgrounds.com	
 newjapanprowrestling	New Japan Pro-Wrestling	FF160B		NJPW,NJPW World,新日本プロレスリング
-newpipe	NewPipe	CD201F		
+newpipe	NewPipe	CD201F	newpipe.net	
 newrelic	New Relic	1CE783	newrelic.com	
 newyorktimes	New York Times	000000		
 nexon	NEXON	000000	nexon.com	
@@ -1973,7 +1973,7 @@ nikon	Nikon	FFE100	nikon.com
 nim	Nim	FFE953	nim-lang.org	
 nissan	Nissan	C3002F	nissan.ie	
 nobaralinux	Nobara Linux	000000		
-nodedotjs	Node.js	5FA04E		
+nodedotjs	Node.js	5FA04E	nodejs.org	
 nodegui	NodeGui	000000		
 nodemon	Nodemon	76D04B	nodemon.io	
 nodered	Node-RED	8F0000	nodered.org	
@@ -1995,9 +1995,9 @@ now	NOW	001211	nowtv.com
 nrwl	Nrwl	96D7E8	nrwl.io	
 nsis	NSIS	01B0F0		Nullsoft Scriptable Install System
 ntfy	ntfy	317F6F	ntfy.sh	
-nubank	Nubank	820AD1		
+nubank	Nubank	820AD1	nubank.com.br	
 nucleo	Nucleo	252B2D	nucleoapp.com	
-nuget	NuGet	004880		
+nuget	NuGet	004880	nuget.org	
 nuke	Nuke	000000		
 numba	Numba	00A3E0		
 numpy	NumPy	013243	numpy.org	
@@ -2031,13 +2031,13 @@ odysee	Odysee	EF1970	odysee.com
 ohdear	Oh Dear	FF3900	ohdear.app	
 okcupid	okcupid	0500BE	okcupid.com	
 okx	OKX	000000		
-ollama	Ollama	000000		
+ollama	Ollama	000000	ollama.com	
 omadacloud	Omada Cloud	10C1D0		
 oneplus	OnePlus	F5010C	oneplus.com	
 onestream	OneStream	000000	onestream.com	
 onlyfans	OnlyFans	00AFF0	onlyfans.com	
 onlyoffice	ONLYOFFICE	444444	onlyoffice.com	
-onnx	ONNX	005CED		
+onnx	ONNX	005CED	onnx.ai	
 onstar	OnStar	003D7D	onstar.com	
 oomol	OOMOL	0D1117	oomol.com	
 opel	Opel	F7FF14		
@@ -2046,7 +2046,7 @@ openaccess	Open Access	F68212
 openaigym	OpenAI Gym	0081A5	gym.openai.com	
 openapiinitiative	OpenAPI Initiative	6BA539		
 openbadges	Open Badges	073B5A	backpack.openbadges.org	
-openbsd	OpenBSD	F2CA30		
+openbsd	OpenBSD	F2CA30	openbsd.org	
 openbugbounty	Open Bug Bounty	F67909	openbugbounty.org	
 opencage	OpenCage	1A8865	opencagedata.com	
 opencode	OpenCode	000000		
@@ -2059,8 +2059,8 @@ opengl	OpenGL	5586A4
 openhab	openHAB	E64A19	openhab.org	
 openid	OpenID	F78C40	openid.net	
 openjsfoundation	OpenJS Foundation	0075C9		
-openlayers	Openlayers	1F6B75		
-openmediavault	openmediavault	5DACDF		
+openlayers	Openlayers	1F6B75	openlayers.org	
+openmediavault	openmediavault	5DACDF	openmediavault.org	
 openmined	OpenMined	ED986C	openmined.org	
 opennebula	OpenNebula	0097C2	opennebula.io	
 openproject	OpenProject	0770B8	openproject.org	
@@ -2076,15 +2076,15 @@ opensuse	openSUSE	73BA25
 opentext	OpenText	000000	opentext.com	Micro Focus
 opentofu	OpenTofu	FFDA18		OpenTF,Terraform
 opentui	OpenTUI	000000		
-openverse	Openverse	FFE033		
+openverse	Openverse	FFE033	openverse.org	
 openvpn	OpenVPN	EA7E20	openvpn.net	
 openwrt	OpenWrt	00B5E2	openwrt.org	
 openzeppelin	OpenZeppelin	4E5EE4	openzeppelin.com	
-openzfs	OpenZFS	2A667F		
+openzfs	OpenZFS	2A667F	openzfs.org	
 opera	Opera	FF1B2D	opera.com	
 operagx	Opera GX	EE2950	opera.com	
-opnsense	OPNsense	E44A20		
-oppo	OPPO	2D683D		
+opnsense	OPNsense	E44A20	opnsense.org	
+oppo	OPPO	2D683D	oppo.com	
 opsgenie	Opsgenie	172B4D		
 opslevel	OpsLevel	0A53E0	opslevel.com	
 optimism	Optimism	FF0420		
@@ -2100,14 +2100,14 @@ ory	Ory	4F46E5	ory.com
 osano	Osano	7764FA	osano.com	
 osf	OSF	2CB9F1		Open Science Framework,Center for Open Science
 osgeo	OSGeo	4CB05B	osgeo.org	
-osmand	OsmAnd	FF8800		
+osmand	OsmAnd	FF8800	osmand.net	
 osmc	OSMC	17394A		
 osu	osu!	FF66AA		
 otto	Otto	D4021D	ottogroup.com	
 outline	Outline	000000	getoutline.com	
 overcast	Overcast	FC7E0F	overcast.fm	
 overleaf	Overleaf	47A141	overleaf.com	
-owasp	OWASP	000000		
+owasp	OWASP	000000	owasp.org,owasp.org.cn	
 owncloud	ownCloud	041E42	owncloud.com	
 oxc	Oxc	00F7F1		
 oxygen	Oxygen	3A209E	oxygenbuilder.com	
@@ -2159,12 +2159,12 @@ penny	Penny	CD1414	penny.de
 penpot	Penpot	000000	penpot.app	
 percy	Percy	9E66BF	percy.io	
 perforce	Perforce	4C00FF		
-perl	Perl	0073A1		
+perl	Perl	0073A1	perl.org	
 perplexity	Perplexity	1FB8CD	perplexity.ai	
 persistent	Persistent	FD5F07	persistent.com	
 personio	Personio	000000	personio.com	
 petsathome	Pets at Home	00AA28	petsathome.com	
-peugeot	Peugeot	000000		
+peugeot	Peugeot	000000	peugeot.com,peugeot.de,peugeot.fr,peugeot.co.uk	
 pexels	Pexels	05A081	pexels.com	
 pfsense	pfSense	212121	pfsense.org	
 phabricator	Phabricator	4A5F88		
@@ -2174,9 +2174,9 @@ phonepe	PhonePe	5F259F	phonepe.com
 photobucket	Photobucket	1C47CB	photobucket.com	
 photocrowd	Photocrowd	3DAD4B	photocrowd.com	
 photon	Photon	004480	photonengine.com	
-photopea	Photopea	18A497		
+photopea	Photopea	18A497	photopea.com	
 phpbb	phpBB	009BDF	phpbb.com	
-phpmyadmin	phpMyAdmin	6C78AF		
+phpmyadmin	phpMyAdmin	6C78AF	phpmyadmin.net	
 phpstorm	PhpStorm	000000		
 pi	Pi	000000		
 piaggiogroup	Piaggio Group	000000	piaggiogroup.com	
@@ -2201,7 +2201,7 @@ pipecat	Pipecat	000000	pipecat.ai
 piped	Piped	F84330		
 pipx	pipx	2CFFAA		
 pivotaltracker	Pivotal Tracker	517A9E	pivotaltracker.com	
-piwigo	Piwigo	FF7700		
+piwigo	Piwigo	FF7700	piwigo.org	
 pix	Pix	77B6A8		
 pixabay	Pixabay	191B26	pixabay.com	
 pixelfed	Pixelfed	6366F1	pixelfed.org	
@@ -2220,11 +2220,11 @@ playcanvas	PlayCanvas	E05F2C	playcanvas.com
 playerdotme	Player.me	C0379A	player.me	
 playerfm	Player FM	C8122A	player.fm	
 playstation2	PlayStation 2	003791		
-playstation3	PlayStation 3	003791		
+playstation3	PlayStation 3	003791	playstation.com	
 playstation4	PlayStation 4	003791		
 playstation5	PlayStation 5	003791	playstation.com	
-playstationportable	PlayStation Portable	003791		PSP
-playstationvita	PlayStation Vita	003791		
+playstationportable	PlayStation Portable	003791	playstation.com	PSP
+playstationvita	PlayStation Vita	003791	playstation.com	
 plesk	Plesk	52BBE6	plesk.com	
 plex	Plex	EBAF00	plex.tv	
 plotly	Plotly	7A76FF	plotly.com	
@@ -2324,14 +2324,14 @@ pyg	PyG	3C2179		PyTorch Geometric
 pypy	PyPy	193440	pypy.org	
 pyscaffold	PyScaffold	005CA0		
 pysyft	PySyft	F1BF7A		
-pytest	Pytest	0A9EDC		
+pytest	Pytest	0A9EDC	pytest.org	
 python	Python	3776AB	python.org	
 pythonanywhere	PythonAnywhere	1D9FD7	pythonanywhere.com	
-pytorch	PyTorch	EE4C2C		
+pytorch	PyTorch	EE4C2C	pytorch.org	
 pyup	PyUp	9F55FF	pyup.io	
 qantas	Qantas	E40000	qantas.com	
 qatarairways	Qatar Airways	5C0D34	qatarairways.com	
-qbittorrent	qbittorrent	2F67BA		
+qbittorrent	qbittorrent	2F67BA	qbittorrent.org	
 qdrant	Qdrant	DC244C	qdrant.tech	
 qemu	QEMU	FF6600	wiki.qemu.org	
 qgis	QGIS	589632	qgis.org	
@@ -2346,7 +2346,7 @@ qnap	QNAP	0C2E82	marketing.qnap.com	Quality Network Appliance Provider
 qodo	Qodo	7968FA	qodo.ai	
 qq	QQ	1EBAFC		
 qt	Qt	41CD52		
-quad9	Quad9	DC205E		9.9.9.9,Quad9 DNS
+quad9	Quad9	DC205E	quad9.net	9.9.9.9,Quad9 DNS
 qualcomm	Qualcomm	3253DC	qualcomm.com	
 qualtrics	Qualtrics	00B4EF	qualtrics.com	
 qualys	Qualys	ED2E26	qualys.com	
@@ -2374,7 +2374,7 @@ radiofrance	Radio France	2B00E7	charte.radiofrance.fr	Fip,France Culture,France 
 radixui	Radix UI	161618	radix-ui.com	
 radstudio	RAD Studio	E62431		
 railway	Railway	0B0D0E	railway.app	
-rainmeter	Rainmeter	19519B		
+rainmeter	Rainmeter	19519B	rainmeter.net	
 rainyun	RainYun	DAD9D9	rainyun.com	
 rakuten	Rakuten	BF0000	global.rakuten.com	
 rakutenkobo	Rakuten Kobo	BF0000	kobo.com	
@@ -2388,11 +2388,11 @@ ratatui	Ratatui	000000
 ravelry	Ravelry	EE6E62	ravelry.com	
 ray	Ray	028CF0		
 raycast	Raycast	FF6363	raycast.com	
-raylib	Raylib	000000		
+raylib	Raylib	000000	raylib.com	
 razer	Razer	00FF00	razer.com	
 razorpay	Razorpay	0C2451	razorpay.com	
-rclone	Rclone	3F79AD		
-react	React	61DAFB		React Native
+rclone	Rclone	3F79AD	rclone.org	
+react	React	61DAFB	react.dev	React Native
 reactbootstrap	React Bootstrap	41E0FD		
 reacthookform	React Hook Form	EC5990		
 reactiveresume	Reactive Resume	000000		
@@ -2435,7 +2435,7 @@ renault	Renault	FFCC33	renaultgroup.com
 render	Render	000000	render.com	
 renovate	Renovate	308BE3		
 renpy	Ren'Py	FF7F7F	renpy.org	
-renren	Renren	217DC6		
+renren	Renren	217DC6	renren.com	
 replicate	Replicate	000000	replicate.com	
 republicofgamers	Republic of Gamers	FF0029		ASUS ROG,ROG
 rescript	ReScript	E6484F	rescript-lang.org	
@@ -2443,10 +2443,10 @@ rescuetime	RescueTime	161A3B	rescuetime.com
 researchgate	ResearchGate	00CCBB	researchgate.net	
 resend	Resend	000000	resend.com	
 resharper	ReSharper	000000		
-resurrectionremixos	Resurrection Remix OS	000000		
+resurrectionremixos	Resurrection Remix OS	000000	resurrectionremix.com	
 retool	Retool	3D3D3D	retool.com	
 retroachievements	Retro Achievements	1065DF		
-retroarch	RetroArch	000000		
+retroarch	RetroArch	000000	retroarch.com	
 retropie	RetroPie	CC0000		
 revanced	ReVanced	9ED5FF	revanced.app	
 revealdotjs	reveal.js	F2E142		
@@ -2491,7 +2491,7 @@ rootssage	Roots Sage	525DDC	roots.io
 ros	ROS	22314E	ros.org	
 rossmann	Rossmann	C3002D	rossmann.de	
 rotaryinternational	Rotary International	F7A81B	rotary.org	
-rottentomatoes	Rotten Tomatoes	FA320A		
+rottentomatoes	Rotten Tomatoes	FA320A	rottentomatoes.com	
 roundcube	Roundcube	37BEFF	roundcube.net	
 rsocket	RSocket	EF0092	rsocket.io	
 rss	RSS	FFA500		
@@ -2502,7 +2502,7 @@ rtlzwei	RTLZWEI	00BCF6
 rtm	RTM	36474F	rtm.fr	Régie des Transports Métropolitains,Régie des Transports de Marseille
 rubygems	RubyGems	E9573F	rubygems.org	
 rubymine	RubyMine	000000		
-rubyonrails	Ruby on Rails	D30001		
+rubyonrails	Ruby on Rails	D30001	rubyonrails.org	
 rubysinatra	Ruby Sinatra	000000		
 ruff	Ruff	D7FF64		
 rumahweb	Rumahweb	2EB4E3	rumahweb.com	
@@ -2511,7 +2511,7 @@ rundeck	Rundeck	F73F39
 runkeeper	Runkeeper	001E62	runkeeper.com	
 runkit	RunKit	491757		
 runrundotit	Runrun.it	DB3729	runrun.it	
-rustdesk	RustDesk	024EFF		
+rustdesk	RustDesk	024EFF	rustdesk.com	
 rxdb	RxDB	8D1F89		
 ryanair	Ryanair	073590	ryanair.com	
 rye	Rye	000000		
@@ -2527,7 +2527,7 @@ samsclub	Sam's Club	0067A0	samsclub.com
 samsungpay	Samsung Pay	1428A0	pay.samsung.com	
 sanfranciscomunicipalrailway	San Francisco Municipal Railway	BA0C2F		
 sanic	Sanic	FF0D68		
-saopaulometro	São Paulo Metro	004382		
+saopaulometro	São Paulo Metro	004382	metro.sp.gov.br	
 sap	SAP	0FAAFF	sap.com	
 sartorius	Sartorius	FFED00	sartorius.com	
 sat1	Sat.1	047DA3	prosiebensat1.com	
@@ -2541,9 +2541,9 @@ scaleway	Scaleway	4F0599	ultraviolet.scaleway.com
 scan	Scan	004C97		
 scania	Scania	041E42	digitaldesign.scania.com	
 schneiderelectric	Schneider Electric	3DCD58		
-scikitlearn	scikit-learn	F7931E		
-scilab	Scilab	CD1925		
-scipy	SciPy	8CAAE6		
+scikitlearn	scikit-learn	F7931E	scikit-learn.org	
+scilab	Scilab	CD1925	scilab.org	
+scipy	SciPy	8CAAE6	scipy.org	
 scopus	Scopus	E9711C	scopus.com	
 scpfoundation	SCP Foundation	FFFFFF		
 scrapbox	Scrapbox	06B632	scrapbox.io	
@@ -2561,7 +2561,7 @@ searxng	SearXNG	3050FF	searxng.org
 seat	SEAT	33302E	seat.es	
 seatgeek	SeatGeek	FF5B49	seatgeek.com	
 securityscorecard	SecurityScorecard	7033FD	securityscorecard.com	
-sefaria	Sefaria	212E50		
+sefaria	Sefaria	212E50	sefaria.org	
 sega	Sega	0089CF		
 selenium	Selenium	43B02A		
 sellfy	Sellfy	21B352	sellfy.com	
@@ -2591,7 +2591,7 @@ shanghaimetro	Shanghai Metro	EC1C24
 sharex	ShareX	2885F1	getsharex.com	
 sharp	sharp	99CC00		
 shazam	Shazam	0088FF	shazam.com	
-shell	Shell	FFD500		
+shell	Shell	FFD500	shell.com	
 shelly	Shelly	4495D1	shelly.com	
 shenzhenmetro	Shenzhen Metro	009943		
 shieldsdotio	Shields.io	000000		
@@ -2613,7 +2613,7 @@ simpleicons	Simple Icons	111111	simpleicons.org
 simpleiconscdn	Simple Icons CDN	111111		
 simplelocalize	SimpleLocalize	222B33	simplelocalize.io	
 simplelogin	SimpleLogin	EA319F	simplelogin.io	
-simplenote	Simplenote	3361CC		
+simplenote	Simplenote	3361CC	simplenote.com	
 simplex	SimpleX	000000		
 sinaweibo	Sina Weibo	E6162D		
 singaporeairlines	Singapore Airlines	F99F1C	singaporeair.com	
@@ -2630,7 +2630,7 @@ skoda	ŠKODA	0E3A2F	skoda-connect.com
 sky	Sky	0072C9	skysports.com	
 skypack	Skypack	3167FF	skypack.dev	
 slackware	Slackware	000000		
-slashdot	Slashdot	026664		
+slashdot	Slashdot	026664	slashdot.org	
 slickpic	SlickPic	FF880F	slickpic.com	
 slides	Slides	E4637C	slides.com	
 slideshare	SlideShare	008ED2	slideshare.net	
@@ -2650,7 +2650,7 @@ socialblade	Social Blade	B3382C	socialblade.com
 society6	Society6	000000	society6.com	
 socket	Socket	C93CD7		
 socketdotio	Socket.io	010101	socket.io	
-softpedia	Softpedia	002873		
+softpedia	Softpedia	002873	softpedia.com	
 sogou	Sogou	FB6022	sogou.com	
 solana	Solana	9945FF	solana.com	
 solid	Solid	2C4F7C	solidjs.com	
@@ -2790,10 +2790,10 @@ symantec	Symantec	FDB511
 symbolab	Symbolab	DB3F59	symbolab.com	
 symfony	Symfony	000000	symfony.com	
 symphony	Symphony	0098FF	symphony.com	
-sympy	SymPy	3B5526		
-syncthing	Syncthing	0891D1		
+sympy	SymPy	3B5526	sympy.org	
+syncthing	Syncthing	0891D1	syncthing.net	
 synology	Synology	B5B5B6	synology.com	
-system76	System76	585048		
+system76	System76	585048	system76.com	
 tabelog	Tabelog	F2CC38	tabelog.com	食べログ
 tablecheck	TableCheck	7935D2	tablecheck.com	
 tacobell	Taco Bell	38096C	tacobell.com	
@@ -2808,7 +2808,7 @@ talend	Talend	FF6D70	talend.com
 talenthouse	Talenthouse	000000	talenthouse.com	
 talos	Talos	FF7300		
 tamiya	Tamiya	000000		
-tampermonkey	Tampermonkey	00485B		
+tampermonkey	Tampermonkey	00485B	tampermonkey.net	
 tangled	Tangled	000000	tangled.org	
 tanstack	TanStack	ECE8D1	tanstack.com	
 taobao	Taobao	E94F20		
@@ -2824,20 +2824,20 @@ teal	Teal	005149	tealhq.com
 teamcity	TeamCity	000000		
 teamspeak	TeamSpeak	4B69B6	teamspeak.com	
 teamviewer	TeamViewer	050A52	teamviewer.com	
-techcrunch	TechCrunch	029F00		
+techcrunch	TechCrunch	029F00	techcrunch.com	
 ted	TED	E62B1E	ted.com	
 teepublic	TeePublic	4E64DF	teepublic.design	
 teespring	Teespring	ED2761	teespring.com	
 tekton	Tekton	FD495C		
 tele5	TELE 5	FF00FF		
-telefonica	Telefónica	0066FF		
+telefonica	Telefónica	0066FF	telefonica.com	
 telegraph	Telegraph	FAFAFA	telegra.ph	
 telenor	Telenor	00C8FF	telenor.no	Grameenphone
 telequebec	Télé-Québec	1343FB	telequebec.tv	
 temporal	Temporal	000000		
 tencenthy	Tencent Hy	0052D9	hy.tencent.ai	
 tensorflow	TensorFlow	FF6F00	tensorflow.org	
-teradata	Teradata	F37440		
+teradata	Teradata	F37440	teradata.com	
 teratail	teratail	F4C51C	teratail.com	
 termius	Termius	000000	termius.com	
 terraform	Terraform	844FBA		
@@ -2852,7 +2852,7 @@ tga	TGA	0014FF		The Game Awards
 thangs	Thangs	FFBC00	thangs.com	
 thanos	Thanos	6D41FF	thanos.io	
 thealgorithms	The Algorithms	00BCB4		
-theboringcompany	The Boring Company	000000		
+theboringcompany	The Boring Company	000000	boringcompany.com	
 theconversation	The Conversation	D8352A	theconversation.com	
 thefinals	THE FINALS	D31F3C		
 theguardian	The Guardian	052962	theguardian.com	
@@ -2873,13 +2873,13 @@ things	Things	2473E7
 thinkpad	ThinkPad	EE2624		
 thirdweb	thirdweb	F213A4	thirdweb.com	
 threadless	Threadless	0099FF	threadless.com	
-threedotjs	Three.js	000000		
+threedotjs	Three.js	000000	threejs.org	
 threema	Threema	3FE669	threema.ch	
 thumbtack	Thumbtack	009FD9	thumbtack.com	
 thunderbird	Thunderbird	0A84FF	thunderbird.net	
 thunderstore	Thunderstore	23FFB0		
 thurgauerkantonalbank	Thurgauer Kantonalbank	006D41		
-thymeleaf	Thymeleaf	005F0F		
+thymeleaf	Thymeleaf	005F0F	thymeleaf.org	
 ticketmaster	Ticketmaster	026CDF	ticketmaster.com	
 tickettailor	Ticket Tailor	222432	tickettailor.com	
 ticktick	TickTick	4772FA	ticktick.com	
@@ -2887,7 +2887,7 @@ tidal	TIDAL	000000	tidal.com
 tidb	TiDB	DC150B		
 tiddlywiki	TiddlyWiki	111111	tiddlywiki.com	
 tide	Tide	4050FB	tide.co	
-tidyverse	Tidyverse	1A162D		
+tidyverse	Tidyverse	1A162D	tidyverse.org	
 tietoevry	TietoEVRY	063752	tietoevry.com	
 tildapublishing	Tilda Publishing	FFA282	tilda.cc	
 tile	Tile	000000	thetileapp.com	
@@ -2900,14 +2900,14 @@ tinygrad	tinygrad	FFFFFF
 tinyletter	TinyLetter	ED1C24	tinyletter.com	
 tistory	Tistory	000000	tistory.com	티스토리
 tldraw	tldraw	FAFAFA	tldraw.dev	
-tmux	tmux	1BB91F		
+tmux	tmux	1BB91F	tmux.github.io	
 todoist	Todoist	E44332	doist.com	
 toggl	Toggl	FFDE91	toggl.com	
 toggltrack	Toggl Track	E57CD8	toggl.com	
 tokio	Tokio	000000	tokio.rs	
-tokyometro	Tokyo Metro	149DD3		
+tokyometro	Tokyo Metro	149DD3	tokyometro.jp	
 toll	Toll	007A68	tollgroup.com	
-toml	TOML	9C4121		
+toml	TOML	9C4121	toml.io	
 tomorrowland	Tomorrowland	000000	tomorrowland.com	
 tomtom	TomTom	DF1B12	brandguide.tomtom.com	
 ton	TON	0098EA	ton.org	
@@ -2917,7 +2917,7 @@ toptal	Toptal	3863A0	toptal.com
 torbrowser	Tor Browser	7D4698		
 torizon	Torizon	FAAF00		
 torproject	Tor Project	7D4698	styleguide.torproject.org	
-toshiba	Toshiba	FF0000		
+toshiba	Toshiba	FF0000	toshiba.com	
 totvs	TOTVS	363636	marca.totvs.com	
 tourbox	TourBox	231F20	tourboxtech.com	
 tower	Tower	00CAF4	git-tower.com	
@@ -2940,14 +2940,14 @@ traxsource	Traxsource	40A0FF	traxsource.com
 treehouse	Treehouse	5FCF80	teamtreehouse.com	
 trendmicro	Trend Micro	D71921	trendmicro.com	
 tresorit	Tresorit	00A9E2	tresorit.com	
-treyarch	Treyarch	000000		
+treyarch	Treyarch	000000	treyarch.com	
 trezor	Trezor	141609		
 tricentis	Tricentis	12438C	tricentis.com	
 trilium	Trilium	000000		
 triller	Triller	FF0089	triller.co	
 trillertv	TrillerTV	E61414		FITE
 trimble	Trimble	0063A3	trimble.com	
-trino	Trino	DD00A1		
+trino	Trino	DD00A1	trino.io	
 tripdotcom	Trip.com	287DFA	careers.trip.com	
 trivago	trivago	E32851	trivago.com	
 trivy	Trivy	1904DA		
@@ -2969,7 +2969,7 @@ turborepo	Turborepo	FF1E56
 turbosquid	TurboSquid	FF8135	turbosquid.com	
 turkishairlines	Turkish Airlines	C70A0C	turkishairlines.com	
 turso	Turso	4FF8D2	turso.tech	
-tuta	Tuta	850122		Tutanota
+tuta	Tuta	850122	tuta.com	Tutanota
 tuxedocomputers	TUXEDO Computers	000000	tuxedocomputers.com	
 tv4play	TV4 Play	E0001C	tv4play.se	
 tvtime	TV Time	FFD400	tvtime.com	
@@ -2988,7 +2988,7 @@ ublockorigin	uBlock Origin	800000
 ubuntu	Ubuntu	E95420	ubuntu.com	
 ubuntumate	Ubuntu MATE	84A454	ubuntu-mate.org	
 udacity	Udacity	02B3E4	udacity.com	
-udotsdotnews	U.S. News	005EA6		
+udotsdotnews	U.S. News	005EA6	usnews.com	
 ufc	UFC	D20A0A	ufc.com	
 uikit	UIkit	2396F3	getuikit.com	
 uipath	UiPath	FA4616	uipath.com	
@@ -3000,7 +3000,7 @@ umbrel	Umbrel	5351FB	umbrel.com
 uml	UML	FABD14	uml.org	Unified Modelling Language
 unacademy	Unacademy	08BD80	unacademy.com	
 underarmour	Under Armour	1D1D1D	underarmour.com	
-underscoredotjs	Underscore.js	0371B5		
+underscoredotjs	Underscore.js	0371B5	underscorejs.org	
 undertale	Undertale	E71D29	undertale.com	
 unicode	Unicode	5455FE		
 unilever	Unilever	1F36C7	unilever.com	
@@ -3010,7 +3010,7 @@ unitedairlines	United Airlines	002244	united.com
 unitednations	United Nations	009EDB		
 unity	Unity	FFFFFF	unity.com	
 unjs	UnJS	ECDC5A	unjs.io	Unified JavaScript
-unlicense	Unlicense	808080		
+unlicense	Unlicense	808080	unlicense.org	
 unocss	UnoCSS	333333		
 unpkg	unpkg	000000		
 unraid	Unraid	F15A2C	unraid.net	
@@ -3041,7 +3041,7 @@ vapor	Vapor	0D0D0D	vapor.codes
 vault	Vault	FFEC6E		
 vaultwarden	Vaultwarden	000000		
 vauxhall	Vauxhall	EB001E		
-vbulletin	vBulletin	184D66		
+vbulletin	vBulletin	184D66	vbulletin.com	
 vectary	Vectary	6100FF	vectary.com	
 vectorlogozone	Vector Logo Zone	184D66		
 vectorworks	Vectorworks	000000	vectorworks.net	
@@ -3057,28 +3057,28 @@ verdaccio	Verdaccio	4B5E40	verdaccio.org
 veritas	Veritas	B1181E	my.veritas.com	
 verizon	Verizon	CD040B	verizondigitalmedia.com	
 vespa	Vespa	85B09A		
-vestel	Vestel	DD052B		
+vestel	Vestel	DD052B	vestel.com.tr	
 vexxhost	VEXXHOST	2A1659	vexxhost.com	
 vfairs	vFairs	EF4678	vfairs.com	
 viadeo	Viadeo	F07355		
-viaplay	Viaplay	FE365F		
+viaplay	Viaplay	FE365F	viaplay.com	
 viber	Viber	7360F2	viber.com	
 viblo	Viblo	5387C6	viblo.asia	
 victoriametrics	VictoriaMetrics	621773		VM,빅토리아메트릭스
 victronenergy	Victron Energy	0066B2	victronenergy.com	
 vikunja	Vikunja	196AFF		
-vim	Vim	019733		
+vim	Vim	019733	vim.org	
 vimeo	Vimeo	1AB7EA	vimeo.com	
 vimeolivestream	Vimeo Livestream	0A0A20	livestream.com	
 vinted	Vinted	007782	vinted.com	
 virgin	Virgin	E10A0A	virgin.com	Virgin Group
 virginatlantic	Virgin Atlantic	DA0530	virginatlantic.com	
-virginmedia	Virgin Media	ED1A37		
+virginmedia	Virgin Media	ED1A37	virginmedia.com	
 virtualbox	VirtualBox	2F61B4	virtualbox.org	Oracle VirtualBox
 virustotal	VirusTotal	394EFF	virustotal.com	
 visualparadigm	Visual Paradigm	CC3333	forums.visual-paradigm.com	
 visx	visx	FF1231		
-vite	Vite	9135FF		
+vite	Vite	9135FF	vite.dev	
 vitepress	VitePress	5C73E7		
 vitess	Vitess	F16728		
 vitest	Vitest	00FF74		
@@ -3135,15 +3135,15 @@ webawesome	Web Awesome	F36944
 webcomponentsdotorg	webcomponents.org	29ABE2	webcomponents.org	
 webdotde	WEB.DE	FFD800	web.de	
 webdriverio	WebdriverIO	EA5906	webdriver.io	
-webflow	Webflow	146EF5		
+webflow	Webflow	146EF5	webflow.com	
 webgl	WebGL	990000		
-webmin	Webmin	7DA0D0		
+webmin	Webmin	7DA0D0	webmin.com	
 webmoney	WebMoney	036CB5	webmoney.ru	
 webrtc	WebRTC	333333	webrtc.org	
 webstorm	WebStorm	000000		
 webtoon	WEBTOON	00D564	webtoons.com	
 webtrees	webtrees	2694E8	webtrees.net	
-wegame	WeGame	FAAB00		
+wegame	WeGame	FAAB00	wegame.com,wegame.com.cn	
 weightsandbiases	Weights & Biases	FFBE00		
 welcometothejungle	Welcome to the Jungle	FFCD00	welcometothejungle.com	WTTJ
 wellfound	Wellfound	000000	wellfound.com	
@@ -3156,23 +3156,23 @@ wezterm	WezTerm	4E49EE
 wgpu	wgpu	40E0D0	wgpu.rs	
 what3words	what3words	E11F26	what3words.com	
 wheniwork	When I Work	51A33D	wheniwork.com	
-wikibooks	Wikibooks	006699		
+wikibooks	Wikibooks	006699	wikibooks.org	
 wikidata	Wikidata	006699		
 wikidotgg	wiki.gg	FF1985	commons.wiki.gg	
 wikidotjs	Wiki.js	1976D2		
 wikimediacommons	Wikimedia Commons	006699		
 wikimediafoundation	Wikimedia Foundation	000000		
-wikiquote	Wikiquote	006699		
-wikisource	Wikisource	006699		
-wikiversity	Wikiversity	00649A		
-wikivoyage	Wikivoyage	006699		
+wikiquote	Wikiquote	006699	wikiquote.org	
+wikisource	Wikisource	006699	wikisource.org	
+wikiversity	Wikiversity	00649A	wikiversity.org	
+wikivoyage	Wikivoyage	006699	wikivoyage.org	
 winamp	Winamp	F93821	winamp.com	
 windsurf	Windsurf	0B100F	windsurf.com	Codeium
 wine	Wine	800000		
 wipro	Wipro	341C53	wipro.com	
 wire	Wire	000000	wire.com	
 wireguard	WireGuard	88171A	wireguard.com	
-wireshark	Wireshark	1679A7		
+wireshark	Wireshark	1679A7	wireshark.org	
 wish	Wish	32E476	wish.com	
 wistia	Wistia	58B7FE	wistia.com	
 wix	Wix	0C6EFC	wix.com	
@@ -3190,7 +3190,7 @@ wpengine	WP Engine	0ECAD4	wpengine.com
 wpexplorer	WPExplorer	2563EB	wpexplorer.com	
 wprocket	WP Rocket	F56640	wp-rocket.me	
 writedotas	Write.as	5AC4EE	write.as	
-wwe	WWE	000000		
+wwe	WWE	000000	wwe.com	
 wwise	Wwise	00549F		
 wxt	WXT	67D55E		
 wykop	Wykop	367DA9	wykop.pl	
@@ -3209,14 +3209,14 @@ xo	XO	5ED9C7
 xrp	XRP	25A768	xrpl.org	
 xsplit	XSplit	0095DE	xsplit.com	
 xstate	XState	2C3E50		
-xubuntu	Xubuntu	0044AA		
+xubuntu	Xubuntu	0044AA	xubuntu.org	
 xyflow	xyflow	1A192B		reactflow,svelteflow
 yaak	Yaak	814EDF	yaak.app	
 yabai	yabai	00364B		
 yale	Yale	FFD900	yalehome.com	
 yamahacorporation	Yamaha Corporation	4B1E78	yamaha.com	
 yamahamotorcorporation	Yamaha Motor Corporation	E60012		
-yaml	YAML	CB171E		
+yaml	YAML	CB171E	yaml.org	
 yandexcloud	Yandex Cloud	5282FF	cloud.yandex.com	
 ycombinator	Y Combinator	F0652F	ycombinator.com	
 yeti	Yeti	00263C	yeti.com	
@@ -3227,20 +3227,20 @@ yolo	YOLO	111F68
 youhodler	YouHodler	546DF9	youhodler.com	
 youtube	YouTube	FF0000		
 youtubegaming	YouTube Gaming	FF0000		
-youtubekids	YouTube Kids	FF0000		
+youtubekids	YouTube Kids	FF0000	youtubekids.com	
 youtubemusic	YouTube Music	FF0000		
 youtubeshorts	YouTube Shorts	FF0000		
 youtubestudio	YouTube Studio	FF0000		
 youtubetv	YouTube TV	FF0000		
 yr	Yr	00B9F1		
 yubico	Yubico	84BD00	yubico.com	
-yunohost	YunoHost	000000		
+yunohost	YunoHost	000000	yunohost.org	
 zabka	Żabka	006420	zabka.pl	
 zaim	Zaim	50A135	zaim.net	
 zalando	Zalando	FF6900		
 zalo	Zalo	0068FF	zalo.me	
 zap	ZAP	00549E	zaproxy.org	Zed Attack Proxy
-zapier	Zapier	FF4F00		
+zapier	Zapier	FF4F00	zapier.com	
 zara	Zara	000000	zara.com	
 zazzle	Zazzle	212121	zazzle.com	
 zcash	Zcash	F3B724		ZEC
