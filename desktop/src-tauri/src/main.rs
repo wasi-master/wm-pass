@@ -17,6 +17,7 @@ mod probe;
 mod sealed;
 mod store;
 mod widgets;
+mod wifi;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -515,6 +516,21 @@ async fn hardware_tap(kind: String, factor: Value) -> Result<Response, String> {
     Ok(Response::new(reply.to_vec()))
 }
 
+// ---- saved Wi-Fi ----
+
+/// The networks this computer has saved, without their passwords. Asks the person nothing.
+#[tauri::command]
+async fn saved_wifi() -> Result<Vec<wifi::Network>, String> {
+    blocking(wifi::list).await?
+}
+
+/// One saved network's password, as bytes. A Mac asks for an administrator's password first.
+#[tauri::command]
+async fn saved_wifi_password(id: String) -> Result<Response, String> {
+    let secret = blocking(move || wifi::password(&id)).await??;
+    Ok(Response::new(secret.as_bytes().to_vec()))
+}
+
 // ---- the local network ----
 
 #[tauri::command]
@@ -911,6 +927,8 @@ fn main() {
             places::places_kinds,
             places::places_sign_in,
             hardware_tap,
+            saved_wifi,
+            saved_wifi_password,
             device_name,
             local_address,
             blob_dir,

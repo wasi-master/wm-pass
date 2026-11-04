@@ -106,6 +106,11 @@ export async function desktopHost(): Promise<Host> {
       read: (path) => rawCall('outside_read', { path }),
       write: (path, bytes) => invoke('outside_write', packed({ path }, bytes)),
     },
+    savedWifi: {
+      asks: os === 'mac' ? 'macOS asks for your Mac’s password before it hands over each network’s password. Always Allow stops it asking again.' : null,
+      list: () => invoke('saved_wifi'),
+      password: (id) => rawCall('saved_wifi_password', { id }),
+    },
     lan: {
       deviceName: () => invoke('device_name'),
       localAddress: () => invoke('local_address'),

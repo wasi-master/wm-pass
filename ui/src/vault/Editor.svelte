@@ -40,6 +40,8 @@
   import Field from '../parts/Field.svelte';
   import Fold from '../parts/Fold.svelte';
   import ScanDialog from '../parts/ScanDialog.svelte';
+  import SavedWifiDialog from './SavedWifiDialog.svelte';
+  import { host, type SavedNetwork } from '../engine/host';
 
   import Icon from '../parts/Icon.svelte';
   import IconBtn from '../parts/IconBtn.svelte';
@@ -511,6 +513,29 @@
     }
   }
 
+  let pickingSaved = $state(false);
+  const canReadSaved = !!host().savedWifi;
+
+  /** Puts a network this computer has saved into the form. */
+  function fillSaved(network: SavedNetwork, password: string) {
+    const set = (key: string, value: string) => {
+      const f = fields.find((x) => x.spec.key === key);
+      if (f) f.text = value;
+    };
+    set('ssid', network.ssid);
+    set('security', network.security);
+    const pw = fields.find((x) => x.spec.key === 'password');
+    if (pw) {
+      pw.text = password;
+      pw.loaded = true;
+    }
+    wifiHad = password !== '';
+    const hidden = fields.find((x) => x.spec.key === 'hidden_ssid');
+    if (hidden) hidden.flag = network.hidden;
+    if (!title) title = network.ssid;
+    wifiNote = null;
+  }
+
   async function wifiScanned(texts: string[]) {
     scanningWifi = false;
     for (const text of texts) if (await fillWifi(text)) return void (wifiNote = null);
@@ -675,7 +700,10 @@
       {#if kind === 'wifi'}
         <div class="form-row">
           <span class="label"></span>
-          <span><Btn label="Fill in from a QR code" icon="qr_code_scanner" variant="quiet" onclick={() => (scanningWifi = true)} /></span>
+          <span class="gap wrap">
+            <Btn label="Fill in from a QR code" icon="qr_code_scanner" variant="quiet" onclick={() => (scanningWifi = true)} />
+            {#if canReadSaved}<Btn label="Pick a network saved on this computer" icon="wifi" variant="quiet" onclick={() => (pickingSaved = true)} />{/if}
+          </span>
         </div>
         {#if wifiNote}<p class="dim small">{wifiNote}</p>{/if}
       {/if}
@@ -863,6 +891,10 @@
 
 {#if scanningWifi}
   <ScanDialog title="Scan the network's code" hint="A phone shows it under Wi-Fi, Share. A screenshot of it works too." onfound={wifiScanned} onclose={() => (scanningWifi = false)} />
+{/if}
+
+{#if pickingSaved}
+  <SavedWifiDialog onclose={() => (pickingSaved = false)} onpick={fillSaved} />
 {/if}
 
 {#if scanningOtp}

@@ -9,10 +9,12 @@
   import { host } from '../engine/host';
   import type { ImportPreview, LinkedView } from '../engine/types';
   import GuideSheet from './GuideSheet.svelte';
+  import SavedWifiDialog from '../vault/SavedWifiDialog.svelte';
 
   const FORMATS = '1Password, Apple Passwords, Avast, Avira, Bitwarden, Buttercup, Chrome and other Chromium browsers, Dashlane, Enpass, Firefox, Kaspersky, KeePass and KeePassXC, Keeper, LastPass, mSecure, NordPass, Password Safe, Proton Pass, Psono, RoboForm, SafeInCloud, Sticky Password and Zoho Vault. Authenticators: Aegis, 2FAS, andOTP, Authenticator Pro, Bitwarden Authenticator, Ente Auth, FreeOTP+, LastPass Authenticator, Proton Authenticator, Raivo, and Google’s export QR code.';
 
   let guides = $state(false);
+  let savedWifi = $state(false);
   let preview = $state<ImportPreview | null>(null);
   let bytes = $state<Uint8Array | null>(null);
   let needsPassword = $state(false);
@@ -206,6 +208,7 @@
     <div class="gap" style="flex-wrap:wrap">
       <Btn label="Choose a file" icon="file_open" variant="primary" onclick={pick} />
       <Btn label="Scan Google Authenticator’s code" icon="qr_code_scanner" onclick={scanCode} />
+      {#if host().savedWifi}<Btn label="Wi-Fi saved on this computer" icon="wifi" onclick={() => { error = null; savedWifi = true; }} />{/if}
     </div>
     <p class="dimmer small">Delete the exported file afterwards. It holds your passwords in plain text.</p>
     <div><Btn label="How to export from your old app" icon="menu_book" onclick={() => (guides = true)} /></div>
@@ -214,6 +217,10 @@
 
 {#if guides}
   <GuideSheet onclose={() => (guides = false)} />
+{/if}
+
+{#if savedWifi}
+  <SavedWifiDialog onclose={() => (savedWifi = false)} onfinished={(summary) => (result = summary)} />
 {/if}
 
 {#if scanning}

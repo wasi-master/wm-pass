@@ -78,7 +78,26 @@ export interface Host {
   hardware?: HardwareHost;
   outside?: OutsideFiles;
   lan?: LanHost;
+  /** The Wi-Fi networks this computer has saved, where the shell can read them. */
+  savedWifi?: SavedWifiHost;
   desktop?: DesktopHost;
+}
+
+/** A Wi-Fi network the system has saved. `security` is one of the Wi-Fi item's choices. */
+export interface SavedNetwork {
+  id: string;
+  ssid: string;
+  security: string;
+  hidden: boolean;
+}
+
+export interface SavedWifiHost {
+  /** What the system asks before it hands over a password, in its own words, or null. */
+  asks: string | null;
+  /** Names and security only. Asks the person nothing. */
+  list(): Promise<SavedNetwork[]>;
+  /** One network's password, empty for an open one. Fill it with zeros after use. */
+  password(id: string): Promise<Uint8Array>;
 }
 
 /** A site the username checker knows, with `{}` in `profile` for the name. */

@@ -26,6 +26,7 @@ It reads these files:
 - JSON from Avast, Enpass, Keeper and Psono, Proton Pass's JSON or unencrypted ZIP, XML from Password Safe and Sticky Password, and Kaspersky Password Manager's text file.
 - Authenticators: Aegis, 2FAS, andOTP, Authenticator Pro (Stratum), Bitwarden Authenticator, FreeOTP+, LastPass Authenticator, Proton Authenticator and Raivo files, and a text file of otpauth links, one per line, which is what Ente Auth's plain-text export is.
 - Google Authenticator's export codes, with [Scan Google Authenticator's code](/guide/settings/import/#action-import-scan-google), or a screenshot of a code chosen as the file.
+- The Wi-Fi networks this computer has saved, with [Wi-Fi saved on this computer](/guide/settings/import/#action-import-saved-wifi).
 - A CSV that WM Pass exported.
 
 With nested vaults, **Import into** picks where the items go: this vault or one of them. The nested vault is opened for the import and closed again when you leave the page.
@@ -109,3 +110,43 @@ Google splits a long list across several codes. After the first, tap **Scan the 
 A screenshot of the code works too: choose it with **Choose a file**.
 
 See also [Import](/guide/settings/import/), [One-time codes](/guide/how-it-works/#feature-codes).
+
+<a id="action-import-saved-wifi"></a>
+
+## Wi-Fi saved on this computer
+
+*Only in the desktop app and Android.*
+
+Lists the Wi-Fi networks this computer has joined before and turns the ones you tick into Wi-Fi items, with their passwords.
+
+#### How it works
+
+The list shows each network's name and security, with **Tick all** to choose every one. On Windows and Linux they start ticked, apart from the ones already in the vault. On a Mac, where each password needs its own permission, none start ticked. Ticking a network that is already in the vault updates its item instead of adding a copy.
+
+The passwords are read one network at a time, only for the ones you save, and the dialog ends on what happened to each.
+
+In the item editor, **Pick a network saved on this computer** fills one network into the item you are writing.
+
+Everything is read from the system on this computer. Nothing is sent anywhere.
+
+#### Limits
+
+- On a Mac, the passwords are in the System keychain, and macOS asks for an administrator's name and password before it hands each one over. **Always Allow** stops it asking again for that network. The Mac does not say which kind of WPA a network uses, so each is saved as WPA.
+- On Windows, the list comes from the WLAN service. Whether Windows hands a saved password to a program not run as an administrator depends on its own settings. When it does not, the network is listed but not saved, and says why.
+- On Linux, WM Pass asks NetworkManager through \`nmcli\`. A password kept in a locked keyring, or one that needs an administrator's permission, does not come back. Systems without NetworkManager, such as those on iwd alone, are not read.
+
+#### On Android
+
+On the phone it is called Wi-Fi saved on this phone.
+
+Lists the Wi-Fi networks this phone has saved and turns the ones you tick into Wi-Fi items, with their passwords.
+
+Android keeps saved passwords from apps. Shizuku, a free app, passes WM Pass the access a computer has over USB debugging, for as long as you allow it. The sheet says what to do when Shizuku is missing, stopped or not yet allowed.
+
+A network already in the vault says so and starts unticked; ticking it updates that item instead of adding a copy.
+
+In the item editor, **Pick a network saved on this phone** fills one network into the item you are writing.
+
+On Android 10, Shizuku has to run as root to read the passwords.
+
+See also [Import](/guide/settings/import/), [Kinds of item](/guide/how-it-works/#concept-item-kinds).

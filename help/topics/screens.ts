@@ -256,7 +256,7 @@ export const screens = [
       EDITOR_SECRETS,
       'A password field has a show button, and **Generate**, which opens the generator; **Use this** puts the result in the field. While you type a password, a meter under it shows how strong it is. A username field has **Use an alias**. An SSH key\'s private key field has **Generate a key**.',
       'A login\'s **Passkeys** section lists the passkeys sites have made, which cannot be typed in or changed. A one-time code has **Add a username and password**, which turns it into a login that keeps its code.',
-      'A Wi-Fi network has **Fill in from a QR code**, which reads the code a phone shows to share a network, from the camera or a picture. Pasting a `WIFI:` code into the network name fills in the rest. Typing a password on an open network sets it to WPA, and clearing it sets it back to open.',
+      'A Wi-Fi network has **Fill in from a QR code**, which reads the code a phone shows to share a network, from the camera or a picture. In the desktop app it also has **Pick a network saved on this computer**; see [[action.import_saved_wifi]]. Pasting a `WIFI:` code into the network name fills in the rest. Typing a password on an open network sets it to WPA, and clearing it sets it back to open.',
       '**Save**, or Ctrl+S (Cmd+S on a Mac), saves and shows the item. **Close** leaves, and asks **Discard changes?** first if you changed anything.',
     ],
     when: '[[setting.editor_generate]] starts every new login with a generated password already in place.',

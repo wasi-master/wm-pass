@@ -8951,6 +8951,77 @@
    "plain": "Scans the export code Google Authenticator shows under Transfer codes, Export codes, and reads the one-time codes in it."
   },
   {
+   "id": "action.import_saved_wifi",
+   "kind": "action",
+   "title": "Wi-Fi saved on this phone",
+   "page": "import",
+   "what": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Lists the Wi-Fi networks this phone has saved and turns the ones you tick into Wi-Fi items, with their passwords."
+      }
+     ]
+    }
+   ],
+   "how": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Android keeps saved passwords from apps. Shizuku, a free app, passes WM Pass the access a computer has over USB debugging, for as long as you allow it. The sheet says what to do when Shizuku is missing, stopped or not yet allowed."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "A network already in the vault says so and starts unticked; ticking it updates that item instead of adding a copy."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "In the item editor, "
+      },
+      {
+       "t": "strong",
+       "s": "Pick a network saved on this phone"
+      },
+      {
+       "t": "text",
+       "s": " fills one network into the item you are writing."
+      }
+     ]
+    }
+   ],
+   "caveats": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "On Android 10, Shizuku has to run as root to read the passwords."
+      }
+     ]
+    }
+   ],
+   "related": [
+    "page.import",
+    "concept.item_kinds"
+   ],
+   "words": "wifi wi-fi wlan network saved known password keychain netsh nmcli networkmanager shizuku",
+   "plain": "Lists the Wi-Fi networks this phone has saved and turns the ones you tick into Wi-Fi items, with their passwords."
+  },
+  {
    "id": "page.export",
    "kind": "page",
    "title": "Export",

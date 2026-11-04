@@ -49,3 +49,9 @@ rustix = { version = "1", features = ["process"] }
 # The widgets' reload library, opened from the bundle at run time (src/widgets.rs).
 [target.'cfg(target_os = "macos")'.dependencies]
 libloading = "0.8"
+# Saved Wi-Fi passwords live in the System keychain (src/wifi.rs).
+security-framework = "3.7"
+
+# The WLAN service, opened at run time so a Windows without it still starts (src/wifi.rs).
+[target.'cfg(windows)'.dependencies]
+libloading = "0.8"
