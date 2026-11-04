@@ -23,7 +23,15 @@ class PassApplication : Application() {
         com.wasimaster.wmsuite.sinks.net.SinkNet.checkInternet = {
             if (com.wasimaster.wmpass.BuildConfig.OFFLINE) throw java.io.IOException("This build has no network access.")
         }
-        Pass.afterSave = { com.wasimaster.wmpass.system.FileSync.soon(this) }
+        Pass.afterSave = {
+            val lan = com.wasimaster.wmpass.system.Lan
+            // A save after a sync on this network goes on to the sync places only if it brought something.
+            if (!lan.savingOwn || lan.savingReceived) com.wasimaster.wmpass.system.FileSync.soon(this)
+            lan.soon(this)
+        }
+        // Sync places and paired devices on this network keep up by themselves while the vault is open.
+        com.wasimaster.wmpass.system.FileSync.startAuto(this)
+        com.wasimaster.wmpass.system.Lan.startAuto(this)
         // A wipe takes what is kept beside the vault too: a duress password must not leave
         // the addresses of the backups and accounts behind.
         Pass.onWipe += {

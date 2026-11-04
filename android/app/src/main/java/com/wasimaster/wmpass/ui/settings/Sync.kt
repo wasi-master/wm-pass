@@ -13,6 +13,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -25,6 +26,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -33,6 +35,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,7 +58,10 @@ import com.wasimaster.wmpass.system.Accounts
 import com.wasimaster.wmpass.system.Destinations
 import com.wasimaster.wmpass.system.FileSync
 import com.wasimaster.wmpass.system.Lan
+import com.wasimaster.wmpass.system.LanMerged
 import com.wasimaster.wmpass.system.LanPeer
+import com.wasimaster.wmpass.system.LanResult
+import com.wasimaster.wmpass.system.LanServed
 import com.wasimaster.wmpass.app.Prefs
 import com.wasimaster.wmpass.ui.help.Help
 import com.wasimaster.wmpass.ui.help.HelpMark
@@ -101,9 +107,67 @@ internal fun HoldMulticast() {
     }
 }
 
-private fun scopeStop() {
-    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-        runCatching { Engine.net("lan.stop", online = false) }
+private fun scopeStop() = Lan.stopWaiting()
+
+/**
+ * While [active], this phone's background listener and its syncs on their own step aside, so
+ * a pairing code's advert or a Wait for one has the network to itself.
+ */
+@Composable
+internal fun PauseLan(active: Boolean) {
+    DisposableEffect(active) {
+        if (active) Lan.pause(true)
+        onDispose { if (active) Lan.pause(false) }
+    }
+}
+
+/**
+ * A paired device asking to merge vaults while this phone waited for it in the background. Shown
+ * over whatever page is open.
+ */
+@Composable
+fun LanMergeAsk() {
+    val colors = palette
+    val shell = LocalShell.current
+    val context = LocalContext.current
+    val ask by Lan.mergeAsk.collectAsStateWithLifecycle()
+    var answering by remember { mutableStateOf(false) }
+    val current = ask ?: return
+    val who = current.peer.shown
+    fun answer(accepted: Boolean) {
+        if (answering) return
+        answering = true
+        // Not the page's scope: this phone's vault may be replaced on the way, and the page goes with it.
+        kotlinx.coroutines.MainScope().launch {
+            val words = try {
+                when (val outcome = Lan.mergeAnswer(context, current.peer, accepted)) {
+                    null -> null
+                    is LanMerged.Kept -> "Merged with $who: ${outcome.added} added, ${outcome.matched} already here. $who now uses this vault"
+                    is LanMerged.Replaced -> null
+                    is LanMerged.Failed -> "$who: ${outcome.text.trimEnd('.')}"
+                }
+            } catch (failure: NativeFailure) {
+                failure.message?.trimEnd('.')
+            }
+            answering = false
+            Lan.mergeAsk.value = null
+            words?.let { shell.notice(it) }
+        }
+    }
+    PassSheet({ answer(false) }, "Merge with $who?") {
+        Text(
+            if (current.theyKeep) {
+                "$who keeps its vault. This phone's items move into it, then this phone uses $who's vault and you unlock it with that vault's master password."
+            } else {
+                "This phone keeps its vault and $who's items move into it. $who then uses this vault."
+            },
+            color = colors.textMid,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 20.dp),
+        )
+        PrimaryButton(if (answering) "Merging…" else "Merge", Modifier.fillMaxWidth(), enabled = !answering) { answer(true) }
+        Spacer(Modifier.height(10.dp))
+        QuietButton("Not now", Modifier.fillMaxWidth(), enabled = !answering) { answer(false) }
     }
 }
 
@@ -114,7 +178,7 @@ internal fun localAddress(context: Context): String? {
     return address?.hostAddress
 }
 
-private enum class LanMode { IDLE, WAITING, SHOW_QR, CODE_WAIT, CODE_COMPARE }
+private enum class LanMode { IDLE, WAITING, MERGING, ANSWERING, SHOW_QR, CODE_WAIT, CODE_COMPARE }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -511,10 +575,12 @@ private fun LanSection() {
     val shell = LocalShell.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var peers by remember { mutableStateOf(Lan.peers(context)) }
+    val revision by Lan.revision.collectAsStateWithLifecycle()
+    val peers = remember(revision) { Lan.peers(context) }
     var mode by remember { mutableStateOf(LanMode.IDLE) }
     var qrText by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
+    var messageBad by remember { mutableStateOf(false) }
     var syncing by remember { mutableStateOf<String?>(null) }
     var adding by remember { mutableStateOf(false) }
     var codeText by remember { mutableStateOf<String?>(null) }
@@ -526,26 +592,37 @@ private fun LanSection() {
     var pastingJoin by remember { mutableStateOf(false) }
     /** Set while the digits on show are for sending this vault, not for pairing. */
     var sendingVault by remember { mutableStateOf(false) }
+    // A paired device's sheet, by key, so it shows the latest status.
+    var openKey by remember { mutableStateOf<String?>(null) }
+    var renaming by remember { mutableStateOf<LanPeer?>(null) }
+    var mergeChoosing by remember { mutableStateOf<LanPeer?>(null) }
+    var mergeReady by remember { mutableStateOf<Pair<LanPeer, Boolean>?>(null) }
+    var mergingWith by remember { mutableStateOf<LanPeer?>(null) }
+    var asked by remember { mutableStateOf<LanServed.MergeAsked?>(null) }
     val name = remember { Build.MODEL }
+    // Pairing, Wait for one and a merge have the network to themselves while they run.
+    PauseLan(mode != LanMode.IDLE || asked != null)
+
+    fun say(text: String, bad: Boolean = false) {
+        message = text
+        messageBad = bad
+    }
 
     fun sentTo(peer: LanPeer) {
-        peers = Lan.peers(context)
-        message = "Sent to ${peer.name}. Unlock it there with this vault's master password. The two are paired, so Sync now keeps them together."
+        say("Sent to ${peer.shown}. Unlock it there with this vault's master password. The two are paired, so they sync on this Wi-Fi.")
         shell.haptics.confirm()
     }
 
     fun failed(failure: Throwable) {
         mode = LanMode.IDLE
         if (failure is NativeFailure && failure.code == "cancelled") return
-        message = failure.message
+        say(failure.message ?: "That did not work.", bad = true)
         shell.haptics.reject()
     }
 
-    fun reportOf(reply: com.wasimaster.wmpass.core.EngineReply): String {
-        val o = reply.obj
-        val sent = o["sent"]?.jsonPrimitive?.content ?: "0"
-        val received = o["received"]?.jsonPrimitive?.content ?: "0"
-        return "Done with ${o["peer"]?.jsonPrimitive?.content}: $sent sent and $received received."
+    fun reported(results: List<LanResult>) {
+        say(Lan.summary(results), bad = results.none { it.ok })
+        if (results.all { it.ok }) shell.haptics.confirm() else shell.haptics.reject()
     }
 
     fun syncWith(peer: LanPeer?) {
@@ -553,13 +630,57 @@ private fun LanSection() {
         message = null
         scope.launch {
             try {
-                val reply = Lan.sync(context)
-                message = reportOf(reply)
-                shell.haptics.confirm()
+                reported(if (peer == null) Lan.sync(context) else listOf(Lan.syncWith(context, peer.key)))
             } catch (failure: NativeFailure) {
                 failed(failure)
             }
             syncing = null
+        }
+    }
+
+    fun merged(outcome: LanMerged?) {
+        when (outcome) {
+            null -> say("Not merged. Nothing changed on either device.")
+            is LanMerged.Kept -> {
+                val who = outcome.peer.shown
+                say("Merged with $who: ${outcome.added} added, ${outcome.matched} already here. $who now uses this vault.")
+                shell.haptics.confirm()
+            }
+            // The vault has locked and this screen is going; the door takes it from here.
+            is LanMerged.Replaced -> shell.haptics.confirm()
+            is LanMerged.Failed -> {
+                say("${outcome.peer.shown}: ${outcome.text}", bad = true)
+                shell.haptics.reject()
+            }
+        }
+    }
+
+    fun startMerge(peer: LanPeer, keepMine: Boolean) {
+        mergingWith = peer
+        mode = LanMode.MERGING
+        message = null
+        scope.launch {
+            try {
+                merged(Lan.merge(context, peer.key, keepMine))
+            } catch (failure: NativeFailure) {
+                failed(failure)
+            }
+            mode = LanMode.IDLE
+        }
+    }
+
+    fun answer(ask: LanServed.MergeAsked, accepted: Boolean) {
+        if (asked == null) return
+        asked = null
+        mergingWith = ask.peer
+        if (accepted) mode = LanMode.ANSWERING
+        scope.launch {
+            try {
+                merged(Lan.mergeAnswer(context, ask.peer, accepted))
+            } catch (failure: NativeFailure) {
+                failed(failure)
+            }
+            mode = LanMode.IDLE
         }
     }
 
@@ -574,13 +695,28 @@ private fun LanSection() {
                         GroupCard {
                             peers.forEachIndexed { index, peer ->
                                 if (index > 0) Hairline(inset = 70.dp)
+                                // A device that failed last time says why on its own row, in red.
+                                val bad = peer.lastAt != 0L && !peer.lastOk
                                 Row(
-                                    Modifier.fillMaxWidth().clickable { forgetting = peer }.padding(horizontal = 16.dp, vertical = 12.dp),
+                                    Modifier.fillMaxWidth().clickable { openKey = peer.key }.padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 10.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    GlyphTile(PassIcons.Devices, colors.primary, size = 40.dp)
+                                    GlyphTile(PassIcons.Devices, if (bad) colors.danger else colors.primary, size = 40.dp)
                                     Spacer(Modifier.width(14.dp))
-                                    Text(peer.name, color = colors.text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Column(Modifier.weight(1f)) {
+                                        Text(peer.shown, color = colors.text, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text(
+                                            lanStatus(peer),
+                                            color = if (bad) colors.danger else colors.textMid,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                    if (syncing == peer.key) {
+                                        Spacer(Modifier.width(8.dp))
+                                        CircularProgressIndicator(Modifier.size(22.dp), color = colors.primary, strokeWidth = 2.dp)
+                                    }
                                 }
                             }
                             if (peers.isNotEmpty()) Hairline()
@@ -589,17 +725,19 @@ private fun LanSection() {
                         if (peers.isNotEmpty()) {
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 PrimaryButton(if (syncing != null) "Looking…" else "Sync now", Modifier.weight(1f), enabled = syncing == null, icon = PassIcons.Sync) { syncWith(null) }
-                                QuietButton("Wait for one", Modifier.weight(1f)) {
+                                QuietButton("Wait for one", Modifier.weight(1f), enabled = syncing == null) {
                                     mode = LanMode.WAITING
                                     message = null
                                     scope.launch {
                                         try {
-                                            message = reportOf(Lan.serve(context))
-                                            shell.haptics.confirm()
+                                            when (val served = Lan.serve(context)) {
+                                                is LanServed.Done -> reported(listOf(served.result))
+                                                is LanServed.MergeAsked -> asked = served
+                                            }
                                         } catch (failure: NativeFailure) {
                                             failed(failure)
                                         }
-                                        mode = LanMode.IDLE
+                                        if (mode == LanMode.WAITING) mode = LanMode.IDLE
                                     }
                                 }
                             }
@@ -610,9 +748,27 @@ private fun LanSection() {
                         Spacer(Modifier.height(12.dp))
                         Text("Waiting for your other device", color = colors.text, style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.height(4.dp))
-                        Text("Tap Sync now on it. Stay on this page.", color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
+                        Text("Tap Sync now on it, or Merge vaults on this phone's row there. Stay on this page.", color = colors.textMid, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
                         Spacer(Modifier.height(14.dp))
                         QuietButton("Stop", height = 46.dp) { scopeStop() }
+                    }
+                    LanMode.MERGING, LanMode.ANSWERING -> Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                        val who = mergingWith?.shown ?: "the other device"
+                        Listening(PassIcons.Devices)
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            if (current == LanMode.MERGING) "Waiting for $who to accept…" else "Merging with $who…",
+                            color = colors.text,
+                            style = MaterialTheme.typography.titleMedium,
+                            textAlign = TextAlign.Center,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            if (current == LanMode.MERGING) "It has three minutes to answer there. Stay on this page." else "Stay on this page.",
+                            color = colors.textMid,
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center,
+                        )
                     }
                     LanMode.SHOW_QR -> Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                         qrText?.let { QrCode(it, Modifier.padding(horizontal = 30.dp)) }
@@ -657,8 +813,7 @@ private fun LanSection() {
                                         val reply = Engine.net("lan.code_finish", online = false) { put("accepted", accepted) }
                                         if (accepted) {
                                             Lan.addPeer(context, LanPeer(reply.obj["key"]!!.jsonPrimitive.content, reply.obj["name"]!!.jsonPrimitive.content))
-                                            peers = Lan.peers(context)
-                                            message = "Paired. Tap Sync now to bring them together."
+                                            say("Paired. Tap Sync now to bring them together.")
                                             shell.haptics.confirm()
                                         }
                                     } catch (failure: NativeFailure) {
@@ -674,7 +829,7 @@ private fun LanSection() {
                     }
                 }
             }
-            message?.let { Text(it, color = colors.textMid, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 6.dp)) }
+            message?.let { Text(it, color = if (messageBad) colors.danger else colors.textMid, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 6.dp)) }
         }
     }
     }
@@ -713,7 +868,7 @@ private fun LanSection() {
                 adding = false
                 val address = localAddress(context)
                 if (address == null) {
-                    message = "This phone is not on a network."
+                    say("This phone is not on a network.", bad = true)
                     return@SheetRow
                 }
                 scope.launch {
@@ -725,8 +880,7 @@ private fun LanSection() {
                         val reply = Engine.net("lan.pair_wait", online = false, secret = identity) { put("name", name) }
                         identity.fill(0)
                         Lan.addPeer(context, LanPeer(reply.obj["key"]!!.jsonPrimitive.content, reply.obj["name"]!!.jsonPrimitive.content))
-                        peers = Lan.peers(context)
-                        message = "Paired. Tap Sync now to bring them together."
+                        say("Paired. Tap Sync now to bring them together.")
                         shell.haptics.confirm()
                     } catch (failure: NativeFailure) {
                         failed(failure)
@@ -748,8 +902,7 @@ private fun LanSection() {
                             identity.fill(0)
                             val peer = reply.obj["peer"]!!.jsonObject
                             Lan.addPeer(context, LanPeer(peer["key"]!!.jsonPrimitive.content, peer["name"]!!.jsonPrimitive.content))
-                            peers = Lan.peers(context)
-                            message = "Paired. Tap Sync now to bring them together."
+                            say("Paired. Tap Sync now to bring them together.")
                             shell.haptics.confirm()
                         } catch (failure: NativeFailure) {
                             failed(failure)
@@ -866,16 +1019,161 @@ private fun LanSection() {
             }
         }
     }
+    peers.firstOrNull { it.key == openKey }?.let { peer ->
+        val bad = peer.lastAt != 0L && !peer.lastOk
+        // Two vaults made apart can only come together by merging, so that is offered first.
+        val different = peer.lastCode == "not_this_vault"
+        val mergeRow: @Composable () -> Unit = {
+            SheetRow(
+                PassIcons.SwapHoriz,
+                "Merge vaults…",
+                when {
+                    !Pass.isFolderVault -> "Only the vault kept on this phone can be merged"
+                    different -> "It has a different vault. Merge the two into one, and they sync from then on"
+                    else -> "Make one vault of two that were set up apart"
+                },
+                enabled = Pass.isFolderVault && mode == LanMode.IDLE,
+            ) {
+                openKey = null
+                mergeChoosing = peer
+            }
+        }
+        PassSheet({ openKey = null }, peer.shown) {
+            Text(
+                lanStatus(peer),
+                color = if (bad) colors.danger else colors.textMid,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = if (peer.nickname.isBlank()) 6.dp else 0.dp),
+            )
+            if (peer.nickname.isNotBlank()) {
+                Text(
+                    "It calls itself ${peer.name}.",
+                    color = colors.textLow,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 6.dp),
+                )
+            }
+            if (different) {
+                Column(Modifier.fillMaxWidth().background(colors.primary.copy(alpha = 0.10f), RoundedCornerShape(16.dp))) { mergeRow() }
+            }
+            SheetRow(PassIcons.Sync, "Sync with it", "It needs to be waiting, or unlocked on a computer", enabled = syncing == null && mode == LanMode.IDLE) {
+                openKey = null
+                syncWith(peer)
+            }
+            if (!different) mergeRow()
+            SheetRow(PassIcons.Edit, "Rename", "A name for it on this phone") {
+                openKey = null
+                renaming = peer
+            }
+            SheetRow(PassIcons.Delete, "Forget", "It will need pairing again before it syncs", tint = colors.danger) {
+                openKey = null
+                forgetting = peer
+            }
+        }
+    }
+    renaming?.let { peer ->
+        key(peer.key) {
+            val field = rememberTextFieldState(peer.nickname)
+            PassSheet({ renaming = null }, "Rename ${peer.shown}") {
+                Text(
+                    "The name is only used on this phone. Leave it empty to use the one it gave itself, ${peer.name}.",
+                    color = colors.textMid,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 10.dp),
+                )
+                SheetField(field, peer.name)
+                Spacer(Modifier.height(14.dp))
+                PrimaryButton("Save", Modifier.fillMaxWidth()) {
+                    Lan.rename(context, peer.key, field.text.toString())
+                    renaming = null
+                }
+            }
+        }
+    }
+    mergeChoosing?.let { peer ->
+        val who = peer.shown
+        PassSheet({ mergeChoosing = null }, "Merge with $who") {
+            Text(
+                "The two vaults become one. Choose the one to keep. The other one's items move into it, and that device then uses the kept vault, with its master password.",
+                color = colors.textMid,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 10.dp),
+            )
+            SheetRow(PassIcons.Smartphone, "Keep this phone's vault", "$who's items move into it. $who then uses this vault") {
+                mergeChoosing = null
+                mergeReady = peer to true
+            }
+            SheetRow(PassIcons.Devices, "Keep $who's vault", "This phone's items move into it. You then unlock this phone with that vault's master password") {
+                mergeChoosing = null
+                mergeReady = peer to false
+            }
+        }
+    }
+    mergeReady?.let { (peer, keepMine) ->
+        val who = peer.shown
+        PassSheet({ mergeReady = null }, "First, on $who") {
+            Text(
+                "On $who, open Settings, then Sync and accounts, and tap Wait for one. A computer waits by itself while WM Pass is unlocked on it. Then start here, and accept on $who.",
+                color = colors.textMid,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 16.dp),
+            )
+            PrimaryButton(if (keepMine) "Merge into this vault" else "Merge into $who's vault", Modifier.fillMaxWidth()) {
+                mergeReady = null
+                startMerge(peer, keepMine)
+            }
+            Spacer(Modifier.height(10.dp))
+            QuietButton("Not now", Modifier.fillMaxWidth()) { mergeReady = null }
+        }
+    }
+    asked?.let { ask ->
+        val who = ask.peer.shown
+        PassSheet({ answer(ask, false) }, "Merge with $who?") {
+            Text(
+                if (ask.theyKeep) {
+                    "$who keeps its vault. This phone's items move into it, then this phone uses $who's vault and you unlock it with that vault's master password."
+                } else {
+                    "This phone keeps its vault and $who's items move into it. $who then uses this vault."
+                },
+                color = colors.textMid,
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 20.dp),
+            )
+            PrimaryButton("Merge", Modifier.fillMaxWidth()) { answer(ask, true) }
+            Spacer(Modifier.height(10.dp))
+            QuietButton("Not now", Modifier.fillMaxWidth()) { answer(ask, false) }
+        }
+    }
     forgetting?.let { peer ->
         ConfirmSheet(
-            "Forget ${peer.name}?",
+            "Forget ${peer.shown}?",
             "It will need pairing again before it can sync with this phone.",
             "Forget",
             onDismiss = { forgetting = null },
         ) {
             Lan.removePeer(context, peer.key)
-            peers = Lan.peers(context)
         }
+    }
+}
+
+/** How the last trip to a paired device went, for its row. */
+internal fun lanStatus(peer: LanPeer): String = when {
+    peer.lastAt == 0L -> "Paired. Not synced yet"
+    !peer.lastOk -> peer.lastText
+    peer.lastCode == "merged" -> "Merged ${ago(peer.lastAt)}: ${peer.lastText}"
+    else -> "Synced ${ago(peer.lastAt)}: ${peer.lastText}"
+}
+
+private fun ago(at: Long): String {
+    val minutes = (System.currentTimeMillis() - at).coerceAtLeast(0) / 60_000
+    return when {
+        minutes < 1 -> "just now"
+        minutes == 1L -> "a minute ago"
+        minutes < 60 -> "$minutes minutes ago"
+        minutes < 120 -> "an hour ago"
+        minutes < 24 * 60 -> "${minutes / 60} hours ago"
+        minutes < 48 * 60 -> "yesterday"
+        else -> "on " + java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(at))
     }
 }
 

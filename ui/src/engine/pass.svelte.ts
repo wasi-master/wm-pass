@@ -69,6 +69,8 @@ class PassStore {
   afterAccountSave: (() => Promise<void>) | null = null;
   /** Called after the vault in this folder has saved, for a sync that follows it. */
   afterSave: (() => void) | null = null;
+  /** Also called after the vault in this folder has saved, for more than one listener. */
+  onSaved: (() => void)[] = [];
   /** Called after the lists reload, which follows every change and every merge. */
   afterRefresh: (() => void) | null = null;
   /** Run on a wipe, so what the app keeps beside the vault goes too. */
@@ -453,6 +455,7 @@ class PassStore {
     await this.writeDoor();
     await this.coverTracks(reply.blobs[0].length);
     this.afterSave?.();
+    for (const run of this.onSaved) run();
   }
 
   /** Saves soon, after a change that needs no lists reloaded. */

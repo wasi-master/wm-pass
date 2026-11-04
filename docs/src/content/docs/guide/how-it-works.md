@@ -689,7 +689,7 @@ See also [Sync and accounts](/guide/settings/sync/), [Places for copies](/guide/
 
 *Only in the desktop app and Android.*
 
-Two of your devices on the same network can sync directly, with no server or cloud in between. You pair them once, and after that either can start a sync, and a computer with the vault open answers by itself.
+Two of your devices on the same network can sync directly, with no server or cloud in between. You pair them once, and after that they keep each other up to date on their own.
 
 <figure class="guide-figure">
 <div class="guide-frame">
@@ -714,7 +714,7 @@ A shown code holds a one-off secret and stops working after two minutes. Six dig
 
 Pairing stores the other device's public key, and later connections from any other key are refused.
 
-A computer with the vault open waits for its paired devices by itself, so **Sync now** on a phone or the other computer is enough. Elsewhere, choose **Wait for one** on one device and **Sync now** on the other. Before anything is sent, each side proves it holds the vault's key, so a paired device with another vault, or one still on the key from before a [rekey](/guide/settings/security/#action-rekey), gets nothing.
+Paired devices on the same network sync on their own while the vault is unlocked on both: a computer whenever its vault is open, a phone while WM Pass is on screen. They look for each other after unlocking, after a change and every five minutes, and **Sync now** does it at once. Before anything is sent, each side proves it holds the vault's key, so a paired device with another vault, or one still on the key from before a [rekey](/guide/settings/security/#action-rekey), gets nothing.
 
 Two devices with different vaults can become one with [Merge vaults](/guide/settings/sync/#action-lan-merge): you pick the vault that stays, and the other device's items move into it.
 
@@ -740,7 +740,7 @@ A shown code holds a one-off secret and stops working after two minutes. Six dig
 
 Pairing stores the other device's public key, and later connections from any other key are refused.
 
-A computer with the vault open waits for its paired devices by itself, so **Sync now** on the phone is enough, and the phone syncs on its own when you unlock it. Between two phones, tap **Wait for one** on one and **Sync now** on the other. Before anything is sent, each side proves it holds the vault's key, so a paired device with another vault, or one still on the key from before a [rekey](/guide/settings/security/#action-rekey), gets nothing.
+Paired devices on the same network sync on their own while the vault is unlocked on both: a computer whenever its vault is open, this phone while WM Pass is on screen. They look for each other after unlocking, after a change and every five minutes, and **Sync now** does it at once. Before anything is sent, each side proves it holds the vault's key, so a paired device with another vault, or one still on the key from before a [rekey](/guide/settings/security/#action-rekey), gets nothing.
 
 Two devices with different vaults can become one with [Merge vaults](/guide/settings/sync/#action-lan-merge): you pick the vault that stays, and the other device's items move into it.
 

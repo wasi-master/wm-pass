@@ -425,9 +425,23 @@ object FileSync {
     private var pending: Job? = null
     private val trip = Mutex()
 
+    /** How often an open vault looks at its sync places, with no edit to set it off. */
+    private const val AUTO_SYNC_MS = 5 * 60_000L
+
     /** Set while a trip saves what it merged, so that save does not start another trip, or stop this one. */
     @Volatile private var ownSave = false
+
+    /** Whether the save under way is one a trip made itself. */
+    val savingOwn: Boolean get() = ownSave
     val problem = MutableStateFlow<String?>(null)
+
+    @Volatile private var lastSyncMs = 0L
+
+    /** Per place, the other devices' copies as last merged, by name: size and time. */
+    private val merged = java.util.concurrent.ConcurrentHashMap<String, MutableMap<String, String>>()
+
+    /** Per place, a hash of this device's copy as last written there. */
+    private val written = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     /** A little after the last change, so that a burst of edits makes one trip. */
     fun soon(context: Context) {
@@ -439,12 +453,53 @@ object FileSync {
         }
     }
 
-    suspend fun now(context: Context): Int = withContext(Dispatchers.IO) {
+    /**
+     * Other devices' changes come in without an edit here: a few seconds after an unlock, when
+     * the app comes back after a minute or more, and every five minutes while the vault is open.
+     */
+    fun startAuto(app: android.app.Application) {
+        val due = { gap: Long -> System.currentTimeMillis() - lastSyncMs >= gap }
+        scope.launch {
+            Pass.state.collect { state ->
+                if (state is LockState.Unlocked) {
+                    // A different vault, or the same one opened again: what was merged and
+                    // written before says nothing about it now.
+                    merged.clear()
+                    written.clear()
+                    delay(5_000)
+                    now(app, auto = true)
+                }
+            }
+        }
+        scope.launch {
+            while (true) {
+                delay(5_000)
+                if (Pass.state.value is LockState.Unlocked && due(AUTO_SYNC_MS)) now(app, auto = true)
+            }
+        }
+        androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(
+            object : androidx.lifecycle.DefaultLifecycleObserver {
+                override fun onStart(owner: androidx.lifecycle.LifecycleOwner) {
+                    if (Pass.state.value is LockState.Unlocked && due(60_000)) scope.launch { now(app, auto = true) }
+                }
+            },
+        )
+    }
+
+    /**
+     * [auto] is a run nobody asked for: it gives way to a run already under way, and passes over
+     * places that need the network while network use is off, rather than reporting them.
+     */
+    suspend fun now(context: Context, auto: Boolean = false): Int = withContext(Dispatchers.IO) {
         var trips = 0
         if (Pass.state.value !is LockState.Unlocked || Pass.account.value != null || Pass.child.value != null) return@withContext 0
+        val places = Destinations.list.value.filter { it.sync && (!auto || !it.remote || NetAccess.allowed(context)) }
+        if (places.isEmpty()) return@withContext 0
+        if (auto && trip.isLocked) return@withContext 0
         var failure: String? = null
         trip.withLock {
-            Destinations.list.value.filter { it.sync }.forEach { place ->
+            lastSyncMs = System.currentTimeMillis()
+            places.forEach { place ->
                 val done = runCatching { one(context, place) }
                 // A cancelled trip is not a problem at the place, so it is not written down as one.
                 done.exceptionOrNull()?.let { if (it is CancellationException) throw it }
@@ -457,15 +512,23 @@ object FileSync {
         trips
     }
 
+    private fun sha256(bytes: ByteArray): String =
+        java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+
     private suspend fun one(context: Context, place: Destination) {
         if (place.remote && !NetAccess.allowed(context)) error("Network features are turned off.")
         val sink = Destinations.sink(context, place)
         val mine = Pass.plainCall("vault.sync_name").obj["name"]!!.jsonPrimitive.content
         val listing = sink.list().getOrThrow()
+        // A copy unchanged since it was last merged has nothing new, so a timed run reads only what moved.
+        val seen = merged.getOrPut(place.id) { java.util.concurrent.ConcurrentHashMap() }
         // Every other device's copy. A file under another key fails to open and is left alone.
         listing.filter { it.name.endsWith(Backups.SYNC_EXTENSION) && it.name != "$mine${Backups.SYNC_EXTENSION}" }.forEach { other ->
+            val stamp = "${other.sizeBytes}:${other.modifiedAtMs}"
+            if (other.modifiedAtMs != 0L && seen[other.name] == stamp) return@forEach
             val bytes = sink.read(other).getOrThrow().use { it.readBytes() }
             runCatching { Pass.mergeCopy(bytes) }
+            seen[other.name] = stamp
         }
         ownSave = true
         try {
@@ -487,8 +550,19 @@ object FileSync {
             val bytes = sink.read(entry).getOrThrow().use { it.readBytes() }
             Pass.writeBlob(entry.name.removePrefix(blobPrefix).removeSuffix(Backups.BLOB_EXTENSION), bytes)
         }
-        val file = Pass.sealedFile()
+        // Unchanged since this device last wrote it there, there is nothing to send.
+        // Its save is this trip's own too, as above.
+        ownSave = true
+        val file = try {
+            Pass.sealedFile()
+        } finally {
+            ownSave = false
+        }
+        val hash = sha256(file)
+        val there = listing.any { it.name == "$mine${Backups.SYNC_EXTENSION}" }
+        if (there && written[place.id] == hash) return
         sink.write("$mine${Backups.SYNC_EXTENSION}", "application/octet-stream") { it.write(file) }.getOrThrow()
+        written[place.id] = hash
     }
 }
 

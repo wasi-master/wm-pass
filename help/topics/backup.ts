@@ -309,8 +309,9 @@ export const backup = [
     why: 'Nothing leaves your network, and there is no account to make or trust.',
     how: [
       'Pair each device once with [[action.lan_pair|Pair a device]]. Pairing stores the other device\'s key, and later connections with any other key are refused.',
-      'While this vault is open, the computer waits for its paired devices by itself, so on a phone you only choose **Sync now**. Between two computers, choose **Sync now** on either. They send each other what differs, attachments included, and merge it field by field.',
-      '**Sync now** syncs with every paired device it finds. Each device\'s row says how its last sync went, so a failure shows beside the device it came from.',
+      'Paired devices sync on their own while both are on this network with the vault unlocked: a computer whenever its vault is open, a phone while WM Pass is on screen. Each looks for the others soon after unlocking, about 20 seconds after a change, and every five minutes. They send each other what differs, attachments included, and merge it field by field.',
+      '**Sync now** does the same at once. A phone that is closed or in the background is not waiting, so a computer catches up with it the next time it is open.',
+      'Each device\'s row says how its last sync went, so a failure shows beside the device it came from.',
       'Being paired is not enough on its own. Before anything is sent, each side proves it holds this vault\'s key, so two devices with different vaults can pair but never sync. [[action.lan_merge|Merge vaults]] makes them one.',
       'Devices find each other with mDNS, under a random name that says nothing about you or the vault. Everything after that is encrypted end to end between the two.',
       'Click a paired device to rename it, sync with it alone, merge vaults with it, or forget it. A name you give it stays on this computer. A forgotten device has to pair again before it can sync.',
@@ -318,7 +319,7 @@ export const backup = [
     caveats: [
       'It counts as network use, so it needs [[setting.network_allowed]].',
       'After you rekey the vault, the other device fails the check until it is unlocked with the new key.',
-      'The computer waits only while the vault is unlocked, and not for an account or a nested vault.',
+      'The computer waits and syncs only while the vault is unlocked, and not for an account or a nested vault.',
     ],
     figure: 'fig.lan',
     related: ['feature.lan', 'action.lan_pair', 'action.lan_wait', 'action.lan_merge'],
@@ -328,7 +329,7 @@ export const backup = [
       android: {
         how: [
           'Start with [[action.lan_add|Add a device]], which asks whether the other device already has this vault: one with none gets a copy, one that has it is paired. Pairing stores the other device\'s key, and later connections with any other key are refused.',
-          'A computer with the vault open waits for its paired devices by itself, so **Sync now** here is enough. The phone also syncs on its own when you unlock it or come back to the app. To sync two phones, choose [[action.lan_wait|Wait for one]] on one and **Sync now** on the other.',
+          'Paired devices sync on their own while both are on this network with the vault unlocked: a computer whenever its vault is open, this phone while WM Pass is on screen. Each looks for the others when you unlock or come back to the app, about 20 seconds after a change, and every five minutes. **Sync now** does the same at once, and [[action.lan_wait|Wait for one]] keeps this phone waiting on this page.',
           'They send each other what differs, attachments included, and merge it field by field. Each device\'s row says how its last sync went, so a failure shows beside the device it came from.',
           'Being paired is not enough on its own. Before anything is sent, each side proves it holds this vault\'s key, so two devices with different vaults can pair but never sync. [[action.lan_merge|Merge vaults]] makes them one.',
           'Devices find each other with mDNS, under a random name that says nothing about you or the vault. Everything after that is encrypted end to end between the two.',
@@ -510,7 +511,7 @@ export const backup = [
       android: {
         how: [
           'Turn on the switch beside a place to sync through it. Tap the place itself to change its details or stop using it. **Add a place** sets up a new one, the same way as under [[page.backup|Backups]].',
-          'A sync runs about 20 seconds after your last change, so a burst of edits makes one trip. **Sync now** runs one at once.',
+          'A sync runs about 20 seconds after your last change, so a burst of edits makes one trip. It also runs on its own, to bring in what your other devices changed: just after you unlock, when you come back to the app after a minute or more, and every five minutes while the vault is open. **Sync now** runs one at once.',
           'Each device writes only its own file, so two devices syncing at the same moment cannot overwrite each other. A file that belongs to some other vault does not open and is left alone. Attachments go up once each and stay.',
         ],
       },

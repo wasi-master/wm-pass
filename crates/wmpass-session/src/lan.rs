@@ -410,6 +410,29 @@ pub fn call(service: &Mutex<Option<Service>>, method: &str, handle: u64, args: &
                 Err(failure) => return Ok(failure_reply(failure)),
             };
             let mut blobs = FolderBlobs(a.blob_dir.clone().into());
+            if a.background {
+                // Two devices that start syncing with each other at the same moment would each
+                // hold their own vault while waiting on the other's. The background end gives
+                // way after a few seconds instead, and the next try settles it.
+                let deadline = Instant::now() + Duration::from_secs(3);
+                let mut guard = loop {
+                    match service.try_lock() {
+                        Ok(guard) => break guard,
+                        Err(std::sync::TryLockError::Poisoned(_)) => return Err(failed("busy", "try that again")),
+                        Err(std::sync::TryLockError::WouldBlock) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(50)),
+                        Err(std::sync::TryLockError::WouldBlock) => {
+                            let key = ready.peer().key;
+                            drop(ready);
+                            return Ok(view(json!({"failed": {"code": "busy", "message": "busy with another sync", "key": hex(&key)}})));
+                        }
+                    }
+                };
+                let service = guard.as_mut().ok_or_else(|| failed("not_started", "the vault service has not started"))?;
+                return Ok(match service.with_vault(handle, |vault| ready.sync(vault, &mut blobs))? {
+                    Ok(report) => sync_reply(&report),
+                    Err(failure) => failure_reply(failure),
+                });
+            }
             let mut ready = Some(ready);
             with_service(&mut |service| {
                 let ready = ready.take().ok_or_else(|| failed("busy", "try that again"))?;

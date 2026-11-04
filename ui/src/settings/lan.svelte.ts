@@ -35,6 +35,8 @@ export interface LanResult {
   peer: LanPeer;
   ok: boolean;
   text: string;
+  /** Items that came in. */
+  received: number;
 }
 
 /** The name to show for a device. */
@@ -86,7 +88,18 @@ class Lan {
   listening = $state(false);
   /** A merge under way, for the screens to show. */
   merging = $state<string | null>(null);
-  private background = false;
+  /** Whether the app wants the background wait, and whether a screen has paused it. */
+  private wanted = false;
+  private paused = false;
+  /** Bumped on every stop, so an old loop that wakes late knows to end. */
+  private round = 0;
+  private stopping: Promise<unknown> = Promise.resolve();
+  /** A sync under way from here, so automatic ones do not stack up. */
+  private syncing = false;
+  /** Saves that a sync itself caused, which are no reason to sync again. */
+  private ownSaves = 0;
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private soonTimer: ReturnType<typeof setTimeout> | null = null;
   private identityHex = '';
   private loaded = false;
 
@@ -218,11 +231,65 @@ class Lan {
     return (await pass.engine('lan.join_send', { accepted, ...(await this.args()) }, { handle: pass.handle })).json.peer;
   }
 
+  /** Reloads and saves after a sync, without that save starting another sync. */
+  private async settle() {
+    await pass.reload();
+    this.ownSaves++;
+    try {
+      await pass.flush();
+    } finally {
+      this.ownSaves--;
+    }
+  }
+
+  /**
+   * Syncs on its own with whichever paired devices are waiting: a computer with its vault open,
+   * or a phone with WM Pass in front. Says nothing unless something arrived; each device's row
+   * still shows how it went.
+   */
+  async autoSync() {
+    if (this.syncing || this.merging || !this.wanted || this.paused || this.peers.length === 0) return;
+    try {
+      const results = await this.sync(undefined, true);
+      const got = results.filter((r) => r.ok && r.received > 0);
+      if (got.length) overlays.toast(`Synced with ${got.map((r) => shown(r.peer)).join(', ')}.`);
+    } catch {
+      // Nobody waiting just now. The next round tries again.
+    }
+  }
+
+  /** After a change here, a sync soon, once the edits have settled. */
+  private changed = () => {
+    if (this.ownSaves > 0 || !this.wanted) return;
+    if (this.soonTimer) clearTimeout(this.soonTimer);
+    this.soonTimer = setTimeout(() => void this.autoSync(), 20_000);
+  };
+
+  private schedule(ms: number) {
+    if (this.timer) clearTimeout(this.timer);
+    // Spread out, so two computers on the same rhythm do not keep starting at the same moment.
+    const jittered = ms * (0.8 + Math.random() * 0.4);
+    this.timer = setTimeout(async () => {
+      await this.autoSync();
+      if (this.wanted) this.schedule(5 * 60_000);
+    }, jittered);
+  }
+
   /**
    * Syncs with every paired device waiting on this network, or only `only`. Each device's
    * outcome is kept with it, so the screen can say which one failed and why.
    */
-  async sync(only?: string): Promise<LanResult[]> {
+  async sync(only?: string, quiet = false): Promise<LanResult[]> {
+    if (this.syncing) throw new Error('A sync is already under way.');
+    this.syncing = true;
+    try {
+      return await this.syncOnce(only, quiet);
+    } finally {
+      this.syncing = false;
+    }
+  }
+
+  private async syncOnce(only: string | undefined, quiet: boolean): Promise<LanResult[]> {
     const found = await this.browse();
     if (found.length === 0) throw new Error('No paired device is waiting on this network. On your phone, choose Wait for one, or open WM Pass on your other computer.');
     let left = this.peers.filter((p) => !only || p.key === only);
@@ -241,15 +308,16 @@ class Lan {
         if (!peer || !left.some((p) => p.key === peer.key) || json.failed?.code === 'unknown_peer') continue;
         left = left.filter((p) => p.key !== peer.key);
         if (json.failed) {
+          // Busy with the other way round at that moment; the next round settles it.
+          if (quiet && (json.failed.code === 'busy' || json.failed.code === 'io')) continue;
           const text = describe(json.failed);
           await this.note(peer.key, false, text, json.failed.code);
-          results.push({ peer, ok: false, text });
+          results.push({ peer, ok: false, text, received: 0 });
         } else {
-          await pass.reload();
-          await pass.flush();
+          await this.settle();
           const text = syncedText(json);
           await this.note(peer.key, true, text);
-          results.push({ peer, ok: true, text });
+          results.push({ peer, ok: true, text, received: json.received ?? 0 });
         }
       }
     });
@@ -279,36 +347,67 @@ class Lan {
    * to choose Sync now. Stops with [`stopListening`].
    */
   listen() {
-    if (this.background) return;
-    this.background = true;
-    this.listening = true;
-    void this.listenLoop();
+    if (!this.wanted) {
+      this.wanted = true;
+      if (!pass.onSaved.includes(this.changed)) pass.onSaved.push(this.changed);
+      // Soon after unlocking, then every few minutes.
+      this.schedule(5000);
+    }
+    void this.resume();
   }
 
   async stopListening() {
-    this.background = false;
-    this.listening = false;
-    await pass.engine('lan.stop_background', {}, {}).catch(() => undefined);
+    this.wanted = false;
+    pass.onSaved = pass.onSaved.filter((run) => run !== this.changed);
+    if (this.timer) clearTimeout(this.timer);
+    if (this.soonTimer) clearTimeout(this.soonTimer);
+    this.timer = this.soonTimer = null;
+    await this.halt();
   }
 
-  private async listenLoop() {
+  /**
+   * Pauses the background wait while a screen pairs or sends the vault, since a device looking
+   * for that screen's advert could otherwise find this one.
+   */
+  pause(on: boolean) {
+    this.paused = on;
+    void (on ? this.halt() : this.resume());
+  }
+
+  private async resume() {
+    await this.stopping;
+    if (!this.wanted || this.paused || this.listening) return;
+    this.listening = true;
+    void this.listenLoop(this.round);
+  }
+
+  private halt() {
+    this.round++;
+    this.listening = false;
+    this.stopping = pass.engine('lan.stop_background', {}, {}).catch(() => undefined);
+    return this.stopping;
+  }
+
+  private async listenLoop(round: number) {
     let failures = 0;
-    while (this.background) {
+    const current = () => round === this.round;
+    while (current()) {
       const handle = pass.handle;
       try {
         await pass.engine('lan.listen_background', {}, {});
+        if (!current()) break;
         const json = await this.withIdentity(async (identity) => (await pass.engine('lan.serve', { background: true, ...(await this.args()) }, { handle, secret: identity })).json);
-        if (!this.background || handle !== pass.handle) break;
+        if (!current() || handle !== pass.handle) break;
         await this.served(json, true);
         failures = 0;
       } catch (failure: any) {
-        if (failure?.code === 'cancelled' || !this.background) break;
+        if (failure?.code === 'cancelled' || !current()) break;
         // A network that comes and goes: try again, more slowly each time.
         failures++;
         await sleep(Math.min(60_000, 2000 * failures));
       }
     }
-    this.listening = this.background;
+    if (current()) this.listening = false;
   }
 
   /** What to do with what a waiting device received. `quiet` is for the background. */
@@ -317,6 +416,7 @@ class Lan {
       const peer = this.peer(json.failed.key);
       // No key, or one not paired: some device looking for another. Nothing to say.
       if (!peer || json.failed.code === 'unknown_peer') return quiet ? null : 'A device that is not paired with this computer tried to connect.';
+      if (quiet && json.failed.code === 'busy') return null;
       const text = describe(json.failed);
       await this.note(peer.key, false, text, json.failed.code);
       return `${shown(peer)}: ${text}`;
@@ -335,8 +435,7 @@ class Lan {
       });
       return this.answerMerge(yes, peer);
     }
-    await pass.reload();
-    await pass.flush();
+    await this.settle();
     const peer = this.peer(json.key);
     const text = syncedText(json);
     if (peer) await this.note(peer.key, true, text);
@@ -404,8 +503,7 @@ class Lan {
       throw new Error(`${label}: ${text}`);
     }
     if (json.merged === 'kept') {
-      await pass.reload();
-      await pass.flush();
+      await this.settle();
       const text = `Merged: ${json.added} added, ${json.matched} already here.`;
       if (peer) await this.note(peer.key, true, text);
       overlays.toast(`${label}’s items are in this vault now. ${label} uses this vault from here on.`);

@@ -2136,7 +2136,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Two of your devices on the same network can sync directly, with no server or cloud in between. You pair them once, and after that either can start a sync, and a computer with the vault open answers by itself."
+       "s": "Two of your devices on the same network can sync directly, with no server or cloud in between. You pair them once, and after that they keep each other up to date on their own."
       }
      ]
     }
@@ -2193,7 +2193,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "A computer with the vault open waits for its paired devices by itself, so "
+       "s": "Paired devices on the same network sync on their own while the vault is unlocked on both: a computer whenever its vault is open, this phone while WM Pass is on screen. They look for each other after unlocking, after a change and every five minutes, and "
       },
       {
        "t": "strong",
@@ -2201,23 +2201,7 @@
       },
       {
        "t": "text",
-       "s": " on the phone is enough, and the phone syncs on its own when you unlock it. Between two phones, tap "
-      },
-      {
-       "t": "strong",
-       "s": "Wait for one"
-      },
-      {
-       "t": "text",
-       "s": " on one and "
-      },
-      {
-       "t": "strong",
-       "s": "Sync now"
-      },
-      {
-       "t": "text",
-       "s": " on the other. Before anything is sent, each side proves it holds the vault's key, so a paired device with another vault, or one still on the key from before a "
+       "s": " does it at once. Before anything is sent, each side proves it holds the vault's key, so a paired device with another vault, or one still on the key from before a "
       },
       {
        "t": "link",
@@ -2308,7 +2292,7 @@
    ],
    "docs": "/security/lan/",
    "words": "lan wifi local network pair peer direct merge",
-   "plain": "Two of your devices on the same network can sync directly, with no server or cloud in between. You pair them once, and after that either can start a sync, and a computer with the vault open answers by itself."
+   "plain": "Two of your devices on the same network can sync directly, with no server or cloud in between. You pair them once, and after that they keep each other up to date on their own."
   },
   {
    "id": "feature.accounts",
@@ -10747,7 +10731,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "A computer with the vault open waits for its paired devices by itself, so "
+       "s": "Paired devices sync on their own while both are on this network with the vault unlocked: a computer whenever its vault is open, this phone while WM Pass is on screen. Each looks for the others when you unlock or come back to the app, about 20 seconds after a change, and every five minutes. "
       },
       {
        "t": "strong",
@@ -10755,7 +10739,7 @@
       },
       {
        "t": "text",
-       "s": " here is enough. The phone also syncs on its own when you unlock it or come back to the app. To sync two phones, choose "
+       "s": " does the same at once, and "
       },
       {
        "t": "link",
@@ -10764,15 +10748,7 @@
       },
       {
        "t": "text",
-       "s": " on one and "
-      },
-      {
-       "t": "strong",
-       "s": "Sync now"
-      },
-      {
-       "t": "text",
-       "s": " on the other."
+       "s": " keeps this phone waiting on this page."
       }
      ]
     },
@@ -11610,7 +11586,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "A sync runs about 20 seconds after your last change, so a burst of edits makes one trip. "
+       "s": "A sync runs about 20 seconds after your last change, so a burst of edits makes one trip. It also runs on its own, to bring in what your other devices changed: just after you unlock, when you come back to the app after a minute or more, and every five minutes while the vault is open. "
       },
       {
        "t": "strong",

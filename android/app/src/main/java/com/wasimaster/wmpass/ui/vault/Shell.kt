@@ -504,6 +504,8 @@ fun VaultShell(prefs: Prefs) {
                 CopyCapsule(Modifier.align(Alignment.TopCenter).statusBarsPadding())
             }
             ChildPill(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 96.dp))
+            // A paired device asking to merge while this phone waited for it in the background.
+            com.wasimaster.wmpass.ui.settings.LanMergeAsk()
             shell.scanTarget?.let { target ->
                 ScanDialog(
                     onCode = { text ->

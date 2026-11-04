@@ -33,7 +33,7 @@ After the handshake, each side looks up the other's key among its paired devices
 
 A failure is reported together with the other device's public key once the handshake has shown it, so a screen can put the failure beside the device it happened with.
 
-A desktop app with its vault unlocked keeps one responder running for as long as the vault stays open, on a port of its own and under its own advert, so a phone only has to start a sync.
+A desktop app with its vault unlocked, and the phone app while it is on screen and unlocked, keep one responder running on a port of their own and under their own advert. Each also starts a sync with whatever paired device answers soon after unlocking, about 20 seconds after a local change, and every five minutes with some jitter. Two devices that start towards each other at the same moment would each hold their vault while waiting on the other, so a background responder that cannot take its vault within three seconds drops the connection, and the next round settles it.
 
 ## Sync
 

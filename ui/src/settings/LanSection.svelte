@@ -42,6 +42,14 @@
     return () => void lan.stop();
   });
 
+  // Pairing and sending the vault advertise this computer for a moment; the background wait
+  // steps aside meanwhile.
+  $effect(() => {
+    const busy = mode === 'qr' || mode === 'code_wait' || mode === 'code_compare' || mode === 'waiting';
+    lan.pause(busy);
+  });
+  $effect(() => () => lan.pause(false));
+
   function failed(failure: any) {
     mode = 'idle';
     if (failure?.code === 'cancelled') return;
