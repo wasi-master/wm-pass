@@ -175,7 +175,11 @@ impl<S: Read + Write> Channel<S> {
                 check(&self.recv()?)
             }
             Role::Responder => {
-                check(&self.recv()?)?;
+                if let Err(error) = check(&self.recv()?) {
+                    // An empty answer, so the other end says why instead of seeing the line drop.
+                    let _ = self.send(&[]);
+                    return Err(error);
+                }
                 self.send(&mine)
             }
         }

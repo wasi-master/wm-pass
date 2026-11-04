@@ -15,6 +15,7 @@
   import { applyTheme } from './theme/themes';
   import { themeFonts } from './theme/fonts.svelte';
   import { startWidgetFeed } from './settings/widgets.svelte';
+  import { lan } from './settings/lan.svelte';
   import { ui } from './vault/ui.svelte';
   import { onMount, untrack } from 'svelte';
 
@@ -125,6 +126,29 @@
       clearInterval(timer);
       document.removeEventListener('visibilitychange', hidden);
     };
+  });
+
+  // ---- devices on this network ----
+
+  // While the vault in this folder is open, the computer waits for its paired devices by itself,
+  // so a phone only has to choose Sync now.
+  $effect(() => {
+    if (pass.state.kind === 'unlocked' && host().lan) void lan.load();
+  });
+  const listenForDevices = $derived(
+    pass.state.kind === 'unlocked' &&
+      !pass.state.readOnly &&
+      !!host().lan &&
+      prefs.v.network_allowed &&
+      lan.peers.length > 0 &&
+      !!pass.file &&
+      pass.account === null &&
+      pass.child === null,
+  );
+  $effect(() => {
+    if (!listenForDevices) return;
+    untrack(() => lan.listen());
+    return () => void lan.stopListening();
   });
 
   // ---- the guide ----

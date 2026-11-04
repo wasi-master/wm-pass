@@ -645,6 +645,27 @@ object Pass {
     }
 
     /**
+     * Puts a vault file from elsewhere in place of the open one, as a merge on the local network
+     * ends when the other device's vault is kept. The open vault locks first; then its file, its
+     * decoy and its attachments go, and so does fingerprint unlock set up for it. [name] is the
+     * name whose attachment folder already holds the new vault's attachments. Any other vault
+     * in the folder, hidden ones included, stays as it is.
+     */
+    suspend fun replaceWith(bytes: ByteArray, name: String) {
+        val old = file ?: throw IllegalStateException("no vault in this folder is open")
+        // The decoy's name follows the key, so it can only be asked while the vault is open.
+        val decoy = Engine.call("vault.chaff_name", handle).obj["name"]!!.jsonPrimitive.content
+        lock()
+        adoptFile(bytes, name)
+        File(vaultDir, old.name).delete()
+        File(vaultDir, decoy).delete()
+        blobDir(old.name).deleteRecursively()
+        prefs.edit().remove("seen_${old.name}").apply()
+        QuickUnlock(context).let { if (it.enrolledFile() == old.name) it.disable() }
+        vaultFiles().forEach { it.setLastModified(FILE_TIME_MS) }
+    }
+
+    /**
      * Shows an account through the same screens as a vault. [writer] keeps what it saves: the
      * KeePass file itself, or the account's sealed offline copy.
      */

@@ -13,7 +13,8 @@ use wmpass_lan::discovery::{self, Advert};
 use wmpass_lan::join::{self, Arrival, Joined, PendingJoin};
 use wmpass_lan::pair::{PairingQr, PendingCode, begin_code_pairing};
 use wmpass_lan::share::{self, ShareReceiver};
-use wmpass_lan::sync::{self, BlobStore};
+use wmpass_lan::merge::{self, Agreed, Merged};
+use wmpass_lan::sync::{self, BlobStore, Failure, Incoming, PendingMerge};
 use wmpass_lan::{Identity, LanError, Peer, Role};
 use zeroize::Zeroizing;
 
@@ -31,6 +32,12 @@ struct Held {
     joining: Option<PendingJoin<TcpStream>>,
     offers: HashMap<String, ShareReceiver>,
     cancelled: bool,
+    /// Waiting for paired devices for as long as the vault is open, apart from the screens
+    /// above, so leaving a screen does not stop it.
+    background: Option<(TcpListener, Advert)>,
+    background_cancelled: bool,
+    /// A paired device asking to merge vaults, waiting for the person's answer.
+    merge: Option<PendingMerge<TcpStream>>,
 }
 
 static HELD: Mutex<Option<Held>> = Mutex::new(None);
@@ -42,6 +49,69 @@ fn held<T>(run: impl FnOnce(&mut Held) -> T) -> Result<T, SessionError> {
 
 fn lan_error(error: LanError) -> SessionError {
     failed("lan", error.to_string())
+}
+
+/// A sync or merge that stopped, as a reply rather than an error, so the screen learns which
+/// device it was: `key` is the other device's, once the handshake showed it.
+fn failure_reply(failure: Failure) -> Reply {
+    view(json!({"failed": {
+        "code": failure.error.code(),
+        "message": failure.error.to_string(),
+        "key": failure.key.map(|key| hex(&key)),
+    }}))
+}
+
+fn merged_reply(merged: Merged) -> Reply {
+    match merged {
+        Merged::Kept { peer, report, blobs } => view(json!({
+            "merged": "kept",
+            "peer": peer_view(&peer),
+            "added": report.added,
+            "matched": report.matched,
+            "blobs": blobs,
+        })),
+        Merged::Replaced { peer, file, sent, blobs } => Reply {
+            json: json!({"merged": "replaced", "peer": peer_view(&peer), "sent": sent, "blobs": blobs}).to_string(),
+            secret: None,
+            blobs: vec![file],
+        },
+    }
+}
+
+/// A merge about to touch the vault: asked from here, or accepted here.
+enum MergeStart {
+    Agreed(Agreed<TcpStream>),
+    Pending(PendingMerge<TcpStream>),
+}
+
+/// Runs a merge both people agreed to, with the vault held only for the merge itself.
+fn run_merge(with_service: &WithService<'_>, handle: u64, start: MergeStart, a: &LanArgs, now_ms: u64) -> Result<Reply, SessionError> {
+    let mut own = FolderBlobs(a.blob_dir.clone().into());
+    let mut new_home = FolderBlobs(a.new_blob_dir.clone().into());
+    let mut start = Some(start);
+    with_service(&mut |service| {
+        let start = start.take().ok_or_else(|| failed("busy", "try that again"))?;
+        let outcome = service.with_vault(handle, |vault| match start {
+            MergeStart::Agreed(agreed) => agreed.run(vault, &mut own, &mut new_home, now_ms),
+            MergeStart::Pending(pending) => pending.finish(true, vault, &mut own, &mut new_home, now_ms),
+        })?;
+        if matches!(outcome, Ok(Merged::Kept { .. })) {
+            service.touch(handle)?;
+        }
+        Ok(outcome.map_or_else(failure_reply, merged_reply))
+    })
+}
+
+fn sync_reply(report: &sync::LanReport) -> Reply {
+    view(json!({
+        "peer": report.peer.name,
+        "key": hex(&report.peer.key),
+        "sent": report.sent,
+        "received": report.received,
+        "blobs_sent": report.blobs_sent,
+        "blobs_received": report.blobs_received,
+        "converged": report.converged,
+    }))
 }
 
 /// Attachment blobs in a folder. They are already sealed under their own keys.
@@ -130,18 +200,35 @@ struct LanArgs {
     ms: u64,
     token: String,
     id: String,
+    /// For `lan.serve`: wait on the background listener, with no time limit.
+    background: bool,
+    /// For `lan.merge`: whether this device's vault is the one kept.
+    keep_mine: bool,
+    /// For a merge: where the kept vault's attachments go, if this device takes it.
+    new_blob_dir: String,
 }
 
 /// Waits for one connection, for up to two minutes, unless cancelled.
 fn accept() -> Result<TcpStream, SessionError> {
+    accept_on(false)
+}
+
+/// Waits on the screen's listener for two minutes, or on the background one for as long as it
+/// runs.
+fn accept_on(background: bool) -> Result<TcpStream, SessionError> {
     let listener = held(|h| {
-        h.cancelled = false;
-        h.listener.as_ref().map(TcpListener::try_clone)
+        if background {
+            h.background_cancelled = false;
+            h.background.as_ref().map(|(l, _)| l.try_clone())
+        } else {
+            h.cancelled = false;
+            h.listener.as_ref().map(TcpListener::try_clone)
+        }
     })?
     .ok_or_else(|| failed("invalid", "not listening"))?
     .map_err(|e| failed("lan", e.to_string()))?;
     listener.set_nonblocking(true).map_err(|e| failed("lan", e.to_string()))?;
-    let deadline = Instant::now() + Duration::from_secs(120);
+    let deadline = (!background).then(|| Instant::now() + Duration::from_secs(120));
     loop {
         match listener.accept() {
             Ok((stream, _)) => {
@@ -150,7 +237,8 @@ fn accept() -> Result<TcpStream, SessionError> {
                 return Ok(stream);
             }
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                if Instant::now() > deadline || held(|h| h.cancelled)? {
+                let stopped = held(|h| if background { h.background_cancelled || h.background.is_none() } else { h.cancelled })?;
+                if deadline.is_some_and(|d| Instant::now() > d) || stopped {
                     return Err(failed("cancelled", "stopped waiting for the other device"));
                 }
                 std::thread::sleep(Duration::from_millis(120));
@@ -262,30 +350,96 @@ pub fn call(service: &Mutex<Option<Service>>, method: &str, handle: u64, args: &
             let peer = pending.finish(a.accepted).map_err(lan_error)?;
             Ok(view(peer_view(&peer)))
         }
-        "lan.sync" | "lan.serve" => {
+        "lan.listen_background" => {
+            // Once per open vault; asking again while it runs changes nothing.
+            if let Some(port) = held(|h| h.background.as_ref().and_then(|(l, _)| l.local_addr().ok()).map(|a| a.port()))? {
+                return Ok(view(json!({"port": port})));
+            }
+            let listener = TcpListener::bind(("0.0.0.0", 0)).map_err(|e| failed("lan", e.to_string()))?;
+            let port = listener.local_addr().map_err(|e| failed("lan", e.to_string()))?.port();
+            let advert = discovery::advertise(port).map_err(lan_error)?;
+            held(|h| {
+                h.background = Some((listener, advert));
+                h.background_cancelled = false;
+            })?;
+            Ok(view(json!({"port": port})))
+        }
+        "lan.stop_background" => {
+            held(|h| {
+                h.background = None;
+                h.background_cancelled = true;
+                h.merge = None;
+            })?;
+            Ok(view(json!({})))
+        }
+        // The handshake and the opening run before the vault is locked for use, so a slow or
+        // silent device, or this computer's own background listener, holds nothing up.
+        "lan.sync" => {
             let a: LanArgs = parse(args)?;
             let me = identity(secret)?;
             let peers = peers_from(&a.peers);
-            let (stream, role) = if method == "lan.serve" {
-                (accept()?, Role::Responder)
-            } else {
-                (connect(&a.address)?, Role::Initiator)
+            let ready = match sync::connect(connect(&a.address)?, &me, &peers) {
+                Ok(ready) => ready,
+                Err(failure) => return Ok(failure_reply(failure)),
             };
             let mut blobs = FolderBlobs(a.blob_dir.clone().into());
+            let mut ready = Some(ready);
             with_service(&mut |service| {
-                let stream = stream.try_clone().map_err(|e| failed("lan", e.to_string()))?;
-                let report = service
-                    .with_vault(handle, |vault| sync::sync(stream, &me, &peers, vault, &mut blobs, role))?
-                    .map_err(lan_error)?;
-                Ok(view(json!({
-                    "peer": report.peer.name,
-                    "sent": report.sent,
-                    "received": report.received,
-                    "blobs_sent": report.blobs_sent,
-                    "blobs_received": report.blobs_received,
-                    "converged": report.converged,
-                })))
+                let ready = ready.take().ok_or_else(|| failed("busy", "try that again"))?;
+                Ok(match service.with_vault(handle, |vault| ready.sync(vault, &mut blobs))? {
+                    Ok(report) => sync_reply(&report),
+                    Err(failure) => failure_reply(failure),
+                })
             })
+        }
+        "lan.serve" => {
+            let a: LanArgs = parse(args)?;
+            let me = identity(secret)?;
+            let peers = peers_from(&a.peers);
+            let stream = accept_on(a.background)?;
+            let timeout = stream.try_clone().map_err(|e| failed("lan", e.to_string()))?;
+            let ready = match sync::answer(stream, &me, &peers) {
+                Ok(Incoming::Sync(ready)) => ready,
+                Ok(Incoming::Merge(pending)) => {
+                    let reply = view(json!({"merge_asked": {"peer": peer_view(pending.peer()), "they_keep": pending.they_keep()}}));
+                    // The person has a few minutes to answer before the asking device gives up.
+                    let _ = timeout.set_read_timeout(Some(Duration::from_secs(180)));
+                    held(|h| h.merge = Some(pending))?;
+                    return Ok(reply);
+                }
+                Err(failure) => return Ok(failure_reply(failure)),
+            };
+            let mut blobs = FolderBlobs(a.blob_dir.clone().into());
+            let mut ready = Some(ready);
+            with_service(&mut |service| {
+                let ready = ready.take().ok_or_else(|| failed("busy", "try that again"))?;
+                Ok(match service.with_vault(handle, |vault| ready.sync(vault, &mut blobs))? {
+                    Ok(report) => sync_reply(&report),
+                    Err(failure) => failure_reply(failure),
+                })
+            })
+        }
+        "lan.merge" => {
+            let a: LanArgs = parse(args)?;
+            let me = identity(secret)?;
+            let peers = peers_from(&a.peers);
+            let stream = connect(&a.address)?;
+            // The other device's person has to say yes first.
+            stream.set_read_timeout(Some(Duration::from_secs(180))).map_err(|e| failed("lan", e.to_string()))?;
+            let agreed = match merge::request(stream, &me, &peers, a.keep_mine) {
+                Ok(agreed) => agreed,
+                Err(failure) => return Ok(failure_reply(failure)),
+            };
+            run_merge(&with_service, handle, MergeStart::Agreed(agreed), &a, now_ms)
+        }
+        "lan.merge_answer" => {
+            let a: LanArgs = parse(args)?;
+            let pending = held(|h| h.merge.take())?.ok_or_else(|| failed("invalid", "no device is asking any more"))?;
+            if !a.accepted {
+                pending.decline();
+                return Ok(view(json!({})));
+            }
+            run_merge(&with_service, handle, MergeStart::Pending(pending), &a, now_ms)
         }
         // ---- bringing a new device into the vault ----
         // The new device listens and shows a code; the one with the vault connects.

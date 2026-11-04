@@ -3,6 +3,7 @@
 //! This crate has no platform code and no network code, so offline mode cannot
 //! be bypassed from inside it and its tests need no fakes for the outside world.
 
+pub mod absorb;
 pub mod backend;
 pub mod categorise;
 pub mod change_password;

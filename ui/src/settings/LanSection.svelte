@@ -9,7 +9,7 @@
   import { overlays } from '../parts/floating.svelte';
   import { consumeText, pass } from '../engine/pass.svelte';
   import { host } from '../engine/host';
-  import { lan, type LanPeer } from './lan.svelte';
+  import { lan, shown, type LanPeer } from './lan.svelte';
   import NetGate from './NetGate.svelte';
 
   type Mode = 'idle' | 'waiting' | 'qr' | 'code_wait' | 'code_compare';
@@ -30,6 +30,12 @@
   let scanning = $state<'pair' | 'join' | null>(null);
   /** Only the vault in this folder goes to a new device: not an account, not a vault inside it. */
   const canSend = $derived(!!pass.file && pass.account === null && pass.child === null);
+  /** The paired device whose sheet is open. */
+  let open = $state<LanPeer | null>(null);
+  let nickname = $state('');
+  /** Choosing which vault stays, for the device in `open`. */
+  let mergeFor = $state<LanPeer | null>(null);
+  let busy = $state(false);
 
   $effect(() => {
     void lan.load();
@@ -42,8 +48,18 @@
     message = failure?.message ?? 'That did not work.';
   }
 
-  function report(json: any) {
-    return `Done with ${json.peer}: ${json.sent} sent and ${json.received} received.`;
+  function when(at: number) {
+    const minutes = Math.round((Date.now() - at) / 60_000);
+    if (minutes < 1) return 'just now';
+    if (minutes < 60) return `${minutes} min ago`;
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return `${hours} h ago`;
+    return new Date(at).toLocaleDateString();
+  }
+
+  function status(peer: LanPeer) {
+    if (!peer.last) return 'Not synced yet';
+    return `${peer.last.ok ? '' : 'Failed: '}${peer.last.text} ${when(peer.last.at)}`;
   }
 
   const paired = 'Paired. Choose Sync now to bring them together.';
@@ -52,7 +68,8 @@
     syncing = true;
     message = null;
     try {
-      message = report(await lan.sync());
+      const results = await lan.sync();
+      message = results.map((r) => `${shown(r.peer)}: ${r.text}`).join('\n');
     } catch (failure) {
       failed(failure);
     }
@@ -63,7 +80,7 @@
     mode = 'waiting';
     message = null;
     try {
-      message = report(await lan.serve());
+      message = await lan.serve();
     } catch (failure) {
       failed(failure);
     }
@@ -201,8 +218,55 @@
     void lan.stop();
   }
 
+  function openPeer(peer: LanPeer) {
+    open = peer;
+    nickname = shown(peer);
+  }
+
+  async function saveName() {
+    if (!open) return;
+    await lan.rename(open.key, nickname === open.name ? '' : nickname);
+    open = null;
+  }
+
+  async function syncOne(peer: LanPeer) {
+    open = null;
+    syncing = true;
+    message = null;
+    try {
+      message = (await lan.sync(peer.key)).map((r) => `${shown(r.peer)}: ${r.text}`).join('\n');
+    } catch (failure) {
+      failed(failure);
+    }
+    syncing = false;
+  }
+
+  async function merge(keepMine: boolean) {
+    const peer = mergeFor;
+    mergeFor = null;
+    if (!peer) return;
+    if (!keepMine) {
+      const yes = await overlays.ask({
+        title: `Use ${shown(peer)}’s vault here?`,
+        body: `This computer’s items move into ${shown(peer)}’s vault, then this computer uses that vault in place of its own. You unlock it with that vault’s master password from then on.`,
+        action: 'Merge',
+        danger: true,
+      });
+      if (!yes) return;
+    }
+    busy = true;
+    message = null;
+    try {
+      message = await lan.merge(peer.key, keepMine);
+    } catch (failure) {
+      failed(failure);
+    }
+    busy = false;
+  }
+
   async function forget(peer: LanPeer) {
-    const yes = await overlays.ask({ title: `Forget ${peer.name}?`, body: 'It will need pairing again before it can sync with this computer.', action: 'Forget', danger: true });
+    open = null;
+    const yes = await overlays.ask({ title: `Forget ${shown(peer)}?`, body: 'It will need pairing again before it can sync with this computer.', action: 'Forget', danger: true });
     if (yes) await lan.removePeer(peer.key);
   }
 </script>
@@ -231,20 +295,26 @@
           <Btn label="They differ" variant="danger" onclick={() => finish(false)} />
           <Btn label="They match" variant="primary" onclick={() => finish(true)} />
         </div>
+      {:else if lan.merging}
+        <p style="font-weight:500">Merging with {lan.merging}</p>
+        <p class="dim">If it asks, accept on {lan.merging}. Keep both devices open until this is done.</p>
       {:else if lan.peers.length > 0}
         <div class="gap wrap">
-          <Btn label={syncing ? 'Looking…' : 'Sync now'} icon="sync" variant="primary" disabled={syncing} onclick={syncNow} />
-          <Btn label="Wait for one" onclick={wait} />
+          <Btn label={syncing ? 'Looking…' : 'Sync now'} icon="sync" variant="primary" disabled={syncing || busy} onclick={syncNow} />
+          {#if !lan.listening}<Btn label="Wait for one" onclick={wait} />{/if}
         </div>
+        {#if lan.listening}
+          <p class="dim small">While this vault is open, this computer waits for your devices by itself. On your phone, choose Sync now.</p>
+        {/if}
       {:else}
         <p class="dim">Pair a phone or another computer. Once paired, they sync directly with nothing in between.</p>
       {/if}
-      {#if message}<p class="dim">{message}</p>{/if}
+      {#if message}<p class="dim" style="white-space:pre-line">{message}</p>{/if}
     </NetGate>
   </div>
   {#if mode === 'idle' && host().network}
     {#each lan.peers as peer (peer.key)}
-      <Row title={peer.name} icon="devices" onclick={() => forget(peer)} />
+      <Row title={shown(peer)} sub={status(peer)} icon={peer.last && !peer.last.ok ? 'warning' : 'devices'} danger={!!peer.last && !peer.last.ok} chevron onclick={() => openPeer(peer)} />
     {/each}
     {#if canSend}
       <Row title="Add a new device" help="action.lan_join" sub="Send this vault to a phone or computer that has none yet" icon="devices" chevron onclick={() => (joining = true)} />
@@ -253,6 +323,37 @@
   {/if}
 </Group>
 
+{#if open}
+  {@const peer = open}
+  <Dialog title={shown(peer)} onclose={() => (open = null)}>
+    <div class="stack">
+      <Field bind:value={nickname} label="Name on this computer" placeholder={peer.name} />
+      {#if nickname.trim() && nickname.trim() !== shown(peer)}<div><Btn label="Save name" variant="primary" onclick={saveName} /></div>{/if}
+      <p class="dim small">It calls itself {peer.name}. {status(peer)}.</p>
+      {#if peer.last?.code === 'not_this_vault'}
+        <p class="dim">The two hold different vaults, so they cannot sync. Merge them into one: you choose which vault stays, and the other device’s items move into it.</p>
+      {/if}
+      <div style="border:1px solid var(--hair);border-radius:var(--r-m);overflow:hidden">
+        <Row title="Sync with it" icon="sync" onclick={() => syncOne(peer)} />
+        <Row title="Merge vaults" help="action.lan_merge" sub="Make two different vaults one, and keep it in step from then on" icon="swap_horiz" chevron onclick={() => { open = null; mergeFor = peer; }} />
+        <Row title="Forget it" icon="delete" danger onclick={() => forget(peer)} />
+      </div>
+    </div>
+  </Dialog>
+{/if}
+{#if mergeFor}
+  {@const peer = mergeFor}
+  <Dialog title="Which vault stays?" onclose={() => (mergeFor = null)}>
+    <div class="stack">
+      <p class="dim">The vault that stays takes every item from the other, and both devices use it from then on. Items both have, such as the same login, are merged rather than doubled.</p>
+      <div style="border:1px solid var(--hair);border-radius:var(--r-m);overflow:hidden">
+        <Row title="Keep this computer’s vault" sub={`${shown(peer)}’s items move here, then it uses this vault and its master password`} icon="lock" chevron onclick={() => merge(true)} />
+        <Row title={`Keep ${shown(peer)}’s vault`} sub="This computer’s items move there, then this computer uses that vault" icon="devices" chevron onclick={() => merge(false)} />
+      </div>
+      <p class="dim small">First, on {shown(peer)}, open Sync and accounts and choose Wait for one. It asks there before anything moves.</p>
+    </div>
+  </Dialog>
+{/if}
 {#if adding}
   <Dialog title="Pair a device" onclose={() => (adding = false)}>
     <div style="border:1px solid var(--hair);border-radius:var(--r-m);overflow:hidden">

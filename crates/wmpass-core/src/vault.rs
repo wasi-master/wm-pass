@@ -320,6 +320,11 @@ impl Vault {
         format::seal_file(&self.header, &self.key, &plain)
     }
 
+    /// Takes note of a moment seen in data from elsewhere, so later edits here sort after it.
+    pub fn observe(&mut self, seen: Hlc) {
+        self.clock.observe(seen);
+    }
+
     /// The next moment on this device.
     pub fn tick(&mut self, now_ms: u64) -> Hlc {
         self.clock.tick(now_ms)

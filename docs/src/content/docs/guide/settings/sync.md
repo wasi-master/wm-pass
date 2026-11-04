@@ -87,13 +87,15 @@ Nothing leaves your network, and there is no account to make or trust.
 
 Pair each device once with [Pair a device](/guide/settings/sync/#action-lan-pair). Pairing stores the other device's key, and later connections with any other key are refused.
 
-To sync, choose [Wait for one](/guide/settings/sync/#action-lan-wait) on one device and **Sync now** on the other. They send each other what differs, attachments included, and merge it field by field.
+While this vault is open, the computer waits for its paired devices by itself, so on a phone you only choose **Sync now**. Between two computers, choose **Sync now** on either. They send each other what differs, attachments included, and merge it field by field.
 
-Being paired is not enough on its own. Before anything is sent, each side proves it holds this vault's key, so two devices with different vaults can pair but never sync.
+**Sync now** syncs with every paired device it finds. Each device's row says how its last sync went, so a failure shows beside the device it came from.
+
+Being paired is not enough on its own. Before anything is sent, each side proves it holds this vault's key, so two devices with different vaults can pair but never sync. [Merge vaults](/guide/settings/sync/#action-lan-merge) makes them one.
 
 Devices find each other with mDNS, under a random name that says nothing about you or the vault. Everything after that is encrypted end to end between the two.
 
-Click a paired device to forget it. It has to pair again before it can sync.
+Click a paired device to rename it, sync with it alone, merge vaults with it, or forget it. A name you give it stays on this computer. A forgotten device has to pair again before it can sync.
 
 #### Limits
 
@@ -101,27 +103,29 @@ It counts as network use, so it needs [Allow network features](/guide/settings/s
 
 After you rekey the vault, the other device fails the check until it is unlocked with the new key.
 
-Keep both devices on this page until the sync is done. Leaving it stops the wait.
+The computer waits only while the vault is unlocked, and not for an account or a nested vault.
 
 #### On Android
 
 Start with [Add a device](/guide/settings/sync/#action-lan-add), which asks whether the other device already has this vault: one with none gets a copy, one that has it is paired. Pairing stores the other device's key, and later connections with any other key are refused.
 
-To sync, choose [Wait for one](/guide/settings/sync/#action-lan-wait) on one device and **Sync now** on the other. They send each other what differs, attachments included, and merge it field by field.
+A computer with the vault open waits for its paired devices by itself, so **Sync now** here is enough. The phone also syncs on its own when you unlock it or come back to the app. To sync two phones, choose [Wait for one](/guide/settings/sync/#action-lan-wait) on one and **Sync now** on the other.
 
-Being paired is not enough on its own. Before anything is sent, each side proves it holds this vault's key, so two devices with different vaults can pair but never sync.
+They send each other what differs, attachments included, and merge it field by field. Each device's row says how its last sync went, so a failure shows beside the device it came from.
+
+Being paired is not enough on its own. Before anything is sent, each side proves it holds this vault's key, so two devices with different vaults can pair but never sync. [Merge vaults](/guide/settings/sync/#action-lan-merge) makes them one.
 
 Devices find each other with mDNS, under a random name that says nothing about you or the vault. Everything after that is encrypted end to end between the two.
 
-Tap a paired device to forget it. It has to pair again before it can sync.
+Tap a paired device to rename it, sync with it alone, merge vaults with it, or forget it. A name you give it stays on this phone. A forgotten device has to pair again before it can sync.
 
 Android files this under internet access, so it needs [Allow network features](/guide/settings/security/#setting-network-allowed) like the rest.
 
 After you rekey the vault, the other device fails the check until it is unlocked with the new key.
 
-Keep both devices on this page until the sync is done. Leaving it stops the wait.
+With **Wait for one**, keep the phone on this page until the sync is done. Leaving it stops the wait.
 
-See also [Syncing over your own network](/guide/how-it-works/#feature-lan), [Pair a device](/guide/settings/sync/#action-lan-pair), [Wait for one](/guide/settings/sync/#action-lan-wait).
+See also [Syncing over your own network](/guide/how-it-works/#feature-lan), [Pair a device](/guide/settings/sync/#action-lan-pair), [Wait for one](/guide/settings/sync/#action-lan-wait), [Merge vaults](/guide/settings/sync/#action-lan-merge).
 
 <a id="action-lan-add"></a>
 
@@ -140,7 +144,7 @@ It first asks whether WM Pass on the other device already opens this vault.
 
 #### Limits
 
-Two vaults made separately stay separate: pairing does not merge them, and a paired device syncs only if it holds this vault's key.
+Two vaults made separately stay separate: pairing does not merge them, and a paired device syncs only if it holds this vault's key. To make them one, use [Merge vaults](/guide/settings/sync/#action-lan-merge) once they are paired.
 
 See also [Add a new device](/guide/settings/sync/#action-lan-join), [Pair a device](/guide/settings/sync/#action-lan-pair), [Your devices, on this network](/guide/settings/sync/#group-sync-lan).
 
@@ -226,17 +230,53 @@ See also [Pair a device](/guide/settings/sync/#action-lan-pair), [Your devices, 
 
 *Only in the desktop app and Android.*
 
-Makes this device visible on the network and waits for a paired device to choose **Sync now**.
+Makes this device visible on the network and waits for a paired device to choose **Sync now** or ask to merge vaults.
 
 #### How it works
 
-One side waits, and the other spends a few seconds looking for a paired device that is waiting. When they are done, both say what was sent and received. **Stop** ends the wait.
+One side waits, and the other spends a few seconds looking for a paired device that is waiting. When they are done, both say what was sent and received. **Stop** ends the wait. A request to merge vaults asks here before anything moves.
 
 #### Limits
 
 If **Sync now** on the other device finds nobody, check that both are on the same network and that this one is still waiting.
 
-See also [Your devices, on this network](/guide/settings/sync/#group-sync-lan), [Pair a device](/guide/settings/sync/#action-lan-pair).
+See also [Your devices, on this network](/guide/settings/sync/#group-sync-lan), [Pair a device](/guide/settings/sync/#action-lan-pair), [Merge vaults](/guide/settings/sync/#action-lan-merge).
+
+<a id="action-lan-merge"></a>
+
+## Merge vaults
+
+*Only in the desktop app and Android.*
+
+Makes two different vaults on two paired devices one vault. You choose which vault stays, and the other device's items move into it.
+
+#### Why it is there
+
+Two vaults made apart, even with the same items imported into both, have different keys and can never sync. A device row that says it has a different vault needs this once.
+
+#### How it works
+
+Open the paired device, choose **Merge vaults**, then which vault stays: this device's or the other's. On the other device, choose [Wait for one](/guide/settings/sync/#action-lan-wait) first; a computer with the vault open is already waiting.
+
+The other device asks its person before anything moves, saying which vault stays.
+
+The device that gives sends every item outside the trash, with attachments and folders, inside the encrypted connection. An item the kept vault already has, the same login for the same site with the same password, is merged field by field rather than doubled, so newer values win and older ones go to history.
+
+The kept vault comes back to the giving device, which uses it in place of its own and deletes its old vault file. From then on you unlock it there with the kept vault's master password, and the two sync as usual.
+
+#### When to use it
+
+When a phone and a computer each had a vault of their own before they were paired.
+
+#### Limits
+
+The giving device's own vault file is gone afterwards, along with its settings and trash. Its items live on in the kept vault. Make a backup first if you want to keep that file as it was.
+
+If the connection drops part way, the kept vault may already have the items, and the giving device keeps its own vault until the end. Run the merge again; items already there are matched, not doubled.
+
+Both devices must be paired and on the same network, and it needs [Allow network features](/guide/settings/security/#setting-network-allowed).
+
+See also [Your devices, on this network](/guide/settings/sync/#group-sync-lan), [Wait for one](/guide/settings/sync/#action-lan-wait), [Add a device](/guide/settings/sync/#action-lan-add).
 
 <a id="group-sync-files"></a>
 

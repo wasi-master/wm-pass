@@ -512,7 +512,7 @@ pub fn preview_csv(text: &str, rows: usize) -> Result<Vec<Vec<String>>> {
     csv_formats::preview(text, rows)
 }
 
-fn identity_key(entry: &Entry) -> Option<(String, String, [u8; 32])> {
+pub(crate) fn identity_key(entry: &Entry) -> Option<(String, String, [u8; 32])> {
     let login = entry.login()?;
     if login.password.v.is_empty() {
         return None;

@@ -626,6 +626,21 @@ class PassStore {
     if (!this.handle) this.state = { kind: 'locked' };
   }
 
+  /**
+   * Puts another copy of a vault in place of the one open, after a merge gave this one's items
+   * to it. The old file and its decoy go, so one password cannot open the wrong vault, and the
+   * door opens the new file with its own master password.
+   */
+  async replaceWith(bytes: Uint8Array, name: string) {
+    const old = this.file;
+    const chaff = (await this.view('vault.chaff_name')).name;
+    await this.lock();
+    await this.adoptFile(bytes, name);
+    if (old && old !== `${VAULTS}/${name}`) await host().removeFile(old);
+    await host().removeFile(`${VAULTS}/${chaff}`);
+    await this.refreshDoorState();
+  }
+
   /** Every vault file and attachment on this device as one file, for a backup. */
   async bundle() {
     if (this.handle) await this.flush();

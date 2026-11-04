@@ -14,6 +14,7 @@
 pub mod channel;
 pub mod discovery;
 pub mod join;
+pub mod merge;
 pub mod pair;
 pub mod share;
 pub mod sync;
@@ -64,6 +65,27 @@ pub enum LanError {
     /// mDNS could not start.
     #[error("device discovery is unavailable")]
     Discovery,
+}
+
+impl LanError {
+    /// A stable name a shell can branch on.
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::Io => "io",
+            Self::Handshake => "handshake",
+            Self::UnknownPeer => "unknown_peer",
+            Self::NotThisVault => "not_this_vault",
+            Self::Declined => "declined",
+            Self::Tampered => "tampered",
+            Self::TooLarge => "too_large",
+            Self::Decode => "decode",
+            Self::Expired => "expired",
+            Self::BadCode => "bad_code",
+            Self::Core => "core",
+            Self::Version => "version",
+            Self::Discovery => "discovery",
+        }
+    }
 }
 
 /// Shorthand.

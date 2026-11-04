@@ -2136,7 +2136,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Two of your devices on the same network can sync directly, with no server or cloud in between. You pair them once, and after that either can start a sync."
+       "s": "Two of your devices on the same network can sync directly, with no server or cloud in between. You pair them once, and after that either can start a sync, and a computer with the vault open answers by itself."
       }
      ]
     }
@@ -2193,7 +2193,15 @@
      "runs": [
       {
        "t": "text",
-       "s": "To sync, tap "
+       "s": "A computer with the vault open waits for its paired devices by itself, so "
+      },
+      {
+       "t": "strong",
+       "s": "Sync now"
+      },
+      {
+       "t": "text",
+       "s": " on the phone is enough, and the phone syncs on its own when you unlock it. Between two phones, tap "
       },
       {
        "t": "strong",
@@ -2201,7 +2209,7 @@
       },
       {
        "t": "text",
-       "s": " on one device and "
+       "s": " on one and "
       },
       {
        "t": "strong",
@@ -2219,6 +2227,24 @@
       {
        "t": "text",
        "s": ", gets nothing."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Two devices with different vaults can become one with "
+      },
+      {
+       "t": "link",
+       "id": "action.lan_merge",
+       "s": "Merge vaults"
+      },
+      {
+       "t": "text",
+       "s": ": you pick the vault that stays, and the other device's items move into it."
       }
      ]
     },
@@ -2277,11 +2303,12 @@
     "page.sync",
     "feature.sync",
     "page.receive",
-    "setting.network_allowed"
+    "setting.network_allowed",
+    "action.lan_merge"
    ],
    "docs": "/security/lan/",
-   "words": "lan wifi local network pair peer direct",
-   "plain": "Two of your devices on the same network can sync directly, with no server or cloud in between. You pair them once, and after that either can start a sync."
+   "words": "lan wifi local network pair peer direct merge",
+   "plain": "Two of your devices on the same network can sync directly, with no server or cloud in between. You pair them once, and after that either can start a sync, and a computer with the vault open answers by itself."
   },
   {
    "id": "feature.accounts",
@@ -10720,7 +10747,15 @@
      "runs": [
       {
        "t": "text",
-       "s": "To sync, choose "
+       "s": "A computer with the vault open waits for its paired devices by itself, so "
+      },
+      {
+       "t": "strong",
+       "s": "Sync now"
+      },
+      {
+       "t": "text",
+       "s": " here is enough. The phone also syncs on its own when you unlock it or come back to the app. To sync two phones, choose "
       },
       {
        "t": "link",
@@ -10729,7 +10764,7 @@
       },
       {
        "t": "text",
-       "s": " on one device and "
+       "s": " on one and "
       },
       {
        "t": "strong",
@@ -10737,7 +10772,7 @@
       },
       {
        "t": "text",
-       "s": " on the other. They send each other what differs, attachments included, and merge it field by field."
+       "s": " on the other."
       }
      ]
     },
@@ -10746,7 +10781,25 @@
      "runs": [
       {
        "t": "text",
-       "s": "Being paired is not enough on its own. Before anything is sent, each side proves it holds this vault's key, so two devices with different vaults can pair but never sync."
+       "s": "They send each other what differs, attachments included, and merge it field by field. Each device's row says how its last sync went, so a failure shows beside the device it came from."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Being paired is not enough on its own. Before anything is sent, each side proves it holds this vault's key, so two devices with different vaults can pair but never sync. "
+      },
+      {
+       "t": "link",
+       "id": "action.lan_merge",
+       "s": "Merge vaults"
+      },
+      {
+       "t": "text",
+       "s": " makes them one."
       }
      ]
     },
@@ -10764,7 +10817,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Tap a paired device to forget it. It has to pair again before it can sync."
+       "s": "Tap a paired device to rename it, sync with it alone, merge vaults with it, or forget it. A name you give it stays on this phone. A forgotten device has to pair again before it can sync."
       }
      ]
     }
@@ -10801,7 +10854,15 @@
      "runs": [
       {
        "t": "text",
-       "s": "Keep both devices on this page until the sync is done. Leaving it stops the wait."
+       "s": "With "
+      },
+      {
+       "t": "strong",
+       "s": "Wait for one"
+      },
+      {
+       "t": "text",
+       "s": ", keep the phone on this page until the sync is done. Leaving it stops the wait."
       }
      ]
     }
@@ -10810,7 +10871,8 @@
    "related": [
     "feature.lan",
     "action.lan_pair",
-    "action.lan_wait"
+    "action.lan_wait",
+    "action.lan_merge"
    ],
    "docs": "/security/lan/",
    "words": "lan wifi local network direct peer mdns",
@@ -10890,7 +10952,16 @@
      "runs": [
       {
        "t": "text",
-       "s": "Two vaults made separately stay separate: pairing does not merge them, and a paired device syncs only if it holds this vault's key."
+       "s": "Two vaults made separately stay separate: pairing does not merge them, and a paired device syncs only if it holds this vault's key. To make them one, use "
+      },
+      {
+       "t": "link",
+       "id": "action.lan_merge",
+       "s": "Merge vaults"
+      },
+      {
+       "t": "text",
+       "s": " once they are paired."
       }
      ]
     }
@@ -11302,7 +11373,7 @@
       },
       {
        "t": "text",
-       "s": "."
+       "s": " or ask to merge vaults."
       }
      ]
     }
@@ -11321,7 +11392,7 @@
       },
       {
        "t": "text",
-       "s": " ends the wait."
+       "s": " ends the wait. A request to merge vaults asks here before anything moves."
       }
      ]
     }
@@ -11347,9 +11418,149 @@
    ],
    "related": [
     "group.sync.lan",
-    "action.lan_pair"
+    "action.lan_pair",
+    "action.lan_merge"
    ],
-   "plain": "Makes this device visible on the network and waits for a paired device to choose Sync now."
+   "plain": "Makes this device visible on the network and waits for a paired device to choose Sync now or ask to merge vaults."
+  },
+  {
+   "id": "action.lan_merge",
+   "kind": "action",
+   "title": "Merge vaults",
+   "page": "sync",
+   "what": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Makes two different vaults on two paired devices one vault. You choose which vault stays, and the other device's items move into it."
+      }
+     ]
+    }
+   ],
+   "why": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Two vaults made apart, even with the same items imported into both, have different keys and can never sync. A device row that says it has a different vault needs this once."
+      }
+     ]
+    }
+   ],
+   "how": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Open the paired device, choose "
+      },
+      {
+       "t": "strong",
+       "s": "Merge vaults"
+      },
+      {
+       "t": "text",
+       "s": ", then which vault stays: this device's or the other's. On the other device, choose "
+      },
+      {
+       "t": "link",
+       "id": "action.lan_wait",
+       "s": "Wait for one"
+      },
+      {
+       "t": "text",
+       "s": " first; a computer with the vault open is already waiting."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "The other device asks its person before anything moves, saying which vault stays."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "The device that gives sends every item outside the trash, with attachments and folders, inside the encrypted connection. An item the kept vault already has, the same login for the same site with the same password, is merged field by field rather than doubled, so newer values win and older ones go to history."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "The kept vault comes back to the giving device, which uses it in place of its own and deletes its old vault file. From then on you unlock it there with the kept vault's master password, and the two sync as usual."
+      }
+     ]
+    }
+   ],
+   "when": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "When a phone and a computer each had a vault of their own before they were paired."
+      }
+     ]
+    }
+   ],
+   "caveats": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "The giving device's own vault file is gone afterwards, along with its settings and trash. Its items live on in the kept vault. Make a backup first if you want to keep that file as it was."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "If the connection drops part way, the kept vault may already have the items, and the giving device keeps its own vault until the end. Run the merge again; items already there are matched, not doubled."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Both devices must be paired and on the same network, and it needs "
+      },
+      {
+       "t": "link",
+       "id": "setting.network_allowed"
+      },
+      {
+       "t": "text",
+       "s": "."
+      }
+     ]
+    }
+   ],
+   "related": [
+    "group.sync.lan",
+    "action.lan_wait",
+    "action.lan_add"
+   ],
+   "docs": "/security/lan/",
+   "words": "merge combine two vaults different vault source of truth lan",
+   "plain": "Makes two different vaults on two paired devices one vault. You choose which vault stays, and the other device's items move into it."
   },
   {
    "id": "group.sync.files",

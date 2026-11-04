@@ -14,7 +14,8 @@ use wmpass_core::Secret;
 use wmpass_lan::channel::Channel;
 use wmpass_lan::pair::{PairingQr, begin_code_pairing, short_code};
 use wmpass_lan::share::{ShareInvite, ShareReceiver, seal_to_offer};
-use wmpass_lan::sync::{BlobStore, NoBlobs, sync};
+use wmpass_lan::merge::{self, Merged};
+use wmpass_lan::sync::{BlobStore, NoBlobs, Served, serve, sync};
 use wmpass_lan::{Identity, LanError, Peer, Role, prepare};
 
 fn linked() -> (TcpStream, TcpStream) {
@@ -202,7 +203,8 @@ fn unpaired_devices_are_refused_and_get_nothing() {
         let mine = sync(left, &ia, &[], &mut a, &mut NoBlobs, Role::Initiator);
         (mine.err(), other.join().unwrap().is_err())
     });
-    assert_eq!(outcome.0, Some(LanError::UnknownPeer));
+    // The failure names the key that answered, so a screen can tell which device it was.
+    assert_eq!(outcome.0.map(|f| (f.error, f.key)), Some((LanError::UnknownPeer, Some(*ib.public()))));
     assert!(outcome.1);
     assert!(b.doc.entries.is_empty());
 }
@@ -220,8 +222,9 @@ fn a_paired_device_without_the_vault_gets_nothing() {
         let mine = sync(left, &ia, &ta, &mut a, &mut NoBlobs, Role::Initiator);
         (mine.err(), other.join().unwrap().err())
     });
-    assert_eq!(outcome.1, Some(LanError::NotThisVault));
-    assert!(outcome.0.is_some());
+    // Both ends say the same thing, and each knows which device it was talking to.
+    assert_eq!(outcome.1.map(|f| (f.error, f.key)), Some((LanError::NotThisVault, Some(*ia.public()))));
+    assert_eq!(outcome.0.map(|f| (f.error, f.key)), Some((LanError::NotThisVault, Some(*ib.public()))));
     assert!(stranger.doc.entries.is_empty());
 }
 
@@ -482,4 +485,104 @@ fn a_qr_sender_cannot_reach_a_device_showing_another_code() {
     let sender = thread::spawn(move || send_by_qr(left, &forged, &Identity::generate().unwrap(), "X", 1000, &file, &[], &NoBlobs));
     assert!(arrive(right, &Identity::generate().unwrap(), "Mac", Some(&shown), 1000, &mut NoBlobs).is_err());
     assert!(sender.join().unwrap().is_err());
+}
+
+fn two_vaults() -> (Vault, Vault) {
+    let mut kept = Vault::create("Kept", b"pw-kept", &config(), 1, 1000).unwrap();
+    let mut other = Vault::create("Other", b"pw-other", &config(), 2, 1000).unwrap();
+    let at = kept.tick(2000);
+    kept.add(login_entry("Shared", "me", "same", at), 2000).unwrap();
+    let at = other.tick(2000);
+    other.add(login_entry("Shared", "me", "same", at), 2000).unwrap();
+    other.add(login_entry("Only on the phone", "u", "p", at), 2000).unwrap();
+    (kept, other)
+}
+
+#[test]
+fn a_merge_keeps_one_vault_with_both_sets_of_items_and_the_other_takes_it() {
+    let (mut kept, mut other) = two_vaults();
+    let (ia, ib, ta, tb) = peers();
+    let (record, sealed) = Vault::seal_attachment("scan.pdf", "application/pdf", &[7u8; 5000]).unwrap();
+    let at = other.tick(2500);
+    let mut entry = login_entry("With file", "u", "p2", at);
+    entry.common.attachments = Lww::new(vec![record.clone()], at);
+    other.add(entry, 2500).unwrap();
+    let mut other_blobs = MemoryBlobs::default();
+    other_blobs.0.insert(record.blob.clone(), sealed.clone());
+    let mut kept_blobs = MemoryBlobs::default();
+    let mut new_home = MemoryBlobs::default();
+    let (left, right) = linked();
+    let (asked, answered) = thread::scope(|scope| {
+        let waiting = scope.spawn(|| {
+            let Served::MergeAsked(pending) = serve(right, &ib, &tb, &mut other, &mut other_blobs).unwrap() else { panic!() };
+            assert!(pending.they_keep());
+            assert_eq!(pending.peer().name, "A");
+            pending.finish(true, &mut other, &mut other_blobs, &mut new_home, 3000).unwrap()
+        });
+        // A asks, and keeps its own vault.
+        let asked = merge::ask(left, &ia, &ta, true, &mut kept, &mut kept_blobs, &mut NoBlobs, 3000).unwrap();
+        (asked, waiting.join().unwrap())
+    });
+    let Merged::Kept { report, blobs, .. } = asked else { panic!() };
+    assert_eq!((report.added, report.matched, blobs), (2, 1, 1));
+    assert_eq!(kept.doc.entries.len(), 3);
+    assert_eq!(kept_blobs.0.get(&record.blob), Some(&sealed));
+    let Merged::Replaced { file, sent, blobs, .. } = answered else { panic!() };
+    assert_eq!((sent, blobs), (3, 1));
+    assert_eq!(new_home.0.get(&record.blob), Some(&sealed));
+    // The file that came back is the kept vault, items and all, under its own key.
+    let opened = Vault::from_file(&file, VaultKey::from_bytes(*kept.key().expose_for_hardware_wrap()), 2).unwrap();
+    assert_eq!(opened.vault_id(), kept.vault_id());
+    assert_eq!(opened.doc.entries.len(), 3);
+}
+
+#[test]
+fn the_waiting_device_can_be_the_one_kept() {
+    let (mut kept, mut other) = two_vaults();
+    let (ia, ib, ta, tb) = peers();
+    let (left, right) = linked();
+    let (asked, answered) = thread::scope(|scope| {
+        let waiting = scope.spawn(|| {
+            let Served::MergeAsked(pending) = serve(right, &ib, &tb, &mut kept, &mut NoBlobs).unwrap() else { panic!() };
+            assert!(!pending.they_keep());
+            pending.finish(true, &mut kept, &mut NoBlobs, &mut NoBlobs, 3000).unwrap()
+        });
+        let asked = merge::ask(left, &ia, &ta, false, &mut other, &mut NoBlobs, &mut NoBlobs, 3000).unwrap();
+        (asked, waiting.join().unwrap())
+    });
+    assert!(matches!(asked, Merged::Replaced { sent: 2, .. }));
+    assert!(matches!(answered, Merged::Kept { .. }));
+    assert_eq!(kept.doc.entries.len(), 2);
+}
+
+#[test]
+fn a_declined_merge_moves_nothing() {
+    let (mut kept, mut other) = two_vaults();
+    let (ia, ib, ta, tb) = peers();
+    let (left, right) = linked();
+    let asked = thread::scope(|scope| {
+        let waiting = scope.spawn(|| {
+            let Served::MergeAsked(pending) = serve(right, &ib, &tb, &mut other, &mut NoBlobs).unwrap() else { panic!() };
+            pending.decline();
+        });
+        let asked = merge::ask(left, &ia, &ta, true, &mut kept, &mut NoBlobs, &mut NoBlobs, 3000);
+        waiting.join().unwrap();
+        asked
+    });
+    assert_eq!(asked.err().map(|f| f.error), Some(LanError::Declined));
+    assert_eq!(kept.doc.entries.len(), 1);
+}
+
+#[test]
+fn a_plain_sync_end_turns_a_merge_down() {
+    let (mut kept, mut other) = two_vaults();
+    let (ia, ib, ta, tb) = peers();
+    let (left, right) = linked();
+    let (asked, waited) = thread::scope(|scope| {
+        let waiting = scope.spawn(|| sync(right, &ib, &tb, &mut other, &mut NoBlobs, Role::Responder));
+        let asked = merge::ask(left, &ia, &ta, true, &mut kept, &mut NoBlobs, &mut NoBlobs, 3000);
+        (asked, waiting.join().unwrap())
+    });
+    assert_eq!(asked.err().map(|f| f.error), Some(LanError::Declined));
+    assert_eq!(waited.err().map(|f| f.error), Some(LanError::Declined));
 }

@@ -3,7 +3,7 @@ title: "The LAN protocol"
 description: "How two devices find, pair with and sync to each other with no server."
 ---
 
-Version 1. Devices find each other through mDNS (`_wmpass._tcp.local.`), with a random instance name and no text records. An advert identifies nothing, and whether an address is a paired device is decided by the handshake.
+Version 2. Devices find each other through mDNS (`_wmpass._tcp.local.`), with a random instance name and no text records. An advert identifies nothing, and whether an address is a paired device is decided by the handshake.
 
 ## Session
 
@@ -27,25 +27,50 @@ An attacker in the middle holds two sessions with different `h`. It must fix `Na
 
 Pairing stores the other device's public key. Later connections are refused unless the key from the handshake is in that list.
 
+## Opening
+
+After the handshake, each side looks up the other's key among its paired devices. The initiator may narrow that list to the devices it is looking for, and hangs up on any other. It then sends an intent: the protocol version, and for a merge, which side keeps its vault. The responder answers `Go`, `Declined` or `Version`. A responder that sees the line close before any intent takes it for a device that was looking for someone else, and says nothing.
+
+A failure is reported together with the other device's public key once the handshake has shown it, so a screen can put the failure beside the device it happened with.
+
+A desktop app with its vault unlocked keeps one responder running for as long as the vault stays open, on a port of its own and under its own advert, so a phone only has to start a sync.
+
 ## Sync
 
-Being paired does not grant vault access. Each side first proves it holds the vault key, with `HMAC(K, role || h)` where `K = HKDF(vault key, vault id, "wmpass/lan/vault-proof/v1")`. The initiator proves first, and the responder answers only after checking. After a rekey, old devices fail this until unlocked with the new key.
+Being paired does not grant vault access. Each side first proves it holds the vault key, with `HMAC(K, role || h)` where `K = HKDF(vault key, vault id, "wmpass/lan/vault-proof/v1")`. The initiator proves first, and the responder answers only after checking. A responder whose check fails sends an empty message before closing, so the initiator reports a different vault rather than a dropped line. After a rekey, old devices fail this until unlocked with the new key.
 
 Then, taking turns so that two large transfers cannot deadlock:
 
 | Step | Sender | Message |
 |---|---|---|
-| 1 | Both | Protocol version |
-| 2 | Initiator | Digests |
-| 3 | Responder | Digests, then delta |
-| 4 | Initiator | Delta |
-| 5 | Both | Blob names wanted |
-| 6 | Initiator, then responder | Blobs asked for |
-| 7 | Both | State hash |
+| 1 | Initiator | Digests |
+| 2 | Responder | Digests, then delta |
+| 3 | Initiator | Delta |
+| 4 | Both | Blob names wanted |
+| 5 | Initiator, then responder | Blobs asked for |
+| 6 | Both | State hash |
 
 A digest is BLAKE3 over an entry's MessagePack, truncated to 128 bits. A delta holds whole entries that differ, and merging applies the same field-by-field rules as file sync. If slot records changed, the delta also holds the sealed file, since only that can carry them.
 
 A blob is sent only if the vault refers to it, and accepted only if this end asked for it, so a peer cannot read or write other files by naming them. Blobs are already encrypted under their own keys.
+
+## Merging two vaults
+
+Two vaults made apart have different keys, so the proof above always fails between them. A merge makes them one. The initiator's intent says which side keeps its vault. The responder does not answer at once: it shows its person who asks and which vault stays, and answers `Go` only on a yes, so a paired device alone can never start one. The initiator waits up to three minutes for that answer.
+
+After `Go`, with `K` the side that keeps its vault and `G` the side that gives:
+
+| Step | Sender | Message |
+|---|---|---|
+| 1 | G | Every entry outside the trash, and every folder |
+| 2 | K | Blob names wanted |
+| 3 | G | Blobs asked for |
+| 4 | K | Its sealed vault file, after taking the entries in, and the blob names it refers to |
+| 5 | G | Blob names wanted |
+| 6 | K | Blobs asked for |
+| 7 | G | Done |
+
+`K` matches an incoming entry to one it has by id, or by site, username and password for a login, and merges the two field by field. Anything else is added, and folders are matched by name under the same parent. `G` then replaces its vault file with `K`'s and deletes its own, so a shared password cannot open the old one. The file is ciphertext and opens only with the kept vault's master password. Blob rules are as for sync. If the line drops before step 7, `K` may already hold the entries while `G` still has its own vault, and a second merge matches rather than doubles them.
 
 ## A new device
 

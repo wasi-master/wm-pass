@@ -11,7 +11,8 @@ use wmpass_core::crypto;
 use crate::channel::Channel;
 use crate::{Identity, LanError, Peer, Result, Role};
 
-const VERSION: u32 = 1;
+/// 2 added the opening [`Intent`], so a sync and a merge can share one waiting device.
+const VERSION: u32 = 2;
 
 /// Where attachment blobs live. They are already encrypted under their own keys.
 pub trait BlobStore {
@@ -53,12 +54,154 @@ pub struct LanReport {
 }
 
 #[derive(Serialize, Deserialize)]
-struct Blob {
+pub(crate) struct Blob {
     name: String,
     bytes: Vec<u8>,
 }
 
-/// Runs one sync over a connection, as either end. `trusted` is the list of paired devices.
+/// Why a sync or merge stopped, and with which device when it got far enough to know.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Failure {
+    /// What went wrong.
+    pub error: LanError,
+    /// The other device's public key, once the handshake has shown it. A key that is not
+    /// among the paired devices means some other WM Pass answered on this network.
+    pub key: Option<[u8; 32]>,
+}
+
+impl std::fmt::Display for Failure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.error.fmt(f)
+    }
+}
+
+impl std::error::Error for Failure {}
+
+impl From<LanError> for Failure {
+    fn from(error: LanError) -> Self {
+        Self { error, key: None }
+    }
+}
+
+/// What the device that connects wants. Sent first, once the handshake is done.
+#[derive(Serialize, Deserialize)]
+struct Intent {
+    version: u32,
+    /// For a merge of two different vaults: whether the connecting device keeps its own.
+    merge: Option<bool>,
+}
+
+/// The waiting device's reply to an [`Intent`].
+#[derive(Serialize, Deserialize)]
+enum Answer {
+    Go,
+    Declined,
+    Version,
+}
+
+/// A connection past the handshake, with a paired device.
+pub(crate) struct Opened<S> {
+    pub(crate) channel: Channel<S>,
+    pub(crate) peer: Peer,
+}
+
+/// Runs the handshake and checks the other end is paired.
+fn handshake<S: Read + Write>(stream: S, identity: &Identity, trusted: &[Peer], role: Role) -> std::result::Result<Opened<S>, Failure> {
+    let channel = Channel::handshake(stream, identity, role, None)?;
+    let remote = *channel.remote();
+    let at = |error| Failure { error, key: Some(remote) };
+    let peer = trusted.iter().find(|peer| constant_eq(&peer.key, &remote)).cloned().ok_or(at(LanError::UnknownPeer))?;
+    Ok(Opened { channel, peer })
+}
+
+/// The connecting end: says what it wants and waits for the answer. `merge` is whether this
+/// end keeps its vault, for a merge.
+pub(crate) fn open<S: Read + Write>(stream: S, identity: &Identity, trusted: &[Peer], merge: Option<bool>) -> std::result::Result<Opened<S>, Failure> {
+    let mut opened = handshake(stream, identity, trusted, Role::Initiator)?;
+    let key = opened.peer.key;
+    let at = |error| Failure { error, key: Some(key) };
+    opened.channel.send_value(&Intent { version: VERSION, merge }).map_err(at)?;
+    match opened.channel.recv_value().map_err(at)? {
+        Answer::Go => Ok(opened),
+        Answer::Declined => Err(at(LanError::Declined)),
+        Answer::Version => Err(at(LanError::Version)),
+    }
+}
+
+/// A connection with a paired device, opened and agreed to sync, and ready for the vault.
+/// Getting here needs no vault, so a shell can hold the vault only for [`Ready::sync`].
+pub struct Ready<S> {
+    opened: Opened<S>,
+    role: Role,
+}
+
+impl<S> std::fmt::Debug for Ready<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Ready").field("peer", &self.opened.peer).finish_non_exhaustive()
+    }
+}
+
+impl<S: Read + Write> Ready<S> {
+    /// The other device.
+    pub fn peer(&self) -> &Peer {
+        &self.opened.peer
+    }
+
+    /// Runs the sync itself: the vault-key proof, the deltas, the attachments.
+    pub fn sync<B: BlobStore>(self, vault: &mut Vault, blobs: &mut B) -> std::result::Result<LanReport, Failure> {
+        let key = self.opened.peer.key;
+        exchange(self.opened, vault, blobs, self.role).map_err(|error| Failure { error, key: Some(key) })
+    }
+}
+
+/// Connects to a waiting device to sync. `trusted` can be narrowed to the devices wanted.
+pub fn connect<S: Read + Write>(stream: S, identity: &Identity, trusted: &[Peer]) -> std::result::Result<Ready<S>, Failure> {
+    Ok(Ready { opened: open(stream, identity, trusted, None)?, role: Role::Initiator })
+}
+
+/// What a waiting device was asked.
+#[derive(Debug)]
+pub enum Incoming<S> {
+    /// To sync. Call [`Ready::sync`].
+    Sync(Ready<S>),
+    /// To merge two different vaults. Show the person and call [`PendingMerge::finish`].
+    Merge(PendingMerge<S>),
+}
+
+/// The waiting end, up to what the other device wants. Needs no vault.
+pub fn answer<S: Read + Write>(stream: S, identity: &Identity, trusted: &[Peer]) -> std::result::Result<Incoming<S>, Failure> {
+    let mut opened = handshake(stream, identity, trusted, Role::Responder)?;
+    let key = opened.peer.key;
+    let at = |error| Failure { error, key: Some(key) };
+    // A device that hangs up before saying anything was looking for some other device.
+    let intent: Intent = opened.channel.recv_value().map_err(|error| match error {
+        LanError::Decode => at(LanError::Version),
+        other => Failure::from(other),
+    })?;
+    if intent.version != VERSION {
+        let _ = opened.channel.send_value(&Answer::Version);
+        return Err(at(LanError::Version));
+    }
+    if let Some(they_keep) = intent.merge {
+        return Ok(Incoming::Merge(PendingMerge { opened, they_keep }));
+    }
+    opened.channel.send_value(&Answer::Go).map_err(at)?;
+    Ok(Incoming::Sync(Ready { opened, role: Role::Responder }))
+}
+
+/// What came of a connection to a waiting device.
+#[derive(Debug)]
+pub enum Served<S> {
+    /// The two synced.
+    Synced(LanReport),
+    /// The other device asks to merge two different vaults. Show the person and call
+    /// [`PendingMerge::finish`].
+    MergeAsked(PendingMerge<S>),
+}
+
+/// Runs one sync over a connection, as either end. `trusted` is the list of paired devices;
+/// the connecting end can narrow it to the devices it is looking for. A waiting end that is
+/// asked to merge vaults declines; use [`serve`] to be able to say yes.
 pub fn sync<S: Read + Write, B: BlobStore>(
     stream: S,
     identity: &Identity,
@@ -66,21 +209,92 @@ pub fn sync<S: Read + Write, B: BlobStore>(
     vault: &mut Vault,
     blobs: &mut B,
     role: Role,
-) -> Result<LanReport> {
-    let mut channel = Channel::handshake(stream, identity, role, None)?;
-    let peer = trusted
-        .iter()
-        .find(|peer| constant_eq(&peer.key, channel.remote()))
-        .cloned()
-        .ok_or(LanError::UnknownPeer)?;
+) -> std::result::Result<LanReport, Failure> {
+    match role {
+        Role::Initiator => connect(stream, identity, trusted)?.sync(vault, blobs),
+        Role::Responder => match serve(stream, identity, trusted, vault, blobs)? {
+            Served::Synced(report) => Ok(report),
+            Served::MergeAsked(pending) => {
+                let key = pending.peer().key;
+                pending.decline();
+                Err(Failure { error: LanError::Declined, key: Some(key) })
+            }
+        },
+    }
+}
+
+/// The waiting end of a connection: syncs, or hands back a request to merge vaults.
+pub fn serve<S: Read + Write, B: BlobStore>(
+    stream: S,
+    identity: &Identity,
+    trusted: &[Peer],
+    vault: &mut Vault,
+    blobs: &mut B,
+) -> std::result::Result<Served<S>, Failure> {
+    match answer(stream, identity, trusted)? {
+        Incoming::Sync(ready) => ready.sync(vault, blobs).map(Served::Synced),
+        Incoming::Merge(pending) => Ok(Served::MergeAsked(pending)),
+    }
+}
+
+/// A request from a paired device to merge two different vaults, waiting for a yes.
+pub struct PendingMerge<S> {
+    opened: Opened<S>,
+    they_keep: bool,
+}
+
+impl<S> std::fmt::Debug for PendingMerge<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PendingMerge").field("peer", &self.opened.peer).field("they_keep", &self.they_keep).finish_non_exhaustive()
+    }
+}
+
+impl<S: Read + Write> PendingMerge<S> {
+    /// The device asking.
+    pub fn peer(&self) -> &Peer {
+        &self.opened.peer
+    }
+
+    /// Whether the asking device keeps its vault, so this one gives its items and then
+    /// takes that vault. False: this one keeps its vault and takes the other's items.
+    pub fn they_keep(&self) -> bool {
+        self.they_keep
+    }
+
+    /// Says no.
+    pub fn decline(mut self) {
+        let _ = self.opened.channel.send_value(&Answer::Declined);
+    }
+
+    /// Answers, and on a yes runs the merge. `own` holds this vault's attachments; `new_home`
+    /// is where the kept vault's attachments go, if this device is the one that changes vault.
+    pub fn finish<B: BlobStore, N: BlobStore>(
+        mut self,
+        accepted: bool,
+        vault: &mut Vault,
+        own: &mut B,
+        new_home: &mut N,
+        now_ms: u64,
+    ) -> std::result::Result<crate::merge::Merged, Failure> {
+        let key = self.opened.peer.key;
+        if !accepted {
+            self.decline();
+            return Err(Failure { error: LanError::Declined, key: Some(key) });
+        }
+        self.opened.channel.send_value(&Answer::Go).map_err(|error| Failure { error, key: Some(key) })?;
+        crate::merge::run(self.opened, !self.they_keep, vault, own, new_home, now_ms)
+    }
+}
+
+/// Everything after the opening: the proof, the deltas, the attachments.
+fn exchange<S: Read + Write, B: BlobStore>(opened: Opened<S>, vault: &mut Vault, blobs: &mut B, role: Role) -> Result<LanReport> {
+    let Opened { mut channel, peer } = opened;
     let lan_key = vault.purpose_key("wmpass/lan/vault-proof/v1")?;
     channel.prove_shared_key(&lan_key, role)?;
 
     let mut report = LanReport { peer, ..LanReport::default() };
     match role {
         Role::Initiator => {
-            channel.send_value(&VERSION)?;
-            check_version(channel.recv_value()?)?;
             channel.send_value(&vault.digests()?)?;
             let theirs: Digests = channel.recv_value()?;
             let delta: Delta = channel.recv_value()?;
@@ -91,9 +305,6 @@ pub fn sync<S: Read + Write, B: BlobStore>(
             channel.send_value(&mine)?;
         }
         Role::Responder => {
-            let theirs: u32 = channel.recv_value()?;
-            channel.send_value(&VERSION)?;
-            check_version(theirs)?;
             let theirs: Digests = channel.recv_value()?;
             channel.send_value(&vault.digests()?)?;
             let mine = vault.delta_for(&theirs)?;
@@ -119,10 +330,6 @@ pub fn sync<S: Read + Write, B: BlobStore>(
     };
     report.converged = state == theirs;
     Ok(report)
-}
-
-fn check_version(theirs: u32) -> Result<()> {
-    if theirs == VERSION { Ok(()) } else { Err(LanError::Version) }
 }
 
 fn constant_eq(a: &[u8; 32], b: &[u8; 32]) -> bool {
@@ -163,7 +370,7 @@ fn swap_blobs<S: Read + Write, B: BlobStore>(
     }
 }
 
-fn send_blobs<S: Read + Write, B: BlobStore>(
+pub(crate) fn send_blobs<S: Read + Write, B: BlobStore>(
     channel: &mut Channel<S>,
     referenced: &[String],
     asked: &[String],
@@ -186,7 +393,7 @@ fn send_blobs<S: Read + Write, B: BlobStore>(
     Ok(())
 }
 
-fn recv_blobs<S: Read + Write, B: BlobStore>(
+pub(crate) fn recv_blobs<S: Read + Write, B: BlobStore>(
     channel: &mut Channel<S>,
     wanted: &[String],
     blobs: &mut B,
