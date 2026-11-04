@@ -322,7 +322,7 @@ fun Palette.flatScheme(source: ThemeColors?): ColorScheme {
 }
 
 /** The phone's own colours, seen through the app's palette. */
-private fun ColorScheme.toPalette(dark: Boolean, black: Boolean): Palette {
+internal fun ColorScheme.toPalette(dark: Boolean, black: Boolean): Palette {
     val bg = if (black && dark) Color.Black else surface
     return Palette(
         dark = dark,
@@ -435,6 +435,41 @@ private fun shapesFor(corners: Int): MaterialShapes = MaterialShapes(
     extraLarge = RoundedCornerShape((corners * 7 / 3).dp),
 )
 
+/**
+ * The palette and Material roles for one set of choices. Plain code rather than a composable, so
+ * the home screen widgets draw in the same colours as the app.
+ */
+fun resolveTheme(
+    context: android.content.Context,
+    dark: Boolean,
+    black: Boolean,
+    flat: Boolean,
+    accent: Accent,
+    themeId: String,
+    theme: ThemeFile?,
+): Pair<Palette, ColorScheme> {
+    val colors = theme?.let { if (dark) it.dark ?: it.light else it.light ?: it.dark }
+    return when {
+        themeId == BuiltInThemes.SYSTEM && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+            val scheme = if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+            val made = scheme.toPalette(dark, black)
+            val finished = if (black && dark) scheme.copy(surface = Color.Black, background = Color.Black) else scheme
+            (if (flat) made else made.copy(flat = false)) to finished
+        }
+        // Glass with no theme chosen keeps the colours it was drawn in.
+        !flat && (themeId == BuiltInThemes.SYSTEM || themeId == BuiltInThemes.DEFAULT) -> {
+            val made = if (dark) darkPalette(accent, black) else lightPalette(accent)
+            made to made.scheme()
+        }
+        else -> {
+            val source = colors ?: if (dark) BuiltInThemes.all.first().dark!! else BuiltInThemes.all.first().light!!
+            // A theme with one side, on a phone asking for the other, stays what it is.
+            val made = source.toPalette(if (colors != null) colors === theme?.dark else dark, black, flat)
+            made to if (flat) made.flatScheme(source) else made.scheme()
+        }
+    }
+}
+
 /** The app's colours and type. [style] is `standard` or `glass`; see DESIGN.md for why. */
 @Composable
 fun PassTheme(
@@ -455,28 +490,7 @@ fun PassTheme(
     val black = look == Look.OBSIDIAN
     val flat = style != "glass"
     val theme = remember(themeId, custom) { (BuiltInThemes.all + custom).firstOrNull { it.id == themeId } }
-    val resolved = remember(dark, black, flat, accent, themeId, theme) {
-        val colors = theme?.let { if (dark) it.dark ?: it.light else it.light ?: it.dark }
-        when {
-            themeId == BuiltInThemes.SYSTEM && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-                val scheme = if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-                val made = scheme.toPalette(dark, black)
-                val finished = if (black && dark) scheme.copy(surface = Color.Black, background = Color.Black) else scheme
-                (if (flat) made else made.copy(flat = false)) to finished
-            }
-            // Glass with no theme chosen keeps the colours it was drawn in.
-            !flat && (themeId == BuiltInThemes.SYSTEM || themeId == BuiltInThemes.DEFAULT) -> {
-                val made = if (dark) darkPalette(accent, black) else lightPalette(accent)
-                made to made.scheme()
-            }
-            else -> {
-                val source = colors ?: if (dark) BuiltInThemes.all.first().dark!! else BuiltInThemes.all.first().light!!
-                // A theme with one side, on a phone asking for the other, stays what it is.
-                val made = source.toPalette(if (colors != null) colors === theme?.dark else dark, black, flat)
-                made to if (flat) made.flatScheme(source) else made.scheme()
-            }
-        }
-    }
+    val resolved = remember(dark, black, flat, accent, themeId, theme) { resolveTheme(context, dark, black, flat, accent, themeId, theme) }
     val type = remember(flat, theme) { if (flat) typeFor(theme?.font ?: "system", context) else WmTypography }
     val shapes = remember(flat, theme) { if (flat) shapesFor(theme?.corners ?: 12) else WmShapes }
     val prefs = com.wasimaster.wmpass.app.Prefs.of(context)

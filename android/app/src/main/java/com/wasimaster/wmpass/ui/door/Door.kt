@@ -1018,6 +1018,9 @@ private fun ComingBack(onDismiss: () -> Unit) {
     }
     when (sheet) {
         "menu" -> PassSheet(onDismiss, "Existing vault") {
+            if (!com.wasimaster.wmpass.BuildConfig.OFFLINE) {
+                DoorRow(PassIcons.Devices, "Get it from another device", "Your other phone or computer sends it over Wi-Fi") { sheet = "join" }
+            }
             DoorRow(PassIcons.Folder, "Restore from a file", ".wmvault or .wmbackup") { openFile.launch(arrayOf("*/*")) }
             DoorRow(PassIcons.Backup, "Restore from a backup location", "Folder, WebDAV, S3 or SFTP") { sheet = "place" }
             DoorRow(PassIcons.Sync, "Open a KeePass file or sign in", "KeePass, Bitwarden, Vaultwarden or a WM Pass server") { sheet = "account" }
@@ -1043,6 +1046,7 @@ private fun ComingBack(onDismiss: () -> Unit) {
         }
         "account" -> com.wasimaster.wmpass.ui.settings.AddAccountSheet(onDismiss)
         "shares" -> SharesSheet(onDismiss)
+        "join" -> JoinSheet(onDismiss)
     }
 }
 

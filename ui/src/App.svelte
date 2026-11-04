@@ -13,10 +13,20 @@
   import { host } from './engine/host';
   import { icons } from './engine/icons.svelte';
   import { applyTheme } from './theme/themes';
+  import { startWidgetFeed } from './settings/widgets.svelte';
   import { ui } from './vault/ui.svelte';
   import { onMount, untrack } from 'svelte';
 
   let main = $state<Main>();
+  const WAITING = new Set(['search', 'add', 'codes', 'generator', 'health', 'backups']);
+  let pendingRoute = $state<string | null>(null);
+
+  $effect(() => {
+    if (!main || !pendingRoute) return;
+    const route = pendingRoute;
+    pendingRoute = null;
+    untrack(() => main?.command(route));
+  });
   let systemDark = $state(window.matchMedia('(prefers-color-scheme: dark)').matches);
 
   onMount(() => {
@@ -27,10 +37,15 @@
     resize();
     window.addEventListener('resize', resize);
     host().onCommand?.((name) => {
+      // A widget's panic lock: the wait is set before the door opens, whatever is on screen.
+      if (name === 'panic') void pass.panic();
       // At the door there is no window to explain but the door itself.
-      if (!main && (name === 'help' || name === 'guide')) void help.open('screen.door');
+      else if (!main && (name === 'help' || name === 'guide')) void help.open('screen.door');
+      // A page asked for from a widget waits for the vault to open, as on the phone.
+      else if (!main && (WAITING.has(name) || name.startsWith('item:'))) pendingRoute = name;
       else main?.command(name);
     });
+    startWidgetFeed();
     return () => {
       media.removeEventListener('change', onChange);
       window.removeEventListener('resize', resize);

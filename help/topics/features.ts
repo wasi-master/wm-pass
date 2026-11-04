@@ -285,6 +285,7 @@ export const features = [
           'A copied secret is marked as sensitive, so Android keeps it out of clipboard previews and history where it honors the mark.',
           'A small bar counts down until it is cleared, with **Clear now**.',
           'When the time set under [[setting.clipboard_seconds]] is up, WM Pass empties the clipboard, unless you have copied something else since.',
+          'If WM Keyboard is your keyboard, its clipboard history keeps the copy only until then: when WM Pass empties the clipboard, the keyboard drops it from its history too.',
           'Usernames, websites and other plain fields are copied as they are, and not cleared.',
         ],
         when: 'Where you can, fill instead of copying: the autofill service does not use the clipboard.',
@@ -659,8 +660,8 @@ export const features = [
     why: 'Your passwords should never be stuck in one app, this one included.',
     how: [
       'Under Settings, Import, choose your old app\'s export file. WM Pass shows how many items it found, a few of their names, and any it could not read, before anything is added.',
-      'Password managers: 1Password, Apple Passwords, Bitwarden, Chrome, Dashlane, Enpass, Firefox, KeePass and KeePassXC, Keeper, LastPass, NordPass, Proton Pass, RoboForm and SafeInCloud. Authenticators: Aegis, 2FAS, andOTP, Ente Auth, FreeOTP+, Raivo, and Google Authenticator, whose export QR code you can choose as a screenshot.',
-      'A file with a password, such as a KeePass database, asks for it first. Items already in the vault are skipped, and the result says how many.',
+      'Password managers: 1Password, Apple Passwords, Avast, Avira, Bitwarden, Buttercup, Chrome and other Chromium browsers, Dashlane, Enpass, Firefox, Kaspersky, KeePass and KeePassXC, Keeper, LastPass, mSecure, NordPass, Password Safe, Proton Pass, Psono, RoboForm, SafeInCloud, Sticky Password and Zoho Vault. Authenticators: Aegis, 2FAS, andOTP, Authenticator Pro, Bitwarden Authenticator, Ente Auth, FreeOTP+, LastPass Authenticator, Proton Authenticator, Raivo, and Google Authenticator, whose export QR code you can choose as a screenshot.',
+      'A file with a password, such as a KeePass or SafeInCloud database, asks for it first. Items already in the vault are skipped, and the result says how many.',
       'Under Settings, Export, a **WM Pass vault** or a **KeePass database** stays encrypted. **Bitwarden JSON**, **CSV** and a **Printable page** are plain text that anyone who opens them can read.',
     ],
     when: 'Import once when you move to WM Pass, then compare the count with your old app. Export when you leave, or for a printed copy kept somewhere safe.',
@@ -677,8 +678,8 @@ export const features = [
       android: {
         how: [
           'Under Settings, Import, choose your old app\'s export file. WM Pass shows how many items it found, a few of their names, and any it could not read, before anything is added.',
-          'Password managers: 1Password, Apple Passwords, Bitwarden, Chrome, Dashlane, Enpass, Firefox, KeePass and KeePassXC, Keeper, LastPass, NordPass, Proton Pass, RoboForm and SafeInCloud. Authenticators: Aegis, 2FAS, andOTP, Ente Auth, FreeOTP+ and Raivo. For Google Authenticator, tap **Scan Google Authenticator\'s code** and scan each of its export codes in turn.',
-          'A file with a password, such as a KeePass database, asks for it first. Items already in the vault are skipped, and the result says how many.',
+          'Password managers: 1Password, Apple Passwords, Avast, Avira, Bitwarden, Buttercup, Chrome and other Chromium browsers, Dashlane, Enpass, Firefox, Kaspersky, KeePass and KeePassXC, Keeper, LastPass, mSecure, NordPass, Password Safe, Proton Pass, Psono, RoboForm, SafeInCloud, Sticky Password and Zoho Vault. Authenticators: Aegis, 2FAS, andOTP, Authenticator Pro, Bitwarden Authenticator, Ente Auth, FreeOTP+, LastPass Authenticator, Proton Authenticator and Raivo. For Google Authenticator, tap **Scan Google Authenticator\'s code** and scan each of its export codes in turn.',
+          'A file with a password, such as a KeePass or SafeInCloud database, asks for it first. Items already in the vault are skipped, and the result says how many.',
           'Under Settings, Export, a **WM Pass vault** or a **KeePass database** stays encrypted. **Bitwarden JSON**, **CSV** and a **Printable page** are plain text that anyone who opens them can read.',
         ],
       },
@@ -710,7 +711,7 @@ export const features = [
         how: [
           ...CODES_HOW,
           'The Codes tab lists them all. Tap one to copy it, and hold it to open its item. The add button there can scan a site\'s QR code.',
-          'A home screen widget, and a paired watch if you allow it under [[setting.wear_access]], can show codes too.',
+          'The Codes widget, if you turn on [[setting.widget_access]], and a paired watch, if you allow it under [[setting.wear_access]], can show codes too. Both only while the vault is open.',
           'Bring codes over from Aegis, 2FAS, andOTP, Ente Auth, FreeOTP+, Raivo or Google Authenticator under Settings, Import.',
         ],
         caveats: [

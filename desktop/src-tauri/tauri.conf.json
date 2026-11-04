@@ -7,7 +7,8 @@
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5184",
     "beforeDevCommand": "node ../scripts/build-host.mjs && npm run desktop:dev",
-    "beforeBuildCommand": "node ../scripts/build-host.mjs && npm run desktop:build"
+    "beforeBuildCommand": "node ../scripts/build-host.mjs && npm run desktop:build",
+    "beforeBundleCommand": "bash ../packaging/macos/widgets/build.sh"
   },
   "app": {
     "windows": [
@@ -61,7 +62,14 @@
     "category": "Utility",
     "shortDescription": "A password manager that stays on your devices",
     "longDescription": "WM Pass keeps your passwords, codes, cards and notes in an encrypted vault on your own devices, offline unless you ask otherwise.",
-    "macOS": { "minimumSystemVersion": "11.0", "signingIdentity": "-" },
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "signingIdentity": "-",
+      "files": {
+        "PlugIns/WMPassWidgets.appex": "widgets-out/WMPassWidgets.appex",
+        "Frameworks/libWMPassWidgetCenter.dylib": "widgets-out/libWMPassWidgetCenter.dylib"
+      }
+    },
     "windows": { "nsis": { "installMode": "currentUser" } }
   }
 }

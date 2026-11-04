@@ -47,6 +47,14 @@ A digest is BLAKE3 over an entry's MessagePack, truncated to 128 bits. A delta h
 
 A blob is sent only if the vault refers to it, and accepted only if this end asked for it, so a peer cannot read or write other files by naming them. Blobs are already encrypted under their own keys.
 
+## A new device
+
+A device with no vault cannot make the vault-key proof, so joining one replaces it with the person's word. The new device listens, advertises itself as waiting to join (an mDNS TXT record `k=join`, and nothing else), and shows a pairing QR code. The device with the vault connects and writes one unauthenticated byte saying which way it will be vouched for: `Q` for the QR code, so the handshake is `Noise_XXpsk3` with the code's secret, or `C` for the six-digit comparison above. A forged byte gains nothing, since each way runs its full handshake.
+
+Once both are satisfied, the sender sends a version, the sealed vault file and a count, then one message for each attachment the vault refers to. The receiver keeps the file only if its header parses, accepts at most 100,000 attachments, and refuses any name that is not plain letters, digits, `-`, `_` or `.`. Both sides store each other's public key, as pairing does.
+
+What crosses is ciphertext. The new device learns nothing until its person types the master password, and a wrong one fails exactly as it would on any copy of the file.
+
 ## One-time sharing
 
 **By QR, both ways.** The receiver shows `wmpass-offer:1:<public key>:<expiry>`, holding a throwaway X25519 key. The sender scans it and shows `wmpass-share:1:<ephemeral public key || sealed entry>`, sealed with XChaCha20-Poly1305 under `HKDF(X25519, sender || receiver, "wmpass/share/v1")`. A photograph of either code cannot open the entry. The receiver discards its key on opening.

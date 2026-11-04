@@ -128,6 +128,8 @@ export async function desktopHost(): Promise<Host> {
       checkUpdate: () => invoke('check_update'),
       installUpdate: () => invoke('install_update'),
       version: () => invoke('app_version'),
+      widgetsFeed: (feed) => invoke('widgets_feed', { feed }),
+      widgetsForget: () => invoke('widgets_forget'),
     },
   };
 }

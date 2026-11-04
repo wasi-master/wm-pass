@@ -16,6 +16,8 @@ class PassApplication : Application() {
         com.wasimaster.wmpass.ui.help.Help.attach(this)
         com.wasimaster.wmpass.system.Accounts.load(this)
         com.wasimaster.wmpass.system.Destinations.load(this)
+        // After the places, so the Backups widget has them; it redraws every widget locked first.
+        com.wasimaster.wmpass.system.widgets.WidgetFeed.start(this)
         com.wasimaster.wmkeyboard.core.settings.sink.AutoBackupNaming.appFiles = com.wasimaster.wmpass.system.Backups::isOurs
         com.wasimaster.wmpass.system.CloudSignIn.install()
         com.wasimaster.wmsuite.sinks.net.SinkNet.checkInternet = {
@@ -28,6 +30,7 @@ class PassApplication : Application() {
             com.wasimaster.wmpass.system.Sealed.wipe(this)
             com.wasimaster.wmpass.system.Destinations.forget()
             com.wasimaster.wmpass.system.Accounts.forget(this)
+            com.wasimaster.wmpass.system.widgets.WidgetFeed.forget(this)
             androidx.work.WorkManager.getInstance(this).cancelAllWork()
         }
     }

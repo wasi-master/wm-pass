@@ -23,6 +23,7 @@
   import CodesSettingsPage from './CodesSettingsPage.svelte';
   import ComparePage from './ComparePage.svelte';
   import DesktopPage from './DesktopPage.svelte';
+  import WidgetsPage from './WidgetsPage.svelte';
   import EditorPage from './EditorPage.svelte';
   import EntryPage from './EntryPage.svelte';
   import ExportPage from './ExportPage.svelte';
@@ -85,6 +86,7 @@
     ssh: SshPage,
     updates: UpdatesPage,
     desktop: DesktopPage,
+    widgets: WidgetsPage,
     guide: GuidePage,
   };
 
@@ -98,6 +100,7 @@
   function shown(info: PageInfo) {
     if (info.desktop && !isDesktop) return false;
     if (info.extension && host().kind !== 'extension') return false;
+    if (info.mac && host().os !== 'mac') return false;
     if (info.parent) return false;
     if (info.needsNetwork && !host().network && !(info.viaDesktop && host().usernames)) return false;
     return true;
@@ -116,6 +119,7 @@
     const words = q.split(/\s+/);
     const rows: Hit[] = SEARCH_INDEX.filter((item) => {
       if (item.desktop && !isDesktop) return false;
+      if (item.mac && host().os !== 'mac') return false;
       const text = `${item.title} ${item.where} ${item.words ?? ''}`.toLowerCase();
       return words.every((w) => text.includes(w));
     }).sort((a, b) => rank(a.title, q) - rank(b.title, q));

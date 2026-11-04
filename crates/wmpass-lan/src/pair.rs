@@ -56,7 +56,12 @@ impl<S: Read + Write> PendingCode<S> {
     }
 
     /// Reports what the person decided. Pairing holds only if both sides accept.
-    pub fn finish(mut self, accepted: bool) -> Result<Peer> {
+    pub fn finish(self, accepted: bool) -> Result<Peer> {
+        self.finish_open(accepted).map(|(peer, _)| peer)
+    }
+
+    /// Like [`Self::finish`], keeping the connection for what comes next, such as a vault.
+    pub fn finish_open(mut self, accepted: bool) -> Result<(Peer, Channel<S>)> {
         let theirs: bool = match self.role {
             Role::Initiator => {
                 self.channel.send_value(&accepted)?;
@@ -68,7 +73,7 @@ impl<S: Read + Write> PendingCode<S> {
                 theirs
             }
         };
-        if accepted && theirs { Ok(self.peer) } else { Err(LanError::Declined) }
+        if accepted && theirs { Ok((self.peer, self.channel)) } else { Err(LanError::Declined) }
     }
 }
 
@@ -175,11 +180,16 @@ impl PairingQr {
     /// Completes a pairing over a connection. The code is a full 256-bit secret, so no
     /// comparison is needed, and the handshake fails without it.
     pub fn pair<S: Read + Write>(&self, stream: S, identity: &Identity, name: &str, role: Role, now_ms: u64) -> Result<Peer> {
+        self.pair_open(stream, identity, name, role, now_ms).map(|(peer, _)| peer)
+    }
+
+    /// Like [`Self::pair`], keeping the connection for what comes next, such as a vault.
+    pub fn pair_open<S: Read + Write>(&self, stream: S, identity: &Identity, name: &str, role: Role, now_ms: u64) -> Result<(Peer, Channel<S>)> {
         if now_ms > self.expires_ms {
             return Err(LanError::Expired);
         }
         let mut channel = Channel::handshake(stream, identity, role, Some(&self.secret))?;
         let peer_name = exchange_names(&mut channel, name, role)?;
-        Ok(Peer { key: *channel.remote(), name: peer_name })
+        Ok((Peer { key: *channel.remote(), name: peer_name }, channel))
     }
 }

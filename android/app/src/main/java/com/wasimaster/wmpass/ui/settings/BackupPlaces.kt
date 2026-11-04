@@ -1,6 +1,7 @@
 package com.wasimaster.wmpass.ui.settings
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
@@ -57,6 +58,8 @@ import com.wasimaster.wmpass.app.Prefs
 import com.wasimaster.wmpass.system.CloudSignIn
 import com.wasimaster.wmpass.system.Destination
 import com.wasimaster.wmpass.system.Destinations
+import com.wasimaster.wmpass.system.KeyboardProvider
+import com.wasimaster.wmpass.system.PlaceWire
 import com.wasimaster.wmpass.ui.door.PasswordPill
 import com.wasimaster.wmpass.ui.icons.PassIcons
 import com.wasimaster.wmpass.ui.parts.Brands
@@ -168,7 +171,8 @@ fun DestinationSheet(existing: Destination?, onDismiss: () -> Unit, onSaved: (De
     val repository = rememberTextFieldState(existing?.repository.orEmpty())
     val branch = rememberTextFieldState(existing?.branch.orEmpty())
     val token = rememberTextFieldState(existing?.token.orEmpty())
-    val server = rememberTextFieldState(existing?.nas?.server ?: existing?.nfs?.host.orEmpty())
+    // An NFS place keeps its host in nfs; its nas.server is empty, not null.
+    val server = rememberTextFieldState(existing?.takeIf { it.kind == "nfs" }?.nfs?.host ?: existing?.nas?.server.orEmpty())
     val export = rememberTextFieldState(existing?.nfs?.export.orEmpty())
     val uid = rememberTextFieldState((existing?.nfs?.uid ?: NfsConfig.DEFAULT_ID).toString())
     val gid = rememberTextFieldState((existing?.nfs?.gid ?: NfsConfig.DEFAULT_ID).toString())
@@ -205,6 +209,68 @@ fun DestinationSheet(existing: Destination?, onDismiss: () -> Unit, onSaved: (De
         }
     }
 
+    // A place WM Keyboard handed over fills the sheet in as if it had been typed. Nothing is saved
+    // until the person saves it, after signing in where the kind needs that.
+    var seeded by remember { mutableStateOf<Destination?>(null) }
+
+    fun fill(place: Destination) {
+        seeded = place
+        kind = place.kind
+        preset = ""
+        problem = null
+        askCode = false
+        askMailbox = false
+        pcloudToken = null
+        protonPending = null
+        icloudSession = null
+        label.setTextAndPlaceCursorAtEnd(place.label)
+        url.setTextAndPlaceCursorAtEnd(place.url)
+        user.setTextAndPlaceCursorAtEnd(place.user)
+        password.setTextAndPlaceCursorAtEnd(place.password)
+        endpoint.setTextAndPlaceCursorAtEnd(place.endpoint)
+        region.setTextAndPlaceCursorAtEnd(place.region)
+        bucket.setTextAndPlaceCursorAtEnd(place.bucket)
+        keyId.setTextAndPlaceCursorAtEnd(place.accessKeyId)
+        keySecret.setTextAndPlaceCursorAtEnd(place.secretAccessKey)
+        prefix.setTextAndPlaceCursorAtEnd(place.prefix)
+        host.setTextAndPlaceCursorAtEnd(place.host)
+        port.setTextAndPlaceCursorAtEnd(if (place.kind in setOf("sftp", "ftp", "smb", "imap")) place.port.toString() else "")
+        path.setTextAndPlaceCursorAtEnd(place.path)
+        folder.setTextAndPlaceCursorAtEnd(place.folder)
+        share.setTextAndPlaceCursorAtEnd(place.share)
+        domain.setTextAndPlaceCursorAtEnd(place.domain)
+        repository.setTextAndPlaceCursorAtEnd(place.repository)
+        branch.setTextAndPlaceCursorAtEnd(place.branch)
+        token.setTextAndPlaceCursorAtEnd(place.token)
+        server.setTextAndPlaceCursorAtEnd(if (place.kind == "nfs") place.nfs.host else place.nas.server)
+        export.setTextAndPlaceCursorAtEnd(place.nfs.export)
+        uid.setTextAndPlaceCursorAtEnd(place.nfs.uid.toString())
+        gid.setTextAndPlaceCursorAtEnd(place.nfs.gid.toString())
+        pathStyle = place.pathStyle
+        secure = place.secure
+        encrypt = place.encrypt
+        security = place.security
+        provider = place.provider
+        allowPublic = place.allowPublic
+        driveSpace = place.driveSpace
+        ownCertificate = place.nas.ownCertificate
+        pcloudRegion = place.pcloud.region
+        folderUri = ""
+        folderName = null
+    }
+
+    val keyboardPackage = remember { KeyboardProvider.installedPackage(context) }
+    val fromKeyboard = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode != Activity.RESULT_OK) return@rememberLauncherForActivityResult
+        val raw = result.data?.getStringExtra(PlaceWire.EXTRA) ?: return@rememberLauncherForActivityResult
+        val place = PlaceWire.decode(raw, id)
+        when {
+            place == null -> problem = "WM Keyboard sent a place this version of WM Pass cannot use."
+            !CloudSignIn.available(place.kind) -> problem = "This build of WM Pass cannot reach ${placeKind(place.kind)?.name ?: place.kind}."
+            else -> fill(place)
+        }
+    }
+
     fun text(state: TextFieldState) = state.text.toString().trim()
 
     fun webDavUrl(): String {
@@ -219,7 +285,8 @@ fun DestinationSheet(existing: Destination?, onDismiss: () -> Unit, onSaved: (De
 
     /** Everything typed so far, as the place it would be. */
     fun draft(): Destination {
-        val base = existing ?: Destination(id = id, kind = kind, label = "")
+        // What the sheet has no field for, such as an SFTP key from WM Keyboard, comes from here.
+        val base = existing ?: seeded ?: Destination(id = id, kind = kind, label = "")
         val portNumber = text(port).toIntOrNull() ?: defaultPort(kind, security)
         return base.copy(
             kind = kind,
@@ -252,7 +319,7 @@ fun DestinationSheet(existing: Destination?, onDismiss: () -> Unit, onSaved: (De
             allowPublic = allowPublic,
             driveSpace = driveSpace,
             nfs = NfsConfig(host = text(server), export = text(export), path = text(path), uid = text(uid).toIntOrNull() ?: NfsConfig.DEFAULT_ID, gid = text(gid).toIntOrNull() ?: NfsConfig.DEFAULT_ID),
-            nas = (existing?.nas ?: NasConfig()).let { old ->
+            nas = ((existing ?: seeded)?.nas ?: NasConfig()).let { old ->
                 val same = old.server == text(server) && old.user == text(user)
                 NasConfig(
                     server = text(server),
@@ -408,6 +475,17 @@ fun DestinationSheet(existing: Destination?, onDismiss: () -> Unit, onSaved: (De
     val chosen = placeKind(kind)
     PassSheet(onDismiss, existing?.label ?: "A place for copies") {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (existing == null && keyboardPackage != null) {
+                QuietButton("Use a place from WM Keyboard", Modifier.fillMaxWidth(), PassIcons.Keyboard, colors.primary) {
+                    // Checked again at the tap: the package could have changed hands since.
+                    val target = KeyboardProvider.installedPackage(context) ?: return@QuietButton
+                    try {
+                        fromKeyboard.launch(Intent().setClassName(target, "com.wasimaster.wmkeyboard.app.PlaceShareActivity"))
+                    } catch (_: ActivityNotFoundException) {
+                        problem = "Update WM Keyboard to share its places."
+                    }
+                }
+            }
             if (existing == null) {
                 shownKinds.groupBy { it.group }.forEach { (group, kinds) ->
                     Text(groupNames[group], color = colors.textLow, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 6.dp))

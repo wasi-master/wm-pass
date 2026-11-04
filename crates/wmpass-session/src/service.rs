@@ -2462,32 +2462,5 @@ fn match_rows(vault: &Vault, target: Target<'_>) -> Reply {
 }
 
 fn format_by_name(name: &str) -> Option<io::Format> {
-    use io::Format as F;
-    [
-        F::Kdbx,
-        F::BitwardenJson,
-        F::BitwardenCsv,
-        F::OnePux,
-        F::LastPassCsv,
-        F::ChromeCsv,
-        F::FirefoxCsv,
-        F::KeePassXcCsv,
-        F::DashlaneCsv,
-        F::EnpassJson,
-        F::NordPassCsv,
-        F::KeeperJson,
-        F::ProtonPass,
-        F::AppleCsv,
-        F::SafeInCloudXml,
-        F::RoboFormCsv,
-        F::WmPassCsv,
-        F::Aegis,
-        F::TwoFas,
-        F::AndOtp,
-        F::FreeOtpPlus,
-        F::Raivo,
-        F::OtpAuthList,
-    ]
-    .into_iter()
-    .find(|f| f.name() == name)
+    io::Format::ALL.into_iter().find(|f| f.name() == name)
 }

@@ -366,6 +366,57 @@ export const backup = [
     },
   },
   {
+    id: 'action.join_device',
+    kind: 'action',
+    title: 'Get it from another device',
+    shells: ['desktop', 'android'],
+    what: 'Brings the vault you already have onto a new device, straight from a phone or computer that has it, over this network.',
+    how: [
+      'On the new device, choose **I already have a vault**, then **Get it from another device**. It shows a QR code, and waits.',
+      'On the device with the vault, open Settings, Sync and accounts, and choose [[action.lan_join|Add a new device]]. Scan the code, or find the new device on the network and compare six digits on both screens.',
+      'The vault comes over with its attachments, and the new device asks for the master password. The two devices are paired, so they can sync on this network from then on.',
+    ],
+    caveats: [
+      'Both devices need to be on the same network, and the device with the vault needs to be unlocked.',
+      'What comes over is the encrypted file. Without the master password it opens nowhere.',
+      'This is for a device with no vault yet. Two vaults made separately stay separate: pairing does not merge them.',
+    ],
+    related: ['action.lan_join', 'group.sync.lan', 'screen.door'],
+    docs: '/security/lan/',
+    words: 'new device setup join transfer move copy vault phone computer existing',
+  },
+  {
+    id: 'action.lan_join',
+    kind: 'action',
+    title: 'Add a new device',
+    page: 'sync',
+    shells: ['desktop', 'android'],
+    what: 'Sends this vault to a phone or computer that has none yet, and pairs the two for syncing.',
+    how: [
+      'First, on the new device, choose **I already have a vault**, then [[action.join_device|Get it from another device]]. It shows a code and waits.',
+      '- **Find it on this network** looks for it, then both screens show six digits. If they match, choose **They match** on both.',
+      '- **Paste its code** takes the text under the new device\'s QR code, for a computer or the terminal app.',
+      'The new device then asks for this vault\'s master password.',
+    ],
+    caveats: [
+      'It sends the vault you opened at the door, not an account or a nested vault.',
+      'If the six digits differ, choose **They differ**, and nothing is sent.',
+    ],
+    related: ['action.join_device', 'action.lan_pair', 'group.sync.lan'],
+    docs: '/security/lan/',
+    words: 'new device add send vault transfer phone computer',
+    on: {
+      android: {
+        how: [
+          'First, on the new device, choose **I already have a vault**, then [[action.join_device|Get it from another device]]. It shows a code and waits.',
+          '- **Scan its code** reads the QR code on the new device\'s screen, from a computer, a phone or the terminal app.',
+          '- **Find it on this network** looks for it, then both screens show six digits. If they match, tap **They match** on both.',
+          'The new device then asks for this vault\'s master password.',
+        ],
+      },
+    },
+  },
+  {
     id: 'action.lan_wait',
     kind: 'action',
     title: 'Wait for one',

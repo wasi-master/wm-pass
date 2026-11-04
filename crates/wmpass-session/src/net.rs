@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 use wmpass_core::crypto;
 use wmpass_core::Secret;
 use wmpass_lan::discovery::{self, Advert};
+use wmpass_lan::join::{self, Arrival, Joined, PendingJoin};
 use wmpass_lan::pair::{PairingQr, PendingCode, begin_code_pairing};
 use wmpass_lan::share::{self, ShareReceiver};
 use wmpass_lan::sync::{self, BlobStore};
@@ -34,6 +35,8 @@ struct Held {
     advert: Option<Advert>,
     qr: Option<PairingQr>,
     code: Option<PendingCode<TcpStream>>,
+    /// A new device waiting for its person to compare digits.
+    joining: Option<PendingJoin<TcpStream>>,
     offers: HashMap<String, ShareReceiver>,
     cancelled: bool,
 }
@@ -148,6 +151,27 @@ impl BlobStore for FolderBlobs {
         }
         std::fs::write(self.0.join(name), bytes).map_err(LanError::from)
     }
+}
+
+/// What a new device came away with: the device to trust as JSON, the sealed file as a blob.
+fn joined_reply(joined: Joined) -> Reply {
+    Reply {
+        json: json!({"done": true, "peer": peer_view(&joined.peer), "blobs": joined.blobs}).to_string(),
+        secret: None,
+        blobs: vec![joined.file],
+    }
+}
+
+type WithService<'a> = dyn Fn(&mut dyn FnMut(&mut Service) -> Result<Reply, SessionError>) -> Result<Reply, SessionError> + 'a;
+
+/// The open vault, sealed as it would be saved, and the attachments it refers to.
+fn vault_to_send(with_service: &WithService<'_>, handle: u64) -> Result<(Vec<u8>, Vec<String>), SessionError> {
+    let mut out = None;
+    with_service(&mut |service| {
+        out = Some(service.with_vault(handle, |vault| Ok::<_, wmpass_core::Error>((vault.save()?, vault.referenced_blobs())))??);
+        Ok(Reply::default())
+    })?;
+    out.ok_or_else(|| failed("invalid", "no vault is open"))
 }
 
 fn identity(secret: &[u8]) -> Result<Identity, SessionError> {
@@ -722,6 +746,7 @@ pub fn call(
                 h.advert = None;
                 h.qr = None;
                 h.code = None;
+                h.joining = None;
             })?;
             Ok(view(json!({})))
         }
@@ -790,6 +815,73 @@ pub fn call(
                     "converged": report.converged,
                 })))
             })
+        }
+        // ---- bringing a new device into the vault ----
+        // The new device listens and shows a code; the one with the vault connects.
+        "lan.join_listen" => {
+            let a: LanArgs = parse(args)?;
+            let listener = TcpListener::bind(("0.0.0.0", 0)).map_err(|e| failed("lan", e.to_string()))?;
+            let port = listener.local_addr().map_err(|e| failed("lan", e.to_string()))?.port();
+            let advert = discovery::advertise_joining(port).map_err(lan_error)?;
+            let qr = if a.address.is_empty() { None } else { Some(PairingQr::new(&format!("{}:{port}", a.address), now_ms).map_err(lan_error)?) };
+            let text = qr.as_ref().map(PairingQr::text).unwrap_or_default();
+            held(|h| {
+                h.listener = Some(listener);
+                h.advert = Some(advert);
+                h.qr = qr;
+            })?;
+            Ok(Reply { json: json!({"port": port}).to_string(), secret: Some(Zeroizing::new(text.into_bytes())), blobs: Vec::new() })
+        }
+        "lan.join_wait" => {
+            let a: LanArgs = parse(args)?;
+            let me = identity(secret)?;
+            let stream = accept()?;
+            let qr = held(|h| h.qr.clone())?;
+            let mut blobs = FolderBlobs(a.blob_dir.clone().into());
+            match join::arrive(stream, &me, &a.name, qr.as_ref(), now_ms, &mut blobs).map_err(lan_error)? {
+                Arrival::Done(joined) => Ok(joined_reply(joined)),
+                Arrival::Code(pending) => {
+                    let reply = json!({"code": pending.code(), "peer": peer_view(pending.peer())});
+                    held(|h| h.joining = Some(pending))?;
+                    Ok(view(reply))
+                }
+            }
+        }
+        "lan.join_finish" => {
+            let a: LanArgs = parse(args)?;
+            let pending = held(|h| h.joining.take())?.ok_or_else(|| failed("invalid", "no device is waiting"))?;
+            let mut blobs = FolderBlobs(a.blob_dir.clone().into());
+            Ok(joined_reply(pending.finish(a.accepted, &mut blobs).map_err(lan_error)?))
+        }
+        "lan.join_find" => {
+            let a: LanArgs = parse(args)?;
+            let found = discovery::browse_joining(Duration::from_millis(a.ms.clamp(200, 10_000))).map_err(lan_error)?;
+            Ok(view(json!(found.iter().map(ToString::to_string).collect::<Vec<_>>())))
+        }
+        "lan.join_scan" => {
+            let a: LanArgs = parse(args)?;
+            let qr = PairingQr::parse(&a.text, now_ms).map_err(lan_error)?;
+            let me = identity(secret)?;
+            let (file, names) = vault_to_send(&with_service, handle)?;
+            let stream = connect(&qr.address)?;
+            let blobs = FolderBlobs(a.blob_dir.clone().into());
+            let peer = join::send_by_qr(stream, &qr, &me, &a.name, now_ms, &file, &names, &blobs).map_err(lan_error)?;
+            Ok(view(json!({"peer": peer_view(&peer)})))
+        }
+        "lan.join_connect" => {
+            let a: LanArgs = parse(args)?;
+            let pending = join::begin_send_by_code(connect(&a.address)?, &identity(secret)?, &a.name).map_err(lan_error)?;
+            let reply = json!({"code": pending.code(), "peer": peer_view(pending.peer())});
+            held(|h| h.code = Some(pending))?;
+            Ok(view(reply))
+        }
+        "lan.join_send" => {
+            let a: LanArgs = parse(args)?;
+            let pending = held(|h| h.code.take())?.ok_or_else(|| failed("invalid", "no device is waiting"))?;
+            let (file, names) = if a.accepted { vault_to_send(&with_service, handle)? } else { (Vec::new(), Vec::new()) };
+            let blobs = FolderBlobs(a.blob_dir.clone().into());
+            let peer = join::finish_send(pending, a.accepted, &file, &names, &blobs).map_err(lan_error)?;
+            Ok(view(json!({"peer": peer_view(&peer)})))
         }
         // ---- one-time QR handover ----
         "share.offer" => {

@@ -1,0 +1,66 @@
+---
+title: Moving from Buttercup
+description: How to export your passwords from Buttercup on each device, and bring them into WM Pass.
+sidebar:
+  label: "Buttercup"
+source:
+  name: "Buttercup"
+  kind: manager
+  exportOn: ["Computer"]
+  choose: "CSV"
+---
+
+import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+import Shot from '../../../../components/Shot.astro';
+
+<Aside type="tip" title="Which file">
+Buttercup Desktop exports one format, a **Buttercup CSV** file.
+</Aside>
+
+<Tabs syncKey="device">
+<TabItem label="Android" icon="mobile-android">
+
+<Aside>
+The export steps found for Buttercup are for the desktop app. Use Buttercup on a computer.
+</Aside>
+
+</TabItem>
+<TabItem label="Computer" icon="laptop">
+
+Buttercup has no export guide in its documentation, so these steps follow the desktop app's own menu code.
+
+<Steps>
+
+1. Open Buttercup Desktop and unlock the vault you want to move. Export stays greyed out while the vault is locked.
+2. In the menu bar, open **Current Vault**.
+3. Choose **Export**.
+4. Pick a place, keep the **csv** extension, and save the file.
+
+</Steps>
+
+Steps from [Buttercup Desktop's menu and export code](https://github.com/buttercup/buttercup-desktop/blob/master/source/main/services/export.ts).
+
+</TabItem>
+</Tabs>
+
+## Good to know
+
+- The export covers one vault, the one that is current. Repeat for each vault you want to move.
+- Buttercup's own importer notes say the same CSV can be brought back into Buttercup Desktop.
+
+## Then, in WM Pass
+
+Open Settings, Import, and choose the file. The [import steps](/guides/import-export/#importing-into-wm-pass) cover every WM Pass app.
+
+Delete the export once WM Pass has read it.
+
+If you exported on a computer and use WM Pass on your phone, import the file in WM Pass on that computer and [sync](/guides/backup-sync/), or copy the file to the phone over a USB cable. Email and cloud drives keep copies of what passes through them.
+
+## Sources
+
+These steps follow Buttercup's own source code, read on 4 November 2026. Menus move between versions; if a step does not match what you see, the page it came from may be newer.
+
+- [export.ts](https://github.com/buttercup/buttercup-desktop/blob/master/source/main/services/export.ts), Buttercup Desktop (GitHub)
+- [appMenu.ts](https://github.com/buttercup/buttercup-desktop/blob/master/source/main/actions/appMenu.ts), Buttercup Desktop (GitHub)
+- [en.json](https://github.com/buttercup/buttercup-desktop/blob/master/source/shared/i18n/translations/en.json), Buttercup Desktop (GitHub)
+- [buttercup-importer README](https://github.com/buttercup/buttercup-importer), Buttercup (GitHub)

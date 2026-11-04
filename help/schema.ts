@@ -101,6 +101,8 @@ export type AndroidPref =
   | 'swipe_left'
   | 'left_handed'
   | 'widgets'
+  | 'widget_colours'
+  | 'widget_background'
   | 'nav_labels'
   | 'show_fab'
   | 'fab_action'

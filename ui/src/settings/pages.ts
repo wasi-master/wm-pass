@@ -12,6 +12,8 @@ export interface PageInfo {
   desktop?: boolean;
   /** Only in the browser extension. */
   extension?: boolean;
+  /** Only on a Mac, for what only macOS has. */
+  mac?: boolean;
   needsNetwork?: boolean;
   /** Shown without a network of its own where the shell has the desktop app make the calls. */
   viaDesktop?: boolean;
@@ -50,6 +52,7 @@ export const PAGES: PageInfo[] = [
   { id: 'shortcuts', title: 'Keyboard shortcuts', group: 'Customize', icon: 'keyboard' },
   { id: 'desktop-link', title: 'Desktop app', group: 'This computer', icon: 'computer', extension: true },
   { id: 'desktop', title: 'Desktop', group: 'This computer', icon: 'computer', desktop: true },
+  { id: 'widgets', title: 'Widgets', group: 'This computer', icon: 'widgets', desktop: true, mac: true },
   { id: 'browser', title: 'Browser extension', group: 'This computer', icon: 'extension', desktop: true },
   { id: 'ssh', title: 'SSH agent', group: 'This computer', icon: 'terminal', desktop: true },
   { id: 'updates', title: 'Updates', group: 'This computer', icon: 'update', desktop: true },
@@ -64,6 +67,8 @@ export interface Found {
   route: string;
   words?: string;
   desktop?: boolean;
+  /** Only on a Mac. */
+  mac?: boolean;
 }
 
 export const SEARCH_INDEX: Found[] = [
@@ -140,6 +145,12 @@ export const SEARCH_INDEX: Found[] = [
   { title: 'Open when you sign in', where: 'Desktop', route: 'desktop', words: 'autostart login startup', desktop: true },
   { title: 'Quick search', where: 'Desktop', route: 'desktop', words: 'global shortcut palette hotkey', desktop: true },
   { title: 'Auto-type', where: 'Desktop', route: 'desktop', words: 'type fill', desktop: true },
+  { title: 'Offer widgets', where: 'Widgets', route: 'widgets', mac: true, words: 'widget gallery notification centre center mac', desktop: true },
+  { title: 'Quick bar', where: 'Widgets', route: 'widgets', mac: true, words: 'widget buttons order', desktop: true },
+  { title: 'Lock button', where: 'Widgets', route: 'widgets', mac: true, words: 'widget panic lock', desktop: true },
+  { title: 'Codes on widgets', where: 'Widgets', route: 'widgets', mac: true, words: 'widget totp pick choose', desktop: true },
+  { title: 'Codes ahead', where: 'Widgets', route: 'widgets', mac: true, words: 'widget totp future refresh', desktop: true },
+  { title: 'Show on widgets', where: 'Security', route: 'security', mac: true, words: 'widget codes favorites totp', desktop: true },
   { title: 'Let the extension connect', where: 'Browser extension', route: 'browser', words: 'chrome firefox bridge native messaging', desktop: true },
   { title: 'Run the SSH agent', where: 'SSH agent', route: 'ssh', words: 'ssh-add git keys', desktop: true },
   { title: 'Check when WM Pass starts', where: 'Updates', route: 'updates', words: 'update version', desktop: true },

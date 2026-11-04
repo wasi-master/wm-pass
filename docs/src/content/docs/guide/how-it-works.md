@@ -276,6 +276,8 @@ A small bar counts down until it is cleared, with **Clear now**.
 
 When the time set under [Clear the clipboard after](/guide/settings/security/#setting-clipboard-seconds) is up, WM Pass empties the clipboard, unless you have copied something else since.
 
+If WM Keyboard is your keyboard, its clipboard history keeps the copy only until then: when WM Pass empties the clipboard, the keyboard drops it from its history too.
+
 Usernames, websites and other plain fields are copied as they are, and not cleared.
 
 See also [Clear the clipboard after](/guide/settings/security/#setting-clipboard-seconds), [Filling logins](/guide/how-it-works/#feature-autofill), [Typing logins with auto-type](/guide/how-it-works/#feature-autotype), [Item view](/guide/screens/#screen-item).
@@ -849,9 +851,9 @@ Your passwords should never be stuck in one app, this one included.
 
 Under Settings, Import, choose your old app's export file. WM Pass shows how many items it found, a few of their names, and any it could not read, before anything is added.
 
-Password managers: 1Password, Apple Passwords, Bitwarden, Chrome, Dashlane, Enpass, Firefox, KeePass and KeePassXC, Keeper, LastPass, NordPass, Proton Pass, RoboForm and SafeInCloud. Authenticators: Aegis, 2FAS, andOTP, Ente Auth, FreeOTP+, Raivo, and Google Authenticator, whose export QR code you can choose as a screenshot.
+Password managers: 1Password, Apple Passwords, Avast, Avira, Bitwarden, Buttercup, Chrome and other Chromium browsers, Dashlane, Enpass, Firefox, Kaspersky, KeePass and KeePassXC, Keeper, LastPass, mSecure, NordPass, Password Safe, Proton Pass, Psono, RoboForm, SafeInCloud, Sticky Password and Zoho Vault. Authenticators: Aegis, 2FAS, andOTP, Authenticator Pro, Bitwarden Authenticator, Ente Auth, FreeOTP+, LastPass Authenticator, Proton Authenticator, Raivo, and Google Authenticator, whose export QR code you can choose as a screenshot.
 
-A file with a password, such as a KeePass database, asks for it first. Items already in the vault are skipped, and the result says how many.
+A file with a password, such as a KeePass or SafeInCloud database, asks for it first. Items already in the vault are skipped, and the result says how many.
 
 Under Settings, Export, a **WM Pass vault** or a **KeePass database** stays encrypted. **Bitwarden JSON**, **CSV** and a **Printable page** are plain text that anyone who opens them can read.
 
@@ -873,9 +875,9 @@ A plain-text export from WM Pass holds every password. Keep it off shared storag
 
 Under Settings, Import, choose your old app's export file. WM Pass shows how many items it found, a few of their names, and any it could not read, before anything is added.
 
-Password managers: 1Password, Apple Passwords, Bitwarden, Chrome, Dashlane, Enpass, Firefox, KeePass and KeePassXC, Keeper, LastPass, NordPass, Proton Pass, RoboForm and SafeInCloud. Authenticators: Aegis, 2FAS, andOTP, Ente Auth, FreeOTP+ and Raivo. For Google Authenticator, tap **Scan Google Authenticator's code** and scan each of its export codes in turn.
+Password managers: 1Password, Apple Passwords, Avast, Avira, Bitwarden, Buttercup, Chrome and other Chromium browsers, Dashlane, Enpass, Firefox, Kaspersky, KeePass and KeePassXC, Keeper, LastPass, mSecure, NordPass, Password Safe, Proton Pass, Psono, RoboForm, SafeInCloud, Sticky Password and Zoho Vault. Authenticators: Aegis, 2FAS, andOTP, Authenticator Pro, Bitwarden Authenticator, Ente Auth, FreeOTP+, LastPass Authenticator, Proton Authenticator and Raivo. For Google Authenticator, tap **Scan Google Authenticator's code** and scan each of its export codes in turn.
 
-A file with a password, such as a KeePass database, asks for it first. Items already in the vault are skipped, and the result says how many.
+A file with a password, such as a KeePass or SafeInCloud database, asks for it first. Items already in the vault are skipped, and the result says how many.
 
 Under Settings, Export, a **WM Pass vault** or a **KeePass database** stays encrypted. **Bitwarden JSON**, **CSV** and a **Printable page** are plain text that anyone who opens them can read.
 
@@ -923,7 +925,7 @@ Counter-based codes are not shown until you ask, since showing one uses it up. S
 
 The Codes tab lists them all. Tap one to copy it, and hold it to open its item. The add button there can scan a site's QR code.
 
-A home screen widget, and a paired watch if you allow it under [Show on my watch](/guide/settings/security/#setting-wear-access), can show codes too.
+The Codes widget, if you turn on [Show on widgets](/guide/settings/security/#setting-widget-access), and a paired watch, if you allow it under [Show on my watch](/guide/settings/security/#setting-wear-access), can show codes too. Both only while the vault is open.
 
 Bring codes over from Aegis, 2FAS, andOTP, Ente Auth, FreeOTP+, Raivo or Google Authenticator under Settings, Import.
 
@@ -1384,24 +1386,6 @@ Nothing is erased. After the hour the vault opens with your password as usual.
 
 See also [Lock and refuse passwords now](/guide/settings/security/#action-panic-now), [Lockout password](/guide/settings/security/#action-lockout-password), [When a panic app signals](/guide/settings/security/#setting-panic-action), [Lock WM Pass tile](/guide/how-it-works/#feature-lock-tile).
 
-<a id="feature-home-widget"></a>
-
-## Home screen widget
-
-*Only in Android.*
-
-A row of four buttons for the home screen: search, add, codes and lock. It shows nothing from your vault.
-
-#### Why it is there
-
-Anyone holding the phone can see the home screen, so the widget names no site and shows no code, whether the vault is open or not.
-
-#### How it works
-
-Search, add and codes open WM Pass on that page, after the door if the vault is locked. Add opens the add menu. Lock locks the vault without opening the app.
-
-See also [App shortcuts](/guide/how-it-works/#feature-app-shortcuts), [Lock WM Pass tile](/guide/how-it-works/#feature-lock-tile).
-
 <a id="feature-app-shortcuts"></a>
 
 ## App shortcuts
@@ -1414,7 +1398,7 @@ Touch and hold the WM Pass icon to go straight to **Search**, **Add a login**, *
 
 **Add a login** opens the add menu. If the vault is locked, the door comes first, then the page you picked.
 
-See also [Home screen widget](/guide/how-it-works/#feature-home-widget).
+See also [Widgets](/guide/how-it-works/#feature-home-widget).
 
 <a id="feature-share-to-pass"></a>
 
@@ -1452,3 +1436,41 @@ The style, theme, animations, the app, site and settings icons, and the list lay
 Your vault, dark mode, accent and your other settings stay as they were. Leaving the app, locking it, the screen going off or swiping it away never counts.
 
 See also [Appearance](/guide/settings/appearance/).
+
+<a id="feature-home-widget"></a>
+
+## Widgets
+
+*Only in Android and the desktop app.*
+
+Widgets for the home screen on a phone, and for the desktop and Notification Centre on a Mac.
+
+#### Why it is there
+
+Anyone who can see the screen can see a widget. So no widget names a site or shows a code unless you turn on [Show on widgets](/guide/settings/security/#setting-widget-access), and even then only while the vault is open.
+
+#### How it works
+
+- *Quick bar*: the buttons you choose under [Quick bar](/guide/settings/widgets/#setting-widget-buttons). Search, add, codes, generator and health open WM Pass on that page, after the door if the vault is locked. Lock locks the vault without opening WM Pass.
+- *Lock status*: whether the vault is open, and its name while it is. A tap locks it, or opens the door.
+- *Health*: your score and how many passwords are weak, reused or in a known breach. The counts are kept from the last time the vault was open, with when that was.
+- *Backups*: when each backup place last ran, and whether that failed or the next run is late.
+- *Generator*: a tap copies a new password made the way the generator is set up. Nothing is shown, and the clipboard is cleared as usual.
+- *Codes* and *Favorites*: only with [Show on widgets](/guide/settings/security/#setting-widget-access) on, and only while the vault is open. Codes shows the codes chosen under [Codes on widgets](/guide/settings/widgets/#setting-widget-codes), and a tap copies one. Favorites shows a letter and a name for each favorite, and a tap opens it.
+
+#### Limits
+
+The Health counts are those of the vault opened last. A wipe password erases them along with the vault.
+
+#### On Android
+
+Touch and hold an empty spot on the home screen, choose **Widgets**, then WM Pass.
+
+- *Quick bar*: the buttons you choose under [Quick bar](/guide/settings/widgets/#setting-widget-buttons). Search, add, codes, generator and health open WM Pass on that page, after the door if the vault is locked. Lock locks the vault without opening WM Pass.
+- *Lock status*: whether the vault is open, and its name while it is. A tap locks it, or opens the door.
+- *Health*: your score and how many passwords are weak, reused or in a known breach. The counts are kept from the last time the vault was open, with when that was.
+- *Backups*: when each backup place last ran, and whether that failed or the next run is late.
+- *Generator*: a tap copies a new password made the way the generator is set up. Nothing is shown, and the clipboard is cleared as usual.
+- *Codes* and *Favorites*: only with [Show on widgets](/guide/settings/security/#setting-widget-access) on, and only while the vault is open. Codes shows the codes chosen under [Codes on widgets](/guide/settings/widgets/#setting-widget-codes), and a tap copies one. Favorites shows a letter and a name for each favorite, and a tap opens it.
+
+If Android ends WM Pass while a widget shows codes or names, the widgets are drawn locked again within a few minutes.

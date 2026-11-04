@@ -6,5 +6,18 @@
     <string name="shortcut_generate">Generate</string>
     <string name="tile_lock">Lock WM Pass</string>
     <string name="tile_panic">Panic lock</string>
-    <string name="widget_description">Search, add, codes and lock, without showing anything from your vault.</string>
+    <string name="widget_quick">Quick bar</string>
+    <string name="widget_quick_description">The buttons you pick: search, add, codes, generator, health and lock. Shows nothing from your vault.</string>
+    <string name="widget_status">Lock status</string>
+    <string name="widget_status_description">Whether the vault is open. Tap to lock it, or to open it.</string>
+    <string name="widget_health">Health</string>
+    <string name="widget_health_description">Your health score and how many passwords need attention. Names no item.</string>
+    <string name="widget_backups">Backups</string>
+    <string name="widget_backups_description">When each backup place last ran, and whether it failed.</string>
+    <string name="widget_generator">Generator</string>
+    <string name="widget_generator_description">Tap to copy a new password. Nothing is shown.</string>
+    <string name="widget_codes">Codes</string>
+    <string name="widget_codes_description">One-time codes while the vault is open, if you turn on Show on widgets.</string>
+    <string name="widget_favorites">Favorites</string>
+    <string name="widget_favorites_description">Your favorites while the vault is open, if you turn on Show on widgets.</string>
 </resources>

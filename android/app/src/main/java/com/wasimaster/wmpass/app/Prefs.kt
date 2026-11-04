@@ -220,6 +220,34 @@ class Prefs(context: Context) {
     /** How many problems the vault list's health row showed when it was put away; it comes back above that. */
     val healthBannerSeen = whole("health_banner_seen", -1)
 
+    // ---- home screen widgets: they describe this phone's home screen, so they stay on it ----
+
+    /** `app` (the theme chosen here), `system` (the wallpaper's colours) or `dark`. */
+    val widgetColours = word("widget_colours", "app", "app", "system", "dark")
+
+    /** `solid`, `translucent` or `none`. */
+    val widgetBackground = word("widget_background", "solid", "solid", "translucent", "none")
+    private val widgetButtonsOpt = word("widget_buttons", DEFAULT_WIDGET_BUTTONS.joinToString(","))
+
+    /** The quick bar's buttons, in order. */
+    val widgetButtons: List<String> get() = widgetButtonsOpt.value.split(",").filter { it in WIDGET_BUTTONS }
+
+    /**
+     * What a widget's lock button does: `lock`, or `panic`, which also refuses every password for
+     * an hour. Not portable: a settings file from someone else must not turn a lock into a lockout.
+     */
+    val widgetLock: Opt<String> = Word("widget_lock", "lock", false, setOf("lock", "panic")).also { it.load() }
+
+    /** Lets widgets show codes and favorites while the vault is open. Off until turned on. */
+    val widgetAccess = flag("widget_access", false, portable = false)
+    private val widgetCodesOpt = local("widget_codes", "")
+
+    /** The items whose codes widgets show, by id. Empty means the favorites that have a code. */
+    val widgetCodes: List<String> get() = widgetCodesOpt.value.split(",").filter { it.isNotEmpty() }
+
+    fun updateWidgetButtons(value: List<String>) = widgetButtonsOpt.set(value.joinToString(","))
+    fun updateWidgetCodes(value: List<String>) = widgetCodesOpt.set(value.joinToString(","))
+
     // ---- settings pages ----
 
     private val foldsOpt = word("folds_open", "")
@@ -502,7 +530,11 @@ class Prefs(context: Context) {
          * Customisations that describe this phone's screens rather than the person, or mean
          * something different on a computer under the same name. They never travel with the vault.
          */
-        private val DEVICE_ONLY = setOf("tabs", "last_tab", "folds_open", "editor_open")
+        private val DEVICE_ONLY = setOf("tabs", "last_tab", "folds_open", "editor_open", "widget_colours", "widget_background", "widget_buttons")
+
+        /** What the quick bar widget can hold, in the order the settings page offers them. */
+        val WIDGET_BUTTONS = listOf("search", "add", "codes", "generator", "health", "lock")
+        val DEFAULT_WIDGET_BUTTONS = listOf("search", "add", "codes", "lock")
         val DEFAULT_SHORTCUTS: Map<String, String?> = mapOf(
             "search" to "Ctrl+F",
             "add" to "Ctrl+N",

@@ -1,0 +1,60 @@
+---
+title: Moving from Keepass2Android
+description: How to bring your Keepass2Android database into WM Pass.
+sidebar:
+  label: "Keepass2Android"
+source:
+  name: "Keepass2Android"
+  kind: manager
+  exportOn: ["Android"]
+  choose: "The .kdbx database itself"
+---
+
+import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+import Shot from '../../../../components/Shot.astro';
+
+<Aside type="tip" title="Which file">
+No export needed. WM Pass opens the `.kdbx` database itself, with its password, and its key file if it has one.
+</Aside>
+
+<Tabs syncKey="device">
+<TabItem label="Android" icon="mobile-android">
+
+Keepass2Android works on a .kdbx file, kept on the phone or in cloud storage, so there is nothing to export; WM Pass opens that file. Keepass2Android's documentation gives no menu path for finding the file, so these steps use your file manager.
+
+<Steps>
+
+1. Find the .kdbx file. A new Keepass2Android database is a local file by default.
+2. If you do not remember where, search your phone for a file ending in **.kdbx**.
+3. If you keep the file in cloud storage, open your cloud app and select the database file there.
+4. In WM Pass, choose that .kdbx file and enter its master password.
+5. If the database also uses a key file, choose that file too.
+
+</Steps>
+
+Steps from [Keepass2Android documentation](https://github.com/PhilippC/keepass2android/wiki/Documentation).
+
+</TabItem>
+<TabItem label="iPhone" icon="phone">
+
+<Aside>
+Keepass2Android is an Android app. If you used it, take the .kdbx file from your Android phone.
+</Aside>
+
+</TabItem>
+</Tabs>
+
+## Good to know
+
+- Keepass2Android keeps the last successfully opened file as a read-only backup on the phone. It holds one version only, so copy the database elsewhere before you rely on it.
+- If you use a key file, move it too. Without the master password and the key file the database cannot be opened.
+
+## Then, in WM Pass
+
+Open Settings, Import, choose the `.kdbx` file and enter its password. The [import steps](/guides/import-export/#importing-into-wm-pass) cover every WM Pass app. The database stays encrypted, so there is nothing to delete afterwards.
+
+## Sources
+
+These steps follow Keepass2Android's own help pages, read on 4 November 2026. Menus move between versions; if a step does not match what you see, the page it came from may be newer.
+
+- [Keepass2Android documentation](https://github.com/PhilippC/keepass2android/wiki/Documentation), PhilippC (Keepass2Android)

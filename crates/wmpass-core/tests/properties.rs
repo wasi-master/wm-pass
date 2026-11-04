@@ -114,8 +114,7 @@ proptest! {
     fn hostile_bytes_never_panic(data in prop::collection::vec(any::<u8>(), 0..4096)) {
         let _ = format::Header::parse(&data);
         let _ = io::detect(&data);
-        for format in [io::Format::BitwardenJson, io::Format::ChromeCsv, io::Format::SafeInCloudXml,
-                       io::Format::OnePux, io::Format::Aegis, io::Format::ProtonPass, io::Format::FreeOtpPlus] {
+        for format in io::Format::ALL {
             let _ = io::import(format, &data, None, Hlc::default());
         }
     }

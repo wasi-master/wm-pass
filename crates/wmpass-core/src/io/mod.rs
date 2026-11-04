@@ -8,6 +8,8 @@ pub mod export;
 mod json_formats;
 pub mod kdbx;
 mod onepux;
+mod safeincloud;
+mod text_formats;
 mod xml_formats;
 
 use std::collections::{BTreeMap, HashSet};
@@ -18,6 +20,9 @@ use crate::model::{Entry, Field, FieldKind, Kind, Login, Lww, Otp, Revision, Sit
 use crate::otp::OtpConfig;
 use crate::vault::Vault;
 use crate::{Error, Result, Secret};
+
+/// The most a compressed member of an export may grow to when inflated.
+pub(crate) const MAX_INFLATED: u64 = 512 * 1024 * 1024;
 
 /// Every format that can be imported.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,13 +43,28 @@ pub enum Format {
     ProtonPass,
     AppleCsv,
     SafeInCloudXml,
+    SafeInCloudDb,
     RoboFormCsv,
     WmPassCsv,
+    KeePassXml,
+    KasperskyTxt,
+    ZohoVaultCsv,
+    StickyPasswordXml,
+    AvastCsv,
+    AvastJson,
+    AviraCsv,
+    PsonoJson,
+    ButtercupCsv,
+    MSecureCsv,
+    PasswordSafeXml,
     Aegis,
     TwoFas,
     AndOtp,
     FreeOtpPlus,
     Raivo,
+    Stratum,
+    ProtonAuthenticator,
+    LastPassAuthenticator,
     OtpAuthList,
 }
 
@@ -67,16 +87,73 @@ impl Format {
             Self::ProtonPass => "Proton Pass",
             Self::AppleCsv => "Apple Passwords CSV",
             Self::SafeInCloudXml => "SafeInCloud XML",
+            Self::SafeInCloudDb => "SafeInCloud database",
             Self::RoboFormCsv => "RoboForm CSV",
             Self::WmPassCsv => "WM Pass CSV",
+            Self::KeePassXml => "KeePass XML",
+            Self::KasperskyTxt => "Kaspersky Password Manager",
+            Self::ZohoVaultCsv => "Zoho Vault CSV",
+            Self::StickyPasswordXml => "Sticky Password XML",
+            Self::AvastCsv => "Avast Passwords CSV",
+            Self::AvastJson => "Avast Passwords JSON",
+            Self::AviraCsv => "Avira Password Manager CSV",
+            Self::PsonoJson => "Psono JSON",
+            Self::ButtercupCsv => "Buttercup CSV",
+            Self::MSecureCsv => "mSecure CSV",
+            Self::PasswordSafeXml => "Password Safe XML",
             Self::Aegis => "Aegis",
             Self::TwoFas => "2FAS",
             Self::AndOtp => "andOTP",
             Self::FreeOtpPlus => "FreeOTP+",
             Self::Raivo => "Raivo",
+            Self::Stratum => "Authenticator Pro (Stratum)",
+            Self::ProtonAuthenticator => "Proton Authenticator",
+            Self::LastPassAuthenticator => "LastPass Authenticator",
             Self::OtpAuthList => "List of otpauth links",
         }
     }
+
+    /// Every format, for looking one up by its name.
+    pub const ALL: [Self; 38] = [
+        Self::Kdbx,
+        Self::BitwardenJson,
+        Self::BitwardenCsv,
+        Self::OnePux,
+        Self::LastPassCsv,
+        Self::ChromeCsv,
+        Self::FirefoxCsv,
+        Self::KeePassXcCsv,
+        Self::DashlaneCsv,
+        Self::EnpassJson,
+        Self::NordPassCsv,
+        Self::KeeperJson,
+        Self::ProtonPass,
+        Self::AppleCsv,
+        Self::SafeInCloudXml,
+        Self::SafeInCloudDb,
+        Self::RoboFormCsv,
+        Self::WmPassCsv,
+        Self::KeePassXml,
+        Self::KasperskyTxt,
+        Self::ZohoVaultCsv,
+        Self::StickyPasswordXml,
+        Self::AvastCsv,
+        Self::AvastJson,
+        Self::AviraCsv,
+        Self::PsonoJson,
+        Self::ButtercupCsv,
+        Self::MSecureCsv,
+        Self::PasswordSafeXml,
+        Self::Aegis,
+        Self::TwoFas,
+        Self::AndOtp,
+        Self::FreeOtpPlus,
+        Self::Raivo,
+        Self::Stratum,
+        Self::ProtonAuthenticator,
+        Self::LastPassAuthenticator,
+        Self::OtpAuthList,
+    ];
 }
 
 /// One imported item.
@@ -127,10 +204,24 @@ pub(crate) struct Draft {
 }
 
 impl Draft {
-    pub fn into_login(self, at: Hlc, skipped: &mut Vec<String>) -> ImportedEntry {
+    pub fn into_login(mut self, at: Hlc, skipped: &mut Vec<String>) -> ImportedEntry {
         let mut matchers: Vec<SiteMatcher> = Vec::new();
         for url in self.urls.iter().map(|u| u.trim()).filter(|u| !u.is_empty()) {
-            matchers.push(crate::matching::matcher_from_address(url));
+            let matcher = crate::matching::matcher_from_address(url);
+            if !matchers.contains(&matcher) {
+                matchers.push(matcher);
+            }
+        }
+        // Browsers leave the name empty on some rows, Chrome's app logins among them.
+        if self.title.trim().is_empty() {
+            self.title = matchers
+                .iter()
+                .find_map(|m| match m {
+                    SiteMatcher::Url(url) => crate::matching::host_of(url),
+                    SiteMatcher::AndroidApp { package, .. } => Some(package.clone()),
+                    _ => None,
+                })
+                .unwrap_or_else(|| self.username.clone());
         }
         let otp = parse_otp(&self.otp, &self.title, &self.username, skipped);
         let login = Login {
@@ -162,6 +253,26 @@ impl Draft {
             folder: non_empty(self.folder),
             files: Vec::new(),
         }
+    }
+}
+
+/// A note with fields, for items that carry no login.
+pub(crate) fn note_item(
+    title: &str,
+    body: &str,
+    extra: Vec<(String, String, bool)>,
+    folder: Option<String>,
+    at: Hlc,
+) -> ImportedEntry {
+    let mut entry = base_entry(title, "", at);
+    entry.kind = crate::model::Kind::Note(crate::model::Note {
+        body: Lww::new(Secret::from(body.to_owned()), at),
+    });
+    entry.common.custom_fields = Lww::new(fields(extra), at);
+    ImportedEntry {
+        entry,
+        folder,
+        files: Vec::new(),
     }
 }
 
@@ -219,6 +330,14 @@ pub(crate) fn parse_otp(
         return None;
     }
     if text.starts_with("otpauth://") || text.starts_with("steam://") {
+        // Zoho Vault writes links with no label, `otpauth://totp?secret=…`; the
+        // entry's title stands in for it.
+        let labelled = ["totp", "hotp"].iter().find_map(|kind| {
+            let rest = text.strip_prefix(&format!("otpauth://{kind}?"))?;
+            let label = crate::otp::percent_encode(if title.is_empty() { "code" } else { title });
+            Some(format!("otpauth://{kind}/{label}?{rest}"))
+        });
+        let text = labelled.as_deref().unwrap_or(text);
         return match OtpConfig::from_uri(text) {
             Ok(config) => Some(config),
             Err(_) => {
@@ -245,12 +364,15 @@ pub fn detect(data: &[u8]) -> Option<Format> {
     if data.starts_with(b"PK\x03\x04") {
         return onepux::detect_zip(data);
     }
+    if safeincloud::is_database(data) {
+        return Some(Format::SafeInCloudDb);
+    }
     let text = std::str::from_utf8(data)
         .ok()?
         .trim_start_matches('\u{feff}')
         .trim();
     if text.starts_with('<') {
-        return text.contains("<database").then_some(Format::SafeInCloudXml);
+        return xml_kind(text);
     }
     if text.starts_with('{') || text.starts_with('[') {
         return json_formats::detect(text);
@@ -258,7 +380,41 @@ pub fn detect(data: &[u8]) -> Option<Format> {
     if text.lines().next()?.trim_start().starts_with("otpauth") {
         return Some(Format::OtpAuthList);
     }
+    if text_formats::is_kaspersky(text) {
+        return Some(Format::KasperskyTxt);
+    }
     csv_formats::detect(text)
+}
+
+/// Whether a file opens only with its own password: a KeePass or SafeInCloud database,
+/// or a password-protected Proton Authenticator export.
+pub fn needs_password(data: &[u8]) -> bool {
+    match detect(data) {
+        Some(Format::Kdbx | Format::SafeInCloudDb) => true,
+        Some(Format::ProtonAuthenticator) => std::str::from_utf8(data)
+            .ok()
+            .and_then(|text| {
+                serde_json::from_str::<serde_json::Value>(text.trim_start_matches('\u{feff}')).ok()
+            })
+            .is_some_and(|root| root.get("entries").is_none() && root.get("content").is_some()),
+        _ => false,
+    }
+}
+
+/// Which XML export this is, by its root element.
+fn xml_kind(text: &str) -> Option<Format> {
+    let head: String = text.chars().take(4096).collect();
+    if head.contains("<KeePassFile") {
+        Some(Format::KeePassXml)
+    } else if head.contains("<passwordsafe") {
+        Some(Format::PasswordSafeXml)
+    } else if head.contains("<database") {
+        Some(Format::SafeInCloudXml)
+    } else if text.contains("<Logins") && text.contains("<Accounts") {
+        Some(Format::StickyPasswordXml)
+    } else {
+        None
+    }
 }
 
 /// Reads a file. `at` stamps everything, so imported data loses to newer edits.
@@ -269,6 +425,7 @@ pub fn import(format: Format, data: &[u8], password: Option<&str>, at: Hlc) -> R
                 password.ok_or_else(|| Error::Import("this database needs its password".into()))?;
             kdbx::import(data, password, None, at)
         }
+        Format::SafeInCloudDb => safeincloud::database(data, password, at),
         Format::OnePux => onepux::import_1pux(data, at),
         Format::ProtonPass if data.starts_with(b"PK\x03\x04") => {
             onepux::import_proton_zip(data, at)
@@ -282,7 +439,16 @@ pub fn import(format: Format, data: &[u8], password: Option<&str>, at: Hlc) -> R
                 Format::EnpassJson => json_formats::enpass(text, at),
                 Format::KeeperJson => json_formats::keeper(text, at),
                 Format::ProtonPass => json_formats::proton(text, at),
-                Format::SafeInCloudXml => xml_formats::safeincloud(text, at),
+                Format::SafeInCloudXml => safeincloud::xml_export(text, at),
+                Format::KeePassXml => xml_formats::keepass(text, at),
+                Format::StickyPasswordXml => xml_formats::sticky_password(text, at),
+                Format::PasswordSafeXml => xml_formats::password_safe(text, at),
+                Format::KasperskyTxt => text_formats::kaspersky(text, at),
+                Format::AvastJson => json_formats::avast(text, at),
+                Format::PsonoJson => json_formats::psono(text, at),
+                Format::Stratum => authenticators::stratum(text, at),
+                Format::ProtonAuthenticator => authenticators::proton(text, password, at),
+                Format::LastPassAuthenticator => authenticators::lastpass(text, at),
                 Format::Aegis => authenticators::aegis(text, at),
                 Format::TwoFas => authenticators::two_fas(text, at),
                 Format::AndOtp => authenticators::and_otp(text, at),
@@ -398,3 +564,5 @@ pub fn apply(vault: &mut Vault, imported: Imported, now_ms: u64) -> Result<Apply
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_more;

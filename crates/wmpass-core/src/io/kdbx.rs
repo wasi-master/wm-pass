@@ -9,17 +9,12 @@ use keepass::{Database, DatabaseKey};
 use super::{Imported, ImportedEntry, base_entry};
 use crate::clock::Hlc;
 use crate::model::{Entry, Kind, Login, Lww, Revision, SiteMatcher};
-use crate::otp::OtpConfig;
+use crate::otp::{OtpAlgorithm, OtpConfig, OtpKind, base32_decode, base32_encode};
 use crate::{Error, Result, Secret};
 
-const STANDARD: [&str; 6] = [
-    kp::TITLE,
-    kp::USERNAME,
-    kp::PASSWORD,
-    kp::URL,
-    kp::NOTES,
-    kp::OTP,
-];
+/// Fields with a place of their own on a login. A one-time code is read separately,
+/// and kept as a field when it cannot be.
+const STANDARD: [&str; 5] = [kp::TITLE, kp::USERNAME, kp::PASSWORD, kp::URL, kp::NOTES];
 
 fn key(password: &str, key_file: Option<&[u8]>) -> Result<DatabaseKey> {
     let mut built = DatabaseKey::new().with_password(password);
@@ -29,6 +24,163 @@ fn key(password: &str, key_file: Option<&[u8]>) -> Result<DatabaseKey> {
             .map_err(|_| Error::Import("the key file could not be read".into()))?;
     }
     Ok(built)
+}
+
+fn hex(text: &str) -> Option<Vec<u8>> {
+    let clean: Vec<u8> = text.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
+    if !clean.len().is_multiple_of(2) {
+        return None;
+    }
+    clean
+        .chunks(2)
+        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok())
+        .collect()
+}
+
+/// A seed in the encoding a field names, as base32.
+fn seed(text: &str, encoding: &str) -> Option<String> {
+    let bytes = match encoding {
+        "hex" => hex(text)?,
+        "base64" => super::xml_formats::base64_body(text)?,
+        "utf8" | "text" => text.as_bytes().to_vec(),
+        _ => base32_decode(text).ok()?.to_vec(),
+    };
+    (!bytes.is_empty()).then(|| base32_encode(&bytes))
+}
+
+fn hash(name: &str) -> OtpAlgorithm {
+    let name = name.to_ascii_lowercase();
+    if name.contains("256") {
+        OtpAlgorithm::Sha256
+    } else if name.contains("512") {
+        OtpAlgorithm::Sha512
+    } else {
+        OtpAlgorithm::Sha1
+    }
+}
+
+/// An entry's one-time code, in each form KeePass apps keep one: an `otp` link
+/// (KeePassXC, KeePassDX), KeeOtp's `key=…&step=…` in that same field, KeePass 2.47's
+/// own `TimeOtp-*` and `HmacOtp-*` fields, and KeeTrayTOTP's `TOTP Seed` with
+/// `TOTP Settings`. Also returns the fields it read, which the caller then leaves out
+/// of the custom fields. A value it cannot read is left for the caller to keep as a
+/// field, so nothing is lost.
+pub(super) fn otp_from_fields(
+    get: &dyn Fn(&str) -> Option<String>,
+    title: &str,
+    skipped: &mut Vec<String>,
+) -> (Option<OtpConfig>, Vec<&'static str>) {
+    let mut config = OtpConfig::totp(String::new());
+    config.issuer = title.to_owned();
+    let number = |key: &str, fallback: u64| {
+        get(key)
+            .and_then(|v| v.trim().parse().ok())
+            .unwrap_or(fallback)
+    };
+    if let Some(value) = get(kp::OTP).map(|v| v.trim().to_owned()) {
+        if value.starts_with("otpauth://") {
+            if let Ok(parsed) = OtpConfig::from_uri(&value) {
+                return (Some(parsed), vec![kp::OTP]);
+            }
+        } else if value.contains("key=") {
+            let params: Vec<(&str, &str)> = value
+                .split('&')
+                .filter_map(|pair| pair.split_once('='))
+                .collect();
+            let param = |name: &str| {
+                params
+                    .iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case(name))
+                    .map(|(_, v)| crate::otp::percent_decode(v))
+            };
+            let encoding = param("encoding").unwrap_or_default().to_ascii_lowercase();
+            if let Some(secret) = param("key").and_then(|k| seed(&k, &encoding)) {
+                config.secret = Secret::from(secret);
+                config.digits = param("size").and_then(|v| v.parse().ok()).unwrap_or(6);
+                config.algorithm = hash(&param("otpHashMode").unwrap_or_default());
+                config.kind = if param("type").is_some_and(|t| t.eq_ignore_ascii_case("hotp")) {
+                    OtpKind::Hotp {
+                        counter: param("counter").and_then(|v| v.parse().ok()).unwrap_or(0),
+                    }
+                } else {
+                    OtpKind::Totp {
+                        period: param("step").and_then(|v| v.parse().ok()).unwrap_or(30),
+                    }
+                };
+                return (Some(config), vec![kp::OTP]);
+            }
+        }
+        skipped.push(format!(
+            "{title}: its one-time code could not be read, so it is kept as a field"
+        ));
+        return (None, Vec::new());
+    }
+    for (prefix, hotp) in [("TimeOtp", false), ("HmacOtp", true)] {
+        let found = [
+            ("-Secret-Base32", "base32"),
+            ("-Secret-Hex", "hex"),
+            ("-Secret-Base64", "base64"),
+            ("-Secret", "utf8"),
+        ]
+        .into_iter()
+        .find_map(|(suffix, encoding)| get(&format!("{prefix}{suffix}")).map(|v| (v, encoding)));
+        let Some((value, encoding)) = found else {
+            continue;
+        };
+        let Some(secret) = seed(&value, encoding) else {
+            skipped.push(format!(
+                "{title}: its one-time code could not be read, so it is kept as a field"
+            ));
+            return (None, Vec::new());
+        };
+        config.secret = Secret::from(secret);
+        let used: Vec<&'static str> = if hotp {
+            config.kind = OtpKind::Hotp {
+                counter: number("HmacOtp-Counter", 0),
+            };
+            vec![
+                "HmacOtp-Secret-Base32",
+                "HmacOtp-Secret-Hex",
+                "HmacOtp-Secret-Base64",
+                "HmacOtp-Secret",
+                "HmacOtp-Counter",
+            ]
+        } else {
+            config.digits = u32::try_from(number("TimeOtp-Length", 6)).unwrap_or(6);
+            config.kind = OtpKind::Totp {
+                period: u32::try_from(number("TimeOtp-Period", 30)).unwrap_or(30),
+            };
+            config.algorithm = hash(&get("TimeOtp-Algorithm").unwrap_or_default());
+            vec![
+                "TimeOtp-Secret-Base32",
+                "TimeOtp-Secret-Hex",
+                "TimeOtp-Secret-Base64",
+                "TimeOtp-Secret",
+                "TimeOtp-Length",
+                "TimeOtp-Period",
+                "TimeOtp-Algorithm",
+            ]
+        };
+        return (Some(config), used);
+    }
+    if let Some(value) = get("TOTP Seed")
+        && let Some(secret) = seed(&value, "base32")
+    {
+        config.secret = Secret::from(secret);
+        // "30;6", or "30;S" for Steam.
+        let settings = get("TOTP Settings").unwrap_or_default();
+        let (period, size) = settings.split_once(';').unwrap_or(("30", "6"));
+        config.kind = if size.trim().eq_ignore_ascii_case("s") {
+            OtpKind::Steam
+        } else {
+            config.digits = size.trim().parse().unwrap_or(6);
+            OtpKind::Totp {
+                period: period.trim().parse().unwrap_or(30),
+            }
+        };
+        return (Some(config), vec!["TOTP Seed", "TOTP Settings"]);
+    }
+    (None, Vec::new())
 }
 
 fn walk(
@@ -50,16 +202,8 @@ fn walk(
         if !url.trim().is_empty() {
             matchers.push(crate::matching::matcher_from_address(&url));
         }
-        let otp = item
-            .get(kp::OTP)
-            .and_then(|uri| match OtpConfig::from_uri(uri) {
-                Ok(config) => Some(config),
-                Err(_) => {
-                    out.skipped
-                        .push(format!("{title}: its one-time code could not be read"));
-                    None
-                }
-            });
+        let read = |name: &str| item.get(name).map(str::to_owned);
+        let (otp, used) = otp_from_fields(&read, &title, &mut out.skipped);
         entry.kind = Kind::Login(Login {
             site_matchers: Lww::new(matchers, at),
             username: Lww::new(get(kp::USERNAME), at),
@@ -70,7 +214,8 @@ fn walk(
         entry.common.tags = Lww::new(item.tags.clone(), at);
         let mut custom = Vec::new();
         for (name, value) in &item.fields {
-            if !STANDARD.contains(&name.as_str()) {
+            let read_as_code = used.contains(&name.as_str());
+            if !STANDARD.contains(&name.as_str()) && !read_as_code {
                 custom.push((name.clone(), value.get().clone(), value.is_protected()));
             }
         }

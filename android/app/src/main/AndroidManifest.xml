@@ -102,6 +102,13 @@
             </intent-filter>
         </activity>
 
+        <!-- WM Keyboard's "Use a place from WM Pass". It answers only WM Keyboard, by certificate. -->
+        <activity
+            android:name=".system.PlaceShareActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:windowSoftInputMode="adjustResize" />
+
         <activity
             android:name=".system.AutofillActivity"
             android:exported="false"
@@ -179,15 +186,74 @@
             android:authorities="com.wasimaster.wmpass.keyboard"
             android:exported="true" />
 
+        <!-- Home screen widgets. The quick bar keeps its old class name, so widgets already placed stay. -->
         <receiver
             android:name=".system.QuickWidgetReceiver"
             android:exported="true"
-            android:label="WM Pass">
+            android:label="@string/widget_quick">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/quick_widget" />
         </receiver>
+        <receiver
+            android:name=".system.widgets.StatusWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_status">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/status_widget" />
+        </receiver>
+        <receiver
+            android:name=".system.widgets.HealthWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_health">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/health_widget" />
+        </receiver>
+        <receiver
+            android:name=".system.widgets.BackupsWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_backups">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/backups_widget" />
+        </receiver>
+        <receiver
+            android:name=".system.widgets.GeneratorWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_generator">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/generator_widget" />
+        </receiver>
+        <receiver
+            android:name=".system.widgets.CodesWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_codes">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/codes_widget" />
+        </receiver>
+        <receiver
+            android:name=".system.widgets.FavoritesWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_favorites">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/favorites_widget" />
+        </receiver>
+        <!-- Redraws widgets locked if the process died while they showed codes. Only this app's alarm sends it. -->
+        <receiver
+            android:name=".system.widgets.WidgetBlankReceiver"
+            android:exported="false" />
         <!-- Where Shizuku hands over its binder. Only the system may call it. -->
         <provider
             android:name="rikka.shizuku.ShizukuProvider"

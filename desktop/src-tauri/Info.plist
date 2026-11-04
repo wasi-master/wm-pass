@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Merged by Tauri into the app's own Info.plist. wmpass:// is how a widget click reaches the app;
+     src/widgets.rs reads only wmpass://widget/... links and ignores the rest. -->
+<plist version="1.0">
+<dict>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>WM Pass widget links</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>wmpass</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>

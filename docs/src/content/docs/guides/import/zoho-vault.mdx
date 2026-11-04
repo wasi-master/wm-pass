@@ -1,0 +1,59 @@
+---
+title: Moving from Zoho Vault
+description: How to export your passwords from Zoho Vault on each device, and bring them into WM Pass.
+sidebar:
+  label: "Zoho Vault"
+source:
+  name: "Zoho Vault"
+  kind: manager
+  logo: zoho
+  exportOn: ["Web"]
+  choose: "Zoho Vault CSV"
+---
+
+import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+import Shot from '../../../../components/Shot.astro';
+
+<Aside type="tip" title="Which file">
+Choose **Zoho Vault CSV**, not **General CSV**. Zoho Vault CSV is the layout WM Pass reads, and it keeps each entry's extra fields.
+</Aside>
+
+<Tabs syncKey="device">
+<TabItem label="Web" icon="external">
+
+<Steps>
+
+1. Sign in to Zoho Vault in a browser.
+2. Open **Settings**, then choose **Export passwords**.
+3. Pick the password categories and folders to include. For a full move, select all of them.
+4. Choose **Zoho Vault CSV** as the format.
+5. Click **Export passwords**. The file downloads as ZohoVault_export.csv.
+
+</Steps>
+
+Steps from [Export Passwords](https://help.zoho.com/portal/en/kb/vault/user-guide/import-and-export-passwords/articles/vault-export-passwords), with the menu names checked against [How to Export from Zoho and Import into RoboForm](https://help.roboform.com/hc/en-us/articles/4422767147021-How-to-Export-from-Zoho-and-Import-into-RoboForm).
+
+</TabItem>
+</Tabs>
+
+## Good to know
+
+- Zoho's page puts **Export passwords** under Password Management in Settings, and says an admin can switch export off for everyone or for chosen users.
+- Only the categories and folders you tick end up in the file.
+- Zoho's own page says exported passwords are not encrypted.
+
+## Then, in WM Pass
+
+Open Settings, Import, and choose the file. The [import steps](/guides/import-export/#importing-into-wm-pass) cover every WM Pass app.
+
+Delete the export once WM Pass has read it.
+
+If you exported on a computer and use WM Pass on your phone, import the file in WM Pass on that computer and [sync](/guides/backup-sync/), or copy the file to the phone over a USB cable. Email and cloud drives keep copies of what passes through them.
+
+## Sources
+
+These steps follow Zoho Vault's own help pages and a third-party guide, read on 4 November 2026. Menus move between versions; if a step does not match what you see, the page it came from may be newer.
+
+- [Export Passwords](https://help.zoho.com/portal/en/kb/vault/user-guide/import-and-export-passwords/articles/vault-export-passwords), Zoho Vault
+- [How to Export from Zoho and Import into RoboForm](https://help.roboform.com/hc/en-us/articles/4422767147021-How-to-Export-from-Zoho-and-Import-into-RoboForm), RoboForm (third party)
+- [How to export passwords from Zoho?](https://support.nordpass.com/hc/en-us/articles/360014056078-How-to-export-passwords-from-Zoho), NordPass (third party)

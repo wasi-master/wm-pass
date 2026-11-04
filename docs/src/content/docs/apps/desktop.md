@@ -1,6 +1,6 @@
 ---
 title: Desktop
-description: The desktop app for macOS, Windows and Linux, with quick search, auto-type, an SSH agent and a tray icon.
+description: The desktop app for macOS, Windows and Linux, with quick search, auto-type, an SSH agent, a tray icon and widgets on a Mac.
 ---
 
 The desktop app has the same vault, screens and settings as the phone, laid out for a larger window. To bring passwords over from another app, see [Import and export](/guides/import-export/); most password managers export only from a computer.
@@ -22,6 +22,10 @@ export SSH_AUTH_SOCK=~/.wm-pass/ssh-agent.sock
 ```
 
 Settings shows the exact path for your system.
+
+## Widgets on a Mac
+
+On macOS 14 and later, WM Pass has widgets for the desktop and Notification Centre: a quick bar, the lock status, health, backups and a generator. With **Show on widgets** turned on under Settings, Security, a Codes widget and a Favorites widget show codes and favorites while the vault is open, and nothing once it locks. A click on a widget brings WM Pass forward for a moment; for Lock and Generator it does what you asked and hides again. What each one shows is under [Widgets](/guide/how-it-works/#feature-home-widget).
 
 ## In the tray
 
