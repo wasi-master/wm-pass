@@ -102,8 +102,11 @@ mod tests {
             SiteMatcher::AndroidApp { package: "com.example.app".into(), cert_sha256: None },
             SiteMatcher::Url("http://192.168.0.1".into()),
             SiteMatcher::Domain("example.org".into()),
+            SiteMatcher::Domain("amazon.com".into()),
         ];
-        assert_eq!(for_matchers(&matchers).as_deref(), Some("https://example.org/.well-known/change-password"));
+        // example.org is not on the list, so the next website that is answers.
+        assert_eq!(for_matchers(&matchers).as_deref(), Some("https://www.amazon.com/ax/account/manage"));
+        assert_eq!(for_matchers(&matchers[..3]), None);
         assert_eq!(for_matchers(&[]), None);
     }
 

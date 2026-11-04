@@ -460,16 +460,25 @@ fn health_groups_reused_passwords_ignores_per_check_and_leaves_out_local_logins(
 }
 
 #[test]
-fn a_login_shows_where_to_change_its_password() {
+fn a_login_shows_where_to_change_its_password_only_for_a_listed_site() {
     let dir = tempfile::tempdir().expect("dir");
-    let mut app = App::over(vault(dir.path()));
+    let mut engine = vault(dir.path());
+    engine.create("login", "23andMe", &serde_json::Map::new(), &[json!({"Domain": "23andme.com"})]).expect("login");
+    let mut app = App::over(engine);
+    let change = |app: &App| {
+        let Screen::Vault(ui) = &app.screen else { panic!("locked") };
+        ui.lines.iter().find_map(|line| match line {
+            crate::vault::Line::Value { label, text, .. } if label == "Change password" => text.clone(),
+            _ => None,
+        })
+    };
+    // GitHub is not on the list, and the terminal asks no site, so no guessed address.
+    pick(&mut app, "GitHub");
     let shown = screen(&mut app, 160, 40);
-    let Screen::Vault(ui) = &app.screen else { panic!("locked") };
-    let line = ui.lines.iter().find_map(|line| match line {
-        crate::vault::Line::Value { label, text, .. } if label == "Change password" => text.clone(),
-        _ => None,
-    });
-    assert_eq!(line.as_deref(), Some("https://github.com/.well-known/change-password"), "{:?}", ui.lines);
+    assert_eq!(change(&app), None, "{shown}");
+    pick(&mut app, "23andMe");
+    let shown = screen(&mut app, 160, 40);
+    assert_eq!(change(&app).as_deref(), Some("https://you.23andme.com/user/edit/password/"), "{shown}");
     assert!(shown.contains("Change password"), "{shown}");
 }
 
