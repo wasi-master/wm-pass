@@ -1212,7 +1212,9 @@ In the app, open Settings, Browser extension. Turn on [Let the extension connect
 
 In the extension, open Settings, Desktop app, and choose **Connect**. Both show a six-digit code. If they match, say so on both.
 
-From then on the extension asks the app for the logins that match the page in front of you, and for the one you choose to fill. It cannot read the rest of the vault.
+From then on the extension asks the app for the logins that match the page in front of you, and for the one you choose to fill.
+
+The extension's vault tab can also open the vault that is open in the app, the first time you allow it there. You can then browse, copy, add, edit and delete entries in the browser, and the app saves each change. Locking the tab leaves the app as it was.
 
 The two talk over an encrypted channel, through a small relay program that holds no keys. Each side commits to its part of the code before it sees the other's, so someone in the middle gets one chance in a million.
 
@@ -1229,6 +1231,10 @@ The extension's own key is sealed by a browser key that scripts cannot read out,
 The app's question names the extension and where it says it comes from. Anything on the computer could claim the same, so refuse a request you did not start.
 
 Passkeys, and the copy buttons in the toolbar popup, need the extension's own vault.
+
+With the app's vault open in the tab, attachments, backups, exports, the master password and security settings stay in the app. Do those there.
+
+Allowing the vault tab lets the extension read every entry while the app is unlocked. Forget the extension under **Connected extensions** to take that back.
 
 Forget an extension under **Connected extensions** to cut it off, including a conversation it already has open.
 

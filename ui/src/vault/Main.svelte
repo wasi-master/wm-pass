@@ -175,6 +175,10 @@
       case 'reload':
         void pass.reload();
         break;
+      case 'linked-change':
+        // The browser extension changed the vault open here. This window holds the file.
+        void pass.reload().then(() => pass.flushSoon());
+        break;
       case 'window-hidden':
         if (prefs.v.lock_on_hide) void pass.lock();
         break;

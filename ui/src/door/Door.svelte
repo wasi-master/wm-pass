@@ -1,3 +1,8 @@
+<script module lang="ts">
+  // Opened by itself once per page, so locking here leads to the door and stays there.
+  let triedDesktop = false;
+</script>
+
 <script lang="ts">
   import { help } from '../help/help.svelte';
   import Btn from '../parts/Btn.svelte';
@@ -42,6 +47,34 @@
   let sharesPassword = $state('');
 
   const remaining = $derived(Math.max(0, retryAt - now));
+
+  // Connected to the desktop app, its open vault is one choice away, or none on first sight.
+  let desktopLinked = $state(false);
+  $effect(() => {
+    const link = host().link;
+    if (!link) return;
+    const check = async () => {
+      const shown = await link.state().catch(() => null);
+      desktopLinked = shown?.status === 'ready';
+      if (desktopLinked && !triedDesktop) {
+        triedDesktop = true;
+        void openDesktop(true);
+      }
+    };
+    void check();
+    return link.onChange(() => void check());
+  });
+
+  async function openDesktop(quietly = false) {
+    busy = true;
+    message = null;
+    try {
+      if (!(await pass.openDesktop()) && !quietly) message = 'The vault in the WM Pass app is locked. Unlock it there first.';
+    } catch (failure: any) {
+      if (!quietly) message = failure.message;
+    }
+    busy = false;
+  }
 
   // Offered only where the user turned it on, for a vault they enrolled.
   let quick = $state(false);
@@ -268,6 +301,7 @@
       {#if confirm && confirm !== password}<p class="danger-text small">Passwords do not match.</p>{/if}
       {#if message}<p class="danger-text small">{message}</p>{/if}
       <Btn label={busy ? 'Creating vault…' : 'Create vault'} variant="primary" wide disabled={!canCreate} type="submit" />
+      {#if desktopLinked}<Btn label="Use the vault open in WM Pass" icon="computer" wide onclick={() => openDesktop()} disabled={busy} />{/if}
       <Btn label="I already have a vault" variant="quiet" wide onclick={() => (returning = true)} />
       {#if pass.state.kind !== 'none' || accounts.list.length > 0}
         <Btn label="Back" variant="quiet" wide onclick={() => (creating = false)} />
@@ -320,6 +354,7 @@
         <Btn label={host().quick?.title ?? 'Quick unlock'} wide onclick={unlockQuick} disabled={busy} />
       {/if}
       <Btn label={busy ? 'Unlocking…' : 'Unlock'} variant="primary" wide type="submit" disabled={(!password && !keyFileOnly) || remaining > 0 || busy} />
+      {#if desktopLinked}<Btn label="Use the vault open in WM Pass" icon="computer" wide onclick={() => openDesktop()} disabled={busy} />{/if}
       {#if source?.kind === 'kdbx'}
         <Btn
           label={accountKeyFile ? 'Key file added' : 'Add key file'}
@@ -369,7 +404,7 @@
   <Dialog title="Use the vault in the desktop app" onclose={() => (sheet = null)}>
     <p class="dim" style="padding-bottom:10px">A browser cannot reach your other devices itself, so the WM Pass app on this computer lends it the vault it has open. In the app, open <strong>Settings, Browser extension</strong> and turn on <strong>Let the extension connect</strong>, then choose <strong>Connect</strong> here. To get the vault onto this computer first, use <strong>Get it from another device</strong> in the app.</p>
     <DesktopLinkPage />
-    {#snippet foot()}<Btn label="Done" onclick={() => (sheet = null)} />{/snippet}
+    {#snippet foot()}<Btn label="Done" onclick={() => { sheet = null; if (desktopLinked) void openDesktop(); }} />{/snippet}
   </Dialog>
 {/if}
 {#if sheet === 'join'}

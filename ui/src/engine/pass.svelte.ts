@@ -51,6 +51,8 @@ class PassStore {
   account = $state<string | null>(null);
   /** The name of the nested or shared vault in use. */
   child = $state<string | null>(null);
+  /** Whether what is open is the desktop app's vault, which the app saves. */
+  desktop = $state(false);
 
   handle = 0;
   file: string | null = null;
@@ -356,6 +358,10 @@ class PassStore {
 
   /** Saves anything pending and forgets every key. */
   async lock() {
+    if (this.desktop) {
+      this.leaveDesktop();
+      return;
+    }
     this.stopWatching();
     await this.leaveChild();
     await this.flush();
@@ -373,6 +379,8 @@ class PassStore {
 
   /** A panic: locked at once, and every password refused for an hour. */
   async panic() {
+    // A panic locks the desktop app's vault too: a browser showing it is no reason to keep it open.
+    if (this.desktop) await host().link?.lockDesktop().catch(() => undefined);
     // The wait first, so the door that opens on locking already shows it.
     this.door.retry_at = Date.now() + 3_600_000;
     await this.writeDoor();
@@ -573,12 +581,18 @@ class PassStore {
     if (folder) await host().removeFile(`${folder}/${name}`);
   }
 
+  private noAttachmentsHere() {
+    if (this.desktop) throw new Error('Attachments stay in the desktop app. Add or open them there.');
+  }
+
   async addAttachment(id: string, name: string, mime: string, plain: Uint8Array) {
+    this.noAttachmentsHere();
     const reply = await this.change('attachment.add', { id, name, mime }, { blobs: [plain] });
     await host().writeFile(`${this.blobFolder()}/${reply.json.blob}`, reply.blobs[0]);
   }
 
   async openAttachment(id: string, blob: string): Promise<Uint8Array> {
+    this.noAttachmentsHere();
     const sealed = await host().readFile(`${this.blobFolder()}/${blob}`);
     return (await this.engine('attachment.open', { id, blob }, { handle: this.handle, blobs: [sealed] })).secret!;
   }
@@ -726,6 +740,57 @@ class PassStore {
 
   noteWrongAccountPassword() {
     return this.noteFailure();
+  }
+
+  // ---- the desktop app's vault ----
+
+  /**
+   * Shows the vault open in the desktop app through these screens. Calls go to the app over its
+   * link, and the app saves. Attachments stay there: their files sit beside its vault. False when
+   * the app is locked or not connected.
+   */
+  async openDesktop() {
+    const link = host().link;
+    const vault = await link?.attachVault();
+    if (!vault) return false;
+    this.handle = vault.handle;
+    this.file = null;
+    this.desktop = true;
+    this.state = { kind: 'unlocked', name: vault.name, file: 'desktop', readOnly: false };
+    try {
+      await this.refresh();
+      this.desktopSeen = (await this.view<{ hash: string }>('vault.state_hash')).hash;
+    } catch (failure) {
+      this.leaveDesktop();
+      throw failure;
+    }
+    // Changes made in the app show here, and a lock there brings the door: the next call answers locked.
+    this.watch = setInterval(() => {
+      this.writing = this.writing.then(() => this.desktopChanges()).catch(() => undefined);
+    }, 3000);
+    return true;
+  }
+
+  private desktopSeen = '';
+
+  private async desktopChanges() {
+    if (!this.desktop) return;
+    const { hash } = await this.view<{ hash: string }>('vault.state_hash');
+    if (hash === this.desktopSeen) return;
+    this.desktopSeen = hash;
+    await this.refresh();
+  }
+
+  /** Back to the door. The vault in the desktop app stays open there. */
+  private leaveDesktop() {
+    this.stopWatching();
+    host().link?.detachVault();
+    this.desktop = false;
+    this.handle = 0;
+    this.file = null;
+    this.entries = [];
+    this.folders = [];
+    void this.refreshDoorState();
   }
 
   // ---- nested and shared vaults ----

@@ -122,6 +122,15 @@ export interface DesktopLink {
   onChange(run: () => void): () => void;
   option(name: string, fallback: unknown): Promise<unknown>;
   setOption(name: string, value: unknown): Promise<void>;
+  /**
+   * Opens the vault that is open in the desktop app, for these screens: calls on the handle it
+   * answers go to the app, which saves them. Null when the app is locked or not connected.
+   */
+  attachVault(): Promise<{ handle: number; name: string } | null>;
+  /** Stops sending calls to the app. Its vault stays as it was. */
+  detachVault(): void;
+  /** Locks the vault in the desktop app. */
+  lockDesktop(): Promise<void>;
 }
 
 export interface LockGuard {

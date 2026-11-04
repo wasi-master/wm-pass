@@ -18,7 +18,7 @@ use interprocess::local_socket::{ListenerNonblockingMode, ListenerOptions, Strea
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use wmpass_bridge::{BridgeError, Keys, Server, fingerprint};
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 use wmpass_core::matching;
 use wmpass_net::http::NativeHttp;
 use wmpass_net::{NetError, NetPolicy, usernames};
@@ -310,6 +310,9 @@ struct Request {
     kind: String,
     #[serde(default)]
     factor: Value,
+    /// An engine call on the vault open here, as the page sends it, or empty when it came in parts.
+    #[serde(default)]
+    frame: String,
 }
 
 /// File bytes on their way through one connection, in parts.
@@ -591,6 +594,52 @@ impl Conversation {
                 out.extend_from_slice(b"\"}");
                 Ok(out)
             }
+            // ---- the vault open here, in the extension's own screens ----
+            "vault.attach" => {
+                if handle == 0 {
+                    return Ok(reply_bytes(&json!({"id": id, "locked": true})));
+                }
+                self.approve_once(key, "vault", |name| {
+                    format!("Let {name} open the vault that is open here, and change it?\n\nWhile WM Pass is unlocked, it can show every entry and password, and add, edit or delete them. Changes are saved here. WM Pass will not ask again; forget the extension under Connected extensions to take this back.")
+                })?;
+                let info = self.engine.call("vault.info", handle, "{}", &[], &[], now_ms()).map_err(|e| e.message)?;
+                let info: Value = serde_json::from_str(&info.json).map_err(|e| e.to_string())?;
+                Ok(reply_bytes(&json!({"id": id, "handle": handle, "name": info.get("name").cloned().unwrap_or_default()})))
+            }
+            "vault.call" => {
+                let frame = if request.frame.is_empty() {
+                    transfers.take(request.token)?
+                } else {
+                    Zeroizing::new(B64.decode(&request.frame).map_err(|_| "an unreadable call")?)
+                };
+                let call = wmpass_session::wire::parse_request(&frame).map_err(|e| e.message)?;
+                let changes = linked_method(&call.method).ok_or("Do this in the desktop app. It cannot be done from the browser.")?;
+                // A vault locked or switched since the extension attached answers as locked.
+                if handle == 0 || call.handle != handle {
+                    return Ok(reply_bytes(&json!({"id": id, "locked": true})));
+                }
+                if !self.allowed(key, "vault") {
+                    return Err("this extension may not open the vault here".to_owned());
+                }
+                let method = call.method.clone();
+                drop(call);
+                let reply = self.engine.run_frame(&frame);
+                // The extension looks for changes every few seconds; that is no sign of a person.
+                if method != "vault.state_hash" {
+                    self.engine.guard.active();
+                }
+                if changes {
+                    // The window here holds the file: it reloads, then writes it.
+                    let _ = self.app.emit("command", "linked-change");
+                }
+                if reply.len() > PART {
+                    return Ok(reply_bytes(&json!({"id": id, "token": transfers.keep(reply.to_vec())?})));
+                }
+                let mut out = Zeroizing::new(format!("{{\"id\":{id},\"frame\":\"").into_bytes());
+                out.extend_from_slice(Zeroizing::new(B64.encode(&*reply)).as_bytes());
+                out.extend_from_slice(b"\"}");
+                Ok(out)
+            }
             _ => Err("unknown request".to_owned()),
         }
     }
@@ -612,6 +661,12 @@ impl Conversation {
         self.approve_once(key, &item, |name| {
             format!("Let {name} keep copies of its vault at {shown}, through WM Pass?\n\nWM Pass connects there with the details the extension sends, and keeps none of them. It will not ask again for this place.")
         })
+    }
+
+    /// Whether this extension was already told yes for `item`.
+    fn allowed(&self, key: &[u8; 32], item: &str) -> bool {
+        let wanted = hex(key);
+        self.saved.lock().is_ok_and(|s| s.paired.iter().any(|p| p.key == wanted && p.allowed.iter().any(|a| a == item)))
     }
 
     /// Asks once for `item`, in this app's own window, and remembers a yes for this extension.
@@ -662,6 +717,32 @@ impl Conversation {
     }
 }
 
+/// Whether the extension may run `method` on the vault open here, and if so whether it changes it.
+/// Everything that reaches the file, the keys, other vaults or a whole copy stays in the app.
+fn linked_method(method: &str) -> Option<bool> {
+    const READS: &[&str] = &[
+        "title", "modified", "vault.info", "vault.state_hash", "prefs.synced",
+        "entry.list", "entry.get", "entry.reveal", "entry.reveal_custom", "entry.reveal_question", "entry.reveal_history",
+        "otp.codes", "otp.code", "folder.list", "health.report", "categorise.suggest", "tags.icons",
+        "match.web", "match.fill", "match.app", "passkey.list", "wifi.qr", "gen.for_site",
+        "related.find", "related.apps", "site.change_password", "entries.merge_plan", "site.probe_change_password",
+    ];
+    const CHANGES: &[&str] = &[
+        "entry.create", "entry.set", "entry.set_secret", "entry.common", "entry.convert",
+        "entry.custom_set", "entry.custom_meta", "entry.custom_remove", "entry.question_set", "entry.otp_set",
+        "entry.trash", "entry.restore", "entry.purge", "entry.duplicate", "entries.bulk", "entries.merge",
+        "health.merge_duplicates", "folder.add", "folder.rename", "folder.remove", "tags.set_icon",
+        "otp.hotp_next", "categorise.all", "prefs.sync",
+    ];
+    if READS.contains(&method) || ["breach.", "icon."].iter().any(|p| method.starts_with(p)) {
+        Some(false)
+    } else if CHANGES.contains(&method) {
+        Some(true)
+    } else {
+        None
+    }
+}
+
 /// Only what a menu shows. Neither passwords nor notes are in a summary, and this narrows it further.
 fn row(value: Value) -> Value {
     let entry = value.get("entry").cloned().unwrap_or_default();
@@ -681,6 +762,18 @@ fn reply_bytes(value: &Value) -> Zeroizing<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_extension_reaches_entries_but_not_the_file_or_keys() {
+        assert_eq!(linked_method("entry.list"), Some(false));
+        assert_eq!(linked_method("entry.reveal"), Some(false));
+        assert_eq!(linked_method("breach.check"), Some(false));
+        assert_eq!(linked_method("entry.set"), Some(true));
+        assert_eq!(linked_method("entries.bulk"), Some(true));
+        for kept in ["vault.save", "vault.export_key", "vault.change_password", "vault.rekey", "slot.add", "export.file", "kdbx", "shared.create", "vault.open", "wipe", "ssh.agent_sign", "attachment.open", "remote.sync"] {
+            assert_eq!(linked_method(kept), None, "{kept}");
+        }
+    }
 
     #[test]
     fn a_file_crosses_in_parts_and_is_gone_once_read() {

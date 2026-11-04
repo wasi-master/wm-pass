@@ -372,6 +372,49 @@ async function linkPlace(message: any) {
   return { value, update: reply.update ?? {} };
 }
 
+/** One engine call on the desktop app's vault. Large frames, such as a long note, cross in parts. */
+async function linkVaultCall(frameB64: string): Promise<{ frame?: string; locked?: boolean }> {
+  if (!linkReady()) return { locked: true };
+  const asked = async (request: Record<string, unknown>) => {
+    const reply = await ask(request);
+    if (reply.error) throw new Error(reply.error === 'refused' ? 'The desktop app was told no.' : reply.error);
+    return reply;
+  };
+  let reply;
+  const frame = fromB64(frameB64);
+  if (frame.length <= LINK_PART) {
+    reply = await asked({ method: 'vault.call', frame: frameB64 });
+  } else {
+    let token = 0;
+    for (let at = 0; at < frame.length; at += LINK_PART) {
+      token = (await asked({ method: 'places.put', token, part: toB64(frame.subarray(at, at + LINK_PART)) })).token;
+    }
+    reply = await asked({ method: 'vault.call', token });
+  }
+  frame.fill(0);
+  if (reply.locked) return { locked: true };
+  if (reply.frame) return { frame: reply.frame };
+  const parts: Uint8Array[] = [];
+  let length = 0;
+  for (let done = false; !done; ) {
+    const got = await asked({ method: 'places.get', token: reply.token, offset: length });
+    const part = fromB64(got.part);
+    parts.push(part);
+    length += part.length;
+    done = got.done;
+  }
+  const whole = new Uint8Array(length);
+  let at = 0;
+  for (const part of parts) {
+    whole.set(part, at);
+    part.fill(0);
+    at += part.length;
+  }
+  const out = toB64(whole);
+  whole.fill(0);
+  return { frame: out };
+}
+
 // ---- messages ----
 
 async function fromContent(message: any, sender: any) {
@@ -492,6 +535,19 @@ async function fromPage(message: any) {
       if (reply.error) throw new Error(reply.error === 'refused' ? 'The desktop app was told no.' : reply.error);
       return { factor: reply.factor, output: reply.output };
     }
+    // The vault open in the desktop app, shown in this extension's own screens. The app asks its
+    // person once, and refuses anything that reaches its file, its keys or a whole copy.
+    case 'link.vault.attach': {
+      if (!linkReady()) return { locked: true };
+      const reply = await ask({ method: 'vault.attach' });
+      if (reply.error) throw new Error(reply.error === 'refused' ? 'The desktop app was told no.' : reply.error);
+      return reply.locked ? { locked: true } : { handle: reply.handle, name: reply.name };
+    }
+    case 'link.vault.call':
+      return linkVaultCall(message.frame);
+    case 'link.lock':
+      if (linkReady()) await ask({ method: 'lock' });
+      return {};
     case 'link.fill.settings':
       return chrome.storage.local.get(['offerSave', 'passkeys']);
     case 'confirm.get': {

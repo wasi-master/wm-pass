@@ -76,6 +76,46 @@ try {
   await tab.mouse.click(box.x + 60, box.y + box.height + 24);
   await sleep(700);
   say('filled', { username: (await tab.locator('#user').inputValue()).length, password: (await tab.locator('#pass').inputValue()).length });
+
+  // The app's vault in the extension's own screens: calls go over the link, the app saves.
+  const attached = (await send({ type: 'link.vault.attach' })).ok;
+  say('vault attached', { handle: attached?.handle > 0, name: attached?.name });
+  const call = (method, args = {}, secret = '', handle = attached?.handle ?? 0) =>
+    page.evaluate(
+      async ({ method, handle, args, secret }) => {
+        const encoder = new TextEncoder();
+        const head = encoder.encode(JSON.stringify({ method, handle, args, now_ms: Date.now(), online: false }));
+        const sealed = encoder.encode(secret);
+        const frame = new Uint8Array(4 + head.length + 4 + sealed.length + 4);
+        const view = new DataView(frame.buffer);
+        view.setUint32(0, head.length, true);
+        frame.set(head, 4);
+        view.setUint32(4 + head.length, sealed.length, true);
+        frame.set(sealed, 8 + head.length);
+        const reply = await chrome.runtime.sendMessage({ type: 'link.vault.call', frame: btoa(String.fromCharCode(...frame)) });
+        if (!reply.ok?.frame) return reply;
+        const bytes = Uint8Array.from(atob(reply.ok.frame), (c) => c.charCodeAt(0));
+        const length = new DataView(bytes.buffer).getUint32(0, true);
+        return JSON.parse(new TextDecoder().decode(bytes.subarray(4, 4 + length)));
+      },
+      { method, handle, args, secret },
+    );
+  const before = await call('entry.list', { sort: 'title' });
+  say('listed over the link', before.map?.((e) => e.title) ?? before);
+  const made = await call('entry.create', { kind: 'login', title: 'Made in the browser', fields: { username: 'browser@example.com' } });
+  say('created over the link', !!made.id);
+  const after = await call('entry.list', { sort: 'title' });
+  say('count after create', `${before.length} -> ${after.length}`);
+  say('key stays in the app', await call('vault.export_key', {}, 'anything'));
+  say('a stale handle answers locked', await call('entry.list', { sort: 'title' }, '', (attached?.handle ?? 0) + 1000));
+
+  // A fresh vault tab opens the app's vault by itself.
+  const screen = await context.newPage();
+  await screen.goto(`chrome-extension://${ID}/vault.html`);
+  await sleep(2500);
+  const text = await screen.evaluate(() => document.body.innerText);
+  say('vault tab shows the app vault', { github: text.includes('GitHub'), made: text.includes('Made in the browser'), door: text.includes('Enter your password') || text.includes('Create your vault') });
+  if (process.env.WMPASS_SHOTS) await screen.screenshot({ path: join(process.env.WMPASS_SHOTS, 'linked-vault.png') });
 } catch (failure) {
   say('FAILED', failure.message.slice(0, 300));
 } finally {

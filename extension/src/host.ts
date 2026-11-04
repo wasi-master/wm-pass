@@ -80,6 +80,25 @@ function linkedHardware(own: HardwareHost | undefined) {
   return { hardware, refresh };
 }
 
+/** The vault handle a request frame names, read from its head. */
+function handleOf(frame: Uint8Array): number {
+  const length = new DataView(frame.buffer, frame.byteOffset, frame.byteLength).getUint32(0, true);
+  try {
+    return Number(JSON.parse(new TextDecoder().decode(frame.subarray(4, 4 + length))).handle ?? 0);
+  } catch {
+    return 0;
+  }
+}
+
+/** A reply frame that carries only an error, as the engine writes one. */
+function errorFrame(code: string, message: string): Uint8Array {
+  const text = new TextEncoder().encode(JSON.stringify({ error: { code, message } }));
+  const out = new Uint8Array(4 + text.length + 1 + 4);
+  new DataView(out.buffer).setUint32(0, text.length, true);
+  out.set(text, 4);
+  return out;
+}
+
 export async function extensionHost(): Promise<Host> {
   const base = await webHost({
     call: async (frame) => fromB64((await send<{ frame: string }>({ type: 'call', frame: toB64(frame) })).frame),
@@ -88,6 +107,24 @@ export async function extensionHost(): Promise<Host> {
   const linkPlaces = linkedPlaces(extensionPlaces);
   const linkKeys = linkedHardware(await webHardware());
   let onCommand: (command: string) => void = () => {};
+  /** The desktop app's handle while these screens show its vault, else zero. */
+  let desktopHandle = 0;
+  async function call(frame: Uint8Array): Promise<Uint8Array> {
+    if (!desktopHandle || handleOf(frame) !== desktopHandle) return base.call(frame);
+    let reply: { frame?: string; locked?: boolean };
+    try {
+      reply = await send({ type: 'link.vault.call', frame: toB64(frame) });
+    } catch (failure: any) {
+      return errorFrame('desktop', failure?.message ?? 'The desktop app did not answer.');
+    }
+    if (reply.locked || !reply.frame) {
+      // Locked or gone there: these screens go back to the door.
+      desktopHandle = 0;
+      onCommand('lock');
+      return errorFrame('locked', 'The vault in the desktop app is locked.');
+    }
+    return fromB64(reply.frame);
+  }
   chrome.runtime.onMessage.addListener((message: any) => {
     if (message?.type === 'locked') onCommand('lock');
     if (message?.type === 'changed') onCommand('reload');
@@ -99,12 +136,13 @@ export async function extensionHost(): Promise<Host> {
   const host: Host = {
     ...base,
     kind: 'extension',
+    call,
     network: true,
     onCommand: (run) => {
       onCommand = run;
     },
     async callToClipboard(frame, clearAfterSeconds) {
-      const reply = decodeReply(await base.call(frame));
+      const reply = decodeReply(await call(frame));
       const text = new TextDecoder().decode(reply.secret ?? new Uint8Array());
       reply.secret?.fill(0);
       await host.copyText(text, true, clearAfterSeconds);
@@ -150,6 +188,16 @@ export async function extensionHost(): Promise<Host> {
       },
       option: async (name, fallback) => (await chrome.storage.local.get(name))[name] ?? fallback,
       setOption: (name, value) => chrome.storage.local.set({ [name]: value }),
+      async attachVault() {
+        const reply = await send<{ handle?: number; name?: string; locked?: boolean }>({ type: 'link.vault.attach' });
+        if (reply.locked || !reply.handle) return null;
+        desktopHandle = reply.handle;
+        return { handle: reply.handle, name: reply.name ?? '' };
+      },
+      detachVault() {
+        desktopHandle = 0;
+      },
+      lockDesktop: () => send({ type: 'link.lock' }),
     },
   };
   return host;
