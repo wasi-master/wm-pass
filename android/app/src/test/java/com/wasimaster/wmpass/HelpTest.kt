@@ -105,6 +105,8 @@ class HelpTest {
             "health_banner_seen",
             // When the last breach check ran, shown on the Breaches page.
             "breach_last",
+            // Whether the vault list may still ask about a browser on its own password manager: action.browser_autofill.
+            "browser_nudge",
         )
     }
 }

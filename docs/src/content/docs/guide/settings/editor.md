@@ -157,7 +157,7 @@ Which reader the camera uses when you scan a payment card into a card item.
 
 Both readers work on this phone, from the camera picture. The first scan asks which one to use, and this is where you change your answer.
 
-- *Google (ML Kit)* reads the number, the expiry date and the name. Google's library sends Google statistics about how it runs, with details of the phone and app, and Play services fetches it the first time, so the first scan may use WM Pass's own reader.
+- *Google (ML Kit)* reads the expiry date and the name too. WM Pass's own reader runs beside it on the same pictures, because ML Kit reads general text and often misreads the raised or foil digits of a card number that the built-in reader was trained on; the number comes from whichever is sure first. Google's library sends Google statistics about how it runs, with details of the phone and app, and Play services fetches it the first time, so the first scan may use WM Pass's own reader alone.
 - *WM Pass* is built in, from Stripe's open card scanner, and sends nothing to anyone. It reads the card number only, so you type the expiry date and the name.
 
 #### What each choice does
@@ -165,7 +165,7 @@ Both readers work on this phone, from the camera picture. The first scan asks wh
 | Choice | What it does |
 | --- | --- |
 | Ask next time | The next scan asks which reader to use. |
-| Google (ML Kit) | Reads the number, expiry date and name. Google gets statistics about how the library runs. |
+| Google (ML Kit) | Reads the number with WM Pass's own reader alongside, and the expiry date and name. Google gets statistics about how the library runs. |
 | WM Pass | Reads the number only, and sends nothing. |
 
 #### Limits

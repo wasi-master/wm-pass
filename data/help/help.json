@@ -17479,7 +17479,7 @@
        },
        {
         "t": "text",
-        "s": " reads the number, the expiry date and the name. Google's library sends Google statistics about how it runs, with details of the phone and app, and Play services fetches it the first time, so the first scan may use WM Pass's own reader."
+        "s": " reads the expiry date and the name too. WM Pass's own reader runs beside it on the same pictures, because ML Kit reads general text and often misreads the raised or foil digits of a card number that the built-in reader was trained on; the number comes from whichever is sure first. Google's library sends Google statistics about how it runs, with details of the phone and app, and Play services fetches it the first time, so the first scan may use WM Pass's own reader alone."
        }
       ],
       [
@@ -17520,7 +17520,7 @@
        "runs": [
         {
          "t": "text",
-         "s": "Reads the number, expiry date and name. Google gets statistics about how the library runs."
+         "s": "Reads the number with WM Pass's own reader alongside, and the expiry date and name. Google gets statistics about how the library runs."
         }
        ]
       }
@@ -20438,11 +20438,83 @@
     "setting.autofill_save",
     "feature.autofill",
     "feature.passkeys",
-    "setting.keyboard_access"
+    "setting.keyboard_access",
+    "action.browser_autofill"
    ],
    "docs": "/apps/android/",
    "words": "autofill fill service password manager default provider",
    "plain": "Opens Android's prompt to make WM Pass this phone's autofill service, so it can fill logins in other apps and in browsers."
+  },
+  {
+   "id": "action.browser_autofill",
+   "kind": "action",
+   "title": "Browsers",
+   "page": "security",
+   "what": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Says whether Chrome, and each browser built on it, hands its pages to your autofill service, and opens that browser's setting when it does not."
+      }
+     ]
+    }
+   ],
+   "how": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Since Chrome 135, Chrome fills from its own password manager unless you turn on "
+      },
+      {
+       "t": "strong",
+       "s": "Autofill using another service"
+      },
+      {
+       "t": "text",
+       "s": " in Chrome's settings, under Autofill services. Until then WM Pass never hears about a page in Chrome, so it cannot offer anything there."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Each browser built on Chrome, such as Brave, Edge, Vivaldi or Samsung Internet, has its own copy of the setting. Each one on this phone that says which way it is set gets a row here; tapping it opens that browser's page for the setting."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Once WM Pass is your autofill service, the vault list also asks once about a browser that is still on its own password manager."
+      }
+     ]
+    }
+   ],
+   "caveats": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "A browser that does not answer is left out: it is older than the setting, or was built without it. Firefox and the browsers built on it use your autofill service already and need nothing."
+      }
+     ]
+    }
+   ],
+   "related": [
+    "action.autofill_service",
+    "feature.autofill"
+   ],
+   "words": "chrome brave edge vivaldi samsung internet browser autofill another service third party",
+   "plain": "Says whether Chrome, and each browser built on it, hands its pages to your autofill service, and opens that browser's setting when it does not."
   },
   {
    "id": "setting.panic_action",

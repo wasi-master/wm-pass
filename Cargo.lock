@@ -9787,6 +9787,7 @@ name = "wmpass-cardscan"
 version = "0.1.0"
 dependencies = [
  "png",
+ "serde_json",
  "tract-tflite",
  "zeroize",
 ]

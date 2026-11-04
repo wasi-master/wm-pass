@@ -25,6 +25,25 @@
         <package android:name="com.wasimaster.wmkeyboard" />
         <package android:name="com.wasimaster.wmkeyboard.debug" />
         <package android:name="com.wasimaster.wmkeyboard.fast" />
+        <!-- Chrome and the browsers built on it, to ask each whether it hands its forms to
+             autofill (BrowserAutofill). The list is the same there. -->
+        <package android:name="com.android.chrome" />
+        <package android:name="com.chrome.beta" />
+        <package android:name="com.chrome.dev" />
+        <package android:name="com.chrome.canary" />
+        <package android:name="com.brave.browser" />
+        <package android:name="com.brave.browser_beta" />
+        <package android:name="com.brave.browser_nightly" />
+        <package android:name="com.microsoft.emmx" />
+        <package android:name="com.vivaldi.browser" />
+        <package android:name="com.opera.browser" />
+        <package android:name="com.opera.gx" />
+        <package android:name="com.sec.android.app.sbrowser" />
+        <package android:name="com.kiwibrowser.browser" />
+        <package android:name="org.cromite.cromite" />
+        <package android:name="org.chromium.chrome" />
+        <package android:name="com.duckduckgo.mobile.android" />
+        <package android:name="com.yandex.browser" />
         <!-- Shizuku, to say whether it needs installing or only starting. -->
         <package android:name="moe.shizuku.privileged.api" />
         <intent>

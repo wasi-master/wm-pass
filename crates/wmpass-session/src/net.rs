@@ -550,7 +550,7 @@ pub fn call(
             let rows = service.with_vault(handle, |vault| {
                 let mut kept: Vec<(&String, &wmpass_core::model::Inbox)> =
                     vault.doc.prefs.inboxes.iter().filter_map(|(id, kept)| kept.v.as_ref().map(|inbox| (id, inbox))).collect();
-                kept.sort_by(|a, b| b.1.created_ms.cmp(&a.1.created_ms));
+                kept.sort_by_key(|k| std::cmp::Reverse(k.1.created_ms));
                 kept.iter()
                     .map(|(id, inbox)| {
                         json!({"id": id, "provider": inbox.provider, "base": inbox.base, "address": inbox.address, "label": inbox.label, "created_ms": inbox.created_ms})

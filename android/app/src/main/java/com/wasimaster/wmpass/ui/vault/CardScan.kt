@@ -327,18 +327,23 @@ internal interface CardEngine {
     fun close()
 }
 
-/** WM Pass's own reader: Stripe CardScan's digit detector, run by the Rust core. */
-private class OwnCardEngine : CardEngine {
+/**
+ * Stripe CardScan's digit detector, run by the Rust core on each frame. WM Pass's own reader is
+ * this alone; Google's reader runs it too, so the number is read by the model made for card
+ * digits and ML Kit adds the expiry and the name.
+ */
+internal class StripeFrames {
     private var opened = false
     private var pixels = ByteArray(0)
 
-    override fun open(context: Context): Boolean {
+    /** Opens the core's reader with the model. False when the model will not load. */
+    fun open(context: Context): Boolean {
         val model = runCatching { context.assets.open(CardModel).use { it.readBytes() } }.getOrNull() ?: return false
         opened = CardReader.open(model)
         return opened
     }
 
-    override fun read(image: ImageProxy, crop: FloatArray): CardReader.Read? {
+    fun read(image: ImageProxy, crop: FloatArray): CardReader.Read? {
         val plane = image.planes[0]
         val buffer = plane.buffer
         buffer.rewind()
@@ -348,23 +353,42 @@ private class OwnCardEngine : CardEngine {
             pixels = ByteArray(size)
         }
         buffer.get(pixels, 0, size)
+        // Left where it started, for a text reader that reads the same frame after this.
+        buffer.rewind()
         return CardReader.frame(pixels, image.width, image.height, plane.rowStride, image.imageInfo.rotationDegrees, crop)
     }
 
-    override fun readPicture(picture: Bitmap): CardReader.Read? {
+    /** One still picture, upright, counted as one frame. */
+    fun readPicture(picture: Bitmap): CardReader.Read? {
         val bytes = ByteArray(picture.byteCount)
         picture.copyPixelsToBuffer(java.nio.ByteBuffer.wrap(bytes))
-        val whole = floatArrayOf(0f, 0f, 1f, 1f)
-        var read: CardReader.Read? = null
-        repeat(3) { read = CardReader.frame(bytes, picture.width, picture.height, picture.rowBytes, 0, whole) ?: read }
+        val read = CardReader.frame(bytes, picture.width, picture.height, picture.rowBytes, 0, floatArrayOf(0f, 0f, 1f, 1f))
         bytes.fill(0)
         return read
     }
 
-    override fun close() {
+    fun close() {
         if (opened) CardReader.close()
+        opened = false
         pixels.fill(0)
     }
+}
+
+/** WM Pass's own reader: Stripe's detector alone. */
+private class OwnCardEngine : CardEngine {
+    private val stripe = StripeFrames()
+
+    override fun open(context: Context): Boolean = stripe.open(context)
+
+    override fun read(image: ImageProxy, crop: FloatArray): CardReader.Read? = stripe.read(image, crop)
+
+    override fun readPicture(picture: Bitmap): CardReader.Read? {
+        var read: CardReader.Read? = null
+        repeat(3) { read = stripe.readPicture(picture) ?: read }
+        return read
+    }
+
+    override fun close() = stripe.close()
 }
 
 @Composable

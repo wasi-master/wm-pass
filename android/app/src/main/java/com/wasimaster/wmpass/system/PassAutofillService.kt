@@ -208,6 +208,8 @@ object AutofillBuilder {
                 arrayOf(form.password),
             )
             form.username?.let { save.setOptionalIds(arrayOf(it)) }
+            // A login page that goes away, as a web page does when the site moves on, counts as sent.
+            save.setFlags(SaveInfo.FLAG_SAVE_ON_ALL_VIEWS_INVISIBLE)
             if (com.wasimaster.wmpass.app.Prefs.of(context).autofillSave.value) builder.setSaveInfo(save.build())
         }
         return builder.build()

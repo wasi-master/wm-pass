@@ -111,6 +111,38 @@ import kotlinx.serialization.json.putJsonArray
 /** What a site matcher says, in a form fit for a row. */
 data class SiteLine(val label: String, val openable: String?, val app: String? = null)
 
+/**
+ * An address in its parts, so a long one reads at a glance: the scheme faint, the site's own
+ * domain strong, the rest of the host plain, the path and query quieter. Breaks are allowed after
+ * each slash, question mark and ampersand, so a long path wraps where it reads naturally.
+ */
+fun addressText(address: String, colors: com.wasimaster.wmpass.ui.theme.Palette): androidx.compose.ui.text.AnnotatedString =
+    androidx.compose.ui.text.buildAnnotatedString {
+        fun part(text: String, color: Color, weight: FontWeight? = null) {
+            if (text.isEmpty()) return
+            pushStyle(androidx.compose.ui.text.SpanStyle(color = color, fontWeight = weight))
+            append(text.replace("/", "/\u200B").replace("?", "?\u200B").replace("&", "&\u200B"))
+            pop()
+        }
+        val scheme = address.substringBefore("://", "").takeIf { it.isNotEmpty() && address.contains("://") }
+        val rest = if (scheme != null) address.substringAfter("://") else address
+        val cut = rest.indexOfFirst { it == '/' || it == '?' || it == '#' }.let { if (it < 0) rest.length else it }
+        val hostPort = rest.substring(0, cut)
+        val tail = rest.substring(cut)
+        val host = hostPort.substringBefore(':')
+        val port = hostPort.removePrefix(host)
+        val domain = com.wasimaster.wmpass.system.Related.registrable(host)?.takeIf { host.endsWith(it) } ?: host
+        // An app address names a package, not a place on the web, so it is set apart in the accent.
+        val appScheme = scheme != null && scheme.lowercase().startsWith("android")
+        if (scheme != null) part("$scheme://", if (appScheme) colors.primary else colors.textLow)
+        part(host.removeSuffix(domain), colors.textMid)
+        part(domain, if (appScheme) colors.primary else colors.text, FontWeight.SemiBold)
+        part(port, colors.textLow)
+        val query = tail.indexOfFirst { it == '?' || it == '#' }.let { if (it < 0) tail.length else it }
+        part(tail.substring(0, query), colors.textMid)
+        part(tail.substring(query), colors.textLow)
+    }
+
 fun siteLine(element: JsonElement): SiteLine? {
     val obj = element as? JsonObject
     if (obj == null) return null
@@ -234,6 +266,9 @@ fun EntryScreen(id: String) {
             }
         }
         TopBar(entry, scroll.value)
+        // What this page's own buttons report, such as a network already saved, says so here
+        // rather than waiting for the vault list.
+        UndoBar(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(horizontal = 14.dp, vertical = 10.dp))
     }
 }
 
@@ -245,6 +280,7 @@ private fun StandardEntry(id: String, entry: Detail?, revealed: MutableMap<Strin
     val shell = LocalShell.current
     androidx.compose.material3.Scaffold(
         containerColor = colors.ground,
+        snackbarHost = { UndoBar() },
         topBar = {
             androidx.compose.material3.TopAppBar(
                 title = {
@@ -574,7 +610,7 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
                     Column(Modifier.weight(1f)) {
                         Text("Website", color = colors.textMid, style = MaterialTheme.typography.bodySmall)
                         Spacer(Modifier.height(2.dp))
-                        Text(site.label, color = colors.text, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(remember(site.label, colors) { addressText(site.label, colors) }, style = MaterialTheme.typography.bodyLarge)
                     }
                     if (open != null) RowIconButton(PassIcons.OpenInNew, "Open ${site.label}", onClick = open)
                 }
@@ -587,7 +623,7 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
         GroupCard(plain = true) {
             webs.forEachIndexed { index, site ->
                 if (index > 0) Hairline()
-                PlainRow(site.label, PassIcons.Language, site.openable?.let { url -> { shell.openUrl(url) } })
+                PlainRow(site.label, PassIcons.Language, site.openable?.let { url -> { shell.openUrl(url) } }, styled = remember(site.label, colors) { addressText(site.label, colors) })
             }
             apps.forEachIndexed { index, pkg ->
                 if (index > 0 || webs.isNotEmpty()) Hairline()
@@ -1066,7 +1102,7 @@ private fun ChangePasswordLine(url: String) {
 }
 
 @Composable
-private fun PlainRow(text: String, icon: ImageVector, onClick: (() -> Unit)?, sub: String? = null) {
+private fun PlainRow(text: String, icon: ImageVector, onClick: (() -> Unit)?, sub: String? = null, styled: androidx.compose.ui.text.AnnotatedString? = null) {
     val colors = palette
     Row(
         Modifier
@@ -1078,7 +1114,12 @@ private fun PlainRow(text: String, icon: ImageVector, onClick: (() -> Unit)?, su
         Icon(icon, null, tint = colors.textMid, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(text, color = colors.text, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            // An address shows whole, however long; anything else keeps to two lines.
+            if (styled != null) {
+                Text(styled, style = MaterialTheme.typography.bodyLarge)
+            } else {
+                Text(text, color = colors.text, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
             if (sub != null) Text(sub, color = colors.textMid, style = MaterialTheme.typography.bodySmall)
         }
         if (onClick != null) Icon(PassIcons.OpenInNew, null, tint = colors.textLow, modifier = Modifier.size(18.dp))

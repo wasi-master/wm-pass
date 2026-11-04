@@ -17,6 +17,8 @@ Exports write an app in several ways: `androidapp://com.example.app`, the `andro
 
 Set WM Pass as your autofill service in Settings, or tap **Turn on** on the card the vault list shows until you do. It matches apps by package name and signing certificate, not by name alone, and matches browsers by web address only for browsers it knows. A login never fills without your tap, and a WebView inside another app asks first and names what it is filling.
 
+Chrome, since version 135, fills from its own password manager unless you turn on **Autofill using another service** in its settings, and until then WM Pass never sees a page in it. Settings, Security lists Chrome and each browser built on it (Brave, Edge, Vivaldi, Samsung Internet and others) that says which way it is set, and a tap opens that browser's setting. Once WM Pass is your autofill service, the vault list asks once about a browser still on its own manager. Firefox needs nothing.
+
 With inline suggestions on, saved logins also show in the suggestion row of any keyboard that has one, such as Gboard or WM Keyboard, and not only in a dropdown under the field.
 
 A login can name the apps it is for as well as its websites. In the editor, open **Websites and apps** and tap **Add an app** to pick from the apps on your phone. WM Pass saves the app's package name and signing certificate, so a different app wearing the same name does not match.
@@ -35,14 +37,14 @@ Some fields offer common values as you type, such as a database's engine or an A
 
 For Wi-Fi, tap **Fill in from a QR code** and scan the code Android's Wi-Fi settings show when you share a network, or share that code's text to WM Pass. Typing a password on an open network switches its security to WPA, and clearing the password switches it back to open.
 
-**Pick a network saved on this phone** fills the item from a network Android already knows, password included, and Import has **Wi-Fi saved on this phone** to add several at once. Android keeps those passwords from apps, so this goes through [Shizuku](https://shizuku.rikka.app/), which you install and start yourself and which asks once whether WM Pass may use it. WM Pass uses it only to read saved networks, and only when you open one of these. The way of asking comes from [wifi-password-manager](https://github.com/Khh-vu/wifi-password-manager).
+**Pick a network saved on this phone** fills the item from a network Android already knows, password included, and Import has **Wi-Fi saved on this phone** to add several at once. A network already in your vault says so and starts unticked; tick it and its item is updated rather than copied. The sheet counts while it saves and ends on what it added and updated. Android keeps those passwords from apps, so this goes through [Shizuku](https://shizuku.rikka.app/), which you install and start yourself and which asks once whether WM Pass may use it. WM Pass uses it only to read saved networks, and only when you open one of these. The way of asking comes from [wifi-password-manager](https://github.com/Khh-vu/wifi-password-manager).
 
 A Wi-Fi item's page has two more buttons beside **Copy password**. **QR code** shows the same code Android's Wi-Fi settings show, so another phone's camera can join the network; the password is in the code, so anyone who can see it can read it. Enterprise networks have no such code. **Add to this phone**, on Android 11 and later, opens Android's own page for saving a network. Android asks before it saves anything, keeps the network with the ones you typed in yourself, and joins it when it is in range. It takes WPA, WPA3 and open networks; a WEP network, or a password written as 64 hex digits, has to go through Android's Wi-Fi settings.
 
 For a payment card, tap **Scan the card** and hold the card inside the frame, or tap the picture button to read a photo of the card you already have. The number fills in once three camera frames agree on it and it passes the checksum every card number carries, and it stays visible so you can compare it with the card. Two readers can do this, and both run on the phone:
 
 - **WM Pass's own reader** is Stripe's CardScan digit model (MIT), built into every build. It sends nothing to anyone, but it was trained on card numbers alone, so you type the expiry date and the name yourself.
-- **Google's reader** is ML Kit's text recognizer, which Play services provides. It reads the number, the expiry date and the name. The picture and what it reads stay on the phone, though Google's library sends Google statistics about how it runs, with details of the phone and app. Play services fetches it the first time, and until then the scan falls back to WM Pass's own reader.
+- **Google's reader** is ML Kit's text recognizer, which Play services provides. It reads the expiry date and the name as well as the number, and WM Pass's own reader runs beside it on the same pictures: ML Kit reads text in general and often misses the raised or foil digits of a card number, which the built-in reader was trained on, so the number comes from whichever is sure first. The picture and what it reads stay on the phone, though Google's library sends Google statistics about how it runs, with details of the phone and app. Play services fetches it the first time, and until then the scan falls back to WM Pass's own reader.
 
 The standard build asks which one to use before the first scan, and you can change it later under Settings, Editor, **Card scanner**. The F-Droid and offline builds carry nothing of Google's, so they have only WM Pass's own reader. No frame is kept or sent anywhere.
 
@@ -60,7 +62,7 @@ Tag names and their icons are stored inside the encrypted vault.
 
 The picture beside each item comes from the sources under Settings, Icons, **Pictures, in order**, tried from the top: the brand marks that ship with the app, then the icon of the app an item is for if it is installed. **Website icons** can be added to the order; they are fetched once per site, from the site itself or from DuckDuckGo, kept encrypted on the phone, and never asked for local addresses. An item none of them covers shows its first letter on a soft color of its own.
 
-The item's page lists **Websites and apps** together, each app with its name and icon, and opens an installed app when you tap it. For a login it also has **Change the password**, which opens the site's own page for that.
+The item's page lists **Websites and apps** together, every address in full however long, with its parts set apart: the site's own name strong, the rest of the address quieter. Each app shows with its name and icon, and opens an installed app when you tap it. For a login it also has **Change the password**, which opens the site's own page for that.
 
 The icon picker shows what Automatic would draw, then every symbol and every brand in one grid that fills the screen's width. Search narrows both. Hold an icon to see its name and where it comes from: symbols come from the icon style you picked, and brand marks come from Simple Icons (CC0) and belong to their owners.
 
@@ -93,7 +95,7 @@ Settings, Security, **When a panic app signals** starts at None, so no other app
 
 ## The vault list
 
-The list opens on types, then folders, the way Bitwarden's vault does: a row for each type of item you have (logins, cards, notes and the rest) with its count, then a row for each folder and **No folder**. Each row opens in place. An item shows under its type and under its folder, and tapping a type chip above the list shows that type as one plain list. Settings, Vault list, **Grouping** changes this to **By site**, one list with several logins for one site folded into a row, or to **By folder**. Logins listed under an open site, type or folder are set in a little, so they read as inside it.
+The list opens on types, then folders, the way Bitwarden's vault does: a row for each type of item you have (logins, cards, notes and the rest) with its count, then a row for each folder and **No folder**. Each row opens in place. An item shows under its type and under its folder, and tapping a type chip above the list shows that type as one plain list. Settings, Vault list, **Grouping** changes this to **By site**, one list with several logins for one site folded into a row, or to **By folder**. Logins listed under an open site, type or folder are set in a little, so they read as inside it. Opening an item and coming back finds the list where you left it, with the same groups open.
 
 A scroll bar runs down the right edge of the vault list and the Health page. Drag it to move through a long list fast; while it is held, a label says which letter or part you are in.
 

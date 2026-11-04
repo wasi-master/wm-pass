@@ -6,4 +6,7 @@ package com.wasimaster.wmpass.ui.vault
  */
 internal object MlKitCards {
     fun engine(): CardEngine? = null
+
+    /** What ML Kit alone reads in a picture: never, here. */
+    fun lines(@Suppress("UNUSED_PARAMETER") context: android.content.Context, @Suppress("UNUSED_PARAMETER") picture: android.graphics.Bitmap): Pair<Array<String>, FloatArray>? = null
 }

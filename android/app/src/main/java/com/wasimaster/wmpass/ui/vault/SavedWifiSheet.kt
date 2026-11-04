@@ -37,16 +37,22 @@ private fun securityName(security: String): String = when (security) {
     else -> "Open"
 }
 
+/** How an add-all run went, for the line the sheet ends on. */
+class WifiAdded(val added: Int, val updated: Int, val leftAlone: Int)
+
 /**
  * The networks this phone has saved, read through Shizuku. With [onPick] a tap fills one item;
- * with [onAddAll] several are ticked and saved at once, the ones already in the vault left unticked.
- * Passwords are never shown here.
+ * with [onAdd] several are ticked and saved at once. A network already in the vault says so and
+ * starts unticked; ticking it updates that item instead of adding a copy. The sheet stays open while
+ * they are saved, counting, and ends on what it did. Passwords are never shown here.
  */
 @Composable
 fun SavedWifiSheet(
     onDismiss: () -> Unit,
     onPick: ((SavedWifi.Network) -> Unit)? = null,
-    onAddAll: ((List<SavedWifi.Network>) -> Unit)? = null,
+    /** Saves one network: a new item when [existing] is null, else an update of that item. */
+    onAdd: (suspend (network: SavedWifi.Network, existing: String?) -> Unit)? = null,
+    onFinished: ((WifiAdded) -> Unit)? = null,
 ) {
     val colors = palette
     val context = LocalContext.current
@@ -60,6 +66,13 @@ fun SavedWifiSheet(
     var asking by remember { mutableStateOf(false) }
     val entries by Pass.entries.collectAsStateWithLifecycle()
     val chosen = remember { mutableStateListOf<String>() }
+    // A network's item in the vault, by name, when it has one already.
+    val inVault = remember(entries) {
+        entries.filter { it.kind == "wifi" && !it.trashed }.flatMap { entry -> listOf(entry.title to entry.id, entry.subtitle to entry.id) }
+            .filter { it.first.isNotEmpty() }.toMap()
+    }
+    var saving by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    var done by remember { mutableStateOf<WifiAdded?>(null) }
     LaunchedEffect(tries) {
         problem = null
         val now = SavedWifi.state(context)
@@ -68,9 +81,8 @@ fun SavedWifiSheet(
             runCatching { SavedWifi.list() }
                 .onSuccess { found ->
                     networks = found
-                    val saved = entries.filter { it.kind == "wifi" }.flatMap { listOf(it.title, it.subtitle) }.toSet()
                     chosen.clear()
-                    chosen.addAll(found.map { it.ssid }.filter { it !in saved })
+                    chosen.addAll(found.map { it.ssid }.filter { it !in inVault })
                 }
                 .onFailure { problem = "Android did not hand over the saved networks: ${it.cause?.message ?: it.message}" }
         }
@@ -129,19 +141,80 @@ fun SavedWifiSheet(
                     problem != null -> Unit
                     found == null -> explain("Reading saved networks…")
                     found.isEmpty() -> explain("This phone has no saved networks.")
-                    onAddAll != null -> {
-                        explain("Ticked ones become Wi-Fi items. Those already in your vault start unticked.")
-                        found.forEach { network ->
-                            val on = network.ssid in chosen
-                            SheetRow(PassIcons.Wifi, network.ssid, securityName(network.security), selected = on) {
-                                if (!chosen.remove(network.ssid)) chosen.add(network.ssid)
-                            }
-                        }
-                        Spacer(Modifier.height(12.dp))
-                        val picked = found.filter { it.ssid in chosen }
-                        PrimaryButton(if (picked.size == 1) "Add 1 network" else "Add ${picked.size} networks", Modifier.fillMaxWidth(), enabled = picked.isNotEmpty()) {
-                            onAddAll(picked)
+                    done != null -> {
+                        val result = done!!
+                        val lines = listOfNotNull(
+                            when (result.added) {
+                                0 -> null
+                                1 -> "Added 1 network."
+                                else -> "Added ${result.added} networks."
+                            },
+                            when (result.updated) {
+                                0 -> null
+                                1 -> "Updated 1 that was already in your vault."
+                                else -> "Updated ${result.updated} that were already in your vault."
+                            },
+                            when (result.leftAlone) {
+                                0 -> null
+                                1 -> "1 already in your vault was left as it was."
+                                else -> "${result.leftAlone} already in your vault were left as they were."
+                            },
+                        )
+                        explain(lines.joinToString(" ").ifEmpty { "Nothing was added." })
+                        PrimaryButton("Done", Modifier.fillMaxWidth()) {
+                            onFinished?.invoke(result)
                             onDismiss()
+                        }
+                    }
+                    onAdd != null -> {
+                        val progress = saving
+                        if (progress != null) {
+                            explain("Saving ${progress.first + 1} of ${progress.second}…")
+                            androidx.compose.material3.LinearProgressIndicator(
+                                progress = { progress.first / progress.second.toFloat() },
+                                color = colors.primary,
+                                trackColor = colors.surface3,
+                                modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, bottom = 14.dp).clip(androidx.compose.foundation.shape.CircleShape),
+                            )
+                        } else {
+                            val already = found.count { it.ssid in inVault }
+                            explain(
+                                if (already == 0) {
+                                    "Ticked ones become Wi-Fi items."
+                                } else {
+                                    "Ticked ones become Wi-Fi items. The ones marked In your vault start unticked; tick one to update its item instead of adding a copy."
+                                },
+                            )
+                            found.forEach { network ->
+                                val on = network.ssid in chosen
+                                val sub = securityName(network.security) + if (network.ssid in inVault) ", in your vault" else ""
+                                SheetRow(PassIcons.Wifi, network.ssid, sub, selected = on) {
+                                    if (!chosen.remove(network.ssid)) chosen.add(network.ssid)
+                                }
+                            }
+                            Spacer(Modifier.height(12.dp))
+                            val picked = found.filter { it.ssid in chosen }
+                            val updates = picked.count { it.ssid in inVault }
+                            val adds = picked.size - updates
+                            val label = when {
+                                picked.isEmpty() -> "Add networks"
+                                updates == 0 -> if (adds == 1) "Add 1 network" else "Add $adds networks"
+                                adds == 0 -> if (updates == 1) "Update 1 network" else "Update $updates networks"
+                                else -> "Add $adds, update $updates"
+                            }
+                            PrimaryButton(label, Modifier.fillMaxWidth(), enabled = picked.isNotEmpty()) {
+                                scope.launch {
+                                    var added = 0
+                                    var updated = 0
+                                    picked.forEachIndexed { index, network ->
+                                        saving = index to picked.size
+                                        val existing = inVault[network.ssid]
+                                        runCatching { onAdd(network, existing) }.onSuccess { if (existing == null) added++ else updated++ }
+                                    }
+                                    saving = null
+                                    done = WifiAdded(added, updated, found.count { it.ssid in inVault && it.ssid !in chosen })
+                                }
+                            }
                         }
                     }
                     else -> found.forEach { network ->

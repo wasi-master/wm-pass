@@ -708,7 +708,29 @@ Apps are matched by package name and signing certificate, not by name. Sites are
 
 Only a browser WM Pass knows can vouch for the web address it shows. When any other app reports one, such as a page inside its own window, WM Pass names that app and asks **Fill it** or **Do not fill**.
 
-See also [Inline suggestions](/guide/settings/security/#setting-autofill-inline), [Offer to save passwords](/guide/settings/security/#setting-autofill-save), [Filling logins](/guide/how-it-works/#feature-autofill), [Passkeys](/guide/how-it-works/#feature-passkeys), [Let WM Keyboard fill](/guide/settings/security/#setting-keyboard-access).
+See also [Inline suggestions](/guide/settings/security/#setting-autofill-inline), [Offer to save passwords](/guide/settings/security/#setting-autofill-save), [Filling logins](/guide/how-it-works/#feature-autofill), [Passkeys](/guide/how-it-works/#feature-passkeys), [Let WM Keyboard fill](/guide/settings/security/#setting-keyboard-access), [Browsers](/guide/settings/security/#action-browser-autofill).
+
+<a id="action-browser-autofill"></a>
+
+## Browsers
+
+*Only in Android.*
+
+Says whether Chrome, and each browser built on it, hands its pages to your autofill service, and opens that browser's setting when it does not.
+
+#### How it works
+
+Since Chrome 135, Chrome fills from its own password manager unless you turn on **Autofill using another service** in Chrome's settings, under Autofill services. Until then WM Pass never hears about a page in Chrome, so it cannot offer anything there.
+
+Each browser built on Chrome, such as Brave, Edge, Vivaldi or Samsung Internet, has its own copy of the setting. Each one on this phone that says which way it is set gets a row here; tapping it opens that browser's page for the setting.
+
+Once WM Pass is your autofill service, the vault list also asks once about a browser that is still on its own password manager.
+
+#### Limits
+
+A browser that does not answer is left out: it is older than the setting, or was built without it. Firefox and the browsers built on it use your autofill service already and need nothing.
+
+See also [Autofill service](/guide/settings/security/#action-autofill-service), [Filling logins](/guide/how-it-works/#feature-autofill).
 
 <a id="setting-panic-action"></a>
 

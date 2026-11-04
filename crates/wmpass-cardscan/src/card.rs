@@ -203,6 +203,51 @@ pub fn name(text: &str) -> Option<String> {
     Some(joined)
 }
 
+/// A letter a text reader gives for a digit it misread, on embossed or foil print above all:
+/// `O` for 0, `l` for 1, `B` for 8 and the like. None for anything else.
+fn digit_for(c: char) -> Option<char> {
+    Some(match c {
+        'O' | 'o' | 'D' | 'Q' | 'U' => '0',
+        'I' | 'l' | 'i' | '|' | '!' | 'L' | 'J' => '1',
+        'Z' | 'z' => '2',
+        'S' | 's' => '5',
+        'G' | 'b' => '6',
+        'T' => '7',
+        'B' => '8',
+        'g' | 'q' => '9',
+        _ => return None,
+    })
+}
+
+/// `text` with the misread digits put back, word by word. A word is mended only when it holds a
+/// real digit and every other letter in it is one that looks like a digit, so `4l11` becomes
+/// `4111` and `O7/2B` becomes `07/28`, while a name or a label such as `VALID` is left alone.
+/// A dash or a dot between two digits becomes a gap, as `4111-1111` prints on some cards. The
+/// Luhn check still has to pass, so a mended number is no easier to invent than a read one.
+pub fn mended(text: &str) -> Zeroizing<String> {
+    // Every letter mended is one ASCII byte for one, so the text never outgrows this and never
+    // leaves an unwiped copy behind in a grown buffer.
+    let mut out = Zeroizing::new(String::with_capacity(text.len()));
+    for (n, word) in text.split(' ').enumerate() {
+        if n > 0 {
+            out.push(' ');
+        }
+        let has_digit = word.chars().any(|c| c.is_ascii_digit());
+        let mend = has_digit && word.chars().all(|c| c.is_ascii_digit() || !c.is_alphanumeric() || digit_for(c).is_some());
+        for c in word.chars() {
+            out.push(if mend { digit_for(c).unwrap_or(c) } else { c });
+        }
+    }
+    let mut bytes = Zeroizing::new(std::mem::take(&mut *out).into_bytes());
+    for i in 1..bytes.len().saturating_sub(1) {
+        if matches!(bytes[i], b'-' | b'.' | b'_') && bytes[i - 1].is_ascii_digit() && bytes[i + 1].is_ascii_digit() {
+            bytes[i] = b' ';
+        }
+    }
+    // Only ASCII bytes were swapped, for ASCII bytes, so this is still the UTF-8 it came in as.
+    Zeroizing::new(String::from_utf8(std::mem::take(&mut *bytes)).unwrap_or_default())
+}
+
 /// The runs of digits and spaces in `text`, trimmed, longest first.
 fn digit_runs(text: &str) -> Vec<&str> {
     let mut runs: Vec<&str> = text.split(|c: char| !(c.is_ascii_digit() || c == ' ')).map(str::trim).filter(|r| !r.is_empty()).collect();
@@ -215,10 +260,12 @@ fn digit_runs(text: &str) -> Vec<&str> {
 /// other line; and the name, the nearest name-like line below the number (or in the card's
 /// lower half when there is no number), since banks print their own names at the top.
 pub fn read_text(lines: &[TextLine], today: Month) -> Card {
+    // Numbers and dates are looked for in the mended text; names in what was read.
+    let digits: Vec<Zeroizing<String>> = lines.iter().map(|l| mended(&l.text)).collect();
     let mut found = None;
     let mut used: Vec<usize> = Vec::new();
     for (i, line) in lines.iter().enumerate() {
-        if let Some(n) = digit_runs(&line.text).into_iter().find_map(number) {
+        if let Some(n) = digit_runs(&digits[i]).into_iter().find_map(number) {
             found = Some((n, line.top));
             used.push(i);
             break;
@@ -227,7 +274,7 @@ pub fn read_text(lines: &[TextLine], today: Month) -> Card {
     if found.is_none() {
         let mut groups: Vec<usize> = (0..lines.len())
             .filter(|&i| {
-                let t = lines[i].text.trim();
+                let t = digits[i].trim();
                 !t.is_empty() && t.bytes().all(|c| c.is_ascii_digit() || c == b' ')
             })
             .collect();
@@ -238,7 +285,7 @@ pub fn read_text(lines: &[TextLine], today: Month) -> Card {
             let mut row: Vec<usize> = groups[start..].iter().copied().take_while(|&i| (lines[i].top - top).abs() < 0.04).collect();
             start += row.len();
             row.sort_by(|&a, &b| lines[a].left.total_cmp(&lines[b].left));
-            let joined = Zeroizing::new(row.iter().map(|&i| lines[i].text.trim()).collect::<Vec<_>>().join(" "));
+            let joined = Zeroizing::new(row.iter().map(|&i| digits[i].trim()).collect::<Vec<_>>().join(" "));
             if let Some(n) = number(&joined) {
                 found = Some((n, top));
                 used = row;
@@ -246,7 +293,7 @@ pub fn read_text(lines: &[TextLine], today: Month) -> Card {
         }
     }
     let rest = || lines.iter().enumerate().filter(|(i, _)| !used.contains(i)).map(|(_, l)| l);
-    let expiry = rest().filter_map(|l| expiry(&l.text, today)).max();
+    let expiry = (0..lines.len()).filter(|i| !used.contains(i)).filter_map(|i| expiry(&digits[i], today)).max();
     let below = found.as_ref().map_or(0.5, |(_, top)| *top);
     let name = rest()
         .filter(|l| l.top > below)
@@ -563,6 +610,27 @@ mod tests {
         ] {
             assert!(name(not).is_none(), "{not}");
         }
+    }
+
+    #[test]
+    fn misread_digits_are_mended_and_still_checked() {
+        assert_eq!(mended("4Z4Z 4242 4242 4242").as_str(), "4242 4242 4242 4242");
+        assert_eq!(mended("5555-5555-5555-4444").as_str(), "5555 5555 5555 4444");
+        assert_eq!(mended("O7/2B").as_str(), "07/28");
+        assert_eq!(mended("VALID THRU 07/28").as_str(), "VALID THRU 07/28");
+        assert_eq!(mended("JOHN DOE").as_str(), "JOHN DOE");
+        let card = read_text(&[line("4l11 1111 1lll 1111", 0.1, 0.5), line("VALID THRU O7/2B", 0.4, 0.7), line("JANE Q PUBLIC", 0.1, 0.8)], NOV_2026);
+        assert_eq!(card.number.as_deref().map(String::as_str), Some("4111111111111111"));
+        assert_eq!(card.expiry.map(|e| e.to_string()), Some("07/2028".to_owned()));
+        assert_eq!(card.name.as_deref(), Some("JANE Q PUBLIC"));
+        // Mending is no way round the checksum.
+        assert_eq!(read_text(&[line("4l11 1111 1111 1112", 0.1, 0.5)], NOV_2026).number, None);
+    }
+
+    #[test]
+    fn groups_misread_on_separate_lines_are_mended_and_joined() {
+        let card = read_text(&[line("4242", 0.1, 0.5), line("4Z42", 0.3, 0.5), line("4242", 0.5, 0.51), line("424Z", 0.7, 0.5)], NOV_2026);
+        assert_eq!(card.number.as_deref().map(String::as_str), Some("4242424242424242"));
     }
 
     fn line(text: &str, left: f32, top: f32) -> TextLine {

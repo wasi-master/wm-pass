@@ -270,6 +270,8 @@ class Prefs(context: Context) {
     val keyboardAccess = flag("keyboard_access", false, portable = false)
     val wearAccess = flag("wear_access", false, portable = false)
     val autofillNudge = flag("autofill_nudge", true)
+    /** Whether the vault list may still ask, once, about a browser that fills from its own manager. */
+    val browserNudge = flag("browser_nudge", true)
 
     /**
      * Turns a companion's access on the first time the real one shows up: WM Keyboard installed,

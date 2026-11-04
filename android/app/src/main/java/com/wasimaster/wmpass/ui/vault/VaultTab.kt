@@ -33,6 +33,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -40,7 +41,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -84,6 +84,7 @@ import com.wasimaster.wmpass.ui.theme.arrive
 import com.wasimaster.wmpass.ui.theme.palette
 import com.wasimaster.wmpass.ui.theme.pressScale
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /** What a list row is: a section title, one entry, or logins grouped by site. */
 private sealed interface Item {
@@ -260,6 +261,19 @@ private fun arrange(
     return out
 }
 
+/**
+ * Where the list was left: its scroll, the groups open in it and the chip picked. Kept for the
+ * life of the process, so opening an item, another tab or a sheet and coming back finds the list
+ * as it was rather than at the top with every group shut.
+ */
+private object VaultMemory {
+    val open = mutableStateListOf<String>()
+    var index = 0
+    var offset = 0
+    var filter = "all"
+    var arrived = false
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun VaultTab() {
@@ -268,8 +282,8 @@ fun VaultTab() {
     val prefs = shell.prefs
     val entries by Pass.entries.collectAsStateWithLifecycle()
     val state by Pass.state.collectAsStateWithLifecycle()
-    var filter by rememberSaveable { mutableStateOf("all") }
-    val openSites = remember { mutableStateListOf<String>() }
+    var filter by remember { mutableStateOf(VaultMemory.filter) }
+    val openSites = VaultMemory.open
     val shown = remember(entries, filter) { filtered(entries, filter) }
     // A type chip already narrows the list to one type, so the types view lists it plainly.
     fun groupingFor(chip: String) = if (prefs.grouping == "types" && chip != "all") "smart" else prefs.grouping
@@ -278,7 +292,13 @@ fun VaultTab() {
     val items = remember(shown, filter, prefs.grouping, openSites.toList(), colors.flat, prefs.sort.value, prefs.pinnedOnTop.value, prefs.listHeadings.value, prefs.groupSites.value) {
         arranged(shown)
     }
-    val listState = rememberLazyListState()
+    val listState = rememberLazyListState(VaultMemory.index, VaultMemory.offset)
+    DisposableEffect(listState) {
+        onDispose {
+            VaultMemory.index = listState.firstVisibleItemIndex
+            VaultMemory.offset = listState.firstVisibleItemScrollOffset
+        }
+    }
     // Space at the foot of the list that stands in for rows a filter just took away. Scrolled to
     // the end, a shorter list would otherwise snap the header and chips down over the row still
     // fading out; held, the rows below slide up into its place as they do at the top. It gives
@@ -308,6 +328,7 @@ fun VaultTab() {
         }
         hold += gone
         filter = next
+        VaultMemory.filter = next
     }
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val scrolled by remember {
@@ -315,10 +336,12 @@ fun VaultTab() {
     }
     // Rows arrive one after another the first time the vault opens, and never again: after
     // that a list is a tool, and a tool does not perform.
-    var arrived by rememberSaveable { mutableStateOf(false) }
+    var arrived by remember { mutableStateOf(VaultMemory.arrived) }
     LaunchedEffect(Unit) {
+        if (arrived) return@LaunchedEffect
         delay(900)
         arrived = true
+        VaultMemory.arrived = true
     }
     Box(Modifier.fillMaxSize()) {
         // The aurora sits behind the header and slides away with it; once it is out of sight
@@ -846,7 +869,9 @@ private fun EmptyVault() {
 
 /**
  * Asks once, until answered, to be the phone's autofill service: without it the vault only fills
- * by copy and paste. It goes as soon as WM Pass is chosen, or for good on "Not now".
+ * by copy and paste. It goes as soon as WM Pass is chosen, or for good on "Not now". Once chosen,
+ * it asks the same once about a browser that still fills from its own password manager, since
+ * WM Pass never sees that browser's pages.
  */
 @Composable
 private fun AutofillNudge() {
@@ -855,22 +880,39 @@ private fun AutofillNudge() {
     val context = androidx.compose.ui.platform.LocalContext.current
     val manager = remember { context.getSystemService(android.view.autofill.AutofillManager::class.java) }
     var chosen by remember { mutableStateOf(true) }
+    var lagging by remember { mutableStateOf<com.wasimaster.wmpass.system.BrowserAutofill.Browser?>(null) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
         chosen = manager == null || !manager.isAutofillSupported || manager.hasEnabledAutofillServices()
+        if (chosen && shell.prefs.browserNudge.value) {
+            scope.launch { lagging = com.wasimaster.wmpass.system.BrowserAutofill.browsers(context).firstOrNull { !it.usesAutofill } }
+        }
         onPauseOrDispose { }
     }
-    androidx.compose.animation.AnimatedVisibility(!chosen && shell.prefs.autofillNudge.value) {
+    val browser = lagging
+    val askService = !chosen && shell.prefs.autofillNudge.value
+    val askBrowser = chosen && browser != null && shell.prefs.browserNudge.value
+    androidx.compose.animation.AnimatedVisibility(askService || askBrowser) {
         val turnOn = {
-            runCatching {
-                context.startActivity(
-                    android.content.Intent(android.provider.Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
-                        .setData(android.net.Uri.parse("package:${context.packageName}")),
-                )
+            if (askBrowser && browser != null) {
+                com.wasimaster.wmpass.system.BrowserAutofill.openSetting(context, browser.pkg)
+            } else {
+                runCatching {
+                    context.startActivity(
+                        android.content.Intent(android.provider.Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
+                            .setData(android.net.Uri.parse("package:${context.packageName}")),
+                    )
+                }
             }
             Unit
         }
-        val title = "Fill passwords in other apps"
-        val body = "Make WM Pass your autofill service and it offers your logins in apps and browsers, with nothing to copy."
+        val notNow = { if (askBrowser) shell.prefs.browserNudge.set(false) else shell.prefs.autofillNudge.set(false) }
+        val title = if (askBrowser) "Fill passwords in ${browser?.label}" else "Fill passwords in other apps"
+        val body = if (askBrowser) {
+            "${browser?.label} fills from its own password manager, so WM Pass never sees its pages. In its settings, turn on Autofill using another service."
+        } else {
+            "Make WM Pass your autofill service and it offers your logins in apps and browsers, with nothing to copy."
+        }
         if (colors.flat) {
             androidx.compose.material3.OutlinedCard(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
                 Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 16.dp, bottom = 4.dp)) {
@@ -882,8 +924,8 @@ private fun AutofillNudge() {
                     Spacer(Modifier.height(6.dp))
                     Text(body, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(end = 8.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        androidx.compose.material3.TextButton(onClick = { shell.prefs.autofillNudge.set(false) }) { Text("Not now") }
-                        androidx.compose.material3.TextButton(onClick = turnOn) { Text("Turn on") }
+                        androidx.compose.material3.TextButton(onClick = notNow) { Text("Not now") }
+                        androidx.compose.material3.TextButton(onClick = turnOn) { Text(if (askBrowser) "Open settings" else "Turn on") }
                     }
                 }
             }
@@ -907,8 +949,8 @@ private fun AutofillNudge() {
                 }
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    com.wasimaster.wmpass.ui.parts.QuietButton("Not now", Modifier.weight(1f), height = 44.dp) { shell.prefs.autofillNudge.set(false) }
-                    com.wasimaster.wmpass.ui.parts.PrimaryButton("Turn on", Modifier.weight(1f), onClick = turnOn)
+                    com.wasimaster.wmpass.ui.parts.QuietButton("Not now", Modifier.weight(1f), height = 44.dp, onClick = notNow)
+                    com.wasimaster.wmpass.ui.parts.PrimaryButton(if (askBrowser) "Open settings" else "Turn on", Modifier.weight(1f), onClick = turnOn)
                 }
             }
         }

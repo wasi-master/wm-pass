@@ -347,6 +347,13 @@ private fun SecurityScreen() {
     var slots by remember { mutableStateOf<List<SlotView>>(emptyList()) }
     var sheet by rememberSaveable { mutableStateOf<String?>(null) }
     var refresh by remember { mutableStateOf(0) }
+    // Read again each time this page comes back, as from a browser's own settings.
+    var browsers by remember { mutableStateOf<List<com.wasimaster.wmpass.system.BrowserAutofill.Browser>>(emptyList()) }
+    val browserScope = androidx.compose.runtime.rememberCoroutineScope()
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        browserScope.launch { browsers = com.wasimaster.wmpass.system.BrowserAutofill.browsers(context) }
+        onPauseOrDispose { }
+    }
     LaunchedEffect(revision, refresh) { slots = runCatching { Pass.slots() }.getOrDefault(emptyList()) }
     // Keyboard and watch access start on once their companion is really there; the toggles show what was decided.
     LaunchedEffect(Unit) {
@@ -518,6 +525,22 @@ private fun SecurityScreen() {
                                 .setData(android.net.Uri.parse("package:${context.packageName}")),
                         )
                     }
+                }
+            }
+            // Chrome and the browsers built on it fill from their own password manager until told
+            // otherwise, and then WM Pass never sees their pages.
+            browsers.forEach { browser ->
+                item {
+                    NavRow(
+                        browser.label,
+                        if (browser.usesAutofill) {
+                            "Fills with your autofill service"
+                        } else {
+                            "Fills from its own password manager. Open it and turn on Autofill using another service"
+                        },
+                        icon = PassIcons.Language,
+                        info = Help.info("action.browser_autofill"),
+                    ) { com.wasimaster.wmpass.system.BrowserAutofill.openSetting(context, browser.pkg) }
                 }
             }
             item {
@@ -1258,34 +1281,38 @@ private fun ImportScreen() {
     }
     var savedWifi by remember { mutableStateOf(false) }
     if (savedWifi) {
-        com.wasimaster.wmpass.ui.vault.SavedWifiSheet({ savedWifi = false }, onAddAll = { networks ->
-            shell.launch {
-                networks.forEach { network ->
-                    val id = Pass.change("entry.create") {
-                        put("kind", "wifi")
-                        put("title", network.ssid)
-                        put(
-                            "fields",
-                            kotlinx.serialization.json.buildJsonObject {
-                                put("ssid", network.ssid)
-                                put("security", network.security)
-                                put("hidden_ssid", network.hidden)
-                            },
-                        )
-                    }.obj["id"]!!.jsonPrimitive.content
-                    if (network.password.isNotEmpty()) {
-                        val bytes = network.password.toByteArray()
-                        Pass.change("entry.set_secret", secret = bytes) {
-                            put("id", id)
-                            put("field", "password")
-                        }
-                        bytes.fill(0)
+        com.wasimaster.wmpass.ui.vault.SavedWifiSheet(
+            { savedWifi = false },
+            onAdd = { network, existing ->
+                val id = existing ?: Pass.change("entry.create") {
+                    put("kind", "wifi")
+                    put("title", network.ssid)
+                    put(
+                        "fields",
+                        kotlinx.serialization.json.buildJsonObject {
+                            put("ssid", network.ssid)
+                            put("security", network.security)
+                            put("hidden_ssid", network.hidden)
+                        },
+                    )
+                }.obj["id"]!!.jsonPrimitive.content
+                if (network.password.isNotEmpty()) {
+                    val bytes = network.password.toByteArray()
+                    Pass.change("entry.set_secret", secret = bytes) {
+                        put("id", id)
+                        put("field", "password")
                     }
+                    bytes.fill(0)
                 }
+            },
+            onFinished = { done ->
                 shell.haptics.confirm()
-                result = if (networks.size == 1) "Added 1 Wi-Fi network." else "Added ${networks.size} Wi-Fi networks."
-            }
-        })
+                result = listOfNotNull(
+                    done.added.takeIf { it > 0 }?.let { if (it == 1) "Added 1 Wi-Fi network." else "Added $it Wi-Fi networks." },
+                    done.updated.takeIf { it > 0 }?.let { if (it == 1) "Updated 1." else "Updated $it." },
+                ).joinToString(" ").ifEmpty { null }
+            },
+        )
     }
     var guides by remember { mutableStateOf(false) }
     if (guides) ExportGuideSheet { guides = false }

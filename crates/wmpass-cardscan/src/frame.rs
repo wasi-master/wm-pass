@@ -50,9 +50,15 @@ impl Frame<'_> {
         }
     }
 
-    /// The model's input from `crop` of this frame: NHWC, RGB, one float per channel. Each
-    /// output pixel averages the frame pixels under it, so small print survives the shrink.
-    /// None when the buffer is smaller than its sizes say or the crop is empty.
+    /// The model's input from `crop` of this frame: NHWC, RGB, one float per channel. Shrunk,
+    /// each output pixel averages the frame pixels under it, each by how much of it lies under;
+    /// enlarged, it blends the four nearest. None when the buffer is smaller than its sizes say or
+    /// the crop is empty.
+    ///
+    /// Counting whole pixels only, as this once did, took one source pixel for some outputs and
+    /// two for the next whenever the scale was not a whole number, which bent thin strokes. The
+    /// model then missed digits on any card held at the wrong distance, and read them only when
+    /// the card filled the window at a lucky size.
     pub fn input(&self, crop: Crop) -> Option<Vec<f32>> {
         let needed = self.height.checked_sub(1)?.checked_mul(self.row_stride)?.checked_add(self.width.checked_mul(4)?)?;
         if self.width == 0 || self.pixels.len() < needed || self.row_stride < self.width * 4 {
@@ -66,30 +72,64 @@ impl Frame<'_> {
         if span_x <= 0.0 || span_y <= 0.0 {
             return None;
         }
+        let columns = taps(left, span_x, WIDTH, w);
+        let rows = taps(top, span_y, HEIGHT, h);
         let mut out = Vec::with_capacity(WIDTH * HEIGHT * 3);
-        for oy in 0..HEIGHT {
-            let y0 = (top + oy as f32 * span_y) as usize;
-            let y1 = ((top + (oy + 1) as f32 * span_y) as usize).max(y0 + 1).min(h);
-            for ox in 0..WIDTH {
-                let x0 = (left + ox as f32 * span_x) as usize;
-                let x1 = ((left + (ox + 1) as f32 * span_x) as usize).max(x0 + 1).min(w);
+        for row in &rows {
+            for column in &columns {
                 let mut sum = [0f32; 3];
-                let mut n = 0f32;
-                for v in y0.min(h - 1)..y1 {
-                    for u in x0.min(w - 1)..x1 {
+                for &(v, wy) in row {
+                    for &(u, wx) in column {
                         let p = self.pixel(u, v);
-                        sum[0] += p[0];
-                        sum[1] += p[1];
-                        sum[2] += p[2];
-                        n += 1.0;
+                        let weight = wy * wx;
+                        sum[0] += p[0] * weight;
+                        sum[1] += p[1] * weight;
+                        sum[2] += p[2] * weight;
                     }
                 }
-                let n = n.max(1.0);
-                out.extend(sum.map(|s| (s / n - MEAN) / SPREAD));
+                out.extend(sum.map(|s| (s - MEAN) / SPREAD));
             }
         }
         Some(out)
     }
+}
+
+/// For each of `count` outputs along one side, the source pixels it draws on and how much each
+/// counts, adding up to one. Output `i` covers source `[start + i * span, start + (i + 1) * span)`
+/// of a side `limit` long.
+fn taps(start: f32, span: f32, count: usize, limit: usize) -> Vec<Vec<(usize, f32)>> {
+    let last = limit.saturating_sub(1);
+    (0..count)
+        .map(|i| {
+            let from = start + i as f32 * span;
+            let to = from + span;
+            if span < 1.0 {
+                // Enlarging: the two pixels either side of the output's centre, by nearness.
+                let centre = (from + to) / 2.0 - 0.5;
+                let low = centre.floor().max(0.0);
+                let near = (centre - low).clamp(0.0, 1.0);
+                let a = (low as usize).min(last);
+                let b = (a + 1).min(last);
+                return if a == b { vec![(a, 1.0)] } else { vec![(a, 1.0 - near), (b, near)] };
+            }
+            let mut out = Vec::new();
+            let mut total = 0.0;
+            let mut u = from.floor().max(0.0) as usize;
+            while (u as f32) < to && u <= last {
+                let covered = (to.min(u as f32 + 1.0) - from.max(u as f32)).max(0.0);
+                if covered > 0.0 {
+                    out.push((u, covered));
+                    total += covered;
+                }
+                u += 1;
+            }
+            if out.is_empty() {
+                return vec![((from as usize).min(last), 1.0)];
+            }
+            out.iter_mut().for_each(|t| t.1 /= total);
+            out
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -143,6 +183,27 @@ mod tests {
         let frame = Frame { pixels: &pixels, width: 1200, height: 750, row_stride: 4800, rotation: 0 };
         let input = frame.input(Crop::WHOLE).unwrap_or_default();
         assert_eq!(rgb(&input, 3, 4), [6.5, 8.5, 7.0]);
+    }
+
+    #[test]
+    fn a_scale_that_is_not_whole_weighs_each_pixel_by_its_share() {
+        // 900 wide: each output covers one and a half input pixels.
+        let pixels = gradient(900, 375);
+        let frame = Frame { pixels: &pixels, width: 900, height: 375, row_stride: 3600, rotation: 0 };
+        let input = frame.input(Crop::WHOLE).unwrap_or_default();
+        // Output 0 is all of pixel 0 and half of pixel 1; output 1 is the other half and pixel 2.
+        assert_eq!(rgb(&input, 0, 5)[0], 0.33);
+        assert_eq!(rgb(&input, 1, 5)[0], 1.67);
+    }
+
+    #[test]
+    fn a_small_frame_is_blended_up() {
+        // 300 wide: each input pixel spreads over two outputs.
+        let pixels = gradient(300, 375);
+        let frame = Frame { pixels: &pixels, width: 300, height: 375, row_stride: 1200, rotation: 0 };
+        let input = frame.input(Crop::WHOLE).unwrap_or_default();
+        assert_eq!(rgb(&input, 20, 5)[0], 9.75);
+        assert_eq!(rgb(&input, 21, 5)[0], 10.25);
     }
 
     #[test]

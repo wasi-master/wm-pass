@@ -36,6 +36,8 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
+        // Only for measuring the card readers on a phone (CardCorpusTest); run with am instrument.
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("boolean", "WATCH", wearLink.toString())
         buildConfigField("boolean", "GOOGLE_SDKS", googleSdks.toString())
         buildConfigField("boolean", "OFFLINE", (providers.gradleProperty("wmpass.offline").orNull == "true").toString())
@@ -144,6 +146,8 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.12.0")
 
     testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.test.runner)
     testImplementation(libs.robolectric)
     testImplementation(libs.roborazzi)
     testImplementation(libs.roborazzi.compose)
