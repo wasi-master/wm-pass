@@ -75,6 +75,8 @@ import kotlinx.serialization.json.putJsonObject
 
 /** Between a form in another app and the vault: open it, choose, confirm, save. */
 class AutofillActivity : SecureActivity() {
+    override val overlayUnlock = true
+
     private val form: ParsedForm? by lazy {
         val structure = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             intent.getParcelableExtra(AutofillManager.EXTRA_ASSIST_STRUCTURE, AssistStructure::class.java)

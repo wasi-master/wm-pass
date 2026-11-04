@@ -20640,7 +20640,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Autofill, WM Keyboard and the watch get nothing while the vault is locked. Autofill can bring up the door for you to open it; the keyboard and the watch cannot."
+       "s": "Autofill, WM Keyboard and the watch get nothing while the vault is locked. Autofill can ask for your fingerprint over the app you are in, or bring up the door; the keyboard and the watch cannot."
       }
      ]
     },
@@ -21441,6 +21441,31 @@
      "runs": [
       {
        "t": "text",
+       "s": "With fingerprint unlock set up, tapping "
+      },
+      {
+       "t": "strong",
+       "s": "Unlock WM Pass"
+      },
+      {
+       "t": "text",
+       "s": " brings up only the fingerprint prompt, over the app you are in. "
+      },
+      {
+       "t": "strong",
+       "s": "Use password"
+      },
+      {
+       "t": "text",
+       "s": " opens the door instead. The same goes for a passkey, and the fingerprint that opened the vault also approves the sign-in."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
        "s": "Each browser built on Chrome, such as Brave, Edge, Vivaldi or Samsung Internet, has its own copy of the setting. Each one on this phone that says which way it is set gets a row here; tapping it opens that browser's page for the setting."
       }
      ]
@@ -22063,7 +22088,7 @@
        },
        {
         "t": "text",
-        "s": ". Search, add, codes, generator and health open WM Pass on that page, after the door if the vault is locked. Lock locks the vault without opening WM Pass."
+        "s": ". Search, add, codes, generator and health open WM Pass on that page, after the door if the vault is locked. Lock locks the vault without opening WM Pass, and while it is locked, unlocks it over the home screen."
        }
       ],
       [
@@ -22073,7 +22098,7 @@
        },
        {
         "t": "text",
-        "s": ": whether the vault is open, and its name while it is. A tap locks it, or opens the door."
+        "s": ": whether the vault is open, and its name while it is. A tap locks it, or unlocks it over the home screen: the fingerprint prompt alone when fingerprint unlock is set up, the door otherwise."
        }
       ],
       [
@@ -22137,7 +22162,7 @@
        },
        {
         "t": "text",
-        "s": ", and a tap copies one. Favorites shows a letter and a name for each favorite, and a tap opens it."
+        "s": ", and a tap copies one. Favorites shows a letter and a name for each favorite, and a tap opens it. Locked, a tap unlocks them where they are."
        }
       ]
      ]

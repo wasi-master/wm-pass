@@ -26,12 +26,12 @@ export const widgets = [
       android: {
         how: [
           'Touch and hold an empty spot on the home screen, choose **Widgets**, then WM Pass.',
-          '- *Quick bar*: the buttons you choose under [[setting.widget_buttons]]. Search, add, codes, generator and health open WM Pass on that page, after the door if the vault is locked. Lock locks the vault without opening WM Pass.',
-          '- *Lock status*: whether the vault is open, and its name while it is. A tap locks it, or opens the door.',
+          '- *Quick bar*: the buttons you choose under [[setting.widget_buttons]]. Search, add, codes, generator and health open WM Pass on that page, after the door if the vault is locked. Lock locks the vault without opening WM Pass, and while it is locked, unlocks it over the home screen.',
+          '- *Lock status*: whether the vault is open, and its name while it is. A tap locks it, or unlocks it over the home screen: the fingerprint prompt alone when fingerprint unlock is set up, the door otherwise.',
           '- *Health*: your score and how many passwords are weak, reused or in a known breach. The counts are kept from the last time the vault was open, with when that was.',
           '- *Backups*: when each backup place last ran, and whether that failed or the next run is late.',
           '- *Generator*: a tap copies a new password made the way the generator is set up. Nothing is shown, and the clipboard is cleared as usual.',
-          '- *Codes* and *Favorites*: only with [[setting.widget_access]] on, and only while the vault is open. Codes shows the codes chosen under [[setting.widget_codes]], and a tap copies one. Favorites shows a letter and a name for each favorite, and a tap opens it.',
+          '- *Codes* and *Favorites*: only with [[setting.widget_access]] on, and only while the vault is open. Codes shows the codes chosen under [[setting.widget_codes]], and a tap copies one. Favorites shows a letter and a name for each favorite, and a tap opens it. Locked, a tap unlocks them where they are.',
           'If Android ends WM Pass while a widget shows codes or names, the widgets are drawn locked again within a few minutes.',
         ],
         related: ['feature.app_shortcuts', 'feature.lock_tile', 'feature.panic_tile', 'page.widgets'],

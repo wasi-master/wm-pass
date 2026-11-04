@@ -16,6 +16,7 @@ import com.wasimaster.wmpass.core.LockState
 import com.wasimaster.wmpass.core.Pass
 import com.wasimaster.wmpass.core.SecretBytes
 import com.wasimaster.wmpass.core.SecureClipboard
+import com.wasimaster.wmpass.system.UnlockActivity
 import com.wasimaster.wmpass.ui.vault.GenState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -32,6 +33,13 @@ fun openApp(context: Context, route: String?): Action {
     if (route != null) intent.putExtra(MainActivity.EXTRA_ROUTE, route)
     return actionStartActivity(intent)
 }
+
+/**
+ * Unlocks over the home screen and stays there: the fingerprint prompt alone when it is set up,
+ * the door otherwise. The widget then redraws open.
+ */
+fun unlockHere(context: Context): Action =
+    actionStartActivity(Intent(context, UnlockActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
 
 fun lockAction(): Action = actionRunCallback<LockAction>()
 

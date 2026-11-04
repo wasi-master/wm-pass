@@ -138,6 +138,16 @@
             android:exported="false"
             android:excludeFromRecents="true"
             android:taskAffinity=""
+            android:theme="@style/Theme.WmPass.Overlay"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- A widget's unlock, over the home screen. Only this app's widgets start it. -->
+        <activity
+            android:name=".system.UnlockActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.WmPass.Overlay"
             android:windowSoftInputMode="adjustResize" />
 
         <service
@@ -156,6 +166,7 @@
             android:exported="false"
             android:excludeFromRecents="true"
             android:taskAffinity=""
+            android:theme="@style/Theme.WmPass.Overlay"
             android:windowSoftInputMode="adjustResize" />
 
         <service

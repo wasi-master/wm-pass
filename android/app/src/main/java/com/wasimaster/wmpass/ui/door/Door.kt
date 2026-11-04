@@ -123,9 +123,13 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 
-/** Everything in front of the vault: the first visit, and every visit after. */
+/**
+ * Everything in front of the vault: the first visit, and every visit after. [askFingerprint] off
+ * leaves the fingerprint to its button, for a screen that has just asked for it and been told to
+ * use the password instead.
+ */
 @Composable
-fun DoorScreen(state: LockState, prefs: Prefs) {
+fun DoorScreen(state: LockState, prefs: Prefs, askFingerprint: Boolean = true) {
     val accounts by Accounts.list.collectAsStateWithLifecycle()
     var starting by remember { mutableStateOf(false) }
     com.wasimaster.wmpass.ui.NoLearningInput {
@@ -133,7 +137,7 @@ fun DoorScreen(state: LockState, prefs: Prefs) {
             Aurora(Modifier.fillMaxSize())
             when {
                 state == LockState.NoVault && (accounts.isEmpty() || starting) -> Welcome(if (accounts.isEmpty()) null else ({ starting = false }))
-                else -> Unlock(state != LockState.NoVault, accounts) { starting = true }
+                else -> Unlock(state != LockState.NoVault, accounts, askFingerprint) { starting = true }
             }
         }
     }
@@ -304,7 +308,7 @@ private fun formatWait(ms: Long): String {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: () -> Unit) {
+private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, askFingerprint: Boolean, onStartLocal: () -> Unit) {
     val colors = palette
     val context = LocalContext.current
     val haptics = rememberHaptics()
@@ -526,7 +530,7 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
     }
 
     LaunchedEffect(Unit) {
-        if (biometricsReady && source == null) {
+        if (biometricsReady && source == null && askFingerprint) {
             delay(240)
             promptBiometric()
         } else if (remaining == 0L) {

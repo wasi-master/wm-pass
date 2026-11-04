@@ -177,7 +177,14 @@ object AutofillBuilder {
             if (Pass.state.value == LockState.NoVault) return null
             val view = row(context, "Unlock WM Pass", "To fill this form")
             val intent = AutofillActivity.intent(context, AutofillActivity.MODE_UNLOCK)
-            builder.setAuthentication(ids, sender(context, intent), view)
+            // On the keyboard's strip too, so a keyboard has no gap to fill with a button of its own.
+            val inline = request?.let { inline(context, it, 0, "Unlock WM Pass", "To fill this form") }
+            if (inline != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                @Suppress("DEPRECATION")
+                builder.setAuthentication(ids, sender(context, intent), view, inline)
+            } else {
+                builder.setAuthentication(ids, sender(context, intent), view)
+            }
             return builder.build()
         }
         var index = 0

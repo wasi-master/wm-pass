@@ -56,9 +56,12 @@ internal fun hiddenCode(code: String): String = spacedCode("•".repeat(code.len
  */
 private fun blocked(context: Context, data: WidgetData, what: String): Pair<Int, String>? = when {
     !Prefs.of(context).widgetAccess.value -> R.drawable.ic_widget_shield to "Turn on Show on widgets in WM Pass, under Security, to see $what here."
-    data.state !is LockState.Unlocked -> R.drawable.ic_widget_lock to "Locked. Open WM Pass to see $what."
+    data.state !is LockState.Unlocked -> R.drawable.ic_widget_lock to "Locked. Tap to unlock and see $what."
     else -> null
 }
+
+/** Whether a tap only has to unlock: widgets may show the vault, and it is just locked. */
+private fun unlocks(context: Context, data: WidgetData) = Prefs.of(context).widgetAccess.value && data.state == LockState.Locked
 
 // ---- codes ----
 
@@ -76,7 +79,11 @@ class CodesWidget : PassWidget() {
         val size = LocalSize.current
         val prefs = Prefs.of(context)
         val stop = blocked(context, data, "codes")
-        WidgetFrame(colors, onClick = if (stop != null || data.codes.isEmpty()) openApp(context, "codes") else null, padding = 10.dp) {
+        WidgetFrame(colors, onClick = when {
+            stop != null && unlocks(context, data) -> unlockHere(context)
+            stop != null || data.codes.isEmpty() -> openApp(context, "codes")
+            else -> null
+        }, padding = 10.dp) {
             if (stop != null) {
                 Placeholder(colors, stop.first, stop.second)
                 return@WidgetFrame
@@ -151,7 +158,11 @@ class FavoritesWidget : PassWidget() {
     override fun Body(context: Context, data: WidgetData, colors: WidgetColors) {
         val size = LocalSize.current
         val stop = blocked(context, data, "favorites")
-        WidgetFrame(colors, onClick = if (stop != null || data.favorites.isEmpty()) openApp(context, null) else null, padding = 10.dp) {
+        WidgetFrame(colors, onClick = when {
+            stop != null && unlocks(context, data) -> unlockHere(context)
+            stop != null || data.favorites.isEmpty() -> openApp(context, null)
+            else -> null
+        }, padding = 10.dp) {
             if (stop != null) {
                 Placeholder(colors, stop.first, stop.second)
                 return@WidgetFrame

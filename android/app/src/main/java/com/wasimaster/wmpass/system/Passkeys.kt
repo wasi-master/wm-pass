@@ -195,6 +195,8 @@ class PasskeyService : CredentialProviderService() {
  */
 @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 class PasskeyActivity : SecureActivity() {
+    override val overlayUnlock = true
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         gated {
@@ -214,6 +216,8 @@ class PasskeyActivity : SecureActivity() {
 
     /** Asks the phone to confirm the person, then runs [then] with whether it did. */
     private fun verifyPerson(title: String, then: (Boolean) -> Unit) {
+        // The fingerprint that opened the vault for this very request was the check.
+        if (justVerified) return then(true)
         val can = BiometricManager.from(this).canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
         if (can != BiometricManager.BIOMETRIC_SUCCESS) return then(false)
         BiometricPrompt(

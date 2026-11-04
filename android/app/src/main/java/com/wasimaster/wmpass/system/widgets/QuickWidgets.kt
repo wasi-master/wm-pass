@@ -65,7 +65,7 @@ private fun quickButton(context: Context, id: String, open: Boolean): QuickButto
     else -> if (open) {
         QuickButton(R.drawable.ic_widget_lock_open, "Lock", "Lock WM Pass", lockAction(), active = true)
     } else {
-        QuickButton(R.drawable.ic_widget_lock, "Locked", "WM Pass is locked. Open it", openApp(context, null))
+        QuickButton(R.drawable.ic_widget_lock, "Locked", "WM Pass is locked. Unlock it", unlockHere(context))
     }
 }
 
@@ -129,11 +129,15 @@ class StatusWidget : PassWidget() {
         val hint = when {
             state is LockState.Unlocked && panic -> "${state.name}. Tap for a panic lock."
             state is LockState.Unlocked -> "${state.name}. Tap to lock."
-            state == LockState.Locked -> "Tap to open"
+            state == LockState.Locked -> "Tap to unlock"
             else -> "Tap to make one"
         }
         val icon = if (open) R.drawable.ic_widget_lock_open else R.drawable.ic_widget_lock
-        val action = if (open) lockAction() else openApp(context, null)
+        val action = when {
+            open -> lockAction()
+            state == LockState.Locked -> unlockHere(context)
+            else -> openApp(context, null)
+        }
         WidgetFrame(colors, onClick = action, padding = 10.dp) {
             if (LocalSize.current.width < 120.dp) {
                 Column(GlanceModifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically, horizontalAlignment = Alignment.CenterHorizontally) {

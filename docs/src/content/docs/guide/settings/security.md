@@ -613,7 +613,7 @@ How other apps and your watch reach the vault, and what a panic app can make WM 
 
 #### How it works
 
-Autofill, WM Keyboard and the watch get nothing while the vault is locked. Autofill can bring up the door for you to open it; the keyboard and the watch cannot.
+Autofill, WM Keyboard and the watch get nothing while the vault is locked. Autofill can ask for your fingerprint over the app you are in, or bring up the door; the keyboard and the watch cannot.
 
 A panic app can lock or wipe the vault at any time.
 
@@ -763,6 +763,8 @@ Opens Android's prompt to make WM Pass this phone's autofill service, so it can 
 #### How it works
 
 Tap a username or password field in another app and WM Pass offers up to six matching logins, and **Search WM Pass** for any other. While the vault is locked it offers **Unlock WM Pass** instead.
+
+With fingerprint unlock set up, tapping **Unlock WM Pass** brings up only the fingerprint prompt, over the app you are in. **Use password** opens the door instead. The same goes for a passkey, and the fingerprint that opened the vault also approves the sign-in.
 
 Nothing leaves the vault until you tap a suggestion. WM Pass then fills the username, the password and a one-time code if the screen has a box for it. A time-based code with no box on the screen is copied to the clipboard, for a site that asks on the next one.
 
