@@ -52,6 +52,8 @@ class Accounts {
   /** How the last trip to a server went: null for fine, or words to show. */
   syncProblem = $state<string | null>(null);
   private device = '';
+  /** The account opened last, to have it chosen at the door when this device has no vault of its own. */
+  private last = '';
   /** The account just added, for the door to have ready the next time it shows. */
   private signInNextId: string | null = null;
 
@@ -65,6 +67,11 @@ class Accounts {
     return this.list.find((a) => a.id === id) ?? null;
   }
 
+  /** The account the door starts on when there is no vault here to unlock: the last one opened. */
+  preferred(): AccountRef | null {
+    return this.list.find((a) => a.id === this.last) ?? this.list[0] ?? null;
+  }
+
   async load() {
     const raw = await host().loadSettings(SETTINGS);
     if (!raw) return;
@@ -72,13 +79,14 @@ class Accounts {
       const parsed = JSON.parse(raw);
       this.list = parsed.list ?? [];
       this.device = parsed.device ?? '';
+      this.last = parsed.last ?? '';
     } catch {
       // A damaged list costs the names, not the vaults.
     }
   }
 
   private async store() {
-    await host().saveSettings(SETTINGS, JSON.stringify({ list: this.list, device: this.device }));
+    await host().saveSettings(SETTINGS, JSON.stringify({ list: this.list, device: this.device, last: this.last }));
   }
 
   private deviceId() {
@@ -106,6 +114,7 @@ class Accounts {
   async forget() {
     this.list = [];
     this.device = '';
+    this.last = '';
     await host().saveSettings(SETTINGS, '');
     await host().removeFolder(FOLDER);
   }
@@ -184,12 +193,21 @@ class Accounts {
     }
   }
 
-  open(ref: AccountRef, password: Uint8Array, options: { keyFile?: Uint8Array | null; code?: string | null; deviceCode?: boolean } = {}) {
-    return ref.kind === 'kdbx'
+  async open(ref: AccountRef, password: Uint8Array, options: { keyFile?: Uint8Array | null; code?: string | null; deviceCode?: boolean } = {}) {
+    await (ref.kind === 'kdbx'
       ? this.openKdbx(ref, password, options.keyFile ?? null)
-      : this.openBitwarden(ref, password, options.code ?? null, options.deviceCode ?? false);
+      : this.openBitwarden(ref, password, options.code ?? null, options.deviceCode ?? false));
+    if (this.last !== ref.id) {
+      this.last = ref.id;
+      await this.store();
+    }
   }
 }
 
 export const accounts = new Accounts();
+
+/** Nothing to unlock at all: no vault in this folder and no KeePass file or server account either. */
+export function nothingToUnlock() {
+  return pass.state.kind === 'none' && accounts.list.length === 0;
+}
 pass.onWipe.push(() => void accounts.forget());

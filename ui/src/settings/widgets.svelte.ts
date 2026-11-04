@@ -8,6 +8,7 @@ import { pass } from '../engine/pass.svelte';
 import { prefs } from '../engine/prefs.svelte';
 import { healthNow } from '../vault/health.svelte';
 import { places } from './places.svelte';
+import { nothingToUnlock } from './accounts.svelte';
 
 const MAX_CODES = 8;
 const MAX_FAVORITES = 12;
@@ -65,7 +66,7 @@ function feed(): WidgetFeed {
   const runs = places.runs;
   return {
     enabled: prefs.v.desktop_widgets,
-    state: open ? 'open' : kind === 'none' ? 'none' : 'locked',
+    state: open ? 'open' : nothingToUnlock() ? 'none' : 'locked',
     vault: open && pass.state.kind === 'unlocked' ? pass.state.name : null,
     health,
     show_score: prefs.v.health_score,

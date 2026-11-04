@@ -16,11 +16,12 @@
   import { pass, bytesOf, consumeText } from '../engine/pass.svelte';
   import { host } from '../engine/host';
   import type { NeededFactor, StrengthView } from '../engine/types';
-  import { accounts, type AccountRef } from '../settings/accounts.svelte';
+  import { accounts, nothingToUnlock, type AccountRef } from '../settings/accounts.svelte';
   import AddAccount from '../settings/AddAccount.svelte';
   import { hardwareTap, hardwareAvailable } from '../settings/hardware';
 
-  let creating = $state(pass.state.kind === 'none');
+  // A KeePass file or a server account is something to unlock too, with no vault of its own here.
+  let creating = $state(nothingToUnlock());
   let password = $state('');
   let confirm = $state('');
   let message = $state<string | null>(null);
@@ -30,8 +31,9 @@
   let now = $state(Date.now());
   let strength = $state<StrengthView | null>(null);
   let needed = $state<NeededFactor[] | null>(null);
-  // An account just added comes chosen, with its password asked for straight away.
-  let source = $state<AccountRef | null>(accounts.takeSignInNext());
+  // An account just added comes chosen, with its password asked for straight away. With no vault
+  // here to unlock, the account opened last does.
+  let source = $state<AccountRef | null>(accounts.takeSignInNext() ?? (pass.state.kind === 'none' ? accounts.preferred() : null));
   let accountKeyFile = $state<Uint8Array | null>(null);
   let code = $state('');
   let asksCode = $state(false);
@@ -303,7 +305,7 @@
       <Btn label={busy ? 'Creating vault…' : 'Create vault'} variant="primary" wide disabled={!canCreate} type="submit" />
       {#if desktopLinked}<Btn label="Use the vault open in WM Pass" icon="computer" wide onclick={() => openDesktop()} disabled={busy} />{/if}
       <Btn label="I already have a vault" variant="quiet" wide onclick={() => (returning = true)} />
-      {#if pass.state.kind !== 'none' || accounts.list.length > 0}
+      {#if !nothingToUnlock()}
         <Btn label="Back" variant="quiet" wide onclick={() => (creating = false)} />
       {/if}
     </form>

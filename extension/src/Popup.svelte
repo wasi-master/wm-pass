@@ -11,6 +11,7 @@
   import { host } from '../../ui/src/engine/host';
   import { pass } from '../../ui/src/engine/pass.svelte';
   import { prefs } from '../../ui/src/engine/prefs.svelte';
+  import { nothingToUnlock } from '../../ui/src/settings/accounts.svelte';
   import { send } from './host';
   import type { SiteAnswer, SiteRow } from './shared';
 
@@ -159,7 +160,7 @@
     </div>
     {#if message}<p class="small dim note">{message}</p>
     {:else if unlocked && rows.length > 0}<p class="dimmer small note">Enter fills this page or copies the password. {host().os === 'mac' ? '⌘' : 'Ctrl+'}Enter copies the username.</p>{/if}
-  {:else if pass.state.kind === 'none'}
+  {:else if nothingToUnlock()}
     <div class="first">
       <p>No vault here yet.</p>
       <p class="dim small">Create one, bring one from a backup, or connect the WM Pass desktop app in Settings.</p>
