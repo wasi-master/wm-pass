@@ -356,7 +356,7 @@ export const computer = [
       'After that, the extension remembers the app\'s key and connects without a code.',
     ],
     caveats: [
-      'If it says the app is closed or this browser has not been set up from it, start the app and choose **Set up browsers** there.',
+      'If it says it could not connect, the line under that says why. Most often the app is closed, **Let the extension connect** is off, or the browser has not been set up: start the app, turn the setting on, choose **Set up browsers**, and restart the browser.',
       '**Disconnect** forgets the app. Connecting again means comparing a code again.',
     ],
     related: ['page.desktop-link', 'feature.bridge'],

@@ -33,7 +33,11 @@
 <p class="dim" style="padding-bottom:14px">Connected to the desktop app, this extension uses the vault already open there, so you unlock once. Everything between the two is encrypted, and the program in the middle cannot read it.</p>
 
 <Group title="Connection">
-  <Row title={shown.status === 'failed' ? shown.problem : WORDS[shown.status]} icon="computer" sub={shown.status === 'ready' ? (shown.unlocked ? 'The vault there is open.' : 'The vault there is locked.') : undefined}>
+  <Row
+    title={shown.status === 'failed' ? shown.problem : shown.status === 'absent' && shown.problem ? 'Could not connect.' : WORDS[shown.status]}
+    icon="computer"
+    sub={shown.status === 'ready' ? (shown.unlocked ? 'The vault there is open.' : 'The vault there is locked.') : shown.status === 'absent' && shown.problem ? shown.problem : undefined}
+  >
     {#if shown.status === 'ready'}
       <Btn label="Disconnect" onclick={forget} />
     {:else if shown.status !== 'compare' && shown.status !== 'waiting' && shown.status !== 'connecting'}

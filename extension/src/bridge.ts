@@ -61,9 +61,21 @@ async function pin() {
   void ask({ method: 'status' }).then((r) => set({ unlocked: r.unlocked === true }));
 }
 
+/** What the browser said when the relay would not start, in words that say what to do. */
+function whyAbsent(said: string | undefined): string {
+  if (said && /not found|no such native application/i.test(said)) {
+    return 'This browser has not been set up. In the app, open Settings, Browser extension, choose Set up browsers, then restart the browser.';
+  }
+  if (said && /forbidden/i.test(said)) {
+    return 'The app set up a different copy of the extension. Choose Set up browsers in the app again, then restart the browser.';
+  }
+  return said ? `The browser could not start the connection: ${said}` : 'The browser could not start the connection.';
+}
+
 function received(message: any) {
   if (message.closed) {
-    close(state.status === 'ready' ? 'off' : 'absent');
+    if (state.status === 'ready') close('off');
+    else close('absent', 'The app is closed, or Let the extension connect is off in its Settings, Browser extension.');
     return;
   }
   let step;
@@ -112,7 +124,7 @@ export async function connectLink() {
         for (const finish of waiting.values()) finish({ error: 'The desktop app went away.' });
         waiting.clear();
         // The browser says why: most often that the app has not set this browser up yet.
-        set({ status: 'absent', code: null, problem: chrome.runtime.lastError?.message ?? null });
+        set({ status: 'absent', code: null, problem: whyAbsent(chrome.runtime.lastError?.message) });
       }
     });
     send(bridge_start(key, known ? fromHex(known) : new Uint8Array(), NAME_OF_THIS));
