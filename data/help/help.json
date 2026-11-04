@@ -21349,6 +21349,31 @@
      "runs": [
       {
        "t": "text",
+       "s": "With fingerprint unlock set up, tapping "
+      },
+      {
+       "t": "strong",
+       "s": "Unlock WM Pass"
+      },
+      {
+       "t": "text",
+       "s": " brings up only the fingerprint prompt, over the app you are in. "
+      },
+      {
+       "t": "strong",
+       "s": "Use password"
+      },
+      {
+       "t": "text",
+       "s": " opens the door instead. The same goes for a passkey, and the fingerprint that opened the vault also approves the sign-in."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
        "s": "Nothing leaves the vault until you tap a suggestion. WM Pass then fills the username, the password and a one-time code if the screen has a box for it. A time-based code with no box on the screen is copied to the clipboard, for a site that asks on the next one."
       }
      ]
@@ -21433,31 +21458,6 @@
       {
        "t": "text",
        "s": " in Chrome's settings, under Autofill services. Until then WM Pass never hears about a page in Chrome, so it cannot offer anything there."
-      }
-     ]
-    },
-    {
-     "t": "p",
-     "runs": [
-      {
-       "t": "text",
-       "s": "With fingerprint unlock set up, tapping "
-      },
-      {
-       "t": "strong",
-       "s": "Unlock WM Pass"
-      },
-      {
-       "t": "text",
-       "s": " brings up only the fingerprint prompt, over the app you are in. "
-      },
-      {
-       "t": "strong",
-       "s": "Use password"
-      },
-      {
-       "t": "text",
-       "s": " opens the door instead. The same goes for a passkey, and the fingerprint that opened the vault also approves the sign-in."
       }
      ]
     },
