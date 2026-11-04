@@ -8,15 +8,23 @@ in a 108dp adaptive-icon canvas.
 The WM outlines in wm_outline.txt come from WM Keyboard's own icon, so the font is
 not needed here and is never shipped.
 
+For macOS 26 it also writes an Icon Composer package (desktop/src-tauri/icons/WMPass.icon):
+the shield, the pin and the monogram as separate layers over the background fill, so
+the system renders them as Liquid Glass. The Tauri bundler compiles it into Assets.car
+when Xcode 26's actool is on the machine; older macOS, or a build without actool, keeps
+using icon.icns.
+
 Requires: Pillow, rsvg-convert, cwebp.
 
     python3 tools/icon/gen_icon.py --preview /tmp/icon.png
+    python3 tools/icon/gen_icon.py --glass desktop/src-tauri/icons/WMPass.icon
     python3 tools/icon/gen_icon.py --out .
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import os
 import shutil
@@ -135,6 +143,75 @@ def foreground_svg(wm: str) -> str:
                SHADOW_FILTER + mask + gradient("bodyg", BODY_TOP, BODY_BOTTOM) + gradient("wmg", WM_A, WM_B))
 
 
+GLASS_PX = 1024
+
+
+def glass_layers(wm: str) -> dict[str, str]:
+    """Icon Composer layers: each part alone on a transparent canvas, in its own colours.
+
+    No drop shadow: macOS adds shadow, specular and translucency per group itself.
+    """
+    s = lockup_scale()
+    wrap = f'<g transform="translate({C},{C}) scale({s:.4f}) translate({-C},{-C})">{{}}</g>'
+    mask = (f'<mask id="body"><rect width="108" height="108" fill="black"/>'
+            f'<path d="{shield_path()}" fill="white"/>'
+            f'<path d="{keyhole_path()}" fill="black"/>'
+            f'<path d="{pin_path(PIN_HALO)}" fill="black"/></mask>')
+
+    def canvas(body: str, defs: str) -> str:
+        return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{GLASS_PX}" height="{GLASS_PX}" '
+                f'viewBox="0 0 108 108"><defs>{defs}</defs>{wrap.format(body)}</svg>')
+
+    return {
+        "Shield": canvas('<rect width="108" height="108" fill="url(#bodyg)" mask="url(#body)"/>',
+                         mask + gradient("bodyg", BODY_TOP, BODY_BOTTOM)),
+        # The monogram is cut out of the pin, so it shows whichever way the two stack.
+        "Pin": canvas(f'<path d="{pin_path()} {wm}" fill="{PIN_FILL}" fill-rule="evenodd"/>', ""),
+        "Monogram": canvas(f'<path d="{wm}" fill="url(#wmg)"/>', gradient("wmg", WM_A, WM_B)),
+    }
+
+
+def srgb(hex_colour: str) -> str:
+    r, g, b = (int(hex_colour[i:i + 2], 16) / 255 for i in (1, 3, 5))
+    return f"srgb:{r:.5f},{g:.5f},{b:.5f},1.00000"
+
+
+def glass_group(name: str, layers: list[str], shadow: float, translucency: float) -> dict:
+    return {
+        "layers": [{"glass": True, "hidden": False, "image-name": f"{layer}.png", "name": layer}
+                   for layer in layers],
+        "lighting": "individual",
+        "name": name,
+        "shadow": {"kind": "neutral", "opacity": shadow},
+        "specular": True,
+        "translucency": {"enabled": True, "value": translucency},
+    }
+
+
+def icon_json() -> str:
+    # Groups and layers run front to back.
+    doc = {
+        "fill": {"linear-gradient": [srgb(BG_TOP), srgb(BG_BOTTOM)]},
+        "groups": [
+            glass_group("Pin", ["Monogram", "Pin"], 0.5, 0.1),
+            glass_group("Shield", ["Shield"], 0.45, 0.25),
+        ],
+        "supported-platforms": {"squares": ["macOS"]},
+    }
+    return json.dumps(doc, indent=2) + "\n"
+
+
+def write_glass_icon(path: str, wm: str, tmp: str) -> None:
+    assets = os.path.join(path, "Assets")
+    if os.path.isdir(assets):
+        shutil.rmtree(assets)
+    os.makedirs(assets)
+    for name, layer in glass_layers(wm).items():
+        shutil.copy(render(layer, GLASS_PX, tmp, f"glass-{name}"), os.path.join(assets, f"{name}.png"))
+    with open(os.path.join(path, "icon.json"), "w") as fh:
+        fh.write(icon_json())
+
+
 def background_xml() -> str:
     return f"""<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
@@ -228,6 +305,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", help="repository root to write assets under")
     ap.add_argument("--preview", help="write a 512px preview PNG here")
+    ap.add_argument("--glass", help="write only the macOS Icon Composer package to this .icon path")
     args = ap.parse_args()
     for tool in ("rsvg-convert", "cwebp"):
         if not shutil.which(tool):
@@ -237,6 +315,8 @@ def main() -> None:
     bg, fg = background_svg(), foreground_svg(wm)
 
     with tempfile.TemporaryDirectory() as tmp:
+        if args.glass:
+            write_glass_icon(args.glass, wm, tmp)
         store = composed(bg, fg, 512, tmp, "store")
         if args.preview:
             store.save(args.preview)
@@ -273,6 +353,7 @@ def main() -> None:
         rounded.save(os.path.join(icons, "wm-pass-1024.png"))
         for px in (16, 32, 48, 128, 256, 512):
             rounded.resize((px, px), Image.LANCZOS).save(os.path.join(icons, f"wm-pass-{px}.png"))
+        write_glass_icon(os.path.join(args.out, "desktop", "src-tauri", "icons", "WMPass.icon"), wm, tmp)
     print("icon assets written")
 
 
