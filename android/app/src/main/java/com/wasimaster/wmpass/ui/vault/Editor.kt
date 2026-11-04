@@ -73,12 +73,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.wasimaster.wmpass.BuildConfig
 import com.wasimaster.wmpass.core.CustomFieldView
 import com.wasimaster.wmpass.core.Detail
 import com.wasimaster.wmpass.core.FieldView
 import com.wasimaster.wmpass.core.NativeFailure
 import com.wasimaster.wmpass.core.Pass
 import com.wasimaster.wmpass.core.StrengthView
+import com.wasimaster.wmpass.system.FieldWire
 import com.wasimaster.wmpass.ui.help.HelpAction
 import com.wasimaster.wmpass.ui.help.helpAnchor
 import com.wasimaster.wmpass.ui.icons.PassIcons
@@ -301,6 +303,38 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
     var aliasFor by remember { mutableStateOf<EditField?>(null) }
     var askDiscard by remember { mutableStateOf(false) }
     val titleFocus = remember { FocusRequester() }
+
+    // The buttons that fill a card or a network from elsewhere. WM Keyboard offers the same on its
+    // strip while one of these fields has the keys, and a tap there runs exactly these.
+    fun scanCard() {
+        shell.cardTarget = { read -> applyCard(read, fields) }
+    }
+    fun wifiFromCode() {
+        shell.scanTarget = { text ->
+            if (!applyWifi(text, fields, title)) shell.notice("That code is not a Wi-Fi network")
+        }
+    }
+    fun wifiFromPhone() {
+        sheet = "savedwifi"
+    }
+    val keyboardToken = rememberKeyboardActions { action ->
+        when {
+            action == FieldWire.CARD_SCAN && kind == "card" -> scanCard()
+            action == FieldWire.WIFI_QR && kind == "wifi" -> wifiFromCode()
+            action == FieldWire.WIFI_SAVED && kind == "wifi" -> wifiFromPhone()
+        }
+    }
+    /** What the keyboard may offer in the field [key]. Only Google's reader reads a card's name and expiry. */
+    fun keyboardActions(key: String?): List<String> = when (kind) {
+        "card" -> when (key) {
+            "number" -> listOf(FieldWire.CARD_SCAN)
+            "holder", "expiry" ->
+                if (BuildConfig.GOOGLE_SDKS && shell.prefs.cardReader.value == CardReaders.Google) listOf(FieldWire.CARD_SCAN) else emptyList()
+            else -> emptyList()
+        }
+        "wifi" -> listOf(FieldWire.WIFI_QR, FieldWire.WIFI_SAVED)
+        else -> emptyList()
+    }
 
     LaunchedEffect(entryId, newKind) {
         if (entryId != null) {
@@ -629,7 +663,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                         label = { Text("Name") },
                         placeholder = if (derived.isNotEmpty()) ({ Text(derived) }) else null,
                         lineLimits = TextFieldLineLimits.SingleLine,
-                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words).offering(keyboardToken, keyboardActions(null)),
                     )
                     related?.name?.takeIf { !it.equals(derived, ignoreCase = true) }?.let { FieldSuggestions(title, listOf(it)) }
                 } else {
@@ -653,7 +687,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                             textStyle = MaterialTheme.typography.headlineMedium.copy(color = colors.text, textAlign = TextAlign.Center),
                             cursorBrush = SolidColor(colors.primary),
                             lineLimits = TextFieldLineLimits.SingleLine,
-                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
+                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words).offering(keyboardToken, keyboardActions(null)),
                         )
                     }
                     Text(
@@ -686,6 +720,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                                     } else {
                                         null
                                     },
+                                    tag = { options -> options.offering(keyboardToken, keyboardActions(field.spec.key)) },
                                 ) { generating = field }
                     }
                     val mainRows = fields.filter { mainKeys == null || it.spec.key in mainKeys }
@@ -699,19 +734,13 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                             }
                             if (kind == "wifi") {
                                 Hairline()
-                                AddLine("Fill in from a QR code", PassIcons.QrCodeScanner) {
-                                    shell.scanTarget = { text ->
-                                        if (!applyWifi(text, fields, title)) shell.notice("That code is not a Wi-Fi network")
-                                    }
-                                }
+                                AddLine("Fill in from a QR code", PassIcons.QrCodeScanner) { wifiFromCode() }
                                 Hairline()
-                                AddLine("Pick a network saved on this phone", PassIcons.Wifi) { sheet = "savedwifi" }
+                                AddLine("Pick a network saved on this phone", PassIcons.Wifi) { wifiFromPhone() }
                             }
                             if (kind == "card") {
                                 Hairline()
-                                AddLine("Scan the card", PassIcons.PhotoCamera) {
-                                    shell.cardTarget = { read -> applyCard(read, fields) }
-                                }
+                                AddLine("Scan the card", PassIcons.PhotoCamera) { scanCard() }
                             }
                         }
                     }
@@ -1433,6 +1462,8 @@ private fun FieldEditor(
     context: List<String>,
     onAlias: (() -> Unit)? = null,
     onSsh: (() -> Unit)? = null,
+    /** Adds what WM Keyboard may offer in this field to its keyboard options. */
+    tag: (KeyboardOptions) -> KeyboardOptions = { it },
     onGenerate: () -> Unit,
 ) {
     val colors = palette
@@ -1534,7 +1565,7 @@ private fun FieldEditor(
                         textStyle = TextStyle(fontFamily = MonoFamily, fontSize = 16.sp),
                         trailingIcon = actions,
                         textObfuscationMode = if (field.showing) TextObfuscationMode.Visible else TextObfuscationMode.RevealLastTyped,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
+                        keyboardOptions = tag(KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false)),
                     )
                     else -> androidx.compose.material3.OutlinedTextField(
                         state = field.text,
@@ -1544,7 +1575,7 @@ private fun FieldEditor(
                         textStyle = if (isSecret) TextStyle(fontFamily = MonoFamily, fontSize = 15.sp) else MaterialTheme.typography.bodyLarge,
                         trailingIcon = if (onAlias != null || onSsh != null) actions else null,
                         lineLimits = if (multiline) TextFieldLineLimits.MultiLine(minHeightInLines = 3) else TextFieldLineLimits.SingleLine,
-                        keyboardOptions = keyboardFor(spec),
+                        keyboardOptions = tag(keyboardFor(spec)),
                     )
                 }
                 if (spec.input == "password" && field.loaded && field.text.text.isNotEmpty()) {
@@ -1588,7 +1619,7 @@ private fun FieldEditor(
                                 textStyle = TextStyle(fontFamily = MonoFamily, fontSize = 16.sp, color = colors.text),
                                 cursorBrush = SolidColor(colors.primary),
                                 textObfuscationMode = if (field.showing) TextObfuscationMode.Visible else TextObfuscationMode.RevealLastTyped,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
+                                keyboardOptions = tag(KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false)),
                             )
                         } else {
                             if (field.text.text.isEmpty()) Text(hintOf(spec), color = colors.textLow, style = MaterialTheme.typography.bodyLarge)
@@ -1602,7 +1633,7 @@ private fun FieldEditor(
                                 },
                                 cursorBrush = SolidColor(colors.primary),
                                 lineLimits = if (multiline) TextFieldLineLimits.MultiLine(minHeightInLines = 3) else TextFieldLineLimits.SingleLine,
-                                keyboardOptions = keyboardFor(spec),
+                                keyboardOptions = tag(keyboardFor(spec)),
                             )
                         }
                     }

@@ -1,13 +1,36 @@
 ---
 title: WM Keyboard
-description: Type logins and one-time codes from WM Pass through WM Keyboard's WM Pass tool, and keep the keyboard's API keys in your vault.
+description: Browse, type and add to your vault from WM Keyboard's WM Pass tool, get WM Pass's own buttons on the keyboard's strip, and keep the keyboard's API keys in your vault.
 ---
 
-If you use [WM Keyboard](https://wmkeyboard.pages.dev), its WM Pass tool can type logins from this app, and its code chip can offer the current code when you reach a code box.
+If you use [WM Keyboard](https://wmkeyboard.pages.dev), its WM Pass tool works as a password book on top of this app: it lists your vault, types from it, adds logins to it and changes passwords in it. Its code chip can offer the current code when you reach a code box.
 
 **Let WM Keyboard fill**, under Settings, Security, starts on when WM Keyboard is installed and its signing certificate is WM Keyboard's own. Turn it off there and it stays off. The keyboard can only ask while your vault is open, and it can never unlock it. Each app checks the other's signing certificate first.
 
 A password typed this way passes through the keyboard's process, as anything you type does. If you would rather keep it out of there, use the autofill service instead.
+
+## The WM Pass tool
+
+The tool lists every item in your vault that is not in the trash or on the hidden shelf, logins, cards, notes, Wi-Fi networks and the rest. Those saved for the app in front come first. Its search uses the vault's own search.
+
+- **Open an item** to see its fields. A plain field, such as a username or a website, shows as it is. A secret, such as a password or a card number, is only named until you tap it.
+- **Type** puts one field into the box you are typing in. That one value is the only thing WM Pass sends to the keyboard, and only when you tap.
+- **Copy** asks WM Pass to copy the field. WM Pass puts it on the clipboard itself, marked sensitive and cleared after the time set under Settings, Security, so a copied secret never passes through the keyboard.
+- **Open in WM Pass** opens the item here, once the vault is open.
+- **Add a login** saves a name, username, password and website. A login added while an app is in front is tied to that app by its signing certificate, so it comes first there next time. In a browser it is not, since one browser shows every site: give it the website instead.
+- **Change password** puts a new password on an item that has one. The old password stays in the item's history.
+- **New password**, in either form, makes a password with the generator as you set it up here.
+
+The keyboard types and copies nothing into a field that asks it not to learn, such as a private browser tab, and shows **Open WM Pass** while the vault is locked.
+
+## Buttons on the keyboard's strip
+
+While you type in some of WM Pass's own fields, WM Keyboard offers the buttons beside that field as chips above its keys. A tap on a chip does exactly what the button does.
+
+- A card's number offers **Scan the card**. So do the name on the card and the expiry date when the card scanner is Google's, since only that one reads them.
+- A Wi-Fi network's name and password offer **Fill in from a QR code** and **Pick a network saved on this phone**.
+
+The fields tell the keyboard which buttons they have, never what they hold. Each screen names its fields afresh, and the keyboard sends that name back with the tap, so a tap meant for a screen that has closed does nothing. This works whether or not **Let WM Keyboard fill** is on, because nothing from the vault goes to the keyboard.
 
 ## API keys
 
