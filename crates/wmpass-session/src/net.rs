@@ -305,6 +305,21 @@ fn mail_rows(list: &[inbox::Message]) -> Value {
     json!(list.iter().map(|m| json!({"id": m.id, "from": m.from, "subject": m.subject, "preview": m.preview, "at_ms": m.at_ms})).collect::<Vec<_>>())
 }
 
+/// Every site the username checker knows, in one list, most used first: `check` is asked here,
+/// `page` is read in a hidden browser view by the app, and `link` is only opened for a person to
+/// look at. The desktop app hands the same list to the browser extension.
+pub fn username_sites() -> Value {
+    let mut sites: Vec<(usize, Value)> = usernames::SITES
+        .iter()
+        .map(|s| (usernames::rank(s.name), json!({"name": s.name, "profile": s.profile, "icon": s.icon, "kind": "check"})))
+        .chain(usernames::PAGE_SITES.iter().map(|s| (usernames::rank(s.name), json!({"name": s.name, "profile": s.profile, "icon": s.icon, "kind": "page"}))))
+        .chain(usernames::LINK_SITES.iter().map(|s| (usernames::rank(s.name), json!({"name": s.name, "profile": s.url, "icon": s.icon, "kind": "link"}))))
+        .collect();
+    // A stable sort keeps list order among the rest.
+    sites.sort_by_key(|(rank, _)| *rank);
+    json!(sites.into_iter().map(|(_, site)| site).collect::<Vec<_>>())
+}
+
 /// Whether a call belongs here rather than on the service itself.
 pub fn is_net_method(method: &str) -> bool {
     method == "remote.sync" || ["breach.", "alias.", "usernames.", "inbox.", "lan.", "share.", "bitwarden."].iter().any(|prefix| method.starts_with(prefix))
@@ -436,19 +451,7 @@ pub fn call(
             let names: Vec<&str> = usernames::SITES.iter().map(|s| s.name).collect();
             Ok(view(json!(names)))
         }
-        // Every site in one list: `check` is asked here, `page` is read in a hidden browser
-        // view by the app, and `link` is only opened for a person to look at.
-        "usernames.site_list" => {
-            let mut sites: Vec<(usize, Value)> = usernames::SITES
-                .iter()
-                .map(|s| (usernames::rank(s.name), json!({"name": s.name, "profile": s.profile, "icon": s.icon, "kind": "check"})))
-                .chain(usernames::PAGE_SITES.iter().map(|s| (usernames::rank(s.name), json!({"name": s.name, "profile": s.profile, "icon": s.icon, "kind": "page"}))))
-                .chain(usernames::LINK_SITES.iter().map(|s| (usernames::rank(s.name), json!({"name": s.name, "profile": s.url, "icon": s.icon, "kind": "link"}))))
-                .collect();
-            // Most used first; a stable sort keeps list order among the rest.
-            sites.sort_by_key(|(rank, _)| *rank);
-            Ok(view(json!(sites.into_iter().map(|(_, site)| site).collect::<Vec<_>>())))
-        }
+        "usernames.site_list" => Ok(view(username_sites())),
         "usernames.check" => {
             let a: NameArgs = parse(args)?;
             let site = usernames::SITES.iter().find(|s| s.name == a.site).ok_or_else(|| failed("invalid", "unknown site"))?;

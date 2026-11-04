@@ -1063,9 +1063,9 @@ The username checker asks a list of sites whether a name is already taken, so yo
 
 #### How it works
 
-Type a name on the [Username checker](/guide/settings/usernames/) page and choose **Check**. Each site is asked in turn and answers **Free**, **Taken** or **No clear answer**.
+Type a name on the [Username checker](/guide/settings/usernames/) page and choose **Check**. Every site is asked at once and answers **Free**, **Taken** or **No clear answer**.
 
-Sites that refuse anonymous lookups, or give the same answer for every name, are left out, because a guess is worse than no answer. X, Instagram, npm and PyPI are among them.
+Sites that refuse anonymous lookups, or give the same answer for every name, get no answer, because a guess is worse than none. X, Threads and Reddit are among them, and the page links their profiles for you to open yourself.
 
 #### Limits
 

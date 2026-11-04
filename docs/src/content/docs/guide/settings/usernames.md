@@ -1,6 +1,6 @@
 ---
 title: "Username checker"
-description: "Asks a list of sites, one at a time, whether a username is taken there."
+description: "Asks a list of sites, all at once, whether a username is taken there."
 sidebar:
   order: 24
 ---
@@ -12,7 +12,7 @@ Found under Settings, Username checker.
 
 ## About this page
 
-Asks a list of sites, one at a time, whether a username is taken there.
+Asks a list of sites, all at once, whether a username is taken there.
 
 #### Why it is there
 
@@ -22,7 +22,7 @@ If you want the same name everywhere, this saves trying it on each site by hand.
 
 For most sites, WM Pass asks for that name's public profile and reads whether one comes back.
 
-TikTok and Instagram only answer a browser. Their pages load in a hidden, private browser view that runs their scripts, may only load pages on that site, and keeps no cookies or storage afterwards. WM Pass reads only the text the page shows.
+TikTok and Instagram only answer a browser. Their pages load in a hidden, private browser view that runs their scripts, may only load pages on that site, and keeps no cookies or storage afterwards. WM Pass reads only the text the page shows. They take turns, so their rows can be the last to fill in.
 
 X, Threads, Reddit and a few others refuse, or give the same answer for every name. They are listed under **Look for yourself**, with a link to the profile.
 
@@ -38,23 +38,23 @@ A name can only be letters, digits, dots, dashes and underscores, up to 64 chara
 
 Needs [Allow network features](/guide/settings/security/#setting-network-allowed).
 
-#### On Android
-
-Asks a list of sites, all at once, whether a username is taken there.
-
 See also [Check](/guide/settings/usernames/#action-username-check), [Look for yourself](/guide/settings/usernames/#group-usernames-links), [Checking usernames](/guide/how-it-works/#feature-usernames).
 
 <a id="action-username-check"></a>
 
 ## Check
 
-Asks every site in turn about the name in the box. The answers fill in as they come.
+Asks every site about the name in the box at once. A bar shows how many have answered, and each row fills in as its answer comes.
 
 #### How it works
 
 - *Free* means the site showed no profile under that name.
 - *Taken* means somebody has it.
-- *No clear answer* means the site refused, took too long, or said something WM Pass could not read.
+- *No clear answer* means the site said something WM Pass could not read.
+
+A site that refused or took too long says why on its own row, with a button to ask it again. Click any site to open that name's page there.
+
+Where no hidden browser view can be opened, TikTok and Instagram say they can only be checked by opening them.
 
 #### Limits
 
@@ -63,8 +63,6 @@ Free means no profile was found today. Signing up is the only way to be sure you
 A site that limits how often it can be asked gives no clear answer until you try again later.
 
 #### On Android
-
-Asks every site about the name in the box at once. A bar shows how many have answered, and each row fills in as its answer comes.
 
 - *Free* means the site showed no profile under that name.
 - *Taken* means somebody has it.

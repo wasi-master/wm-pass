@@ -805,8 +805,8 @@ export const features = [
     title: 'Checking usernames',
     what: 'The username checker asks a list of sites whether a name is already taken, so you can pick one that is free where you need it.',
     how: [
-      'Type a name on the [[page.usernames]] page and choose **Check**. Each site is asked in turn and answers **Free**, **Taken** or **No clear answer**.',
-      'Sites that refuse anonymous lookups, or give the same answer for every name, are left out, because a guess is worse than no answer. X, Instagram, npm and PyPI are among them.',
+      'Type a name on the [[page.usernames]] page and choose **Check**. Every site is asked at once and answers **Free**, **Taken** or **No clear answer**.',
+      'Sites that refuse anonymous lookups, or give the same answer for every name, get no answer, because a guess is worse than none. X, Threads and Reddit are among them, and the page links their profiles for you to open yourself.',
     ],
     caveats: [
       'Every site checked learns the name you looked up.',
@@ -816,7 +816,7 @@ export const features = [
     words: 'username handle availability taken free',
     on: {
       extension: {
-        caveats: 'The browser extension does not make these calls itself. Use the desktop app or the phone.',
+        caveats: 'The browser extension has no network of its own. While it is connected to the desktop app, the app makes the checks for it.',
       },
     },
   },

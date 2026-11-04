@@ -401,6 +401,7 @@ impl Conversation {
                 out.push(b'}');
                 Ok(out)
             }
+            "usernames.site_list" => Ok(reply_bytes(&json!({"id": id, "sites": wmpass_session::net::username_sites()}))),
             "usernames.sites" => {
                 let sites: Vec<&str> = usernames::SITES.iter().map(|s| s.name).collect();
                 let pages: Vec<&str> = usernames::PAGE_SITES.iter().map(|s| s.name).collect();

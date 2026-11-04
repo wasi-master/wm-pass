@@ -1,7 +1,7 @@
 // What a page of the extension runs on. Files are shared IndexedDB, and the session is in the
 // background, so it survives the popup closing.
 
-import type { Host } from '../../ui/src/engine/host';
+import type { Host, UsernameSite } from '../../ui/src/engine/host';
 import { decodeReply } from '../../ui/src/engine/frame';
 import { webHost } from '../../ui/src/hosts/web';
 import { extensionPlaces } from './places';
@@ -59,9 +59,8 @@ export async function extensionHost(): Promise<Host> {
     saveSealed: (name, text) => seal(name, text),
     places: extensionPlaces,
     usernames: {
-      sites: () => send({ type: 'usernames', what: 'sites' }),
+      siteList: async () => (await send<{ sites: UsernameSite[] }>({ type: 'usernames', what: 'site_list' })).sites,
       check: async (site, name) => (await send<{ answer: string }>({ type: 'usernames', what: 'check', site, name })).answer,
-      links: async (name) => (await send<{ links: { site: string; url: string }[] }>({ type: 'usernames', what: 'links', name })).links,
     },
     link: {
       state: () => send({ type: 'link.state' }),

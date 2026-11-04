@@ -77,10 +77,18 @@ export interface Host {
   desktop?: DesktopHost;
 }
 
+/** A site the username checker knows, with `{}` in `profile` for the name. */
+export interface UsernameSite {
+  name: string;
+  profile: string;
+  icon: string;
+  /** `check` is asked directly, `page` read in a hidden window, `link` only opened. */
+  kind: 'check' | 'page' | 'link';
+}
+
 export interface UsernameHost {
-  sites(): Promise<{ sites: string[]; pages: string[] }>;
+  siteList(): Promise<UsernameSite[]>;
   check(site: string, name: string): Promise<string>;
-  links(name: string): Promise<{ site: string; url: string }[]>;
 }
 
 export interface DesktopLink {

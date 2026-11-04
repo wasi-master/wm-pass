@@ -3448,7 +3448,7 @@
       },
       {
        "t": "text",
-       "s": ". Each site is asked in turn and answers "
+       "s": ". Every site is asked at once and answers "
       },
       {
        "t": "strong",
@@ -3481,7 +3481,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Sites that refuse anonymous lookups, or give the same answer for every name, are left out, because a guess is worse than no answer. X, Instagram, npm and PyPI are among them."
+       "s": "Sites that refuse anonymous lookups, or give the same answer for every name, get no answer, because a guess is worse than none. X, Threads and Reddit are among them, and the page links their profiles for you to open yourself."
       }
      ]
     }
@@ -12734,7 +12734,16 @@
      "runs": [
       {
        "t": "text",
-       "s": "While the page is open, it asks api.mail.tm for new mail with the sign-in key. Opening a mail fetches its full text."
+       "s": "While an address is open, it asks api.mail.tm for new mail with the sign-in key. Opening a mail fetches all of it. The key and the password stay in the vault, and when the key runs out WM Pass signs in again with the password."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "mail.gw and a server of your own that speaks the same API work the same way, at their own address."
       }
      ]
     }
@@ -12785,7 +12794,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Opening a mail shows the opening lines that came with the list, not the whole message."
+       "s": "A quiet session lapses, so each visit first points the session back at the same address."
       }
      ]
     }
@@ -12898,7 +12907,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "TikTok and Instagram only answer a browser. Their pages load in a hidden, private browser view that runs their scripts, may only load pages on that site, and keeps no cookies or storage afterwards. WM Pass reads only the text the page shows."
+       "s": "TikTok and Instagram only answer a browser. Their pages load in a hidden, private browser view that runs their scripts, may only load pages on that site, and keeps no cookies or storage afterwards. WM Pass reads only the text the page shows. They take turns, so their rows can be the last to fill in."
       }
      ]
     },

@@ -385,10 +385,11 @@ pub fn open_in_browser(url: &str) {
     let _ = std::process::Command::new(program).arg(url).spawn();
 }
 
-/// Only web addresses: a saved "site" comes from a vault that may hold anything.
+/// Only web addresses, and mail ones for the mail program: a saved "site" comes from a vault that
+/// may hold anything.
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
-    if !(url.starts_with("https://") || url.starts_with("http://")) || url.chars().any(char::is_control) {
+    if !(url.starts_with("https://") || url.starts_with("http://") || url.starts_with("mailto:")) || url.chars().any(char::is_control) {
         return Err("that is not a web address".to_owned());
     }
     open_in_browser(&url);

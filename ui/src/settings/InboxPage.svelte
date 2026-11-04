@@ -1,97 +1,144 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import Btn from '../parts/Btn.svelte';
+  import Dialog from '../parts/Dialog.svelte';
+  import Field from '../parts/Field.svelte';
   import Group from '../parts/Group.svelte';
-  import IconBtn from '../parts/IconBtn.svelte';
-  import Segmented from '../parts/Segmented.svelte';
+  import Icon from '../parts/Icon.svelte';
+  import Row from '../parts/Row.svelte';
   import { pass } from '../engine/pass.svelte';
-  import { copyPlainLine } from './clipboard';
+  import { ui } from '../vault/ui.svelte';
   import NetGate from './NetGate.svelte';
+  import InboxAddress from './InboxAddress.svelte';
+  import MailView from './MailView.svelte';
   import { online } from './net.svelte';
+  import { INBOX_WARNING, PROVIDERS, isOwn, keptInboxes, mailTime, providerName, sentence, titleOf, type KeptInbox } from './inbox';
 
-  interface Message {
-    id: string;
-    from: string;
-    subject: string;
-    preview: string;
-  }
+  // The list of kept addresses, one address at settings/inbox/<id>, and one mail below that.
+  const parts = $derived(ui.section.split('/'));
+  const openId = $derived(parts[2] ?? null);
+  const openMail = $derived(parts[3] ? decodeURIComponent(parts[3]) : null);
 
-  let service = $state<'mailtm' | 'guerrilla'>('mailtm');
-  let address = $state<string | null>(null);
-  let token = $state<Uint8Array | null>(null);
-  let messages = $state.raw<Message[]>([]);
-  let opened = $state<{ subject: string; body: string } | null>(null);
+  let kept = $state.raw<KeptInbox[] | null>(null);
   let problem = $state<string | null>(null);
 
-  $effect(() => {
-    const current = address;
-    if (!current) return;
-    const check = async () => {
-      try {
-        messages = (await pass.engine<Message[]>('inbox.messages', { service, address: current }, { secret: token, online: online() })).json;
-      } catch {
-        // The next round tries again.
-      }
-    };
-    void check();
-    const timer = setInterval(check, 8000);
-    return () => clearInterval(timer);
-  });
-
-  async function make() {
+  async function load() {
     try {
-      const reply = await pass.engine<{ address: string }>('inbox.new', { service }, { online: online() });
-      token = reply.secret;
-      address = reply.json.address;
+      kept = await keptInboxes();
       problem = null;
     } catch (failure: any) {
-      problem = failure.message;
+      kept = [];
+      problem = sentence(failure.message);
     }
   }
 
-  async function open(message: Message) {
-    let body = message.preview;
-    if (service === 'mailtm') {
-      try {
-        body = (await pass.engine<{ text: string }>('inbox.body', { id: message.id }, { secret: token, online: online() })).json.text;
-      } catch {
-        // The preview will do.
-      }
+  // The list is read again on the way back from an address, which may have been renamed or closed.
+  $effect(() => {
+    if (!openId) untrack(() => void load());
+  });
+
+  function go(id: string) {
+    ui.section = `settings/inbox/${id}`;
+  }
+
+  // ---- a new address ----
+
+  let making = $state(false);
+  let provider = $state('mailtm');
+  let label = $state('');
+  let base = $state('');
+  let domain = $state('');
+  let busy = $state(false);
+  let makeProblem = $state<string | null>(null);
+  const own = $derived(isOwn(provider));
+  const ready = $derived(!own || (base.trim() !== '' && (provider !== 'inbucket' || domain.trim() !== '')));
+
+  function startMaking() {
+    provider = 'mailtm';
+    label = base = domain = '';
+    makeProblem = null;
+    making = true;
+  }
+
+  async function make() {
+    if (!ready || busy) return;
+    busy = true;
+    makeProblem = null;
+    try {
+      const reply = await pass.net<{ id: string }>('inbox.open', online(), {
+        provider,
+        base: base.trim().replace(/\/+$/, ''),
+        domain: domain.trim(),
+        label: label.trim(),
+      });
+      await pass.flush();
+      making = false;
+      go(reply.json.id);
+    } catch (failure: any) {
+      makeProblem = sentence(failure.message);
+    } finally {
+      busy = false;
     }
-    opened = { subject: message.subject, body };
   }
 </script>
 
-<NetGate what="Makes a throwaway address on a public mail service, for a sign-up that only needs one confirmation mail. The service, and possibly others, can read what arrives. Never use one for an account you want to keep.">
-  <div class="stack">
-    {#if !address}
-      <p class="dim">Anyone could read these mailboxes in principle, and the address is gone when you leave this page. Good for a one-off sign-up, nothing more.</p>
-      <div><Segmented value={service} options={[['mailtm', 'mail.tm'], ['guerrilla', 'Guerrilla Mail']]} onchange={(s) => (service = s)} /></div>
-      <div><Btn label="Make an address" icon="inbox" variant="primary" onclick={make} /></div>
-    {:else}
-      <div class="gap">
-        <span class="mono selectable grow">{address}</span>
-        <IconBtn icon="content_copy" label="Copy" onclick={() => copyPlainLine('Address', address!)} />
-      </div>
-      <Group title="Arrived" help="group.inbox.arrived">
-        {#if messages.length === 0}
-          <div class="set-body"><p class="dim">Nothing yet. This page checks every few seconds.</p></div>
-        {/if}
-        {#each messages as message (message.id)}
-          <button type="button" class="set-row" onclick={() => open(message)}>
-            <span class="text">
-              <span class="ell" style="display:block;font-weight:500">{message.subject || 'No subject'}</span>
-              <span class="sub ell" style="display:block">{message.from}</span>
-              <span class="sub" style="display:block">{message.preview}</span>
-            </span>
-          </button>
+<NetGate what={INBOX_WARNING}>
+  {#if openId && openMail}
+    <MailView id={openId} message={openMail} />
+  {:else if openId}
+    <InboxAddress id={openId} />
+  {:else}
+    <div class="stack" style="padding-bottom:14px;max-width:480px">
+      <p class="dim">Each address stays here, with its mail, until you close it. Good for one-off sign-ups, nothing more.</p>
+      <div><Btn label="New address" icon="add" variant="primary" onclick={startMaking} /></div>
+      {#if problem}<p class="danger-text">{problem}</p>{/if}
+      {#if kept && kept.length === 0 && !problem}<p class="dimmer">No addresses yet.</p>{/if}
+    </div>
+    {#if kept && kept.length > 0}
+      <Group title={kept.length === 1 ? '1 address' : `${kept.length} addresses`}>
+        {#each kept as inbox (inbox.id)}
+          <Row
+            title={titleOf(inbox)}
+            sub={[inbox.label ? inbox.address : null, providerName(inbox.provider), mailTime(inbox.created_ms) || null].filter(Boolean).join('  ·  ')}
+            icon={isOwn(inbox.provider) ? 'dns' : 'inbox'}
+            chevron
+            onclick={() => go(inbox.id)}
+          />
         {/each}
       </Group>
-      {#if opened}
-        <p style="font-weight:500">{opened.subject}</p>
-        <!-- Plain text only, so no tracking pixel or script in a mail ever runs here. -->
-        <p class="selectable" style="white-space:pre-wrap">{opened.body}</p>
-      {/if}
     {/if}
-    {#if problem}<p class="danger-text">{problem}</p>{/if}
-  </div>
+  {/if}
 </NetGate>
+
+{#if making}
+  <Dialog title="New address" onclose={() => !busy && (making = false)}>
+    <div class="stack">
+      <Group>
+        {#each PROVIDERS as choice (choice.id)}
+          <Row
+            title={choice.name}
+            sub={choice.about}
+            icon={choice.own ? 'dns' : 'inbox'}
+            onclick={() => {
+              provider = choice.id;
+              makeProblem = null;
+            }}
+          >
+            {#if provider === choice.id}<span class="ok-text" style="display:flex" aria-label="Chosen"><Icon name="check" size={18} /></span>{/if}
+          </Row>
+        {/each}
+      </Group>
+      {#if own}
+        <Field bind:value={base} placeholder="Server, like https://mail.example.com" />
+        {#if provider === 'inbucket'}<Field bind:value={domain} placeholder="The domain it takes mail for" />{/if}
+        <p class="dimmer small">Plain http works only for this computer and Tailscale addresses.</p>
+      {/if}
+      <Field bind:value={label} placeholder="What it is for (optional)" onenter={make} />
+      {#if makeProblem}<p class="danger-text small">{makeProblem}</p>{/if}
+    </div>
+    {#snippet foot()}
+      <Btn label="Cancel" disabled={busy} onclick={() => (making = false)} />
+      <Btn label={busy ? 'Making the address…' : 'Make the address'} icon="inbox" variant="primary" disabled={!ready || busy} onclick={make} />
+    {/snippet}
+  </Dialog>
+{/if}

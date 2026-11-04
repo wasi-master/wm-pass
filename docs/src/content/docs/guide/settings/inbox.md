@@ -1,6 +1,6 @@
 ---
 title: "Disposable inbox"
-description: "Makes a throwaway address on a public mail service and shows the mail that arrives, for a sign-up that only needs one confirmation mail."
+description: "Makes throwaway addresses on a mail service and keeps each one, with its mail, until you close it. For sign-ups that only need a confirmation mail."
 sidebar:
   order: 23
 ---
@@ -14,7 +14,7 @@ Found under Settings, Disposable inbox.
 
 *Only in the desktop app and Android.*
 
-Makes a throwaway address on a public mail service and shows the mail that arrives, for a sign-up that only needs one confirmation mail.
+Makes throwaway addresses on a mail service and keeps each one, with its mail, until you close it. For sign-ups that only need a confirmation mail.
 
 #### Why it is there
 
@@ -22,9 +22,13 @@ Some sites want an address before they show you anything. A throwaway one keeps 
 
 #### How it works
 
-Choose mail.tm or Guerrilla Mail and click **Make an address**. Copy the address into the sign-up form, and what is sent to it appears under **Arrived**.
+Click **New address** and choose where it comes from: mail.tm, mail.gw or Guerrilla Mail, your own server running the mail.tm API, or an Inbucket server you run. Give it a name if you like, so you know what it was for.
 
-When you leave the page, WM Pass forgets the address and the key to its mailbox. You cannot open that inbox again.
+Each address stays in the list, saved inside the encrypted vault, until you close it. Open one to copy the address and read what arrived.
+
+Click a mail to read it as a mail app shows it, with its layout and links. Pictures stay unloaded until you click **Load**. A code in it gets its own copy button. The buttons at the top forward the mail in your mail program or save it to the vault as a note, and **More** copies its text or saves it as a file.
+
+The pencil button names the address, and the bin button closes it. Where the service allows, closing can delete the mailbox there too; Guerrilla Mail clears its own within the hour.
 
 #### When to use it
 
@@ -34,13 +38,11 @@ For a one-off, such as a download link or a trial. Never for an account you want
 
 The service, and possibly others, can read what arrives. Treat anything sent there as public.
 
-WM Pass does not delete the mailbox when you leave. It stays at the service, under that service's own rules.
+Plain http works only for this computer and Tailscale addresses, so a server of your own needs https anywhere else.
 
 Needs [Allow network features](/guide/settings/security/#setting-network-allowed).
 
 #### On Android
-
-Makes throwaway addresses on a mail service and keeps each one, with its mail, until you close it. For sign-ups that only need a confirmation mail.
 
 Tap **New address** and choose where it comes from: mail.tm, mail.gw or Guerrilla Mail, your own server running the mail.tm API, or an Inbucket server you run. Give it a name if you like, so you know what it was for.
 
@@ -70,7 +72,9 @@ A free mailbox service. WM Pass makes a new account there for each address.
 
 WM Pass asks api.mail.tm which domains it offers, then creates a mailbox with a random name and a random password, and signs in to it. Nothing about you is in either.
 
-While the page is open, it asks api.mail.tm for new mail with the sign-in key. Opening a mail fetches its full text.
+While an address is open, it asks api.mail.tm for new mail with the sign-in key. Opening a mail fetches all of it. The key and the password stay in the vault, and when the key runs out WM Pass signs in again with the password.
+
+mail.gw and a server of your own that speaks the same API work the same way, at their own address.
 
 See also [Disposable inbox](/guide/settings/inbox/), [Guerrilla Mail](/guide/settings/inbox/#concept-inbox-guerrilla).
 
@@ -88,7 +92,7 @@ WM Pass asks api.guerrillamail.com for an address and gets a session key with it
 
 Its API wants an IP address and a program name with every call, so WM Pass sends 127.0.0.1 and "WM-Pass" instead of anything real.
 
-Opening a mail shows the opening lines that came with the list, not the whole message.
+A quiet session lapses, so each visit first points the session back at the same address.
 
 #### Limits
 
@@ -102,13 +106,13 @@ See also [Disposable inbox](/guide/settings/inbox/), [mail.tm](/guide/settings/i
 
 *Only in the desktop app and Android.*
 
-The mail sent to the address so far. Click one to read it below the list.
+The mail sent to this address, newest first. A dot marks what came in since you opened the page. Click one to read it.
 
 #### How it works
 
-The page asks the service for new mail every 8 seconds while it is open.
+The page asks the service for new mail every 8 seconds while it is open, and the refresh button asks now.
 
-Mail is shown as plain text only, so no picture, tracking pixel or script in it ever loads or runs here.
+A mail opens with its own layout in a sealed frame: no script in it runs, it cannot reach anything on this computer, and pictures load only when you click **Load**, so the sender cannot tell you opened it. Links open in your browser.
 
 #### On Android
 

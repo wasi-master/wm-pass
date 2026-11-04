@@ -199,23 +199,24 @@ export const tools = [
     title: 'Disposable inbox',
     page: 'inbox',
     shells: ['desktop', 'android'],
-    what: 'Makes a throwaway address on a public mail service and shows the mail that arrives, for a sign-up that only needs one confirmation mail.',
+    what: 'Makes throwaway addresses on a mail service and keeps each one, with its mail, until you close it. For sign-ups that only need a confirmation mail.',
     why: 'Some sites want an address before they show you anything. A throwaway one keeps your own address, and your aliases, out of their lists.',
     how: [
-      'Choose mail.tm or Guerrilla Mail and click **Make an address**. Copy the address into the sign-up form, and what is sent to it appears under **Arrived**.',
-      'When you leave the page, WM Pass forgets the address and the key to its mailbox. You cannot open that inbox again.',
+      'Click **New address** and choose where it comes from: mail.tm, mail.gw or Guerrilla Mail, your own server running the mail.tm API, or an Inbucket server you run. Give it a name if you like, so you know what it was for.',
+      'Each address stays in the list, saved inside the encrypted vault, until you close it. Open one to copy the address and read what arrived.',
+      'Click a mail to read it as a mail app shows it, with its layout and links. Pictures stay unloaded until you click **Load**. A code in it gets its own copy button. The buttons at the top forward the mail in your mail program or save it to the vault as a note, and **More** copies its text or saves it as a file.',
+      'The pencil button names the address, and the bin button closes it. Where the service allows, closing can delete the mailbox there too; Guerrilla Mail clears its own within the hour.',
     ],
     when: 'For a one-off, such as a download link or a trial. Never for an account you want to keep: a password reset would go to an inbox you can no longer open.',
     caveats: [
       'The service, and possibly others, can read what arrives. Treat anything sent there as public.',
-      'WM Pass does not delete the mailbox when you leave. It stays at the service, under that service\'s own rules.',
+      'Plain http works only for this computer and Tailscale addresses, so a server of your own needs https anywhere else.',
       'Needs [[setting.network_allowed]].',
     ],
     related: ['concept.inbox_mailtm', 'concept.inbox_guerrilla', 'page.aliases'],
     words: 'temporary throwaway burner email disposable',
     on: {
       android: {
-        what: 'Makes throwaway addresses on a mail service and keeps each one, with its mail, until you close it. For sign-ups that only need a confirmation mail.',
         how: [
           'Tap **New address** and choose where it comes from: mail.tm, mail.gw or Guerrilla Mail, your own server running the mail.tm API, or an Inbucket server you run. Give it a name if you like, so you know what it was for.',
           'Each address stays in the list, saved inside the encrypted vault, like a chat in a chat app. Open one to copy the address and read what arrived.',
@@ -239,7 +240,8 @@ export const tools = [
     what: 'A free mailbox service. WM Pass makes a new account there for each address.',
     how: [
       'WM Pass asks api.mail.tm which domains it offers, then creates a mailbox with a random name and a random password, and signs in to it. Nothing about you is in either.',
-      'While the page is open, it asks api.mail.tm for new mail with the sign-in key. Opening a mail fetches its full text.',
+      'While an address is open, it asks api.mail.tm for new mail with the sign-in key. Opening a mail fetches all of it. The key and the password stay in the vault, and when the key runs out WM Pass signs in again with the password.',
+      'mail.gw and a server of your own that speaks the same API work the same way, at their own address.',
     ],
     related: ['page.inbox', 'concept.inbox_guerrilla'],
   },
@@ -253,7 +255,7 @@ export const tools = [
     how: [
       'WM Pass asks api.guerrillamail.com for an address and gets a session key with it, which it sends with each check for new mail.',
       'Its API wants an IP address and a program name with every call, so WM Pass sends 127.0.0.1 and "WM-Pass" instead of anything real.',
-      'Opening a mail shows the opening lines that came with the list, not the whole message.',
+      'A quiet session lapses, so each visit first points the session back at the same address.',
     ],
     caveats: 'Those fixed values keep your real address out of the request itself. The service still sees where the connection comes from.',
     related: ['page.inbox', 'concept.inbox_mailtm'],
@@ -264,10 +266,10 @@ export const tools = [
     title: 'Arrived',
     page: 'inbox',
     shells: ['desktop', 'android'],
-    what: 'The mail sent to the address so far. Click one to read it below the list.',
+    what: 'The mail sent to this address, newest first. A dot marks what came in since you opened the page. Click one to read it.',
     how: [
-      'The page asks the service for new mail every 8 seconds while it is open.',
-      'Mail is shown as plain text only, so no picture, tracking pixel or script in it ever loads or runs here.',
+      'The page asks the service for new mail every 8 seconds while it is open, and the refresh button asks now.',
+      'A mail opens with its own layout in a sealed frame: no script in it runs, it cannot reach anything on this computer, and pictures load only when you click **Load**, so the sender cannot tell you opened it. Links open in your browser.',
     ],
     related: ['page.inbox'],
     on: {
@@ -288,11 +290,11 @@ export const tools = [
     kind: 'page',
     title: 'Username checker',
     page: 'usernames',
-    what: 'Asks a list of sites, one at a time, whether a username is taken there.',
+    what: 'Asks a list of sites, all at once, whether a username is taken there.',
     why: 'If you want the same name everywhere, this saves trying it on each site by hand.',
     how: [
       'For most sites, WM Pass asks for that name\'s public profile and reads whether one comes back.',
-      'TikTok and Instagram only answer a browser. Their pages load in a hidden, private browser view that runs their scripts, may only load pages on that site, and keeps no cookies or storage afterwards. WM Pass reads only the text the page shows.',
+      'TikTok and Instagram only answer a browser. Their pages load in a hidden, private browser view that runs their scripts, may only load pages on that site, and keeps no cookies or storage afterwards. WM Pass reads only the text the page shows. They take turns, so their rows can be the last to fill in.',
       'X, Threads, Reddit and a few others refuse, or give the same answer for every name. They are listed under **Look for yourself**, with a link to the profile.',
       'Each site you check learns the name you looked up. Nothing from your vault goes with it.',
     ],
@@ -304,9 +306,6 @@ export const tools = [
     related: ['action.username_check', 'group.usernames.links', 'feature.usernames'],
     words: 'handle availability taken free name',
     on: {
-      android: {
-        what: 'Asks a list of sites, all at once, whether a username is taken there.',
-      },
       extension: {
         caveats: [
           'The extension has no network of its own. While it is connected to the desktop app, the app makes every check for it, and only while network features are allowed there.',
@@ -321,11 +320,13 @@ export const tools = [
     kind: 'action',
     title: 'Check',
     page: 'usernames',
-    what: 'Asks every site in turn about the name in the box. The answers fill in as they come.',
+    what: 'Asks every site about the name in the box at once. A bar shows how many have answered, and each row fills in as its answer comes.',
     how: [
       '- *Free* means the site showed no profile under that name.',
       '- *Taken* means somebody has it.',
-      '- *No clear answer* means the site refused, took too long, or said something WM Pass could not read.',
+      '- *No clear answer* means the site said something WM Pass could not read.',
+      'A site that refused or took too long says why on its own row, with a button to ask it again. Click any site to open that name\'s page there.',
+      'Where no hidden browser view can be opened, TikTok and Instagram say they can only be checked by opening them.',
     ],
     caveats: [
       'Free means no profile was found today. Signing up is the only way to be sure you can have the name.',
@@ -334,12 +335,20 @@ export const tools = [
     related: ['page.usernames', 'group.usernames.links'],
     on: {
       android: {
-        what: 'Asks every site about the name in the box at once. A bar shows how many have answered, and each row fills in as its answer comes.',
         how: [
           '- *Free* means the site showed no profile under that name.',
           '- *Taken* means somebody has it.',
           '- *No clear answer* means the site said something WM Pass could not read.',
           'A site that refused or took too long says why on its own row, with a button to ask it again. Tap any site to open that name\'s page there.',
+        ],
+      },
+      extension: {
+        how: [
+          '- *Free* means the site showed no profile under that name.',
+          '- *Taken* means somebody has it.',
+          '- *No clear answer* means the site said something WM Pass could not read.',
+          'A site that refused or took too long says why on its own row, with a button to ask it again. Click any site to open that name\'s page there.',
+          'The desktop app answers one question from the extension at a time, so the rows fill in one after another.',
         ],
       },
     },

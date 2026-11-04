@@ -424,7 +424,7 @@ async function fromPage(message: any) {
       return linkState();
     case 'usernames': {
       // Checks run in the desktop app, which reaches the sites and holds the network switch.
-      if (!['sites', 'check', 'links'].includes(message.what)) throw new Error('Unknown request.');
+      if (!['site_list', 'check'].includes(message.what)) throw new Error('Unknown request.');
       const reply = await ask({ method: `usernames.${message.what}`, site: message.site ?? '', name: message.name ?? '' });
       if (reply.error) throw new Error(reply.error);
       return reply;
