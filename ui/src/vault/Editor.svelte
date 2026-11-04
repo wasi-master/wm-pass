@@ -4,6 +4,7 @@
   import Dialog from '../parts/Dialog.svelte';
   import Field from '../parts/Field.svelte';
   import Fold from '../parts/Fold.svelte';
+  import ScanDialog from '../parts/ScanDialog.svelte';
 
   import IconBtn from '../parts/IconBtn.svelte';
   import Strength from '../parts/Strength.svelte';
@@ -78,6 +79,22 @@
   let notesLoaded = $state(entryId === null);
   let notesOriginal = $state('');
   let otpSeed = $state(editing.presetOtp ?? '');
+  let scanningOtp = $state(false);
+  let otpNote = $state<string | null>(null);
+
+  /** A scanned setup code: the first otpauth link wins; an authenticator's export goes to Import. */
+  function otpScanned(texts: string[]) {
+    scanningOtp = false;
+    const link = texts.find((t) => t.startsWith('otpauth://'));
+    if (link) {
+      otpSeed = link;
+      otpNote = null;
+    } else if (texts.some((t) => t.startsWith('otpauth-migration://'))) {
+      otpNote = 'That is an export of several codes. Bring them in with Settings, Import.';
+    } else {
+      otpNote = 'That QR code holds no one-time code setup.';
+    }
+  }
   let color = $state<string | null>(null);
   let icon = $state<string | null>(null);
   let folder = $state<string | null>(null);
@@ -493,6 +510,11 @@
             <span class="label">Setup key or otpauth link</span>
             <Field bind:value={otpSeed} mono placeholder={detail?.otp ? 'Saved. Type to replace' : 'JBSWY3DPEHPK3PXP'} label="Setup key or otpauth link" />
           </div>
+          <div class="form-row">
+            <span class="label"></span>
+            <Btn label="Scan its QR code" icon="qr_code_scanner" variant="quiet" onclick={() => (scanningOtp = true)} />
+          </div>
+          {#if otpNote}<p class="dim small">{otpNote}</p>{/if}
         </Fold>
       {/if}
 
@@ -588,4 +610,8 @@
 
 {#if aliasFor}
   <AliasPicker hint={title} onclose={() => (aliasFor = null)} onpick={(address) => { aliasFor!.text = address; aliasFor = null; }} />
+{/if}
+
+{#if scanningOtp}
+  <ScanDialog title="Scan the setup code" hint="The site shows it where you turn on two-factor sign-in. A screenshot of it works too." onfound={otpScanned} onclose={() => (scanningOtp = false)} />
 {/if}

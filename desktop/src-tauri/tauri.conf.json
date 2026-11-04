@@ -65,6 +65,7 @@
     "macOS": {
       "minimumSystemVersion": "11.0",
       "signingIdentity": "-",
+      "entitlements": "Entitlements.plist",
       "files": {
         "PlugIns/WMPassWidgets.appex": "widgets-out/WMPassWidgets.appex",
         "Frameworks/libWMPassWidgetCenter.dylib": "widgets-out/libWMPassWidgetCenter.dylib"

@@ -123,9 +123,10 @@ Introduces another device to this one, once, so the two can sync over this netwo
 
 #### How it works
 
-Choose one of four ways. Each ends with both devices holding the other's key.
+Choose one of five ways. Each ends with both devices holding the other's key.
 
 - With **Show a code**, this computer shows a QR code for the other device to scan, and the same code as text for a computer that cannot scan. It works once and stops in two minutes.
+- With **Scan a code**, the other device shows its code and this computer's webcam reads it. **Choose a picture** reads a screenshot of the code instead.
 - With **Paste a code**, the other device shows its code, and you paste its text here.
 - With **Compare six digits**, this side waits and the other connects. Both screens show six digits, and if they match you choose **They match** on both.
 - **Compare six digits, finding the other** does the same from the side that connects to a device already waiting.
@@ -159,7 +160,7 @@ Sends this vault to a phone or computer that has none yet, and pairs the two for
 
 First, on the new device, choose **I already have a vault**, then Get it from another device. It shows a code and waits.
 
-- **Scan its code** reads the new device's QR code with the camera.
+- **Scan its code** reads the new device's QR code with the camera: a phone's, or a computer's webcam. On a computer, **Choose a picture** reads a screenshot of it.
 - **Find it on this network** looks for it, then both screens show six digits. If they match, choose **They match** on both.
 - **Paste its code** takes the code's text. A computer and the terminal app show it under the code; a phone has **Copy the code**.
 
