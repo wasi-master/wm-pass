@@ -446,7 +446,8 @@ export const features = [
     what: 'Checks whether your passwords, or the email addresses in your vault, appear in published leaks. It runs only when you ask.',
     why: 'A password that has leaked anywhere is on the lists attackers try first, however strong it looks. Knowing which ones have leaked tells you what to change first.',
     how: [
-      '**Check every password** goes through each item with a password. WM Pass hashes the password with SHA-1 and sends only the first five characters of the hash to Have I Been Pwned. The service answers with every leaked hash that starts the same way, padded with dummy ones, and the comparison happens on your device, so the service cannot tell which password you asked about.',
+      '**Check every password** goes through each item with a password, with Have I Been Pwned or XposedOrNot. WM Pass hashes the password and sends only the start of the hash: five characters of SHA-1 to Have I Been Pwned, or ten of Keccak-512 to XposedOrNot. The service answers with every leaked hash that starts the same way, and the comparison happens on your device, so the service cannot tell which password you asked about.',
+      'The check keeps running when you leave the page, and **Stop** ends it early.',
       'Passwords it finds lead the list on the [[screen.health]], with how many times each was seen.',
       'Under **Your email addresses**, each address used in your items can be checked with one of three services:',
       '- **LeakCheck** names the services an address appeared in. The address goes to LeakCheck.',

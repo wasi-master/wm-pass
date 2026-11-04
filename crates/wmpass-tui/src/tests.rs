@@ -406,3 +406,68 @@ fn print_join_screens() {
     app.overlay = Some(Overlay::Link(Box::new(LinkUi::at_stage(Role::Send, Stage::Digits { code: "482913".into(), peer: "Pixel 9".into() }))));
     println!("{}", screen(&mut app, 110, 30));
 }
+
+#[test]
+fn health_groups_reused_passwords_ignores_per_check_and_leaves_out_local_logins() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut engine = vault(dir.path());
+    let mut weak = |title: &str, site: &str| {
+        let id = engine.create("login", title, &serde_json::Map::new(), &[json!({"Url": site})]).expect("login");
+        engine.set_secret(&id, "password", b"password1").expect("password");
+        id
+    };
+    let mail = weak("Mail", "https://mail.example.com");
+    weak("Shop", "https://shop.example.org");
+    weak("Router", "http://192.168.1.1");
+    let mut app = App::over(engine);
+    press(&mut app, KeyCode::Char('4'));
+
+    // Local addresses are left out by default; the reused ones come as one group per password.
+    let Screen::Vault(ui) = &mut app.screen else { panic!("locked") };
+    assert_eq!(ui.health_ids(0).len(), 2, "the router's login is left out");
+    assert!(matches!(&ui.health_lines(1)[0], crate::vault::HealthLine::Heading(text) if text == "2 items share one password"));
+    assert_eq!(ui.health_groups(), crate::vault::IGNORED_GROUP, "no Ignored group until something is");
+    ui.health_group = 1;
+    let reused = screen(&mut app, 140, 30);
+    assert!(reused.contains("2 items share one password"), "{reused}");
+
+    // Ignoring one leaves it out of that check only, and lists it under Ignored.
+    let Screen::Vault(ui) = &mut app.screen else { panic!("locked") };
+    ui.health_group = 0;
+    ui.health_at = ui.health_ids(0).iter().position(|id| *id == mail).expect("mail is weak");
+    press(&mut app, KeyCode::Char('i'));
+    assert_eq!(app.prefs.health_ignored, vec![format!("weak:{mail}")]);
+    let Screen::Vault(ui) = &mut app.screen else { panic!("locked") };
+    assert!(!ui.health_ids(0).contains(&mail));
+    assert!(ui.health_ids(1).contains(&mail), "still reused");
+    assert_eq!(ui.health_groups(), crate::vault::HEALTH_GROUPS.len());
+    ui.health_group = crate::vault::IGNORED_GROUP;
+    ui.health_at = 0;
+    let ignored = screen(&mut app, 140, 30);
+    assert!(ignored.contains("Mail") && ignored.contains("Weak passwords"), "{ignored}");
+
+    // And it counts again from there.
+    press(&mut app, KeyCode::Char('i'));
+    assert!(app.prefs.health_ignored.is_empty());
+    let Screen::Vault(ui) = &app.screen else { panic!("locked") };
+    assert!(ui.health_ids(0).contains(&mail));
+    assert!(ui.health_group < crate::vault::IGNORED_GROUP, "the empty Ignored group goes");
+
+    app.command(crate::app::Command::SkipLocal);
+    let Screen::Vault(ui) = &app.screen else { panic!("locked") };
+    assert_eq!(ui.health_ids(0).len(), 3, "the router's login counts again");
+}
+
+#[test]
+fn a_login_shows_where_to_change_its_password() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    let shown = screen(&mut app, 160, 40);
+    let Screen::Vault(ui) = &app.screen else { panic!("locked") };
+    let line = ui.lines.iter().find_map(|line| match line {
+        crate::vault::Line::Value { label, text, .. } if label == "Change password" => text.clone(),
+        _ => None,
+    });
+    assert_eq!(line.as_deref(), Some("https://github.com/.well-known/change-password"), "{:?}", ui.lines);
+    assert!(shown.contains("Change password"), "{shown}");
+}

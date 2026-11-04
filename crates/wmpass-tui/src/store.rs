@@ -52,6 +52,10 @@ pub struct Prefs {
     pub sync_settings: bool,
     /// Keys from those that stay on this device, such as `tui_theme`.
     pub sync_skip: Vec<String>,
+    /// Items left out of one health check, as `check:id`, the way every app keeps them.
+    pub health_ignored: Vec<String>,
+    /// Leaves logins only for the router, a NAS or other devices at home out of Health.
+    pub health_skip_local: bool,
 }
 
 impl Default for Prefs {
@@ -66,6 +70,8 @@ impl Default for Prefs {
             device: 0,
             sync_settings: true,
             sync_skip: Vec::new(),
+            health_ignored: Vec::new(),
+            health_skip_local: true,
         }
     }
 }
@@ -73,6 +79,38 @@ impl Default for Prefs {
 const RECENT_KEPT: usize = 8;
 
 impl Prefs {
+    /// The ignored items by check, as the health report takes them.
+    pub fn ignored_checks(&self) -> std::collections::BTreeMap<String, Vec<String>> {
+        let mut out: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
+        for pair in &self.health_ignored {
+            if let Some((check, id)) = pair.split_once(':').filter(|(check, id)| !check.is_empty() && !id.is_empty()) {
+                out.entry(check.to_owned()).or_default().push(id.to_owned());
+            }
+        }
+        out
+    }
+
+    /// Leaves one item out of one check, or counts it again.
+    pub fn ignore_health(&mut self, check: &str, id: &str, ignore: bool) {
+        let pair = format!("{check}:{id}");
+        self.health_ignored.retain(|p| *p != pair);
+        if ignore {
+            self.health_ignored.push(pair);
+        }
+        self.health_ignored.sort();
+    }
+
+    /// The ignored list as the other apps write it: pairs joined by commas.
+    pub fn ignored_text(&self) -> String {
+        self.health_ignored.join(",")
+    }
+
+    /// Takes the ignored list as another app wrote it.
+    pub fn set_ignored_text(&mut self, text: &str) {
+        self.health_ignored = text.split(',').filter(|p| p.contains(':')).map(str::to_owned).collect();
+        self.health_ignored.sort();
+    }
+
     fn path() -> Option<PathBuf> {
         state_dir().map(|dir| dir.join("tui.json"))
     }

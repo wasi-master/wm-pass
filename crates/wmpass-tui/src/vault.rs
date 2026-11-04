@@ -205,6 +205,8 @@ pub struct VaultUi {
     pub health: Option<Health>,
     pub health_group: usize,
     pub health_at: usize,
+    /// What the Ignored group lists, as `check:id`, kept in step with the settings.
+    pub health_ignored: Vec<String>,
     pub titles: HashMap<String, (String, String)>,
     pub folders: Vec<Folder>,
     pub shelf_open: bool,
@@ -216,16 +218,34 @@ pub struct VaultUi {
     last_codes: Instant,
 }
 
-/// The health report's groups, with the search word that lists each.
-pub const HEALTH_GROUPS: [(&str, &str); 7] = [
-    ("Weak passwords", "weak"),
-    ("Reused passwords", "reused"),
-    ("Not changed in a year", "old"),
-    ("No two-factor code", ""),
-    ("Plain http addresses", ""),
-    ("Duplicates", "duplicate"),
-    ("Expiring soon", ""),
+/// The health report's groups, with the search word that lists each and the check's name, the
+/// one every app files an ignored item under. The last group lists what was ignored.
+pub const HEALTH_GROUPS: [(&str, &str, &str); 8] = [
+    ("Weak passwords", "weak", "weak"),
+    ("Reused passwords", "reused", "reused"),
+    ("Not changed in a year", "old", "old"),
+    ("No two-factor code", "", "twofactor"),
+    ("Plain http addresses", "", "insecure"),
+    ("Duplicates", "duplicate", "duplicates"),
+    ("Expiring soon", "", "expiring"),
+    ("Ignored", "", ""),
 ];
+
+/// The group that lists ignored items.
+pub const IGNORED_GROUP: usize = HEALTH_GROUPS.len() - 1;
+
+/// A check's name as the Health tab shows it.
+pub fn check_label(check: &str) -> &str {
+    HEALTH_GROUPS.iter().find(|group| group.2 == check && !check.is_empty()).map_or(check, |group| group.0)
+}
+
+/// One line of a health group: an item, or the heading over items sharing one password.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum HealthLine {
+    Heading(String),
+    /// An item, with the check it was ignored for in the Ignored group.
+    Item { id: String, check: Option<String> },
+}
 
 impl VaultUi {
     pub fn new(engine: Box<Engine>) -> Self {
@@ -253,6 +273,7 @@ impl VaultUi {
             health: None,
             health_group: 0,
             health_at: 0,
+            health_ignored: Vec::new(),
             titles: HashMap::new(),
             folders: Vec::new(),
             shelf_open: false,
@@ -432,6 +453,10 @@ impl VaultUi {
                 has_value: true,
             });
         }
+        // The page the site keeps for changing the password, to copy into a browser.
+        if let Some(url) = &detail.change_password {
+            lines.push(Line::Value { label: "Change password".into(), text: Some(url.clone()), secret: None, has_value: true });
+        }
         if let Some(alias) = &detail.alias {
             lines.push(Line::Value { label: "Alias".into(), text: Some(alias.clone()), secret: None, has_value: true});
         }
@@ -605,17 +630,54 @@ impl VaultUi {
         (redraw, news)
     }
 
-    /// The ids in a health group.
+    /// How many groups the Health tab lists: Ignored only when something is.
+    pub fn health_groups(&self) -> usize {
+        if self.health_ignored.is_empty() { IGNORED_GROUP } else { HEALTH_GROUPS.len() }
+    }
+
+    /// The items in a health group, in the order the cursor moves through them.
     pub fn health_ids(&self, group: usize) -> Vec<String> {
+        self.health_items(group).into_iter().map(|(id, _)| id).collect()
+    }
+
+    /// The items in a health group, each with the check it was ignored for in the Ignored group.
+    pub fn health_items(&self, group: usize) -> Vec<(String, Option<String>)> {
+        self.health_lines(group)
+            .into_iter()
+            .filter_map(|line| match line {
+                HealthLine::Item { id, check } => Some((id, check)),
+                HealthLine::Heading(_) => None,
+            })
+            .collect()
+    }
+
+    /// The lines of a health group. Reused passwords come one group per password, each under a
+    /// heading, so each group is one password to change.
+    pub fn health_lines(&self, group: usize) -> Vec<HealthLine> {
+        let item = |id: &String| HealthLine::Item { id: id.clone(), check: None };
+        if group == IGNORED_GROUP {
+            return self
+                .health_ignored
+                .iter()
+                .filter_map(|pair| pair.split_once(':'))
+                .map(|(check, id)| HealthLine::Item { id: id.to_owned(), check: Some(check.to_owned()) })
+                .collect();
+        }
         let Some(h) = &self.health else { return Vec::new() };
         match group {
-            0 => h.weak.clone(),
-            1 => h.reused.iter().flatten().cloned().collect(),
-            2 => h.old.clone(),
-            3 => h.missing_two_factor.clone(),
-            4 => h.insecure_url.clone(),
-            5 => h.duplicates.iter().flatten().cloned().collect(),
-            6 => h.expiring.clone(),
+            0 => h.weak.iter().map(item).collect(),
+            1 => h
+                .reused
+                .iter()
+                .flat_map(|set| {
+                    std::iter::once(HealthLine::Heading(format!("{} items share one password", set.len()))).chain(set.iter().map(item))
+                })
+                .collect(),
+            2 => h.old.iter().map(item).collect(),
+            3 => h.missing_two_factor.iter().map(item).collect(),
+            4 => h.insecure_url.iter().map(item).collect(),
+            5 => h.duplicates.iter().flatten().map(item).collect(),
+            6 => h.expiring.iter().map(item).collect(),
             _ => Vec::new(),
         }
     }

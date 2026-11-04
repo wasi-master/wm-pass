@@ -19,6 +19,7 @@ const ITEM_FIELDS = [
   'Below come its fields. A secret shows as dots; the eye button shows it, and it hides again after the time set under [[setting.reveal_seconds]] or when you leave the item. When the password is showing, its strength is shown under it.',
   'A one-time code counts down with a ring and shows the next code in its last ten seconds. A counter-based code shows **New code** in place of the code.',
   'Further down are the websites, passkeys, fields of your own, security questions, notes, an email alias, attachments, linked items, the reminder and the tags. With no tags yet, WM Pass may suggest one, guessed on your device.',
+  'A login for a website also has **Change the password on the site**, which opens the page the site keeps for that: one from a list of known pages, or the address the site lists at /.well-known/change-password. Logins for apps and for devices on your own network have none.',
   'The history link at the bottom, such as **History, 2 earlier**, lists earlier values of secret fields, each hidden until you show it.',
 ];
 
@@ -233,6 +234,7 @@ export const screens = [
           'Below come its fields. A secret shows as dots until you tap **Show**, and it hides again after the time set under [[setting.reveal_seconds]] or when you leave. Tap a field to copy it.',
           'A one-time code counts down with a ring and shows the next code in its last ten seconds. A counter-based code shows **New code** in place of the code.',
           'Further down are the websites, passkeys, fields of your own, security questions, notes, attachments and linked items, then **History** with earlier values of secret fields.',
+          'A login for a website also has **Change the password on the site**, which opens the page the site keeps for that: one from a list of known pages, or the address the site lists at /.well-known/change-password.',
           '**More**, at the bottom, adds a tag, attaches a file, links another item, sets a reminder, a folder, a color or a self-destruct date, pins it, puts it on the hidden shelf, duplicates it, sends it to another device, or moves it to the trash.',
         ],
         when: 'A copied secret is cleared from the clipboard after the time set under [[setting.clipboard_seconds]].',
@@ -333,6 +335,9 @@ export const screens = [
     what: 'A score for your passwords, and a list of what to fix, worst first.',
     how: [
       ...HEALTH_PARTS,
+      'Under **Used more than once**, the logins are grouped by the password they share, so each group is one password to change. Under **In a known breach**, each item says how many times it was seen, and the most seen come first.',
+      'Clicking an item offers what fixes it: **Change the password on the site** opens the site\'s own page for that, from a list of known pages or the address a site lists at /.well-known/change-password, and a missing second factor offers the site\'s settings. **Ignore for this check** takes the item off that list only, for sites with a second factor of their own and the like. **Ignored** lists them again, to put any back.',
+      '**Fix the most urgent** opens the first item of the most serious group in the editor.',
       '**Check for breaches** opens Settings, Breaches, and **Compare two passwords** opens a side-by-side comparison.',
     ],
     when: '{{key:health}} opens this screen from anywhere. Look after an import, and whenever the score drops.',

@@ -514,7 +514,7 @@ fn draw_bottom(frame: &mut Frame, area: Rect, ui: &VaultUi, theme: &Theme, toast
         },
         Tab::Codes => vec![("Enter", "copy"), ("/", "filter"), ("o", "open item"), ("?", "keys")],
         Tab::Generator => vec![("←→", "change"), ("Enter", "again"), ("c", "copy"), ("?", "keys")],
-        Tab::Health => vec![("←→", "group"), ("Enter", "open"), ("r", "check again"), ("?", "keys")],
+        Tab::Health => vec![("←→", "group"), ("Enter", "open"), ("i", "ignore"), ("r", "check again"), ("?", "keys")],
     };
     let hint_w = (key_hint(theme, &hints).width() as u16 + 1).min(area.width);
     let left = match toast {
@@ -1156,64 +1156,91 @@ fn draw_health(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme) {
     let block = panel(theme, Line::from(Span::styled(" Findings ", theme.dim())), true);
     let inner = block.inner(groups).inner(Margin::new(1, 0));
     frame.render_widget(block, groups);
+    let shown = ui.health_groups();
     let lines: Vec<Line> = HEALTH_GROUPS
         .iter()
+        .take(shown)
         .enumerate()
-        .map(|(n, (label, _))| {
+        .map(|(n, (label, _, _))| {
             let count = ui.health_ids(n).len();
             let picked = n == ui.health_group;
             let base = if picked { theme.selected(true) } else { Style::new() };
-            let badge_colour = if count == 0 { theme.ok } else if n <= 1 { theme.danger } else { theme.warn };
-            let badge = if count == 0 { "✓".to_owned() } else { count.to_string() };
+            let ignored = n == vault::IGNORED_GROUP;
+            let badge_colour = if ignored { theme.low } else if count == 0 { theme.ok } else if n <= 1 { theme.danger } else { theme.warn };
+            let badge = if count == 0 && !ignored { "✓".to_owned() } else { count.to_string() };
             let pad = usize::from(inner.width).saturating_sub(label.chars().count() + badge.chars().count() + 3);
             Line::from(vec![
                 Span::styled(if picked { "▌" } else { " " }, base.fg(theme.primary)),
-                Span::styled(format!("{label}{}", " ".repeat(pad)), base.fg(theme.text)),
+                Span::styled(format!("{label}{}", " ".repeat(pad)), base.fg(if ignored { theme.low } else { theme.text })),
                 Span::styled(format!(" {badge} "), base.fg(badge_colour).add_modifier(Modifier::BOLD)),
             ])
         })
         .collect();
     frame.render_widget(Paragraph::new(lines), inner);
-    for n in 0..HEALTH_GROUPS.len() {
+    for n in 0..shown {
         let y = inner.y + n as u16;
         if y < inner.bottom() {
             hit(Rect { y, height: 1, ..inner }, Hit::HealthGroup(n));
         }
     }
 
-    let ids = ui.health_ids(ui.health_group);
+    let rows = ui.health_lines(ui.health_group);
     let title = HEALTH_GROUPS.get(ui.health_group).map_or("", |g| g.0);
     let block = panel(theme, Line::from(Span::styled(format!(" {title} "), theme.dim())), false);
     let inner = block.inner(entries).inner(Margin::new(1, 0));
     frame.render_widget(block, entries);
-    if ids.is_empty() {
+    if rows.is_empty() {
         frame.render_widget(Paragraph::new(Line::from(Span::styled("Nothing to fix here", Style::new().fg(theme.ok)))), inner);
         return;
     }
-    let skip = ui.health_at.saturating_sub(usize::from(inner.height.saturating_sub(1)));
-    let lines: Vec<Line> = ids
+    // Each line with the item number it stands for, so the cursor and clicks skip headings.
+    let mut numbered = Vec::with_capacity(rows.len());
+    let mut item = 0;
+    for row in &rows {
+        match row {
+            vault::HealthLine::Heading(_) => numbered.push(None),
+            vault::HealthLine::Item { .. } => {
+                numbered.push(Some(item));
+                item += 1;
+            }
+        }
+    }
+    let picked_line = numbered.iter().position(|n| *n == Some(ui.health_at)).unwrap_or(0);
+    let skip = picked_line.saturating_sub(usize::from(inner.height.saturating_sub(1)));
+    let hint = if ui.health_group == vault::IGNORED_GROUP { "   i counts it again" } else { "   Enter opens, i ignores" };
+    let lines: Vec<Line> = rows
         .iter()
-        .enumerate()
+        .zip(&numbered)
         .skip(skip)
-        .map(|(n, id)| {
-            let (title, kind) = ui.titles.get(id).cloned().unwrap_or_else(|| ("(hidden)".into(), String::new()));
-            let picked = n == ui.health_at;
-            let base = if picked { theme.selected(true) } else { Style::new() };
-            Line::from(vec![
-                Span::styled(if picked { "▌" } else { " " }, base.fg(theme.primary)),
-                Span::styled(format!("{} ", theme.g.kind(&kind)), base.fg(theme.label(None, &kind))),
-                Span::styled(title, base.fg(theme.text)),
-                Span::styled(if picked { "   Enter opens" } else { "" }, base.fg(theme.low)),
-            ])
+        .map(|(row, n)| match row {
+            vault::HealthLine::Heading(text) => Line::from(Span::styled(format!(" {text}"), theme.dim())),
+            vault::HealthLine::Item { id, check } => {
+                let (title, kind) = ui.titles.get(id).cloned().unwrap_or_else(|| ("A deleted item".into(), String::new()));
+                let picked = *n == Some(ui.health_at);
+                let base = if picked { theme.selected(true) } else { Style::new() };
+                let indent = if ui.health_group == 1 { "  " } else { "" };
+                let mut spans = vec![
+                    Span::styled(if picked { "▌" } else { " " }, base.fg(theme.primary)),
+                    Span::styled(format!("{indent}{} ", theme.g.kind(&kind)), base.fg(theme.label(None, &kind))),
+                    Span::styled(title, base.fg(theme.text)),
+                ];
+                if let Some(check) = check {
+                    spans.push(Span::styled(format!("  {}", vault::check_label(check)), base.fg(theme.low)));
+                }
+                spans.push(Span::styled(if picked { hint } else { "" }, base.fg(theme.low)));
+                Line::from(spans)
+            }
         })
         .collect();
     frame.render_widget(Paragraph::new(lines), inner);
-    for n in skip..ids.len() {
-        let y = inner.y + (n - skip) as u16;
+    for (line, n) in numbered.iter().enumerate().skip(skip) {
+        let y = inner.y + (line - skip) as u16;
         if y >= inner.bottom() {
             break;
         }
-        hit(Rect { y, height: 1, ..inner }, Hit::HealthEntry(n));
+        if let Some(n) = n {
+            hit(Rect { y, height: 1, ..inner }, Hit::HealthEntry(*n));
+        }
     }
 }
 
@@ -1467,13 +1494,14 @@ fn draw_editor(frame: &mut Frame, area: Rect, editor: &Editor, theme: &Theme, ui
 
 fn draw_help(frame: &mut Frame, area: Rect, theme: &Theme) {
     let inner = popup(frame, area, 92, (area.height - 2).min(32), theme, "Keys", false);
-    let groups: [(&str, &[(&str, &str)]); 6] = [
+    let groups: [(&str, &[(&str, &str)]); 7] = [
         ("Anywhere", &[("1-4", "Items, Codes, Generator, Health"), (": or ^K", "commands"), ("^L", "lock now"), ("^T", "next theme"), ("?", "this list"), ("q", "quit")]),
         ("Moving", &[("↑↓ or j k", "move"), ("←→ or h l", "pane"), ("Tab", "next pane"), ("g G", "top, bottom"), ("Enter", "open")]),
         ("Search", &[("/", "search"), ("Esc", "clear"), ("tag:work", "by tag"), ("kind:card", "by kind"), ("has:otp", "with codes"), ("weak reused old", "health")]),
         ("Item", &[("c", "copy password"), ("u", "copy username"), ("t", "copy code"), ("r", "show password"), ("e n", "edit, new"), ("d", "trash"), ("f p", "favourite, pin"), ("m + -", "folder, tags"), ("a", "attach a file")]),
         ("In an item", &[("r Space", "show or hide"), ("y Enter", "copy the line"), ("o", "save a file")]),
         ("In the trash", &[("u", "restore"), ("D", "delete for good")]),
+        ("In Health", &[("i", "ignore for this check, or count again"), ("r", "check again")]),
     ];
     let half = inner.width / 2;
     let mut col = [Vec::new(), Vec::new()];

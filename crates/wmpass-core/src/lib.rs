@@ -5,6 +5,7 @@
 
 pub mod backend;
 pub mod categorise;
+pub mod change_password;
 pub mod clock;
 pub mod crypto;
 pub mod emergency;

@@ -97,6 +97,8 @@ export interface Detail extends Summary {
   history: RevisionView[];
   alias: string | null;
   questions: string[];
+  /** Where the site lets you change the password, for a login saved for a website. */
+  change_password?: string | null;
 }
 
 export interface OtpRow {

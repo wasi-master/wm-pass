@@ -482,8 +482,13 @@ class PassStore {
   codes(ids?: string[]) {
     return this.view<OtpRow[]>('otp.codes', ids ? { ids } : {});
   }
-  health(breached: Record<string, number> = {}) {
-    return this.view<HealthView>('health.report', { breached });
+  health(breached: Record<string, number> = {}, ignored: Record<string, string[]> = {}, skipLocal = false) {
+    return this.view<HealthView>('health.report', { breached, ignored, skip_local: skipLocal });
+  }
+  /** Where a saved address lets you change the password, or null for an app or a local address. */
+  async changePasswordUrl(site: string | null | undefined): Promise<string | null> {
+    if (!site) return null;
+    return (await this.view<{ url: string | null }>('site.change_password', { site })).url;
   }
   presets() {
     return this.view<PresetView[]>('gen.presets');

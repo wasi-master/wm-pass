@@ -346,6 +346,19 @@
             </div>
           {/if}
         {/each}
+        {#if detail.change_password}
+          {@const change = detail.change_password}
+          <div class="field">
+            <span class="label"></span>
+            <span class="value">
+              <button type="button" class="link" style="text-align:left" onclick={() => openUrl(change)}>Change the password on the site</button>
+              <span class="dim small ell" style="display:block">{change.replace(/^https:\/\//, '')}</span>
+            </span>
+            <span class="tools">
+              <IconBtn icon="content_copy" size={16} label="Copy the address" onclick={() => ui.copyPlain('Address', change)} />
+            </span>
+          </div>
+        {/if}
 
         {#each detail.passkeys as key}
           <div class="field">

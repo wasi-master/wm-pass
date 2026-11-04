@@ -5,6 +5,7 @@
 //! When another program, such as a sync client, writes the file meanwhile, its copy is
 //! merged in before the next write rather than overwritten.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -127,6 +128,8 @@ pub struct Detail {
     pub history: Vec<Revision>,
     pub alias: Option<String>,
     pub questions: Vec<String>,
+    /// Where the site lets you change the password, for a login saved for a website.
+    pub change_password: Option<String>,
 }
 
 /// A live one-time code.
@@ -602,9 +605,10 @@ impl Engine {
         self.view("otp.codes", &json!({"ids": ids}))
     }
 
-    /// The health report.
-    pub fn health(&mut self) -> Result<Health, String> {
-        self.view("health.report", &json!({}))
+    /// The health report, leaving out what was ignored per check and, if asked, logins only
+    /// for addresses on the local network.
+    pub fn health(&mut self, ignored: &BTreeMap<String, Vec<String>>, skip_local: bool) -> Result<Health, String> {
+        self.view("health.report", &json!({"ignored": ignored, "skip_local": skip_local}))
     }
 
     /// A secret field's value.
