@@ -120,8 +120,40 @@ pub struct Device {
     pub identifier: String,
     /// Shown in the account's device list.
     pub name: String,
-    /// Bitwarden's device type number. 14 is an unknown browser, 8 is the Linux CLI.
+    /// Bitwarden's device type number, which names the device in its sign-in emails and
+    /// device list. See [`device_kind`].
     pub kind: u32,
+}
+
+/// Bitwarden's device type number for where this runs. `platform` is what a shell knows that the
+/// engine cannot, such as `chrome-extension` or `firefox-browser` for code running as wasm;
+/// empty means the system this was built for. The numbers are Bitwarden's `DeviceType`.
+pub fn device_kind(platform: &str) -> u32 {
+    match platform {
+        "android" => 0,
+        "ios" => 1,
+        "chrome-extension" => 2,
+        "firefox-extension" => 3,
+        "opera-extension" => 4,
+        "edge-extension" => 5,
+        "windows" => 6,
+        "macos" => 7,
+        "linux" => 8,
+        "chrome-browser" => 9,
+        "firefox-browser" => 10,
+        "opera-browser" => 11,
+        "edge-browser" => 12,
+        "safari-browser" => 17,
+        "vivaldi-browser" => 18,
+        "vivaldi-extension" => 19,
+        "safari-extension" => 20,
+        "duckduckgo-browser" => 26,
+        "duckduckgo-extension" => 27,
+        // Wasm has no system name, so it stays an unknown browser.
+        "" if !std::env::consts::OS.is_empty() => device_kind(std::env::consts::OS),
+        // An unknown browser: Bitwarden has no general "other".
+        _ => 14,
+    }
 }
 
 /// What a login gives.
@@ -357,6 +389,21 @@ pub async fn run_async<T>(call: Call<T>, http: &impl wmpass_net::AsyncHttp, poli
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Bitwarden names a device by this number in its sign-in emails, so a desktop app must not
+    /// pass for a phone.
+    #[test]
+    fn device_kind_names_the_platform() {
+        assert_eq!(device_kind("android"), 0);
+        assert_eq!(device_kind("windows"), 6);
+        assert_eq!(device_kind("macos"), 7);
+        assert_eq!(device_kind("linux"), 8);
+        assert_eq!(device_kind("firefox-extension"), 3);
+        assert_eq!(device_kind("safari-browser"), 17);
+        assert_eq!(device_kind("something new"), 14);
+        assert_eq!(device_kind(""), device_kind(std::env::consts::OS));
+        assert_ne!(device_kind(""), 0, "this test does not run on Android");
+    }
 
     #[test]
     fn only_a_refused_password_reads_as_one() {
