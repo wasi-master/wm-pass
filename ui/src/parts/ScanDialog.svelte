@@ -2,8 +2,7 @@
   import Btn from './Btn.svelte';
   import Dialog from './Dialog.svelte';
   import Select from './Select.svelte';
-  import { pass } from '../engine/pass.svelte';
-  import { consumeText } from '../engine/frame';
+  import { qrInPicture, readQr } from './qr';
 
   // Reads QR codes with the computer's camera, or from a picture. Frames are decoded by the
   // engine on this device and go nowhere else. What a code says often holds a secret, such as
@@ -24,7 +23,6 @@
   let timer: ReturnType<typeof setInterval> | null = null;
   let reading = false;
   let done = false;
-  const canvas = document.createElement('canvas');
 
   $effect(() => {
     void start(camera);
@@ -69,20 +67,6 @@
     timer = setInterval(() => void frame(), 250);
   }
 
-  /** Decodes what `source` shows, scaled down to at most `longest` pixels across. */
-  async function read(source: CanvasImageSource, width: number, height: number, longest: number) {
-    const scale = Math.min(1, longest / Math.max(width, height));
-    canvas.width = Math.max(1, Math.round(width * scale));
-    canvas.height = Math.max(1, Math.round(height * scale));
-    const context = canvas.getContext('2d', { willReadFrequently: true });
-    if (!context) return [];
-    context.drawImage(source, 0, 0, canvas.width, canvas.height);
-    const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
-    const reply = await pass.engine('qr.read', { width: canvas.width, height: canvas.height, rgba: true }, { blobs: [new Uint8Array(pixels.data.buffer)] });
-    pixels.data.fill(0);
-    return reply.json.found > 0 ? (JSON.parse(consumeText(reply.secret)) as string[]) : [];
-  }
-
   function found(texts: string[]) {
     if (done || texts.length === 0) return;
     done = true;
@@ -94,7 +78,7 @@
     if (reading || done || !video || video.readyState < 2) return;
     reading = true;
     try {
-      found(await read(video, video.videoWidth, video.videoHeight, 960));
+      found(await readQr(video, video.videoWidth, video.videoHeight, 960));
     } catch {
       // A frame that fails to read is just a missed frame.
     }
@@ -106,11 +90,7 @@
     if (!file) return;
     problem = null;
     try {
-      const image = await createImageBitmap(file);
-      // A screenshot's code can be small, so a picture is read larger than a frame.
-      let texts = await read(image, image.width, image.height, 2400);
-      if (texts.length === 0) texts = await read(image, image.width, image.height, 1200);
-      image.close();
+      const texts = await qrInPicture(file);
       if (texts.length === 0) problem = 'No QR code was found in that picture.';
       else found(texts);
     } catch {

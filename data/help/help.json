@@ -8471,6 +8471,23 @@
      "runs": [
       {
        "t": "text",
+       "s": "With nested vaults, "
+      },
+      {
+       "t": "strong",
+       "s": "Import into"
+      },
+      {
+       "t": "text",
+       "s": " picks where the items go: this vault or one of them. The nested vault is opened for the import and closed again when you leave the page."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
        "s": "Folders in the file become folders here, matched by name. Attachments come along from KeePass, SafeInCloud and 1Password files. A KeePass or SafeInCloud database, or a password-protected Proton Authenticator export, asks for its password."
       }
      ]
@@ -8612,6 +8629,17 @@
       {
        "t": "text",
        "s": "."
+      }
+     ]
+    }
+   ],
+   "caveats": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "The codes hold the secret keys of your accounts. Delete any screenshot of them once the import is done."
       }
      ]
     }
@@ -9069,7 +9097,8 @@
    ],
    "related": [
     "group.export.plain",
-    "action.emergency_kit"
+    "action.emergency_kit",
+    "action.export_pdf"
    ],
    "words": "print paper html offline copy",
    "plain": "Writes a web page listing every item and its values, made to be printed and locked away."

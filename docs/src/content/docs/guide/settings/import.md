@@ -25,7 +25,10 @@ It reads these files:
 - CSV from Apple Passwords, Avast, Avira, Buttercup, Chrome and other Chromium browsers, Dashlane, Firefox, LastPass, mSecure, NordPass, RoboForm and Zoho Vault.
 - JSON from Avast, Enpass, Keeper and Psono, Proton Pass's JSON or unencrypted ZIP, XML from Password Safe and Sticky Password, and Kaspersky Password Manager's text file.
 - Authenticators: Aegis, 2FAS, andOTP, Authenticator Pro (Stratum), Bitwarden Authenticator, FreeOTP+, LastPass Authenticator, Proton Authenticator and Raivo files, and a text file of otpauth links, one per line, which is what Ente Auth's plain-text export is.
+- Google Authenticator's export codes, with [Scan Google Authenticator's code](/guide/settings/import/#action-import-scan-google), or a screenshot of a code chosen as the file.
 - A CSV that WM Pass exported.
+
+With nested vaults, **Import into** picks where the items go: this vault or one of them. The nested vault is opened for the import and closed again when you leave the page.
 
 Folders in the file become folders here, matched by name. Attachments come along from KeePass, SafeInCloud and 1Password files. A KeePass or SafeInCloud database, or a password-protected Proton Authenticator export, asks for its password.
 
@@ -33,7 +36,7 @@ A login with the same site, username and password as one already in the vault is
 
 The file is read on this device. Nothing is sent anywhere.
 
-**How to export from your old app** lists the apps WM Pass reads. Choose one to open its export steps on the WM Pass website.
+**How to export from your old app** lists the apps WM Pass reads. Choose one to read its export steps here, with a tab for each device; **Open on the website** has the same page with its pictures.
 
 #### When to use it
 
@@ -44,8 +47,6 @@ Once, when you move to WM Pass, or to bring in one-time codes from an authentica
 Most export files hold your passwords in plain text. Delete the file once WM Pass has read it, and empty the recycle bin.
 
 Encrypted exports from Bitwarden, Proton Pass, Aegis, 2FAS and Authenticator Pro cannot be read. Export them again without encryption. A KeePass database that also needs a key file cannot be opened here.
-
-There is no scanner here, so Google Authenticator's export codes come in only as a text file holding the otpauth-migration links inside them, one per line. The phone can scan them.
 
 The importers were tested against sample files written from each format's published or observed layout, not against exports from every real app. Compare the count afterwards.
 
@@ -62,6 +63,8 @@ It reads these files:
 - Authenticators: Aegis, 2FAS, andOTP, Authenticator Pro (Stratum), Bitwarden Authenticator, FreeOTP+, LastPass Authenticator, Proton Authenticator and Raivo files, and a text file of otpauth links, one per line, which is what Ente Auth's plain-text export is.
 - Google Authenticator's export codes, with [Scan Google Authenticator's code](/guide/settings/import/#action-import-scan-google), or a screenshot of a code chosen as the file.
 - A CSV that WM Pass exported.
+
+With nested vaults, **Import into** picks where the items go: this vault or one of them. The nested vault is opened for the import and closed again when you leave the page.
 
 Folders in the file become folders here, matched by name. Attachments come along from KeePass, SafeInCloud and 1Password files. A KeePass or SafeInCloud database, or a password-protected Proton Authenticator export, asks for its password.
 
@@ -83,11 +86,23 @@ See also [Moving passwords in and out](/guide/how-it-works/#feature-import-expor
 
 ## Scan Google Authenticator's code
 
-*Only in Android.*
-
-Scans the export code Google Authenticator shows under Transfer codes, Export codes, and reads the one-time codes in it.
+Reads the export code Google Authenticator shows under Transfer codes, Export codes, with the computer's camera or from a picture, and reads the one-time codes in it.
 
 #### How it works
+
+Hold the phone up to the camera, or choose **Choose a picture** for a screenshot of the code. A screenshot chosen with **Choose a file** works too.
+
+Google splits a long list across several codes. After the first, choose **Scan the next code** for each of the rest, then import them all together.
+
+The codes are read on this computer. Nothing is sent anywhere.
+
+#### Limits
+
+The codes hold the secret keys of your accounts. Delete any screenshot of them once the import is done.
+
+#### On Android
+
+Scans the export code Google Authenticator shows under Transfer codes, Export codes, and reads the one-time codes in it.
 
 Google splits a long list across several codes. After the first, tap **Scan the next code** for each of the rest, then import them all together.
 

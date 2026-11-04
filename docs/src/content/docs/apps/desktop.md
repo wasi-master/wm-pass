@@ -33,4 +33,4 @@ Closing the window can leave WM Pass in the tray, where it still locks on time. 
 
 ## Clipboard
 
-Copied passwords are marked to stay out of clipboard history and are cleared after 30 seconds, unless you have copied something else by then.
+Copied passwords are marked to stay out of clipboard history and are cleared after 60 seconds, or the time set under Settings, Security, unless you have copied something else by then.
