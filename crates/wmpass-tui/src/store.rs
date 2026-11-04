@@ -40,7 +40,9 @@ pub struct Prefs {
     pub icons: String,
     /// Lock after this many minutes without a key press. Zero never locks.
     pub lock_minutes: u32,
-    /// Clear a copied secret after this many seconds. Zero leaves it.
+    /// Clear a copied secret after this many seconds. Zero leaves it. Stored under the apps' own
+    /// name: the 30 seconds older versions saved, with no way to change it, give way to 60.
+    #[serde(rename = "clipboard_seconds")]
     pub clip_seconds: u32,
     /// Hide a revealed secret after this many seconds.
     pub reveal_seconds: u32,
@@ -59,7 +61,7 @@ impl Default for Prefs {
             theme: String::new(),
             icons: String::new(),
             lock_minutes: 5,
-            clip_seconds: 30,
+            clip_seconds: 60,
             reveal_seconds: 20,
             device: 0,
             sync_settings: true,
@@ -240,6 +242,16 @@ mod tests {
         }
         assert_eq!(prefs.recent.len(), RECENT_KEPT);
         assert_eq!(prefs.recent[0], PathBuf::from("/v11"));
+    }
+
+    #[test]
+    fn the_clipboard_waits_a_minute_as_in_the_apps() {
+        assert_eq!(Prefs::default().clip_seconds, 60);
+        // The 30 seconds older versions saved, under the old key, give way to the new default.
+        let old: Prefs = serde_json::from_str(r#"{"clip_seconds": 30, "lock_minutes": 9}"#).expect("old prefs");
+        assert_eq!((old.clip_seconds, old.lock_minutes), (60, 9));
+        let new: Prefs = serde_json::from_str(r#"{"clipboard_seconds": 15}"#).expect("new prefs");
+        assert_eq!(new.clip_seconds, 15);
     }
 
     #[test]

@@ -90,7 +90,7 @@ Every change is written to the file at once, with the previous version kept besi
 
 ## What stays private
 
-A copied password is kept out of clipboard history where the system allows it, and cleared after 30 seconds unless you have copied something else since. Quitting or locking clears it straight away. On Linux the clipboard only holds what WM Pass copied while WM Pass is running.
+A copied password is kept out of clipboard history where the system allows it, and cleared after 60 seconds unless you have copied something else since; change the time under `:` then **Clear the clipboard after…**, where 0 leaves it. Quitting or locking clears it straight away. On Linux the clipboard only holds what WM Pass copied while WM Pass is running.
 
 Over SSH there is no local clipboard to reach, so copies go through the terminal as an OSC 52 sequence. Most modern terminals pass that to your computer's clipboard; tmux needs `set -g set-clipboard on`.
 
