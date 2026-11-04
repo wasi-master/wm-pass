@@ -296,7 +296,7 @@ fn serialize_argon2_version<S: serde::Serializer>(
 
 impl KdfConfig {
     #[cfg(feature = "save_kdbx4")]
-    fn seed_size(&self) -> usize {
+    pub(crate) fn seed_size(&self) -> usize {
         match self {
             KdfConfig::Aes { .. } => 32,
             KdfConfig::Argon2 { .. } => 32,

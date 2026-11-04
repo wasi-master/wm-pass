@@ -133,6 +133,7 @@ fn parse_keyfile(buffer: &[u8]) -> Result<KeyElement, DatabaseKeyError> {
 pub struct DatabaseKey {
     password: Option<String>,
     keyfile: Option<Vec<u8>>,
+    challenge_response_answer: Option<Vec<u8>>,
     #[cfg(feature = "challenge_response")]
     challenge_response_key: Option<ChallengeResponseKey>,
     #[cfg(feature = "challenge_response")]
@@ -177,6 +178,15 @@ impl DatabaseKey {
         Ok(self)
     }
 
+    /// Modify the database key to include a challenge-response key's answer, worked out
+    /// elsewhere: a YubiKey's HMAC-SHA1 of the KDF seed (KDBX 4) or of the master seed
+    /// (KDBX 3.1). It joins the key as its SHA-256, as KeePassXC adds it. (WM Pass patch:
+    /// for apps that reach the key themselves, such as over NFC on a phone.)
+    pub fn with_challenge_response_answer(mut self, answer: &[u8]) -> Self {
+        self.challenge_response_answer = Some(answer.to_vec());
+        self
+    }
+
     /// Modify the database key to include a challenge-response key
     #[cfg(feature = "challenge_response")]
     pub fn with_challenge_response_key(mut self, challenge_response_key: ChallengeResponseKey) -> Self {
@@ -212,6 +222,10 @@ impl DatabaseKey {
             out.push(parse_keyfile(f)?);
         }
 
+        if let Some(answer) = &self.challenge_response_answer {
+            out.push(calculate_sha256(&[answer]).to_vec());
+        }
+
         if out.is_empty() {
             return Err(DatabaseKeyError::EmptyKey);
         }
@@ -230,7 +244,7 @@ impl DatabaseKey {
 
     /// Returns true if the database key is not associated with any key component.
     pub fn is_empty(&self) -> bool {
-        if self.password.is_some() || self.keyfile.is_some() {
+        if self.password.is_some() || self.keyfile.is_some() || self.challenge_response_answer.is_some() {
             return false;
         }
         #[cfg(feature = "challenge_response")]
@@ -341,6 +355,7 @@ mod key_tests {
         assert!(DatabaseKey {
             password: None,
             keyfile: None,
+            challenge_response_answer: None,
             #[cfg(feature = "challenge_response")]
             challenge_response_key: None,
             #[cfg(feature = "challenge_response")]

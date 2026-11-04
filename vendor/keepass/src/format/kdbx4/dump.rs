@@ -28,6 +28,18 @@ pub fn dump_kdbx4(
     db_key: &DatabaseKey,
     writer: &mut dyn Write,
 ) -> Result<(), DatabaseSaveError> {
+    dump_kdbx4_seeded(db, db_key, writer, None)
+}
+
+/// Dump a KeePass database, with the given KDF seed instead of a new random one when
+/// `kdf_seed` is set. (WM Pass patch: a challenge-response key answers the KDF seed, so a
+/// caller that holds the answer, but not the key, must keep the seed it was asked.)
+pub fn dump_kdbx4_seeded(
+    db: &Database,
+    db_key: &DatabaseKey,
+    writer: &mut dyn Write,
+    kdf_seed: Option<&[u8]>,
+) -> Result<(), DatabaseSaveError> {
     if !matches!(db.config.version, DatabaseVersion::KDB4(1)) {
         return Err(DatabaseSaveError::UnsupportedVersion);
     }
@@ -42,7 +54,13 @@ pub fn dump_kdbx4(
     let mut inner_random_stream_key = vec![0; db.config.inner_cipher_config.get_key_size()];
     getrandom::fill(&mut inner_random_stream_key)?;
 
-    let (kdf, kdf_seed) = db.config.kdf_config.get_kdf_and_seed()?;
+    let (kdf, kdf_seed) = match kdf_seed {
+        Some(seed) if seed.len() == db.config.kdf_config.seed_size() => {
+            (db.config.kdf_config.get_kdf_seeded(seed), seed.to_vec())
+        }
+        Some(_) => return Err(DatabaseSaveError::InvalidKdfSeed),
+        None => db.config.kdf_config.get_kdf_and_seed()?,
+    };
 
     #[cfg(feature = "challenge_response")]
     let db_key = db_key.clone().perform_challenge(&kdf_seed)?;

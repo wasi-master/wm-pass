@@ -18,6 +18,23 @@ impl Database {
             DatabaseVersion::KDB4(_) => dump_kdbx4(self, &key, destination),
         }
     }
+
+    /// Like [`Database::save`], with a KDF seed of the caller's choosing rather than a new
+    /// random one. A challenge-response key answers the KDF seed, so keeping the seed lets
+    /// a caller reuse an answer it already has. It must be as long as the KDF's seed.
+    pub fn save_with_kdf_seed(
+        &self,
+        destination: &mut dyn std::io::Write,
+        key: DatabaseKey,
+        kdf_seed: &[u8],
+    ) -> Result<(), DatabaseSaveError> {
+        use crate::format::kdbx4::dump_kdbx4_seeded;
+
+        match self.config.version {
+            DatabaseVersion::KDB4(_) => dump_kdbx4_seeded(self, &key, destination, Some(kdf_seed)),
+            _ => Err(DatabaseSaveError::UnsupportedVersion),
+        }
+    }
 }
 
 /// Errors that can occur during saving of the database to a KDBX file
@@ -47,4 +64,8 @@ pub enum DatabaseSaveError {
     /// Attempted to save a database with an unsupported version (e.g., KDB, KDBX2, or KDBX3)
     #[error("Unsupported database version")]
     UnsupportedVersion,
+
+    /// A KDF seed given to [`Database::save_with_kdf_seed`] is the wrong length
+    #[error("The KDF seed has the wrong length")]
+    InvalidKdfSeed,
 }
