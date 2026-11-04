@@ -51,7 +51,8 @@ fun parseForm(structure: AssistStructure): ParsedForm {
     fun visit(node: AssistStructure.ViewNode) {
         if (domain == null) node.webDomain?.takeIf { it.isNotEmpty() }?.let { domain = it }
         if (node.visibility == View.VISIBLE && node.autofillId != null) {
-            val hints = node.autofillHints.orEmpty().map { it.lowercase() }
+            // Some apps leave nulls in the list.
+            val hints = node.autofillHints.orEmpty().mapNotNull { it?.lowercase() }
             val tag = node.htmlInfo?.tag?.lowercase()
             val htmlType = node.attr("type")?.lowercase()
             val complete = node.attr("autocomplete")?.lowercase().orEmpty()
