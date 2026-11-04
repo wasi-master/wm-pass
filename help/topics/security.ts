@@ -206,6 +206,24 @@ export const security = [
     docs: '/security/threat-model/',
     words: 'secret service keychain quick unlock biometrics',
   },
+  {
+    id: 'action.passkey_unlock',
+    kind: 'action',
+    title: 'Unlock with a passkey',
+    page: 'security',
+    shells: ['extension'],
+    what: 'Opens this vault with Touch ID, Windows Hello or your phone, in place of the master password.',
+    how: 'WM Pass makes a passkey for itself on this device. What the passkey answers seals the vault\'s key inside WM Pass\'s own engine, and only that sealed copy is kept in the browser. Turning it off throws the copy away.',
+    when: 'On a computer only you use, where typing the master password many times a day is the bigger risk.',
+    caveats: [
+      'The sealed copy opens nothing without the passkey, so a copied browser profile does not open the vault.',
+      'The passkey belongs to wmpass.pages.dev, and your browser or phone may keep it with your other passkeys. Deleting it there turns this off.',
+      'A browser without passkeys that can give an app a secret (the PRF extension) does not offer this.',
+    ],
+    related: ['action.keyring_unlock', 'feature.locking', 'concept.master_password'],
+    docs: '/security/threat-model/',
+    words: 'touch id windows hello biometrics quick unlock fingerprint face',
+  },
 
   // ---- master password ----
 

@@ -83,7 +83,8 @@ export const backup = [
     on: {
       extension: {
         caveats: [
-          'A browser cannot open raw connections, so the extension has no SFTP, FTP, SMB, NFS or Email places. It also has no folder, and no iCloud Drive, whose sign-in needs headers a page may not send. The desktop app and the phone have them all.',
+          'A browser cannot open raw connections, so SFTP, FTP, SMB, NFS and Email places, and iCloud Drive, whose sign-in needs headers a page may not send, go through the desktop app while the extension is connected to it. The app asks you once for each place.',
+          'A folder works in Chrome and Edge, which let a page use a folder you pick. The browser asks again for it after a restart: run a backup once from here to say yes.',
           'Saving any place turns on [[setting.network_allowed]], since reaching it is the reason you set it up.',
           'Google Drive, Dropbox, OneDrive and Box are offered only by builds made with an app id for that service.',
         ],
@@ -540,7 +541,7 @@ export const backup = [
           'WM Pass writes changes back to the file on each save, and keeps one earlier copy beside its own files in case a write is cut off.',
           'Click an account to remove it. WM Pass forgets it here. Nothing in the file changes.',
         ],
-        caveats: 'The extension does not reach servers itself. Use the desktop app or the phone for a Bitwarden, Vaultwarden or WM Pass server account.',
+        caveats: 'A self-hosted server is reached through the browser, which cannot pin its certificate the way the desktop and phone apps do. It trusts whatever certificate the browser trusts.',
       },
     },
   },

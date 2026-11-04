@@ -4,6 +4,8 @@
      src/widgets.rs reads only wmpass://widget/... links and ignores the rest. -->
 <plist version="1.0">
 <dict>
+    <key>NSCameraUsageDescription</key>
+    <string>WM Pass reads QR codes with the camera: one-time code setups, pairing codes and a new device's code. Frames never leave this computer.</string>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>

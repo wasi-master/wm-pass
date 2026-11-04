@@ -511,6 +511,7 @@ private fun LanSection() {
     var joining by remember { mutableStateOf(false) }
     // First the question that decides between the two: whether the other device has this vault.
     var choosing by remember { mutableStateOf(false) }
+    var pastingJoin by remember { mutableStateOf(false) }
     /** Set while the digits on show are for sending this vault, not for pairing. */
     var sendingVault by remember { mutableStateOf(false) }
     val name = remember { Build.MODEL }
@@ -792,7 +793,7 @@ private fun LanSection() {
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 10.dp),
             )
-            SheetRow(PassIcons.QrCodeScanner, "Scan its code", "From a computer, a phone or the terminal app") {
+            SheetRow(PassIcons.QrCodeScanner, "Scan its code", "The code on the new phone, computer or terminal") {
                 joining = false
                 shell.scanTarget = { text ->
                     scope.launch {
@@ -803,6 +804,10 @@ private fun LanSection() {
                         }
                     }
                 }
+            }
+            SheetRow(PassIcons.ContentPaste, "Paste its code", "The text under the code on a computer or in the terminal app") {
+                joining = false
+                pastingJoin = true
             }
             SheetRow(PassIcons.Pin, "Find it on this network", "Then compare six digits on both screens") {
                 joining = false
@@ -817,6 +822,31 @@ private fun LanSection() {
                         codePeer = reply.obj["peer"]!!.jsonObject["name"]!!.jsonPrimitive.content
                         sendingVault = true
                         mode = LanMode.CODE_COMPARE
+                    } catch (failure: NativeFailure) {
+                        failed(failure)
+                    }
+                }
+            }
+        }
+    }
+    if (pastingJoin) {
+        val pasted = rememberTextFieldState()
+        PassSheet({ pastingJoin = false }, "Paste its code") {
+            Text(
+                "Copy the code's text on the new device, then paste it here. It starts with wmpass-pair and works for two minutes.",
+                color = colors.textMid,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 10.dp),
+            )
+            SheetField(pasted, "wmpass-pair:1:…")
+            Spacer(Modifier.height(12.dp))
+            PrimaryButton("Send the vault", Modifier.fillMaxWidth(), enabled = pasted.text.isNotBlank()) {
+                val text = pasted.text.toString().trim()
+                pastingJoin = false
+                message = null
+                scope.launch {
+                    try {
+                        sentTo(Lan.joinScan(context, text, name))
                     } catch (failure: NativeFailure) {
                         failed(failure)
                     }

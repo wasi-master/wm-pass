@@ -26,11 +26,43 @@ function base64(bytes: Uint8Array) {
   return btoa(text);
 }
 
+/**
+ * Where this runs, so Bitwarden's sign-in emails name the right kind of device. The desktop app's
+ * engine knows its system already; in a browser it is wasm and cannot tell.
+ */
+function platform() {
+  if (host().kind === 'desktop') return '';
+  // Most of these also say Chrome or Safari, so the more particular ones come first.
+  const browsers: [string, RegExp][] = [
+    ['edge', /Edg\//],
+    ['opera', /OPR\//],
+    ['vivaldi', /Vivaldi/],
+    ['duckduckgo', /DuckDuckGo|Ddg\//],
+    ['firefox', /Firefox\//],
+    ['chrome', /Chrome\//],
+    ['safari', /Safari\//],
+  ];
+  const browser = browsers.find(([, test]) => test.test(navigator.userAgent))?.[0] ?? 'other';
+  return `${browser}-${host().kind === 'extension' ? 'extension' : 'browser'}`;
+}
+
 class Accounts {
   list = $state.raw<AccountRef[]>([]);
   /** How the last trip to a server went: null for fine, or words to show. */
   syncProblem = $state<string | null>(null);
   private device = '';
+  /** The account just added, for the door to have ready the next time it shows. */
+  private signInNextId: string | null = null;
+
+  signInNext(id: string) {
+    this.signInNextId = id;
+  }
+
+  takeSignInNext(): AccountRef | null {
+    const id = this.signInNextId;
+    this.signInNextId = null;
+    return this.list.find((a) => a.id === id) ?? null;
+  }
 
   async load() {
     const raw = await host().loadSettings(SETTINGS);
@@ -125,7 +157,7 @@ class Accounts {
           )
         : await pass.engine(
             'bitwarden.login',
-            { server: ref.server, region: ref.region, email: ref.email, device: this.deviceId(), ...(code ? { [deviceCode ? 'device_code' : 'code']: code } : {}) },
+            { server: ref.server, region: ref.region, email: ref.email, device: this.deviceId(), platform: platform(), ...(code ? { [deviceCode ? 'device_code' : 'code']: code } : {}) },
             { secret: password, online: online() },
           );
     await pass.adoptAccount(ref.id, reply, (bytes) => host().writeFile(cachePath, bytes));

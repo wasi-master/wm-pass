@@ -2,6 +2,7 @@
 // vault files means the same thing on every platform.
 
 import { host } from './host';
+import { prefs } from './prefs.svelte';
 import { bytesOf, consumeText, decodeReply, encodeRequest, EngineError, type Reply } from './frame';
 import { isVaultFile, makeBundle, unzip } from './bundle';
 import type {
@@ -55,6 +56,8 @@ class PassStore {
   file: string | null = null;
   private door: DoorState = { device: 0, fails: 0, retry_at: 0, seen: {} };
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Sites off the list asked this run, by domain: the page they named, or null for none. */
+  private changeAsked = new Map<string, string | null>();
   private writing: Promise<unknown> = Promise.resolve();
   private accountWriter: ((bytes: Uint8Array) => Promise<void>) | null = null;
   private childWriter: ((bytes: Uint8Array) => Promise<void>) | null = null;
@@ -70,6 +73,9 @@ class PassStore {
   onWipe: (() => void)[] = [];
   /** How long to wait after a change before writing. The extension's popup can vanish at any moment. */
   saveDelayMs = 350;
+  /** The vault file as last read or written, by its hash, to notice another program writing it. */
+  private known: string | null = null;
+  private watch: ReturnType<typeof setInterval> | null = null;
 
   get device() {
     return this.door.device;
@@ -199,8 +205,58 @@ class PassStore {
   private adopt(handle: number, file: string, name: string, readOnly: boolean) {
     this.handle = handle;
     this.file = file;
+    this.known = null;
     this.state = { kind: 'unlocked', name, file, readOnly };
     host().stateChanged?.({ unlocked: true, name, handle, file, read_only: readOnly });
+    this.watchFile();
+  }
+
+  // ---- other programs writing the same file ----
+
+  private async hashOf(bytes: Uint8Array) {
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as BufferSource));
+    return Array.from(digest, (b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  /**
+   * On a computer, the terminal app and `wmpass` open this same folder. Every file here keeps
+   * one time on purpose, so a change shows only in what the file holds: it is read every few
+   * seconds and merged in when it differs from what this app last read or wrote.
+   */
+  private watchFile() {
+    this.stopWatching();
+    if (host().kind !== 'desktop') return;
+    this.watch = setInterval(() => {
+      this.writing = this.writing.then(() => this.takeOutsideChanges()).catch(() => undefined);
+    }, 3000);
+  }
+
+  private stopWatching() {
+    if (this.watch) clearInterval(this.watch);
+    this.watch = null;
+  }
+
+  /** Merges in the file if another program wrote it since. Returns whether anything came in. */
+  private async takeOutsideChanges() {
+    const file = this.file;
+    if (!this.handle || !file || this.childWriter || this.accountWriter) return false;
+    let bytes: Uint8Array;
+    try {
+      bytes = await host().readFile(file);
+    } catch {
+      return false;
+    }
+    const hash = await this.hashOf(bytes);
+    if (this.known === null) {
+      this.known = hash;
+      return false;
+    }
+    if (hash === this.known || file !== this.file) return false;
+    const name = file.split('/').pop()!;
+    await this.engine('vault.merge', { seen_generation: this.door.seen[name] ?? 0 }, { handle: this.handle, blobs: [bytes] });
+    this.known = hash;
+    await this.refresh();
+    return true;
   }
 
   /** When typing a password next becomes allowed, or 0. */
@@ -237,6 +293,7 @@ class PassStore {
         await this.noteSuccess();
         const target = `${VAULTS}/${files[obj.index].name}`;
         this.adopt(obj.handle, target, obj.name, obj.read_only === true);
+        this.known = await this.hashOf(blobs[factors.length + obj.index]);
         await this.afterOpen(files[obj.index].name, obj.generation);
         return { kind: 'opened' };
       }
@@ -256,16 +313,19 @@ class PassStore {
     }
   }
 
-  /** Opens with a key the system's own store holds. The key never reaches this page. */
+  /** Opens with a key the system's keyring or a passkey holds. The key never reaches this page. */
   async unlockQuick() {
-    const desktop = host().desktop;
-    if (!desktop) return false;
+    const quick = host().quick;
+    if (!quick) return false;
     for (const f of await this.vaultFiles()) {
-      if (!(await desktop.quickEnrolled(f.name))) continue;
+      if (!(await quick.enrolled(f.name))) continue;
       const path = `${VAULTS}/${f.name}`;
-      const obj = decodeReply(await desktop.quickOpen(f.name, await host().readFile(path))).json;
+      const bytes = await host().readFile(path);
+      const obj = decodeReply(await quick.open(f.name, bytes)).json;
+      if (obj?.error) throw new EngineError(obj.error.code, obj.error.message);
       await this.noteSuccess();
       this.adopt(obj.handle, path, obj.name, obj.read_only === true);
+      this.known = await this.hashOf(bytes);
       await this.afterOpen(f.name, obj.generation);
       return true;
     }
@@ -274,10 +334,10 @@ class PassStore {
 
   /** Whether quick unlock could work for a file on this device. */
   async quickFiles() {
-    const desktop = host().desktop;
-    if (!desktop || !(await desktop.quickAvailable())) return [];
+    const quick = host().quick;
+    if (!quick || !(await quick.available())) return [];
     const out: string[] = [];
-    for (const f of await this.vaultFiles()) if (await desktop.quickEnrolled(f.name)) out.push(f.name);
+    for (const f of await this.vaultFiles()) if (await quick.enrolled(f.name)) out.push(f.name);
     return out;
   }
 
@@ -296,6 +356,7 @@ class PassStore {
 
   /** Saves anything pending and forgets every key. */
   async lock() {
+    this.stopWatching();
     await this.leaveChild();
     await this.flush();
     await host().lockAll();
@@ -319,6 +380,7 @@ class PassStore {
   }
 
   async wipe() {
+    this.stopWatching();
     await host().lockAll();
     await host().removeFolder(VAULTS);
     await host().removeFolder(BLOBS);
@@ -374,8 +436,11 @@ class PassStore {
       return;
     }
     if (!this.file) return;
+    // Whatever another program wrote since goes in first, so this write keeps it.
+    await this.takeOutsideChanges().catch(() => false);
     const reply = await this.engine('vault.save', {}, { handle: active });
     await host().writeFile(this.file, reply.blobs[0]);
+    this.known = await this.hashOf(reply.blobs[0]);
     this.door.seen[this.file.split('/').pop()!] = reply.json.generation;
     await this.writeDoor();
     await this.coverTracks(reply.blobs[0].length);
@@ -421,8 +486,30 @@ class PassStore {
   codes(ids?: string[]) {
     return this.view<OtpRow[]>('otp.codes', ids ? { ids } : {});
   }
-  health(breached: Record<string, number> = {}) {
-    return this.view<HealthView>('health.report', { breached });
+  health(breached: Record<string, number> = {}, ignored: Record<string, string[]> = {}, skipLocal = false) {
+    return this.view<HealthView>('health.report', { breached, ignored, skip_local: skipLocal });
+  }
+  /**
+   * Where a saved address lets you change the password, and only for a site that has such a page:
+   * the core's list at once, and for any other website, when the network may be used, the site's
+   * own answer to whether its `/.well-known/change-password` address leads anywhere. Null for no
+   * page, an app or a local address.
+   */
+  async changePasswordUrl(site: string | null | undefined): Promise<string | null> {
+    if (!site) return null;
+    const { url, ask } = await this.view<{ url: string | null; ask: string | null }>('site.change_password', { site });
+    if (url || !ask) return url;
+    const kept = this.changeAsked.get(ask);
+    if (kept !== undefined) return kept;
+    if (!prefs.v.network_allowed) return null;
+    try {
+      const found = (await this.net<{ url: string | null }>('site.probe_change_password', true, { host: ask })).json.url ?? null;
+      this.changeAsked.set(ask, found);
+      return found;
+    } catch {
+      // No answer, such as no network: asked again next time.
+      return null;
+    }
   }
   presets() {
     return this.view<PresetView[]>('gen.presets');

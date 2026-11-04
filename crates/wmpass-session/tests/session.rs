@@ -150,6 +150,29 @@ fn save_reopen_and_quick_unlock() {
     assert_eq!(got.secret.as_deref().map(Vec::as_slice), Some(PASSWORD_MARKER.as_bytes()));
 }
 
+/// A browser's quick unlock: the key is sealed under a passkey's answer and comes back only
+/// with that same answer. The page never holds the key itself.
+#[test]
+fn a_passkey_answer_seals_and_reopens_the_key() {
+    let mut s = Service::new(1);
+    let h = new_vault(&mut s);
+    let id = login(&mut s, h);
+    let file = call(&mut s, "vault.save", h, json!({})).blobs[0].clone();
+    let answer = [7u8; 32];
+    let sealed = secret_call(&mut s, "vault.quick_seal", h, json!({}), &answer);
+    assert!(sealed.secret.is_none(), "the key does not come out");
+    let sealed = sealed.blobs[0].clone();
+    s.lock_all();
+
+    let blobs: [&[u8]; 2] = [&sealed, &file];
+    let wrong = s.call("vault.quick_open", Call { secret: &[8u8; 32], blobs: &blobs, ..Call::default() });
+    assert_eq!(wrong.err().map(|e| e.code), Some("wrong_password"));
+    let open = s.call("vault.quick_open", Call { secret: &answer, blobs: &blobs, ..Call::default() }).unwrap();
+    let h = json_of(&open)["handle"].as_u64().unwrap();
+    let got = call(&mut s, "entry.reveal", h, json!({"id": id, "field": "password"}));
+    assert_eq!(got.secret.as_deref().map(Vec::as_slice), Some(PASSWORD_MARKER.as_bytes()));
+}
+
 #[test]
 fn the_shelf_stays_shut_to_a_held_id_until_a_fresh_unlock() {
     let mut s = Service::new(1);
@@ -485,4 +508,140 @@ fn a_code_becomes_a_login_and_keeps_its_code() {
     assert_eq!(code.secret.as_ref().map(|s| s.len()), Some(6));
     let args = json!({"id": id, "kind": "login"}).to_string();
     assert!(s.call("entry.convert", Call { handle: h, args: &args, ..Call::default() }).is_err(), "a login is not converted again");
+}
+
+#[test]
+fn qr_codes_are_read_from_a_picture() {
+    let text = "otpauth://totp/GitHub:octo?secret=JBSWY3DPEHPK3PXP&issuer=GitHub";
+    let code = qrcode::QrCode::new(text.as_bytes()).expect("qr");
+    let width = code.width();
+    // Four pixels a module, with a light border, in RGBA as a camera frame comes.
+    let (scale, border) = (4, 4);
+    let side = (width + 2 * border) * scale;
+    let colours = code.to_colors();
+    let mut rgba = vec![255u8; side * side * 4];
+    for y in 0..side {
+        for x in 0..side {
+            let (mx, my) = ((x / scale).wrapping_sub(border), (y / scale).wrapping_sub(border));
+            if mx < width && my < width && colours[my * width + mx] == qrcode::Color::Dark {
+                rgba[(y * side + x) * 4..][..3].fill(0);
+            }
+        }
+    }
+    let mut s = Service::new(1);
+    let args = json!({"width": side, "height": side, "rgba": true}).to_string();
+    let reply = s
+        .call("qr.read", Call { args: &args, blobs: &[&rgba], ..Call::default() })
+        .expect("read");
+    assert_eq!(json_of(&reply)["found"], 1);
+    assert!(!reply.json.contains("JBSWY3DP"), "the code's text never rides in the view");
+    let found: Vec<String> = serde_json::from_slice(reply.secret.as_deref().expect("secret")).expect("list");
+    assert_eq!(found, vec![text.to_owned()]);
+    // A picture with no code finds nothing, and a wrong size is refused.
+    let blank = vec![200u8; 64 * 64];
+    let args = json!({"width": 64, "height": 64}).to_string();
+    let reply = s.call("qr.read", Call { args: &args, blobs: &[&blank], ..Call::default() }).expect("blank");
+    assert_eq!(json_of(&reply)["found"], 0);
+    let args = json!({"width": 65, "height": 64}).to_string();
+    assert!(s.call("qr.read", Call { args: &args, blobs: &[&blank], ..Call::default() }).is_err());
+}
+
+#[test]
+fn a_login_says_where_to_change_its_password() {
+    let mut s = Service::new(1);
+    let h = new_vault(&mut s);
+    let id = login(&mut s, h);
+    let detail = json_of(&call(&mut s, "entry.get", h, json!({"id": id})));
+    // example.com is not on the list: no guessed link, only a domain for the app to ask.
+    assert!(detail["change_password"].is_null());
+    let reply = json_of(&call(&mut s, "site.change_password", 0, json!({"site": "https://login.example.com/in"})));
+    assert!(reply["url"].is_null());
+    assert_eq!(reply["ask"], "example.com");
+    let reply = json_of(&call(&mut s, "site.change_password", 0, json!({"site": "https://www.23andme.com/login"})));
+    assert_eq!(reply["url"], "https://you.23andme.com/user/edit/password/");
+    assert!(reply["ask"].is_null());
+    let reply = json_of(&call(&mut s, "site.change_password", 0, json!({"site": "http://192.168.1.1"})));
+    assert!(reply["url"].is_null());
+    assert!(reply["ask"].is_null());
+}
+
+#[test]
+fn health_leaves_out_what_was_ignored_and_local_logins() {
+    let mut s = Service::new(1);
+    let h = new_vault(&mut s);
+    let weak = |s: &mut Service, title: &str, site: &str| {
+        let reply = call(s, "entry.create", h, json!({"kind": "login", "title": title, "sites": [{"Url": site}]}));
+        let id = json_of(&reply)["id"].as_str().unwrap().to_owned();
+        secret_call(s, "entry.set_secret", h, json!({"id": id, "field": "password"}), b"password1");
+        id
+    };
+    let mail = weak(&mut s, "Mail", "https://mail.example.com");
+    let router = weak(&mut s, "Router", "http://192.168.1.1");
+    let all = json_of(&call(&mut s, "health.report", h, json!({})));
+    assert_eq!(all["weak"].as_array().unwrap().len(), 2);
+    // Reused passwords come as one group per password.
+    let groups = all["reused"].as_array().unwrap();
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].as_array().unwrap().len(), 2);
+    assert!(groups[0].as_array().unwrap().contains(&json!(router)));
+    let skipped = json_of(&call(&mut s, "health.report", h, json!({"skip_local": true})));
+    assert_eq!(skipped["weak"], json!([mail.clone()]));
+    let ignored = json_of(&call(&mut s, "health.report", h, json!({"skip_local": true, "ignored": {"weak": [mail]}})));
+    assert_eq!(ignored["weak"], json!([]));
+}
+
+#[test]
+fn a_wifi_network_comes_in_from_its_text_and_goes_out_as_a_qr_code() {
+    let mut s = Service::new(1);
+    let reply = s
+        .call("wifi.parse", Call { secret: b"WIFI:T:WPA;S:Home;P:hunter22;;", ..Call::default() })
+        .expect("parse");
+    assert_eq!(json_of(&reply), json!({"ssid": "Home", "security": "wpa", "hidden": false}));
+    assert_eq!(reply.secret.as_ref().map(|s| s.to_vec()), Some(b"hunter22".to_vec()), "the password comes back as the secret");
+    assert!(s.call("wifi.parse", Call { secret: b"hello", ..Call::default() }).is_err());
+
+    let h = new_vault(&mut s);
+    let made = call(&mut s, "entry.create", h, json!({"kind": "wifi", "title": "Home", "fields": {"ssid": "Home", "security": "wpa"}}));
+    let id = json_of(&made)["id"].as_str().unwrap().to_owned();
+    secret_call(&mut s, "entry.set_secret", h, json!({"id": id, "field": "password"}), b"hunter22");
+    let view = json_of(&call(&mut s, "wifi.qr", h, json!({"id": id})));
+    let want = qrcode::QrCode::new(b"WIFI:T:WPA;S:Home;P:hunter22;;").unwrap();
+    assert_eq!(view["size"], want.width());
+    let rows: String = want.to_colors().iter().map(|c| if *c == qrcode::Color::Dark { '1' } else { '0' }).collect();
+    assert_eq!(view["rows"], rows);
+    call(&mut s, "entry.set", h, json!({"id": id, "fields": {"security": "eap"}}));
+    let args = json!({"id": id}).to_string();
+    assert!(s.call("wifi.qr", Call { handle: h, args: &args, ..Call::default() }).is_err(), "an enterprise network has no code");
+}
+
+#[test]
+fn related_sites_and_apps_come_from_the_engine() {
+    let mut s = Service::new(1);
+    let args = json!({"title": "", "sites": ["facebook.com"]}).to_string();
+    let found = json_of(&s.call("related.find", Call { args: &args, ..Call::default() }).expect("find"));
+    assert!(found["sites"].as_array().unwrap().contains(&json!("messenger.com")), "{found}");
+    assert!(found["apps"].as_array().unwrap().contains(&json!({"package": "com.facebook.orca", "name": "Messenger"})), "{found}");
+    assert_eq!(found["name"], "Facebook");
+    let apps = json_of(&s.call("related.apps", Call::default()).expect("apps"));
+    assert!(apps.as_array().unwrap().iter().any(|a| a["package"] == "com.facebook.katana"));
+}
+
+#[test]
+fn common_values_ride_with_the_fields() {
+    let mut s = Service::new(1);
+    let kinds = json_of(&s.call("kinds", Call::default()).expect("kinds"));
+    let field = |kind: &str, key: &str| {
+        kinds.as_array().unwrap().iter().find(|k| k["kind"] == kind).unwrap()["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["key"] == key)
+            .unwrap()
+            .clone()
+    };
+    assert!(field("database", "engine")["suggestions"].as_array().unwrap().contains(&json!("PostgreSQL")));
+    assert!(field("api", "provider")["suggestions"].as_array().unwrap().contains(&json!("Anthropic")));
+    assert!(field("document", "label")["suggestions"].as_array().unwrap().contains(&json!("Passport")));
+    assert!(field("card", "issuer")["suggestions"].as_array().unwrap().contains(&json!("Visa")));
+    assert!(field("login", "username").get("suggestions").is_none(), "a field without any leaves them out");
 }

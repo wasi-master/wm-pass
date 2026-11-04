@@ -1,8 +1,24 @@
-// Settings, Editor, Item page, Codes, Generator and Keyboard shortcuts: adding and editing items, reading them, and the keys that drive the window.
+// Settings, Adding and editing (the hub, Editor, Generator), Item page, Codes, Generator and Keyboard shortcuts: adding and editing items, reading them, and the keys that drive the window.
 
 import type { Topic } from '../schema.ts';
 
 export const editing = [
+  // ---- the hub ----
+
+  {
+    id: 'page.editing',
+    kind: 'page',
+    title: 'Adding and editing',
+    page: 'editing',
+    what: 'What a new item starts with, and how the editor opens. Each row opens its own page.',
+    how: [
+      '**New items** holds [[page.add|Add menu]], for which types the add button offers and in what order, and [[page.generator|Generator]], for what a new password looks like.',
+      '**Changing them** holds [[page.editor|Editor]], for which sections start open and which start folded.',
+    ],
+    related: ['page.add', 'page.generator', 'page.editor'],
+    words: 'new item editor generator add menu',
+  },
+
   // ---- editor ----
 
   {
@@ -30,7 +46,7 @@ export const editing = [
     what: 'Which sections of the editor are open when it starts. The others show as one line that opens when you choose it.',
     how: [
       'Most sections also open by themselves when they already hold something, so a saved website or note is never out of sight.',
-      '- Websites, for logins.',
+      '- Websites and apps, for logins.',
       '- One-time code, for logins and codes.',
       '- Notes, for every type except a note.',
       '- More fields, for fields you name yourself.',
@@ -105,15 +121,21 @@ export const editing = [
     title: 'Tag new items',
     page: 'editor',
     pref: 'auto_tag',
-    shells: ['android'],
     what: 'Gives a new item the tag its site suggests, such as Banking or Social, when you save it without any.',
-    how: 'The tag comes from WM Pass\'s list of known sites, or from an item\'s name when that is a known site\'s, such as PyPI. The offline model\'s guesses tag only with [[setting.auto_tag_guess]] on. An item you tag yourself keeps only your tags.',
+    how: 'The tag comes from WM Pass\'s list of known sites, or from an item\'s name when that is a known site\'s, such as PyPI. The offline model\'s guesses do not tag a new item. An item you tag yourself keeps only your tags.',
     effects: [
       { value: true, label: 'On', text: 'A new item saved with no tags gets its site\'s suggestions.' },
       { value: false, label: 'Off', text: 'A new item has only the tags you give it.' },
     ],
-    caveats: 'It applies when an item is first saved. [[action.bulk_tags|Add suggested tags]] does the same for items already in the vault.',
-    related: ['screen.editor', 'concept.item_kinds', 'action.bulk_tags'],
+    caveats: 'It applies when an item is first saved. Items already in the vault are left as they are.',
+    related: ['screen.editor', 'concept.item_kinds'],
+    on: {
+      android: {
+        how: 'The tag comes from WM Pass\'s list of known sites, or from an item\'s name when that is a known site\'s, such as PyPI. The offline model\'s guesses tag only with [[setting.auto_tag_guess]] on. An item you tag yourself keeps only your tags.',
+        caveats: 'It applies when an item is first saved. [[action.bulk_tags|Add suggested tags]] does the same for items already in the vault.',
+        related: ['screen.editor', 'concept.item_kinds', 'action.bulk_tags'],
+      },
+    },
     words: 'tags automatic category suggest label',
   },
   {

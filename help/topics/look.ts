@@ -1,14 +1,41 @@
-// Settings, Appearance, Theme and Icons: colours, dark mode, sizes, motion, themes and how icons are drawn.
+// Settings, Appearance: the hub, Style and theme, Theme and Icons: colours, dark mode, sizes, motion, themes and how icons are drawn.
 
 import type { Topic } from '../schema.ts';
 
 export const look = [
+  // ---- the hub ----
+
+  {
+    id: 'page.appearance',
+    kind: 'page',
+    title: 'Appearance',
+    page: 'appearance',
+    what: 'How WM Pass looks, and what its main screens show. Each row opens its own page.',
+    how: [
+      '**How it looks** holds [[page.look|Style and theme]], for the theme, dark mode, row height, text size and animations, and [[page.icons|Icons]], for the app\'s own icons, site icons and the icons in Settings.',
+      '**What it shows** holds a page for each main part of the window: [[page.list|Vault list]], [[page.navigation|Sidebar]], [[page.entry|Item page]] and [[page.codes|Codes]]. On a Mac, [[page.widgets|Widgets]] is there too.',
+    ],
+    caveats: 'All of these can be carried to another computer, or put back, under Settings, Settings file.',
+    related: ['page.look', 'page.themes', 'page.icons', 'page.list', 'page.file'],
+    words: 'customize look theme layout',
+    on: {
+      android: {
+        how: [
+          '**How it looks** holds [[page.look|Style and theme]], for the style, theme, dark mode, animations and vibration, and [[page.icons|Icons]], for the app\'s own icons, site icons and the icons in Settings.',
+          '**What it shows** holds a page for each main screen: [[page.list|Vault list]], [[page.navigation|Navigation]], [[page.entry|Item page]] and [[page.codes|Codes]].',
+        ],
+        caveats: 'All of these can be carried to another phone, or put back, under Settings, Settings file.',
+        related: ['page.look', 'page.themes', 'page.icons', 'page.list', 'page.file', 'feature.launch_guard'],
+      },
+    },
+  },
+
   // ---- look ----
 
   {
     id: 'page.look',
     kind: 'page',
-    title: 'Appearance',
+    title: 'Style and theme',
     page: 'look',
     what: 'The theme, dark mode, row height, text size and animations.',
     how: 'The theme decides the colors, and Dark mode decides whether you see its light side or its dark one. Row height and Text size change how much fits in the window.',
@@ -16,7 +43,6 @@ export const look = [
     words: 'look colors dark light font size',
     on: {
       android: {
-        title: 'Style and theme',
         what: 'The style, theme, dark mode, motion and vibration.',
         how: 'Style chooses between the plain Android look and Glass. The theme decides the colors, and Dark mode decides whether you see its light side or its dark one.',
       },
@@ -211,12 +237,14 @@ export const look = [
     how: [
       'Give it a name, then choose **Light** or **Dark** for the side you are coloring. The preview at the top shows a row, a password and a few buttons in your colors as you go.',
       'There are eleven colors: the accent, the background, three levels of surface, three of text, and danger, warning and information. Beside each is its contrast against the background.',
-      '**Corners** goes from square to 28 px. **Font** is System, Inter, Serif or Mono.',
+      '**Corners** goes from square to 28 px. **Font** is System, Inter, Serif, Mono, or a .ttf or .otf file you add with **Add a font file**, which is kept with the app\'s files. The sample line under the fonts is drawn in the one chosen.',
       '**Save and use** adds it under Yours and switches to it.',
     ],
     caveats: [
       'Changing the accent resets the colors worked out from it, such as the tint behind selected things, so they follow the new one.',
       'Text that falls under a readable contrast with its background is darkened or lightened when the theme is drawn, so a faint color may come out stronger than you picked.',
+      'Words on the accent, as on the main button, use white or black, whichever reads better, unless the theme names a color for them that reads at 4.5:1.',
+      'A font file stays on the device it was added on. A theme shared or synced to another device uses the system font there unless that device has the same file.',
     ],
     related: ['action.theme_edit', 'action.theme_copy', 'action.theme_share'],
     words: 'create custom theme editor colors',
@@ -375,7 +403,7 @@ export const look = [
     title: 'Pictures, in order',
     page: 'icons',
     pref: 'icon_sources',
-    shells: ['android'],
+    shells: ['android', 'desktop'],
     what: 'Where the picture beside each item comes from, tried from the top down until one has a picture.',
     how: [
       '**Brand marks** are the logos that ship with the app. **App icons** are the icons of apps installed on this phone, for items saved for an app. **Website icons** are fetched from each site.',
@@ -385,6 +413,16 @@ export const look = [
     caveats: 'Website icons are the only ones that go online. They are fetched once per site through the same network switch as everything else, kept encrypted on this phone, and never asked for addresses on your own network.',
     related: ['setting.site_icon_from', 'setting.site_icon_style', 'setting.network_allowed'],
     words: 'favicon app icon picture logo fallback order',
+    on: {
+      desktop: {
+        how: [
+          '**Brand marks** are the logos that ship with the app. **Website icons** are fetched from each site.',
+          'Use the arrows to change the order, and remove any you do not want. An item none of them has a picture for shows its first letter, in a soft color of its own when [[setting.site_icon_style|Site icons]] is on brand colors.',
+          'A color or symbol you chose for one item always wins.',
+        ],
+        caveats: 'Website icons are the only pictures that go online. They are fetched once per site through the same network switch as everything else, kept in memory until the vault locks, and never asked for addresses on your own network. The browser extension has no network features, so it shows brand marks only.',
+      },
+    },
   },
   {
     id: 'setting.site_icon_from',
@@ -392,7 +430,7 @@ export const look = [
     title: 'Website icons from',
     page: 'icons',
     pref: 'site_icon_from',
-    shells: ['android'],
+    shells: ['android', 'desktop'],
     what: 'Who is asked for a website\'s icon, when website icons are in [[setting.icon_sources|the order]].',
     effects: [
       { value: 'site', label: 'Each site', text: 'Asks each site for its own icon, so only that site learns that it was asked.' },

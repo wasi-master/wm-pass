@@ -22,6 +22,7 @@
 
 <Group title="Page">
   <Toggle title="Show the score" icon="ecg_heart" pref="health_score" />
+  <Toggle title="Leave out local addresses" sub="Logins only for your router, NAS or other devices at home." icon="router" pref="health_skip_local" />
 </Group>
 <Group title="Problems to list" help="group.health.problems">
   {#each CHECKS as [key, name, icon] (key)}

@@ -29,7 +29,7 @@ The name, the websites and the apps suggest each other. Type facebook.com and **
 
 ## Adding and editing items
 
-The editor's sections start folded, each with a line saying what is inside, so a long item opens short. Settings, Editor can keep open the ones you opened last time.
+The editor's sections start folded, each with a line saying what is inside, so a long item opens short. Settings, Adding and editing, Editor can keep open the ones you opened last time.
 
 A new item starts with the fields its kind needs. Everything else waits behind **Add more**: a one-time code, notes, text or secret fields, security questions, an app, a file, a link to another item, and a reminder to change the password. Files and links chosen before the first save are kept with the item when you save it. A code can take a username and password too, and becomes a login that keeps its code.
 
@@ -48,15 +48,15 @@ For a payment card, tap **Scan the card** and hold the card inside the frame, or
 - **WM Pass's own reader** is Stripe's CardScan digit model (MIT), built into every build. It sends nothing to anyone, but it was trained on card numbers alone, so you type the expiry date and the name yourself.
 - **Google's reader** is ML Kit's text recognizer, which Play services provides. It reads the expiry date and the name as well as the number, and WM Pass's own reader runs beside it on the same pictures: ML Kit reads text in general and often misses the raised or foil digits of a card number, which the built-in reader was trained on, so the number comes from whichever is sure first. The picture and what it reads stay on the phone, though Google's library sends Google statistics about how it runs, with details of the phone and app. Play services fetches it the first time, and until then the scan falls back to WM Pass's own reader.
 
-The standard build asks which one to use before the first scan, and you can change it later under Settings, Editor, **Card scanner**. The F-Droid and offline builds carry nothing of Google's, so they have only WM Pass's own reader. No frame is kept or sent anywhere.
+The standard build asks which one to use before the first scan, and you can change it later under Settings, Adding and editing, Editor, **Card scanner**. The F-Droid and offline builds carry nothing of Google's, so they have only WM Pass's own reader. No frame is kept or sent anywhere.
 
 ## Tags
 
 Tags show as chips on the item's page. The cross on a chip takes the tag off that item. Holding a chip renames the tag, gives it an icon or deletes it, on every item that has it. Below them, WM Pass suggests tags from the site, such as Banking or Social, and for a code also Authenticator.
 
-A new item saved without tags gets the one its site suggests, from WM Pass's list of known sites, or from its name when that is a known site's, such as PyPI. The offline model's guesses tag a new item only with **Use guesses too** on. Turn tagging off under Settings, Editor, **Tag new items**.
+A new item saved without tags gets the one its site suggests, from WM Pass's list of known sites, or from its name when that is a known site's, such as PyPI. The offline model's guesses tag a new item only with **Use guesses too** on. Turn tagging off under Settings, Adding and editing, Editor, **Tag new items**.
 
-For the items you already have, Settings, Editor, **Add suggested tags** lists every tag WM Pass would add, grouped by tag. Each suggestion says where it came from: the site list and known names are on to start with, the item's kind and the model's guesses are off. Open a group to leave items out, or untick a whole tag, then add the rest in one go. The message afterwards offers **Undo**.
+For the items you already have, Settings, Adding and editing, Editor, **Add suggested tags** lists every tag WM Pass would add, grouped by tag. Each suggestion says where it came from: the site list and known names are on to start with, the item's kind and the model's guesses are off. Open a group to leave items out, or untick a whole tag, then add the rest in one go. The message afterwards offers **Undo**.
 
 **Add a tag** lists the item's own tags and the ones you use most, with a search and a button for the rest.
 
@@ -64,13 +64,13 @@ Tag names and their icons are stored inside the encrypted vault.
 
 ## Icons
 
-The picture beside each item comes from the sources under Settings, Icons, **Pictures, in order**, tried from the top: the brand marks that ship with the app, then the icon of the app an item is for if it is installed. **Website icons** can be added to the order; they are fetched once per site, from the site itself or from DuckDuckGo, kept encrypted on the phone, and never asked for local addresses. An item none of them covers shows its first letter on a soft color of its own.
+The picture beside each item comes from the sources under Settings, Appearance, Icons, **Pictures, in order**, tried from the top: the brand marks that ship with the app, then the icon of the app an item is for if it is installed. **Website icons** can be added to the order; they are fetched once per site, from the site itself or from DuckDuckGo, kept encrypted on the phone, and never asked for local addresses. An item none of them covers shows its first letter on a soft color of its own.
 
 The item's page lists **Websites and apps** together, every address in full however long, with its parts set apart: the site's own name strong, the rest of the address quieter. Each app shows with its name and icon, and opens an installed app when you tap it. One that is not installed offers the app stores on the phone, or Google Play and F-Droid in the browser when there are none. A login also has **Change the password on the site**, but only for a site that has a page for it: one on Apple's list of 805 known pages, or one that answers at its `/.well-known/change-password` address after first refusing an address no site has. A site is asked that once, and the answer is kept sealed on the phone for a month.
 
 The icon picker shows what Automatic would draw, then every symbol and every brand in one grid that fills the screen's width. Search narrows both. Hold an icon to see its name and where it comes from: symbols come from the icon style you picked, and brand marks come from Simple Icons (CC0) and belong to their owners.
 
-Settings, Icons has eight styles for the app's own symbols: four versions of Material Symbols (Apache License 2.0), Phosphor in regular, bold and light (MIT), and Lucide (ISC). All of them are in the app, so switching needs no download. Lucide is drawn in lines only, so a selected tab keeps its outline instead of filling in.
+Settings, Appearance, Icons has eight styles for the app's own symbols: four versions of Material Symbols (Apache License 2.0), Phosphor in regular, bold and light (MIT), and Lucide (ISC). All of them are in the app, so switching needs no download. Lucide is drawn in lines only, so a selected tab keeps its outline instead of filling in.
 
 ## Throwaway addresses and usernames
 
@@ -99,7 +99,7 @@ Settings, Security, **When a panic app signals** starts at None, so no other app
 
 ## The vault list
 
-The list opens on types, then folders, the way Bitwarden's vault does: a row for each type of item you have (logins, cards, notes and the rest) with its count, then a row for each folder and **No folder**. Each row opens in place. An item shows under its type and under its folder, and tapping a type chip above the list shows that type as one plain list. Settings, Vault list, **Grouping** changes this to **By site**, one list with several logins for one site folded into a row, or to **By folder**. Logins listed under an open site, type or folder are set in a little, so they read as inside it. Opening an item and coming back finds the list where you left it, with the same groups open.
+The list opens on types, then folders, the way Bitwarden's vault does: a row for each type of item you have (logins, cards, notes and the rest) with its count, then a row for each folder and **No folder**. Each row opens in place. An item shows under its type and under its folder, and tapping a type chip above the list shows that type as one plain list. Settings, Appearance, Vault list, **Grouping** changes this to **By site**, one list with several logins for one site folded into a row, or to **By folder**. Logins listed under an open site, type or folder are set in a little, so they read as inside it. Opening an item and coming back finds the list where you left it, with the same groups open.
 
 A scroll bar runs down the right edge of the vault list and the Health page. Drag it to move through a long list fast; while it is held, a label says which letter or part you are in.
 

@@ -8,7 +8,7 @@ import { prefs } from '../engine/prefs.svelte';
 import { chordLabel } from '../engine/text';
 import { ui } from '../vault/ui.svelte';
 import { highlight } from '../settings/nav.svelte';
-import { PAGES } from '../settings/pages';
+import { PAGES, ancestors } from '../settings/pages';
 
 type Content = typeof import('$help');
 
@@ -56,8 +56,7 @@ class Help {
     }
     const page = topic.page ? PAGES.find((p) => p.id === topic.page) : undefined;
     if (!page) return 'Guide';
-    const parent = page.parent ? PAGES.find((p) => p.id === page.parent) : undefined;
-    return ['Settings', parent?.title, topic.kind === 'page' ? null : page.title].filter(Boolean).join(', ');
+    return ['Settings', ...ancestors(page.id).map((p) => p.title), topic.kind === 'page' ? null : page.title].filter(Boolean).join(', ');
   }
 
   keyLabel(action: string): string {

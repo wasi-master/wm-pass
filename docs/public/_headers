@@ -1,0 +1,26 @@
+# Cloudflare Pages reads this for the whole site. The web vault gets the strictest rules the app
+# can run under: its own scripts and WebAssembly only, no frames in or out, no forms, no plugins,
+# and requests only over https, or plain http to this computer as the Rust policy allows.
+
+/vault/*
+  Content-Security-Policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; manifest-src 'self'; worker-src 'self'; frame-src 'none'; frame-ancestors 'none'; form-action 'none'; base-uri 'none'; object-src 'none'
+  Cross-Origin-Opener-Policy: same-origin-allow-popups
+  Cross-Origin-Resource-Policy: same-origin
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), interest-cohort=(), publickey-credentials-create=(self), publickey-credentials-get=(self), clipboard-write=(self)
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+
+# The pages and the service worker are asked for fresh each time, so a release, or a
+# fix, reaches everyone at once. Everything else is named by its contents and never changes.
+/vault/
+  Cache-Control: no-cache
+/vault/index.html
+  Cache-Control: no-cache
+/vault/oauth.html
+  Cache-Control: no-cache
+/vault/sw.js
+  Cache-Control: no-cache
+/vault/assets/*
+  Cache-Control: public, max-age=31536000, immutable

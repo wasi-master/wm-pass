@@ -262,6 +262,8 @@ pub struct Detail {
     pub alias: Option<String>,
     /// Security questions, by label. Answers are secret.
     pub questions: Vec<String>,
+    /// Where the login's site lets you change the password, for a login saved for a website.
+    pub change_password: Option<String>,
 }
 
 /// Builds the detail view.
@@ -324,7 +326,12 @@ pub fn detail(entry: &Entry) -> Detail {
         ),
         _ => (Vec::new(), None, Vec::new(), None, Vec::new()),
     };
+    let change_password = match &entry.kind {
+        Kind::Login(_) => wmpass_core::change_password::for_matchers(&sites),
+        _ => None,
+    };
     Detail {
+        change_password,
         summary: summary(entry),
         created_ms: entry.created_ms,
         fields: field_views,
@@ -386,6 +393,13 @@ pub enum FactorView {
         /// OTP slot.
         slot: u8,
     },
+    /// A FIDO2 key through WebAuthn's PRF, which browsers can ask too.
+    Webauthn {
+        /// Credential id, hex.
+        credential_id: String,
+        /// PRF input, hex.
+        input: String,
+    },
 }
 
 /// Describes what a slot needs.
@@ -402,6 +416,13 @@ pub fn factor_view(kind: &FactorKind) -> FactorView {
         FactorKind::YubiKey { challenge, slot } => FactorView::Yubikey {
             challenge: hex(challenge),
             slot: *slot,
+        },
+        FactorKind::WebAuthn {
+            credential_id,
+            input,
+        } => FactorView::Webauthn {
+            credential_id: hex(credential_id),
+            input: hex(input),
         },
     }
 }

@@ -29,6 +29,8 @@ class Ui {
   showDetail = $state(false);
   searchFocus = $state(0);
   renamingFolder = $state<{ id: string; name: string } | null>(null);
+  /** A tag being renamed, deleted or given a symbol on every item. */
+  managingTag = $state<string | null>(null);
   /** Asked to stop by anything that would lose an edit. */
   editorDirty = false;
 
@@ -152,6 +154,17 @@ class Ui {
       default:
         return true;
     }
+  }
+
+  /**
+   * What a copy button or a click on a row does for this item: the action chosen, or for a copy
+   * the item cannot do, the next that it can. A code with no password copies the code, and a
+   * login with neither its username.
+   */
+  effective(action: string, entry: Summary): string | null {
+    if (this.canDo(action, entry)) return action;
+    if (action !== 'password' && action !== 'code' && action !== 'username') return null;
+    return ['password', 'code', 'username'].find((a) => this.canDo(a, entry)) ?? null;
   }
 
   perform(action: string, entry: Summary) {

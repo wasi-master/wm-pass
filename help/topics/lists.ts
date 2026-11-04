@@ -35,21 +35,12 @@ export const lists = [
     what: 'The shape of the list: full rows, shorter rows, or a grid of tiles.',
     effects: [
       { value: 'list', label: 'List', text: 'Full rows, with the second line under the name if that is on.' },
-      { value: 'compact', label: 'Compact', text: 'Smaller icons and no second line, so more rows fit.' },
+      { value: 'compact', label: 'Compact', text: 'One line per item, with a small icon and the second line beside the name, so many more rows fit.' },
       { value: 'grid', label: 'Grid', text: 'Large tiles with the name under each. Pinned items, headings and folded sites are not used.' },
     ],
     preview: 'preview.row',
     related: ['setting.row_subtitle', 'setting.grouping', 'setting.density'],
     words: 'grid compact tiles view',
-    on: {
-      android: {
-        effects: [
-          { value: 'list', label: 'List', text: 'Full rows, with the second line under the name if that is on.' },
-          { value: 'compact', label: 'Compact', text: 'One line per item, with a small icon and the second line beside the name, so many more rows fit.' },
-          { value: 'grid', label: 'Grid', text: 'Large tiles with the name under each. Pinned items, headings and folded sites are not used.' },
-        ],
-      },
-    },
   },
   {
     id: 'setting.grouping',
@@ -113,7 +104,7 @@ export const lists = [
     page: 'list',
     pref: 'group_sites',
     what: 'Shows several logins for the same website as one row, which opens to show each account.',
-    how: 'The row shows the site and how many accounts it holds. Open it to see them, and again to fold them away.',
+    how: 'The row shows the site and how many accounts it holds. Open it to see them, set in under it, and again to fold them away.',
     when: 'Useful when you keep more than one account on a site, such as a personal one and one for work.',
     caveats: 'Only logins fold, and only while the list is grouped by site.',
     preview: 'preview.row',
@@ -174,7 +165,7 @@ export const lists = [
     page: 'list',
     pref: 'row_subtitle',
     what: 'Shows the username or another detail under each item\'s name.',
-    caveats: 'The compact layout leaves it out to save room.',
+    caveats: 'The compact layout puts it beside the name, on the same line.',
     preview: 'preview.row',
     related: ['setting.layout'],
     words: 'subtitle username detail',
@@ -198,7 +189,7 @@ export const lists = [
     pref: 'row_button',
     what: 'A copy button at the end of each row, shown while the pointer is over it.',
     effects: [
-      { value: 'password', label: 'Copy password', text: 'Copies the item\'s password. Items without one have no button.' },
+      { value: 'password', label: 'Copy password', text: 'Copies the item\'s password. An item with none copies its one-time code, or else its username.' },
       { value: 'username', label: 'Copy username', text: 'Copies the username of a login or a database.' },
       { value: 'code', label: 'Copy code', text: 'Copies the current one-time code. Only items with a code have the button.' },
       { value: 'none', label: 'None', text: 'Rows have no button. Right-click a row for the same choices.' },
@@ -213,7 +204,7 @@ export const lists = [
         what: 'A copy button at the right end of each row.',
         how: 'When [[setting.tap_action|Tap]] is set to copy something, this button becomes an arrow that opens the item instead.',
         effects: [
-          { value: 'password', label: 'Copy password', text: 'Copies the item\'s password. Items without one have no button.' },
+          { value: 'password', label: 'Copy password', text: 'Copies the item\'s password. An item with none copies its one-time code, or else its username.' },
           { value: 'username', label: 'Copy username', text: 'Copies the username of a login or a database.' },
           { value: 'code', label: 'Copy code', text: 'Copies the current one-time code. Only items with a code have the button.' },
           { value: 'none', label: 'None', text: 'Rows have no button.' },
@@ -417,6 +408,7 @@ export const lists = [
     pref: 'sidebar_tags',
     shells: ['desktop', 'extension'],
     what: 'Lists every tag you have used, in alphabetical order, so one click shows the items that carry it.',
+    how: 'Each tag shows the icon picked for it, or one that suits its name. Right-click a tag to rename it or delete it from every item, or to give it another icon.',
     preview: 'preview.sidebar',
     words: 'labels',
   },

@@ -8,6 +8,7 @@
   import Select from '../parts/Select.svelte';
   import Switch from '../parts/Switch.svelte';
   import { host } from '../engine/host';
+  import { shownName } from '../hosts/folders';
   import { blankPlace, placeReady, places, type Place } from './places.svelte';
   import { DEFAULT_FOLDER, GROUPS, PLACE_KINDS, S3_PRESETS, WEBDAV_PRESETS, defaultPort, kindOf, s3Endpoint, webDavUrl } from './placeKinds';
 
@@ -154,7 +155,7 @@
     <Field bind:value={place.label} placeholder="A name for it" />
 
     {#if place.kind === 'folder'}
-      <Btn label={place.path ? place.path : 'Choose a folder'} icon="folder" onclick={async () => (place.path = (await host().places!.chooseFolder()) ?? place.path)} wide />
+      <Btn label={place.path ? shownName(place.path) : 'Choose a folder'} icon="folder" onclick={async () => (place.path = (await host().places!.chooseFolder()) ?? place.path)} wide />
     {:else if place.kind === 'webdav'}
       <Select label="Service" value={x.preset ?? ''} options={[['', 'Type the address'], ...WEBDAV_PRESETS.map((p) => [p.id, p.label] as [string, string])]} onchange={(id) => (x.preset = id)} />
       {#if !webdav}

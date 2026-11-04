@@ -15,7 +15,9 @@ use crate::clip::{Clip, Route};
 use crate::door::{self, Ask, Door};
 use crate::editor::{Editor, Slot};
 use crate::engine::{self, ImportPreview, Secret, Unlock};
+use crate::draw::Hit;
 use crate::input::Input;
+use crate::link::{LinkUi, Role, Stage};
 use crate::store::{self, Prefs};
 use crate::theme::Theme;
 use crate::vault::{HEALTH_GROUPS, Line, Pane, Tab, VaultUi};
@@ -48,8 +50,9 @@ pub enum Screen {
 /// What a prompt's answer is for.
 #[derive(Debug, Clone)]
 pub enum PromptFor {
-    NewFolder,
-    AddTag(String),
+    /// A new folder, and the items to move into it.
+    NewFolder(Vec<String>),
+    AddTag(Vec<String>),
     ImportPath,
     ImportPassword(PathBuf),
     ExportPath(String),
@@ -58,23 +61,27 @@ pub enum PromptFor {
     AttachSave { id: String, blob: String, name: String },
     ShelfPassword,
     LockMinutes,
+    ClipSeconds,
+    RenameTag(String),
 }
 
 /// What a confirmation does on yes.
 #[derive(Debug, Clone)]
 pub enum Act {
-    Trash(String),
-    Purge(String),
+    Trash(Vec<String>),
+    Purge(Vec<String>),
     Export(String, PathBuf),
     Import,
+    DeleteTag(String),
 }
 
 /// What a pick is for.
 #[derive(Debug, Clone)]
 pub enum PickFor {
     NewKind,
-    MoveFolder(String),
-    RemoveTag(String),
+    MoveFolder(Vec<String>),
+    RemoveTag(Vec<String>),
+    Color(Vec<String>),
     ExportFormat,
 }
 
@@ -90,6 +97,14 @@ pub enum Command {
     MoveFolder,
     AddTag,
     RemoveTag,
+    RenameTag,
+    DeleteTag,
+    WifiCode,
+    Color,
+    Hide,
+    Link,
+    Mark,
+    MarkAll,
     NewFolder,
     CopyPassword,
     CopyUsername,
@@ -101,8 +116,11 @@ pub enum Command {
     Theme,
     Icons,
     SyncSettings,
+    SkipLocal,
     AddDevice,
+    IntoApp,
     LockAfter,
+    ClearClipboard,
     Items,
     Codes,
     Generator,
@@ -113,21 +131,30 @@ pub enum Command {
 }
 
 /// The terminal's settings that follow the vault, by the key they travel under. Its themes are
-/// not the apps' themes, so they travel under names of their own; the reveal time is shared.
-const SYNCED: [&str; 3] = ["tui_theme", "tui_icons", "reveal_seconds"];
+/// not the apps' themes, so they travel under names of their own; the reveal time and the
+/// Health choices are shared with every app.
+const SYNCED: [&str; 5] = ["tui_theme", "tui_icons", "reveal_seconds", "health_ignored", "health_skip_local"];
 
 /// Every palette command, with its words and key.
-pub const COMMANDS: [(Command, &str, &str); 29] = [
+pub const COMMANDS: [(Command, &str, &str); 40] = [
     (Command::New, "New item", "n"),
     (Command::Edit, "Edit item", "e"),
     (Command::CopyPassword, "Copy password", "c"),
     (Command::CopyUsername, "Copy username", "u"),
     (Command::CopyCode, "Copy one-time code", "t"),
-    (Command::Favourite, "Favourite or not", "f"),
+    (Command::Favourite, "Favorite or not", "f"),
     (Command::Pin, "Pin to the top or not", "p"),
     (Command::MoveFolder, "Move to folder", "m"),
     (Command::AddTag, "Add a tag", "+"),
     (Command::RemoveTag, "Remove a tag", "-"),
+    (Command::RenameTag, "Rename a tag on every item", "R"),
+    (Command::DeleteTag, "Delete a tag from every item", "D"),
+    (Command::WifiCode, "Show the Wi-Fi network's QR code", "w"),
+    (Command::Color, "Color", ""),
+    (Command::Hide, "Put on or take off the hidden shelf", ""),
+    (Command::Mark, "Mark or unmark, to act on several", "space"),
+    (Command::MarkAll, "Mark all listed, or none", ""),
+    (Command::Link, "Link the marked items together", ""),
     (Command::Duplicate, "Duplicate item", "ctrl+d"),
     (Command::Attach, "Attach a file", "a"),
     (Command::Trash, "Move to the trash", "d"),
@@ -138,8 +165,11 @@ pub const COMMANDS: [(Command, &str, &str); 29] = [
     (Command::Theme, "Next theme", "ctrl+t"),
     (Command::Icons, "Nerd Font icons on or off", ""),
     (Command::SyncSettings, "Sync settings with the vault on or off", ""),
+    (Command::SkipLocal, "Leave local addresses out of Health or not", ""),
     (Command::AddDevice, "Add a new device: send this vault to it", ""),
+    (Command::IntoApp, "Keep this vault in the WM Pass app on this computer", ""),
     (Command::LockAfter, "Lock after…", ""),
+    (Command::ClearClipboard, "Clear the clipboard after…", ""),
     (Command::Items, "Go to Items", "1"),
     (Command::Codes, "Go to Codes", "2"),
     (Command::Generator, "Go to Generator", "3"),
@@ -148,6 +178,44 @@ pub const COMMANDS: [(Command, &str, &str); 29] = [
     (Command::Lock, "Lock now", "ctrl+l"),
     (Command::Quit, "Quit", "q"),
 ];
+
+/// The colors an item can wear: the apps' twelve hues, by the names the terminal shows them under.
+pub const HUES: [(&str, &str); 12] = [
+    ("25", "Red"),
+    ("55", "Orange"),
+    ("85", "Yellow"),
+    ("120", "Lime"),
+    ("150", "Green"),
+    ("180", "Teal"),
+    ("210", "Cyan"),
+    ("240", "Blue"),
+    ("270", "Indigo"),
+    ("300", "Purple"),
+    ("330", "Pink"),
+    ("355", "Rose"),
+];
+
+/// "1 item", "3 items".
+fn items(n: usize) -> String {
+    if n == 1 { "1 item".to_owned() } else { format!("{n} items") }
+}
+
+/// Has each item list the others under Linked, keeping the links it had.
+fn link_together(engine: &mut engine::Engine, ids: &[String]) -> Result<(), String> {
+    for id in ids {
+        let mut links = engine.detail(id)?.links;
+        let before = links.len();
+        for other in ids.iter().filter(|o| *o != id) {
+            if !links.contains(other) {
+                links.push(other.clone());
+            }
+        }
+        if links.len() != before {
+            engine.set_common(id, json!({"links": links}))?;
+        }
+    }
+    Ok(())
+}
 
 /// Something drawn over the screen.
 #[derive(Debug)]
@@ -159,6 +227,14 @@ pub enum Overlay {
     Pick { title: String, items: Vec<(String, String)>, at: usize, then: PickFor },
     Editor(Box<Editor>),
     Import(ImportPreview),
+    /// Moving the vault to or from another device.
+    Link(Box<LinkUi>),
+    /// A Wi-Fi network's code, for another phone's camera.
+    WifiCode { ssid: String, qr: crate::join::Qr },
+}
+
+fn plural_items(n: usize) -> String {
+    if n == 1 { "1 item".to_owned() } else { format!("{n} items") }
 }
 
 /// The palette's matches for what was typed, best first.
@@ -203,15 +279,14 @@ pub struct App {
     quit: bool,
     /// Work to do once the next frame shows that it is happening.
     deferred: Option<Ask>,
-    /// Work that runs as plain lines, outside the full screen.
-    outside: Option<Outside>,
-}
-
-/// What the app steps out of full screen to do.
-#[derive(Debug)]
-enum Outside {
-    Join(PathBuf),
-    Send(PathBuf),
+    /// What the last frame drew where, for the mouse.
+    pub hits: Vec<(Rect, Hit)>,
+    /// Where the overlay's part of `hits` begins, when one is open.
+    pub overlay_from: Option<usize>,
+    /// The last left click, to tell a double click.
+    last_click: Option<(Position, Instant)>,
+    /// Whether the last QR code drawn used big cells, for flipping its size.
+    pub link_drew_big: bool,
 }
 
 impl App {
@@ -237,8 +312,21 @@ impl App {
             last_input: Instant::now(),
             quit: false,
             deferred: None,
-            outside: None,
+            hits: Vec::new(),
+            overlay_from: None,
+            last_click: None,
+            link_drew_big: false,
         }
+    }
+
+    /// Opens straight onto moving a vault: waiting for it at `path`, or sending the one there.
+    pub fn linking(role: Role, path: PathBuf) -> Self {
+        let mut app = Self::new(if role == Role::Send { Some(path.clone()) } else { None });
+        app.overlay = Some(Overlay::Link(Box::new(match role {
+            Role::Receive => LinkUi::receive(path),
+            Role::Send => LinkUi::send(path),
+        })));
+        app
     }
 
     /// For tests: an app over an open vault, with no clipboard and no saved preferences.
@@ -254,7 +342,10 @@ impl App {
             last_input: Instant::now(),
             quit: false,
             deferred: None,
-            outside: None,
+            hits: Vec::new(),
+            overlay_from: None,
+            last_click: None,
+            link_drew_big: false,
         }
     }
 
@@ -262,6 +353,12 @@ impl App {
     pub fn lock_in(&self) -> Option<Duration> {
         let minutes = self.prefs.lock_minutes;
         (minutes > 0).then(|| Duration::from_secs(u64::from(minutes) * 60).saturating_sub(self.last_input.elapsed()))
+    }
+
+    /// For tests: a mouse event, as if it happened.
+    #[cfg(test)]
+    pub fn mouse_for_test(&mut self, mouse: MouseEvent) {
+        self.mouse(mouse);
     }
 
     /// For tests: one key, as if pressed.
@@ -284,11 +381,6 @@ impl App {
             }
             if let Some(ask) = self.deferred.take() {
                 self.finish_door(ask);
-                dirty = true;
-                continue;
-            }
-            if let Some(job) = self.outside.take() {
-                self.step_outside(terminal, job)?;
                 dirty = true;
                 continue;
             }
@@ -341,6 +433,11 @@ impl App {
             self.say(Level::Info, "Clipboard cleared");
             changed = true;
         }
+        if let Some(Overlay::Link(link)) = &mut self.overlay {
+            link.tick();
+            // The spinner and the countdown move.
+            changed = true;
+        }
         if self.toast.as_ref().is_some_and(|t| t.at.elapsed() > Duration::from_secs(6)) {
             self.toast = None;
             changed = true;
@@ -366,41 +463,18 @@ impl App {
         changed || self.clip.seconds_left().is_some() || matches!(self.screen, Screen::Vault(_))
     }
 
-    /// Leaves full screen for a job that talks in plain lines, then comes back.
-    fn step_outside(&mut self, terminal: &mut DefaultTerminal, job: Outside) -> std::io::Result<()> {
-        use ratatui::crossterm::event::{DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture};
-        use ratatui::crossterm::execute;
-        let _ = execute!(std::io::stdout(), DisableMouseCapture, DisableBracketedPaste);
-        ratatui::restore();
-        let result = match &job {
-            Outside::Join(path) => crate::join::receive(path),
-            Outside::Send(path) => crate::join::send(path, None),
-        };
-        if let Err(problem) = &result {
-            println!("\n{problem}");
+    /// The desktop app's vault follows the app's own timers, which stay on this computer.
+    fn follow_app_timers(&mut self, root: &std::path::Path) {
+        let (lock, clip, reveal) = crate::app_folder::app_timers(root);
+        if let Some(seconds) = lock {
+            self.prefs.lock_minutes = u32::try_from(seconds.div_ceil(60)).unwrap_or(u32::MAX).min(24 * 60);
         }
-        print!("\nPress Enter to go back. ");
-        let _ = std::io::Write::flush(&mut std::io::stdout());
-        let mut line = String::new();
-        let _ = std::io::stdin().read_line(&mut line);
-        *terminal = ratatui::init();
-        let _ = execute!(std::io::stdout(), EnableMouseCapture, EnableBracketedPaste);
-        terminal.clear()?;
-        self.last_input = Instant::now();
-        match (job, result) {
-            (Outside::Join(path), Ok(())) => {
-                if let Screen::Door(door) = &mut self.screen {
-                    if door.mode == door::Mode::Create {
-                        door.toggle_mode();
-                    }
-                    door.path.set(&path.to_string_lossy());
-                    door.notice = Some("Your vault is here. Unlock it with its master password".into());
-                }
-            }
-            (Outside::Send(_), Ok(())) => self.say(Level::Good, "Sent. Unlock it on the other device with the master password"),
-            (_, Err(_)) => {}
+        if let Some(seconds) = clip {
+            self.prefs.clip_seconds = u32::try_from(seconds).unwrap_or(u32::MAX).min(3600);
         }
-        Ok(())
+        if let Some(seconds) = reveal {
+            self.prefs.reveal_seconds = u32::try_from(seconds).unwrap_or(u32::MAX).min(3600);
+        }
     }
 
     // ---- settings that follow the vault ----
@@ -413,6 +487,8 @@ impl App {
         match key {
             "tui_theme" => json!(self.prefs.theme),
             "tui_icons" => json!(self.prefs.icons),
+            "health_ignored" => json!(self.prefs.ignored_text()),
+            "health_skip_local" => json!(self.prefs.health_skip_local),
             _ => json!(self.prefs.reveal_seconds),
         }
     }
@@ -426,6 +502,7 @@ impl App {
         let Screen::Vault(ui) = &mut self.screen else { return };
         let Ok(held) = ui.engine.synced_settings() else { return };
         let defaults = Prefs::default();
+        let mut health_changed = false;
         let mut missing = serde_json::Map::new();
         for key in SYNCED {
             if !self.syncs(key) {
@@ -435,6 +512,8 @@ impl App {
                 let fresh = match key {
                     "tui_theme" => self.prefs.theme == defaults.theme,
                     "tui_icons" => self.prefs.icons == defaults.icons,
+                    "health_ignored" => self.prefs.health_ignored == defaults.health_ignored,
+                    "health_skip_local" => self.prefs.health_skip_local == defaults.health_skip_local,
                     _ => self.prefs.reveal_seconds == defaults.reveal_seconds,
                 };
                 if !fresh {
@@ -455,6 +534,18 @@ impl App {
                         self.theme.g = crate::glyphs::Glyphs::pick(name);
                     }
                 }
+                "health_ignored" => {
+                    if let Some(text) = value.as_str().filter(|text| *text != self.prefs.ignored_text()) {
+                        self.prefs.set_ignored_text(text);
+                        health_changed = true;
+                    }
+                }
+                "health_skip_local" => {
+                    if let Some(on) = value.as_bool().filter(|on| *on != self.prefs.health_skip_local) {
+                        self.prefs.health_skip_local = on;
+                        health_changed = true;
+                    }
+                }
                 _ => {
                     if let Some(seconds) = value.as_u64().filter(|s| *s <= 3600).and_then(|s| u32::try_from(s).ok()) {
                         self.prefs.reveal_seconds = seconds;
@@ -463,9 +554,23 @@ impl App {
             }
         }
         self.prefs.save();
+        if health_changed {
+            self.refresh_health();
+        }
         if let Screen::Vault(ui) = &mut self.screen {
             let _ = ui.engine.sync_settings(missing);
         }
+    }
+
+    /// Works the health report out again, with what was ignored and whether local addresses
+    /// count.
+    fn refresh_health(&mut self) {
+        let Screen::Vault(ui) = &mut self.screen else { return };
+        ui.health = ui.engine.health(&self.prefs.ignored_checks(), self.prefs.health_skip_local).ok();
+        ui.health_ignored.clone_from(&self.prefs.health_ignored);
+        ui.health_group = ui.health_group.min(ui.health_groups() - 1);
+        let len = ui.health_ids(ui.health_group).len();
+        ui.health_at = ui.health_at.min(len.saturating_sub(1));
     }
 
     /// Leaves one setting in the vault for the other devices, if this terminal lets it go.
@@ -517,9 +622,8 @@ impl App {
                     Ask::Quit => self.quit = true,
                     Ask::Nothing => {}
                     Ask::Join => {
-                        let typed = door.path.text().trim().to_owned();
-                        let path = if typed.is_empty() || store::expand(&typed).exists() { door::default_new_path() } else { store::expand(&typed) };
-                        self.outside = Some(Outside::Join(path));
+                        let path = door::join_target(if door.mode == door::Mode::Create { door.path.text() } else { "" });
+                        self.overlay = Some(Overlay::Link(Box::new(LinkUi::receive(path))));
                     }
                     ask => {
                         door.busy = Some(if ask == Ask::Create { "Making your vault…" } else { "Unlocking…" });
@@ -575,6 +679,10 @@ impl App {
                         return;
                     }
                     Ok(Unlock::NeedsHardware) => Err("This vault needs a hardware key. Open it in the desktop or phone app".into()),
+                    Ok(Unlock::Waiting(at)) => {
+                        let minutes = at.saturating_sub(engine::now_ms()).div_ceil(60_000);
+                        Err(format!("Too many wrong passwords. Try again in {minutes} min"))
+                    }
                     Err(e) => Err(e),
                 }
             }
@@ -585,6 +693,9 @@ impl App {
                 door.wipe();
                 self.prefs.remember(&path);
                 let name = engine.name.clone();
+                if let Some(root) = engine.app_folder() {
+                    self.follow_app_timers(root);
+                }
                 self.screen = Screen::Vault(Box::new(VaultUi::new(engine)));
                 self.pull_settings();
                 match rollback {
@@ -677,9 +788,7 @@ impl App {
         match tab {
             Tab::Codes => ui.refresh_codes(),
             Tab::Generator if ui.generator.value.is_empty() => self.regenerate(),
-            Tab::Health if ui.health.is_none() => {
-                ui.health = ui.engine.health().ok();
-            }
+            Tab::Health if ui.health.is_none() => self.refresh_health(),
             _ => {}
         }
     }
@@ -700,6 +809,10 @@ impl App {
             KeyCode::Esc if ui.pane == Pane::Detail => {
                 ui.pane = Pane::List;
                 return;
+            }
+            KeyCode::Esc if !ui.marked.is_empty() => {
+                ui.marked.clear();
+                return self.say(Level::Info, "Nothing marked");
             }
             KeyCode::Tab => {
                 ui.pane = match ui.pane {
@@ -745,6 +858,8 @@ impl App {
                 KeyCode::Down | KeyCode::Char('j') => ui.move_section(1),
                 KeyCode::Up | KeyCode::Char('k') => ui.move_section(-1),
                 KeyCode::Enter => ui.pane = Pane::List,
+                KeyCode::Char('R') if ui.picked_tag().is_some() => self.command(Command::RenameTag),
+                KeyCode::Char('D') | KeyCode::Delete if ui.picked_tag().is_some() => self.command(Command::DeleteTag),
                 _ => self.item_action(key),
             },
             Pane::List => match key.code {
@@ -755,6 +870,7 @@ impl App {
                 KeyCode::Home | KeyCode::Char('g') => ui.move_list(-isize::MAX / 2),
                 KeyCode::End | KeyCode::Char('G') => ui.move_list(isize::MAX / 2),
                 KeyCode::Enter => ui.pane = Pane::Detail,
+                KeyCode::Char(' ') => ui.toggle_mark(),
                 _ => self.item_action(key),
             },
             Pane::Detail => match key.code {
@@ -784,6 +900,7 @@ impl App {
             KeyCode::Char('+') if !trash => Command::AddTag,
             KeyCode::Char('-') if !trash => Command::RemoveTag,
             KeyCode::Char('a') if !trash => Command::Attach,
+            KeyCode::Char('w') if !trash => Command::WifiCode,
             KeyCode::Char('d') | KeyCode::Delete if !trash => Command::Trash,
             KeyCode::Char('u') if trash => return self.restore(),
             KeyCode::Char('D') | KeyCode::Delete if trash => return self.ask_purge(),
@@ -821,14 +938,13 @@ impl App {
                 }
             }
             Command::Trash => {
-                if let Some(row) = ui.current().cloned() {
-                    self.overlay = Some(Overlay::Confirm {
-                        title: "Move to the trash?".into(),
-                        body: format!("{} stays in the trash for a while and can be brought back.", row.title),
-                        act: Act::Trash(row.id),
-                        danger: false,
-                    });
-                }
+                let ids = ui.targets();
+                let body = match (ids.len(), ui.current()) {
+                    (0, _) => return self.say(Level::Info, "Pick an item first"),
+                    (1, Some(row)) if ui.marked.is_empty() => format!("{} stays in the trash for a while and can be brought back.", row.title),
+                    (n, _) => format!("{} stay in the trash for a while and can be brought back.", items(n)),
+                };
+                self.overlay = Some(Overlay::Confirm { title: "Move to the trash?".into(), body, act: Act::Trash(ids), danger: false });
             }
             Command::Duplicate => {
                 let Some(id) = need(self) else { return };
@@ -843,14 +959,19 @@ impl App {
                 }
             }
             Command::Favourite | Command::Pin => {
-                let Some(row) = ui.current().cloned() else { return };
-                let (key, now) = if command == Command::Favourite { ("favourite", !row.favourite) } else { ("pinned", !row.pinned) };
-                match ui.engine.set_common(&row.id, json!({ key: now })) {
+                let ids = ui.targets();
+                if ids.is_empty() {
+                    return self.say(Level::Info, "Pick an item first");
+                }
+                let flag = |r: &engine::Row| if command == Command::Favourite { r.favourite } else { r.pinned };
+                let all = ids.iter().all(|id| ui.rows.iter().find(|r| r.id == *id).is_some_and(flag));
+                let op = if command == Command::Favourite { "favourite" } else { "pin" };
+                match ui.engine.bulk(&ids, op, json!({"flag": !all})) {
                     Ok(()) => {
                         ui.reload();
-                        let what = match (command, now) {
-                            (Command::Favourite, true) => "Added to favourites",
-                            (Command::Favourite, false) => "Taken out of favourites",
+                        let what = match (command, !all) {
+                            (Command::Favourite, true) => "Added to favorites",
+                            (Command::Favourite, false) => "Taken out of favorites",
                             (_, true) => "Pinned",
                             (_, false) => "Unpinned",
                         };
@@ -860,28 +981,137 @@ impl App {
                 }
             }
             Command::MoveFolder => {
-                let Some(id) = need(self) else { return };
-                let Screen::Vault(ui) = &self.screen else { return };
+                let ids = ui.targets();
+                if ids.is_empty() {
+                    return self.say(Level::Info, "Pick an item first");
+                }
                 let mut items = vec![(String::new(), "—  No folder".to_owned())];
                 let mut folders = ui.folders.clone();
                 folders.sort_by_key(|f| f.name.to_lowercase());
                 items.extend(folders.into_iter().map(|f| (f.id, format!("▸  {}", f.name))));
                 items.push(("+".into(), "+  New folder…".into()));
-                self.overlay = Some(Overlay::Pick { title: "Move to folder".into(), items, at: 0, then: PickFor::MoveFolder(id) });
+                self.overlay = Some(Overlay::Pick { title: "Move to folder".into(), items, at: 0, then: PickFor::MoveFolder(ids) });
             }
             Command::AddTag => {
-                let Some(id) = need(self) else { return };
-                self.prompt("Add a tag", "One word or a few, such as work", false, PromptFor::AddTag(id));
+                let ids = ui.targets();
+                if ids.is_empty() {
+                    return self.say(Level::Info, "Pick an item first");
+                }
+                self.prompt("Add a tag", "One word or a few, such as work", false, PromptFor::AddTag(ids));
             }
             Command::RemoveTag => {
-                let Some(row) = ui.current().cloned() else { return };
-                if row.tags.is_empty() {
-                    return self.say(Level::Info, "It has no tags");
+                let ids = ui.targets();
+                // Any tag one of them has; it comes off every one.
+                let mut tags: Vec<String> = Vec::new();
+                for row in ui.rows.iter().filter(|r| ids.contains(&r.id)) {
+                    for tag in &row.tags {
+                        if !tags.contains(tag) {
+                            tags.push(tag.clone());
+                        }
+                    }
                 }
-                let items = row.tags.iter().map(|t| (t.clone(), format!("#  {t}"))).collect();
-                self.overlay = Some(Overlay::Pick { title: "Remove a tag".into(), items, at: 0, then: PickFor::RemoveTag(row.id) });
+                if ids.is_empty() {
+                    return self.say(Level::Info, "Pick an item first");
+                }
+                if tags.is_empty() {
+                    return self.say(Level::Info, if ids.len() == 1 { "It has no tags" } else { "They have no tags" });
+                }
+                tags.sort_by_key(|t| t.to_lowercase());
+                let items = tags.into_iter().map(|t| (t.clone(), format!("#  {t}"))).collect();
+                self.overlay = Some(Overlay::Pick { title: "Remove a tag".into(), items, at: 0, then: PickFor::RemoveTag(ids) });
             }
-            Command::NewFolder => self.prompt("New folder", "Its name", false, PromptFor::NewFolder),
+            Command::Color => {
+                let ids = ui.targets();
+                if ids.is_empty() {
+                    return self.say(Level::Info, "Pick an item first");
+                }
+                let mut items = vec![(String::new(), "The site's own color".to_owned())];
+                items.extend(HUES.iter().map(|(hue, name)| ((*hue).to_owned(), (*name).to_owned())));
+                self.overlay = Some(Overlay::Pick { title: "Color".into(), items, at: 0, then: PickFor::Color(ids) });
+            }
+            Command::Hide => {
+                let ids = ui.targets();
+                if ids.is_empty() {
+                    return self.say(Level::Info, "Pick an item first");
+                }
+                let on_shelf = ui.sections.get(ui.section).is_some_and(|s| s.query == "hidden");
+                match ui.engine.bulk(&ids, "hide", json!({"flag": !on_shelf})) {
+                    Ok(()) => {
+                        ui.marked.clear();
+                        ui.reload();
+                        let text = if on_shelf {
+                            "Taken off the hidden shelf"
+                        } else {
+                            "Moved to the hidden shelf. Open it from the commands to see them"
+                        };
+                        self.say(Level::Good, text);
+                    }
+                    Err(e) => self.say(Level::Bad, e),
+                }
+            }
+            Command::Mark => ui.toggle_mark(),
+            Command::MarkAll => ui.mark_all(),
+            Command::Link => {
+                let ids = ui.marked.clone();
+                if ids.len() < 2 {
+                    return self.say(Level::Info, "Mark two or more with space first");
+                }
+                match link_together(&mut ui.engine, &ids) {
+                    Ok(()) => {
+                        ui.marked.clear();
+                        ui.reload();
+                        let text = if ids.len() == 2 { "Linked the two".to_owned() } else { format!("Linked all {}", ids.len()) };
+                        self.say(Level::Good, text);
+                    }
+                    Err(e) => self.say(Level::Bad, e),
+                }
+            }
+            Command::NewFolder => {
+                let ids = ui.current_id().into_iter().collect();
+                self.prompt("New folder", "Its name", false, PromptFor::NewFolder(ids));
+            }
+            Command::RenameTag | Command::DeleteTag => {
+                let Some(tag) = ui.picked_tag() else {
+                    return self.say(Level::Info, "Pick a tag in the sidebar first");
+                };
+                let items = plural_items(ui.sections.get(ui.section).map_or(0, |s| s.count));
+                if command == Command::RenameTag {
+                    self.overlay = Some(Overlay::Prompt {
+                        title: format!("Rename #{tag}"),
+                        hint: format!("On {items}. The new name goes on every one of them."),
+                        input: Input::with(&tag),
+                        secret: false,
+                        then: PromptFor::RenameTag(tag),
+                    });
+                } else {
+                    self.overlay = Some(Overlay::Confirm {
+                        title: format!("Delete #{tag}?"),
+                        body: format!("It comes off every item that has it, {items} now. The items stay."),
+                        act: Act::DeleteTag(tag),
+                        danger: true,
+                    });
+                }
+            }
+            Command::WifiCode => {
+                let Some(detail) = ui.detail.clone() else {
+                    return self.say(Level::Info, "Pick an item first");
+                };
+                if detail.row.kind != "wifi" {
+                    return self.say(Level::Info, "Only a Wi-Fi network has a QR code");
+                }
+                let ssid = detail
+                    .fields
+                    .iter()
+                    .find(|f| f.key == "ssid")
+                    .and_then(|f| f.value.as_ref())
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_owned();
+                match ui.engine.wifi_qr(&detail.row.id) {
+                    Ok(qr) => self.overlay = Some(Overlay::WifiCode { ssid, qr }),
+                    Err(e) => self.say(Level::Bad, e),
+                }
+            }
             Command::CopyPassword => self.copy_main(),
             Command::CopyUsername => self.copy_username(),
             Command::CopyCode => self.copy_code(),
@@ -939,10 +1169,22 @@ impl App {
                 self.prefs.save();
                 if self.prefs.sync_settings {
                     self.pull_settings();
-                    self.say(Level::Info, "Theme, icons and reveal time now follow the vault");
+                    self.say(Level::Info, "Theme, icons, reveal time and Health choices now follow the vault");
                 } else {
                     self.say(Level::Info, "Settings stay on this computer");
                 }
+            }
+            Command::SkipLocal => {
+                self.prefs.health_skip_local = !self.prefs.health_skip_local;
+                self.prefs.save();
+                self.push_setting("health_skip_local");
+                self.refresh_health();
+                let text = if self.prefs.health_skip_local {
+                    "Health leaves out logins only for your router, NAS or other devices at home"
+                } else {
+                    "Health checks logins for devices at home too"
+                };
+                self.say(Level::Info, text);
             }
             Command::LockAfter => {
                 let mut input = Input::with(&self.prefs.lock_minutes.to_string());
@@ -955,15 +1197,44 @@ impl App {
                     then: PromptFor::LockMinutes,
                 });
             }
+            Command::ClearClipboard => {
+                let mut input = Input::with(&self.prefs.clip_seconds.to_string());
+                input.multiline = false;
+                self.overlay = Some(Overlay::Prompt {
+                    title: "Clear the clipboard after".into(),
+                    hint: "Seconds before a copied secret is cleared. 0 leaves it".into(),
+                    input,
+                    secret: false,
+                    then: PromptFor::ClipSeconds,
+                });
+            }
             Command::Items => self.switch_tab(Tab::Items),
             Command::Codes => self.switch_tab(Tab::Codes),
             Command::Generator => self.switch_tab(Tab::Generator),
             Command::Health => self.switch_tab(Tab::Health),
             Command::Help => self.overlay = Some(Overlay::Help),
             Command::Lock => self.lock("Locked"),
+            Command::IntoApp => {
+                if ui.engine.app_folder().is_some() {
+                    return self.say(Level::Info, "This is already the WM Pass app's vault");
+                }
+                let Some(root) = crate::app_folder::default_root() else {
+                    return self.say(Level::Bad, "No WM Pass app folder on this computer");
+                };
+                let old = ui.engine.path().to_owned();
+                match ui.engine.move_into(&root) {
+                    Ok(()) => {
+                        self.prefs.recent.retain(|p| *p != old && std::fs::canonicalize(&old).ok().as_ref() != Some(p));
+                        self.prefs.remember(&root);
+                        self.follow_app_timers(&root);
+                        self.say(Level::Good, format!("The app and this terminal now share it. {} is no longer used; delete it once you are sure", old.display()));
+                    }
+                    Err(e) => self.say(Level::Bad, e),
+                }
+            }
             Command::AddDevice => {
                 if let Screen::Vault(ui) = &self.screen {
-                    self.outside = Some(Outside::Send(ui.engine.path().to_owned()));
+                    self.overlay = Some(Overlay::Link(Box::new(LinkUi::send(ui.engine.path().to_owned()))));
                 }
             }
             Command::Quit => self.quit = true,
@@ -1010,9 +1281,12 @@ impl App {
         let Some(detail) = &ui.detail else { return self.say(Level::Info, "Pick an item first") };
         let main = detail.fields.iter().find(|f| f.secret && f.has_value).map(|f| (f.label.clone(), f.key.clone()));
         let has_code = detail.otp.is_some();
+        let has_user = detail.fields.iter().any(|f| matches!(f.key.as_str(), "username" | "email" | "holder" | "user" | "ssid") && f.has_value);
+        // As in the apps: with no password, the code, and then the username.
         match main {
             Some((label, key)) => self.copy_secret(&label, &Secret::Field(key)),
             None if has_code => self.copy_code(),
+            None if has_user => self.copy_username(),
             None => self.say(Level::Info, "Nothing secret to copy here"),
         }
     }
@@ -1116,9 +1390,13 @@ impl App {
 
     fn restore(&mut self) {
         let Screen::Vault(ui) = &mut self.screen else { return };
-        let Some(id) = ui.current_id() else { return };
-        match ui.engine.restore(&id) {
+        let ids = ui.targets();
+        if ids.is_empty() {
+            return;
+        }
+        match ui.engine.bulk(&ids, "restore", json!({})) {
             Ok(()) => {
+                ui.marked.clear();
                 ui.reload();
                 self.say(Level::Good, "Brought back");
             }
@@ -1128,11 +1406,16 @@ impl App {
 
     fn ask_purge(&mut self) {
         let Screen::Vault(ui) = &self.screen else { return };
-        let Some(row) = ui.current().cloned() else { return };
+        let ids = ui.targets();
+        let what = match (ids.len(), ui.current()) {
+            (0, _) => return,
+            (1, Some(row)) if ui.marked.is_empty() => format!("{} and its files go", row.title),
+            (n, _) => format!("{} and their files go", items(n)),
+        };
         self.overlay = Some(Overlay::Confirm {
             title: "Delete for good?".into(),
-            body: format!("{} and its files go now, on this device and, at the next sync, everywhere else. This cannot be undone.", row.title),
-            act: Act::Purge(row.id),
+            body: format!("{what} now, on this device and, at the next sync, everywhere else. This cannot be undone."),
+            act: Act::Purge(ids),
             danger: true,
         });
     }
@@ -1217,21 +1500,45 @@ impl App {
 
     fn health_key(&mut self, key: KeyEvent) {
         let Screen::Vault(ui) = &mut self.screen else { return };
-        let ids = ui.health_ids(ui.health_group);
+        let items = ui.health_items(ui.health_group);
+        let ids: Vec<String> = items.iter().map(|(id, _)| id.clone()).collect();
         match key.code {
             KeyCode::Left | KeyCode::Char('h') => {
                 ui.health_group = ui.health_group.saturating_sub(1);
                 ui.health_at = 0;
             }
             KeyCode::Right | KeyCode::Char('l') => {
-                ui.health_group = (ui.health_group + 1).min(HEALTH_GROUPS.len() - 1);
+                ui.health_group = (ui.health_group + 1).min(ui.health_groups() - 1);
                 ui.health_at = 0;
             }
             KeyCode::Down | KeyCode::Char('j') => ui.health_at = (ui.health_at + 1).min(ids.len().saturating_sub(1)),
             KeyCode::Up | KeyCode::Char('k') => ui.health_at = ui.health_at.saturating_sub(1),
             KeyCode::Char('r') => {
-                ui.health = ui.engine.health().ok();
+                self.refresh_health();
                 self.say(Level::Info, "Checked again");
+            }
+            KeyCode::Char('i') => {
+                let group = ui.health_group;
+                let Some((id, ignored_for)) = items.get(ui.health_at).cloned() else { return };
+                let title = ui.titles.get(&id).map_or_else(|| "A deleted item".to_owned(), |(title, _)| title.clone());
+                let (check, ignore) = match ignored_for {
+                    Some(check) => (check, false),
+                    None => (HEALTH_GROUPS[group].2.to_owned(), true),
+                };
+                if check.is_empty() {
+                    return;
+                }
+                self.prefs.ignore_health(&check, &id, ignore);
+                self.prefs.save();
+                self.push_setting("health_ignored");
+                self.refresh_health();
+                let label = crate::vault::check_label(&check);
+                let text = if ignore {
+                    format!("{title} no longer counts under {label}. It is listed under Ignored")
+                } else {
+                    format!("{title} counts under {label} again")
+                };
+                self.say(Level::Info, text);
             }
             KeyCode::Enter => {
                 if let Some(id) = ids.get(ui.health_at) {
@@ -1324,6 +1631,11 @@ impl App {
                     false
                 }
                 _ => true,
+            },
+            Overlay::WifiCode { .. } => !matches!(key.code, KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q' | 'w')),
+            Overlay::Link(link) => match self.link_key(link, key) {
+                Some(keep) => keep,
+                None => return,
             },
             Overlay::Editor(editor) => {
                 let row_multiline = editor.rows.get(editor.at).is_some_and(|r| r.value.multiline);
@@ -1429,8 +1741,19 @@ impl App {
     fn confirmed(&mut self, act: Act) {
         let Screen::Vault(ui) = &mut self.screen else { return };
         let result = match act {
-            Act::Trash(id) => ui.engine.trash(&id).map(|()| "Moved to the trash. Restore it from Trash with u".to_owned()),
-            Act::Purge(id) => ui.engine.purge(&id).map(|()| "Deleted for good".to_owned()),
+            Act::Trash(ids) => {
+                ui.marked.clear();
+                let text = if ids.len() == 1 {
+                    "Moved to the trash. Restore it from Trash with u".to_owned()
+                } else {
+                    format!("{} moved to the trash. Restore them from Trash with u", items(ids.len()))
+                };
+                ui.engine.bulk(&ids, "trash", json!({})).map(|()| text)
+            }
+            Act::Purge(ids) => {
+                ui.marked.clear();
+                ui.engine.bulk(&ids, "purge", json!({})).map(|()| "Deleted for good".to_owned())
+            }
             Act::Import => ui
                 .engine
                 .import_apply()
@@ -1439,6 +1762,7 @@ impl App {
                 let password = Zeroizing::new(String::new());
                 Self::write_export(ui, &format, &path, &password)
             }
+            Act::DeleteTag(tag) => ui.engine.remove_tag(&tag).map(|n| format!("Took #{tag} off {}", plural_items(n))),
         };
         ui.reload();
         match result {
@@ -1481,25 +1805,35 @@ impl App {
                 }
                 self.overlay = Some(Overlay::Editor(Box::new(editor)));
             }
-            PickFor::MoveFolder(_) if choice == "+" => {
-                self.prompt("New folder", "Its name. The item moves into it", false, PromptFor::NewFolder);
+            PickFor::MoveFolder(ids) if choice == "+" => {
+                let hint = if ids.len() == 1 { "Its name. The item moves into it" } else { "Its name. The items move into it" };
+                self.prompt("New folder", hint, false, PromptFor::NewFolder(ids));
             }
-            PickFor::MoveFolder(id) => {
+            PickFor::MoveFolder(ids) => {
                 let folder = (!choice.is_empty()).then_some(choice);
-                match ui.engine.set_common(&id, json!({"folder": folder})) {
+                match ui.engine.bulk(&ids, "folder", json!({"folder": folder})) {
                     Ok(()) => {
+                        ui.marked.clear();
                         ui.reload();
                         self.say(Level::Good, "Moved");
                     }
                     Err(e) => self.say(Level::Bad, e),
                 }
             }
-            PickFor::RemoveTag(id) => {
-                let tags: Vec<String> = ui.current().map(|r| r.tags.iter().filter(|t| **t != choice).cloned().collect()).unwrap_or_default();
-                match ui.engine.set_common(&id, json!({"tags": tags})) {
+            PickFor::RemoveTag(ids) => match ui.engine.bulk(&ids, "tag_remove", json!({"tag": choice})) {
+                Ok(()) => {
+                    ui.reload();
+                    self.say(Level::Good, format!("Removed #{choice}"));
+                }
+                Err(e) => self.say(Level::Bad, e),
+            },
+            PickFor::Color(ids) => {
+                let color = (!choice.is_empty()).then_some(choice);
+                match ui.engine.bulk(&ids, "color", json!({"color": color})) {
                     Ok(()) => {
+                        ui.marked.clear();
                         ui.reload();
-                        self.say(Level::Good, format!("Removed #{choice}"));
+                        self.say(Level::Good, if color.is_some() { "Color set" } else { "Back to the site's own color" });
                     }
                     Err(e) => self.say(Level::Bad, e),
                 }
@@ -1528,15 +1862,15 @@ impl App {
         let Screen::Vault(ui) = &mut self.screen else { return };
         let text = answer.trim();
         match then {
-            PromptFor::NewFolder => {
+            PromptFor::NewFolder(ids) => {
                 if text.is_empty() {
                     return;
                 }
-                let picked = ui.current_id();
                 match ui.engine.add_folder(text) {
                     Ok(folder) => {
-                        if let Some(id) = picked {
-                            let _ = ui.engine.set_common(&id, json!({"folder": folder}));
+                        if !ids.is_empty() {
+                            let _ = ui.engine.bulk(&ids, "folder", json!({"folder": folder}));
+                            ui.marked.clear();
                         }
                         ui.reload();
                         self.say(Level::Good, format!("Folder {text} made"));
@@ -1544,16 +1878,30 @@ impl App {
                     Err(e) => self.say(Level::Bad, e),
                 }
             }
-            PromptFor::AddTag(id) => {
+            PromptFor::RenameTag(from) => {
+                let to = text.trim().trim_start_matches('#').trim().to_owned();
+                if to.is_empty() || to == from {
+                    return;
+                }
+                match ui.engine.rename_tag(&from, &to) {
+                    Ok(n) => {
+                        ui.reload();
+                        let query = format!("tag:{}", crate::vault::quoted(&to.to_lowercase()));
+                        if let Some(at) = ui.sections.iter().position(|s| s.query == query) {
+                            ui.section = at;
+                            ui.refresh_list(None);
+                        }
+                        self.say(Level::Good, format!("Renamed #{from} to #{to} on {}", plural_items(n)));
+                    }
+                    Err(e) => self.say(Level::Bad, e),
+                }
+            }
+            PromptFor::AddTag(ids) => {
                 if text.is_empty() {
                     return;
                 }
-                let mut tags = ui.current().map(|r| r.tags.clone()).unwrap_or_default();
                 let tag = text.trim_start_matches('#').to_owned();
-                if !tags.contains(&tag) {
-                    tags.push(tag.clone());
-                }
-                match ui.engine.set_common(&id, json!({"tags": tags})) {
+                match ui.engine.bulk(&ids, "tag_add", json!({"tag": tag})) {
                     Ok(()) => {
                         ui.reload();
                         self.say(Level::Good, format!("Tagged #{tag}"));
@@ -1650,61 +1998,287 @@ impl App {
                 }
                 Err(_) => self.say(Level::Bad, "That is not a number of minutes"),
             },
+            PromptFor::ClipSeconds => match text.parse::<u32>() {
+                Ok(seconds) => {
+                    self.prefs.clip_seconds = seconds.min(3600);
+                    self.prefs.save();
+                    let text = if seconds == 0 { "Copied secrets stay on the clipboard".to_owned() } else { format!("Copied secrets are cleared after {} seconds", seconds.min(3600)) };
+                    self.say(Level::Good, text);
+                }
+                Err(_) => self.say(Level::Bad, "That is not a number of seconds"),
+            },
+        }
+    }
+
+    /// A key on the screen that moves a vault. Returns whether the screen stays, or `None` when
+    /// this has already decided what is open.
+    fn link_key(&mut self, link: &mut LinkUi, key: KeyEvent) -> Option<bool> {
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        match (&link.stage, key.code) {
+            (Stage::Received { path, .. }, KeyCode::Enter | KeyCode::Esc) => {
+                // A vault that went into the app's folder opens as the app's.
+                let path = crate::app_folder::root_of(path).unwrap_or_else(|| path.clone());
+                if let Screen::Door(door) = &mut self.screen {
+                    if door.mode == door::Mode::Create {
+                        door.toggle_mode();
+                    }
+                    door.path.set(&path.to_string_lossy());
+                    door.focus = door::Field::Password;
+                    door.notice = Some("Your vault is here. Unlock it with its master password".into());
+                }
+                Some(false)
+            }
+            (Stage::Sent { .. }, KeyCode::Enter | KeyCode::Esc) => {
+                self.say(Level::Good, "Sent. Unlock it on the other device with the master password");
+                Some(false)
+            }
+            (Stage::Failed(_), KeyCode::Char('r') | KeyCode::Enter) => {
+                link.restart();
+                Some(true)
+            }
+            (Stage::Digits { .. }, KeyCode::Char('y' | 'Y') | KeyCode::Enter) => {
+                link.answer(true);
+                Some(true)
+            }
+            (Stage::Digits { .. }, KeyCode::Char('n' | 'N')) => {
+                link.answer(false);
+                Some(true)
+            }
+            (Stage::Waiting { code: Some(code), .. }, KeyCode::Char('c' | 'y')) if !ctrl => {
+                let code = code.clone();
+                let wait = self.clip_for();
+                let route = self.clip.copy(&code, true, wait);
+                self.copied("Code", route, true);
+                Some(true)
+            }
+            (Stage::Waiting { .. }, KeyCode::Char('z')) => {
+                // Flip whatever was drawn last; with no choice yet, that was what fitted.
+                let big = !link.big.unwrap_or(self.link_drew_big);
+                link.big = Some(big);
+                Some(true)
+            }
+            (Stage::Searching, KeyCode::Up) => {
+                link.at = link.at.saturating_sub(1);
+                Some(true)
+            }
+            (Stage::Searching, KeyCode::Down) => {
+                link.at = (link.at + 1).min(link.found.len().saturating_sub(1));
+                Some(true)
+            }
+            (Stage::Searching, KeyCode::Enter) => {
+                if link.code.is_empty() {
+                    link.send_to_picked();
+                } else {
+                    link.send_to_code();
+                }
+                Some(true)
+            }
+            (Stage::Searching, KeyCode::Esc) if !link.code.is_empty() => {
+                link.code.clear();
+                Some(true)
+            }
+            (_, KeyCode::Esc) => Some(false),
+            (Stage::Searching, _) => {
+                link.code.key(key);
+                Some(true)
+            }
+            _ => Some(true),
         }
     }
 
     fn mouse(&mut self, mouse: MouseEvent) {
-        if self.overlay.is_some() {
-            if let MouseEventKind::Down(MouseButton::Left) = mouse.kind
-                && matches!(self.overlay, Some(Overlay::Help))
-            {
-                self.overlay = None;
-            }
-            return;
-        }
-        let Screen::Vault(ui) = &mut self.screen else { return };
         let at = Position::new(mouse.column, mouse.row);
-        let inside = |r: Rect| r.contains(at);
+        let landed = crate::draw::hit_at(&self.hits, self.overlay_from, at);
         match mouse.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                let double = self
+                    .last_click
+                    .is_some_and(|(where_, when)| where_ == at && when.elapsed() < Duration::from_millis(400));
+                self.last_click = Some((at, Instant::now()));
+                match landed {
+                    // Outside an open overlay: the light ones close, the rest stay.
+                    Some(None) => {
+                        if matches!(self.overlay, Some(Overlay::Help | Overlay::Palette { .. } | Overlay::Pick { .. })) {
+                            self.overlay = None;
+                        }
+                    }
+                    Some(Some(hit)) => self.click(hit, double),
+                    None => {}
+                }
+            }
             MouseEventKind::ScrollDown | MouseEventKind::ScrollUp => {
-                let by = if mouse.kind == MouseEventKind::ScrollDown { 1 } else { -1 };
-                if ui.tab == Tab::Items {
-                    if inside(ui.areas.detail) {
-                        ui.move_line(by);
-                    } else if inside(ui.areas.sidebar) {
-                        ui.move_section(by);
-                    } else {
-                        ui.move_list(by);
+                let by: isize = if mouse.kind == MouseEventKind::ScrollDown { 1 } else { -1 };
+                let landed = landed.flatten();
+                self.scroll(by, landed, at);
+            }
+            _ => {}
+        }
+    }
+
+    /// A left click on something drawn.
+    fn click(&mut self, hit: Hit, double: bool) {
+        let plain = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        match hit {
+            Hit::Cover => {
+                if matches!(self.overlay, Some(Overlay::Help)) {
+                    self.overlay = None;
+                }
+            }
+            Hit::Key(key) => self.key(key),
+            Hit::DoorField(field) => {
+                if let Screen::Door(door) = &mut self.screen {
+                    door.focus = field;
+                }
+            }
+            Hit::Recent(n) => {
+                if let Screen::Door(door) = &mut self.screen {
+                    door.recent = Some(n);
+                }
+                self.key(plain(KeyCode::Enter));
+            }
+            Hit::PaletteRow(n) => {
+                if let Some(Overlay::Palette { at, .. }) = &mut self.overlay {
+                    *at = n;
+                }
+                self.key(plain(KeyCode::Enter));
+            }
+            Hit::PickRow(n) => {
+                if let Some(Overlay::Pick { at, .. }) = &mut self.overlay {
+                    *at = n;
+                }
+                self.key(plain(KeyCode::Enter));
+            }
+            Hit::EditorRow(n) => {
+                if let Some(Overlay::Editor(editor)) = &mut self.overlay {
+                    editor.at = n.min(editor.rows.len().saturating_sub(1));
+                    let row = editor.row();
+                    if double && matches!(row.input.as_str(), "toggle" | "choice") {
+                        self.key(plain(KeyCode::Char(' ')));
                     }
                 }
             }
-            MouseEventKind::Down(MouseButton::Left) => {
-                if let Some(n) = ui.areas.tabs.iter().position(|r| inside(*r)) {
-                    return self.switch_tab(Tab::ALL[n]);
+            Hit::LinkDevice(n) => {
+                if let Some(Overlay::Link(link)) = &mut self.overlay {
+                    link.at = n;
+                    link.send_to_picked();
                 }
-                if ui.tab != Tab::Items {
-                    return;
+            }
+            Hit::Section(n) => {
+                let Screen::Vault(ui) = &mut self.screen else { return };
+                ui.pane = Pane::Sidebar;
+                if n != ui.section {
+                    ui.section = n;
+                    ui.list.select(Some(0));
+                    ui.refresh_list(None);
                 }
-                if inside(ui.areas.list) {
-                    ui.pane = Pane::List;
-                    let row = usize::from(at.y.saturating_sub(ui.areas.list.y + 1)) / 2 + ui.list.offset();
-                    if row < ui.rows.len() && ui.list.selected() != Some(row) {
-                        ui.list.select(Some(row));
-                        ui.load_detail();
-                    }
-                } else if inside(ui.areas.sidebar) {
-                    ui.pane = Pane::Sidebar;
-                    let row = usize::from(at.y.saturating_sub(ui.areas.sidebar.y + 1));
-                    if ui.sections.get(row).is_some_and(|s| !s.heading) && row != ui.section {
-                        ui.section = row;
-                        ui.list.select(Some(0));
-                        ui.refresh_list(None);
-                    }
-                } else if inside(ui.areas.detail) {
+            }
+            Hit::Row(n) => {
+                let Screen::Vault(ui) = &mut self.screen else { return };
+                ui.pane = Pane::List;
+                if ui.list.selected() != Some(n) {
+                    ui.list.select(Some(n));
+                    ui.load_detail();
+                }
+                if double {
                     ui.pane = Pane::Detail;
                 }
             }
-            _ => {}
+            Hit::Line(n) => {
+                let Screen::Vault(ui) = &mut self.screen else { return };
+                ui.pane = Pane::Detail;
+                ui.line = n;
+                if double {
+                    self.copy_line();
+                }
+            }
+            Hit::Code(n) => {
+                let Screen::Vault(ui) = &mut self.screen else { return };
+                ui.code_at = n;
+                if double {
+                    self.codes_key(plain(KeyCode::Enter));
+                }
+            }
+            Hit::Knob(n) => {
+                let Screen::Vault(ui) = &mut self.screen else { return };
+                let same = ui.generator.at == n;
+                ui.generator.at = n;
+                if same || double {
+                    self.generator_key(plain(KeyCode::Char(' ')));
+                }
+            }
+            Hit::HealthGroup(n) => {
+                let Screen::Vault(ui) = &mut self.screen else { return };
+                ui.health_group = n;
+                ui.health_at = 0;
+            }
+            Hit::HealthEntry(n) => {
+                let Screen::Vault(ui) = &mut self.screen else { return };
+                ui.health_at = n;
+                if double {
+                    self.health_key(plain(KeyCode::Enter));
+                }
+            }
+        }
+    }
+
+    /// The wheel, over whatever is under the pointer.
+    fn scroll(&mut self, by: isize, over: Option<Hit>, at: Position) {
+        let step = |n: usize, by: isize, len: usize| n.saturating_add_signed(by).min(len.saturating_sub(1));
+        match &mut self.overlay {
+            Some(Overlay::Palette { input, at: picked }) => {
+                *picked = step(*picked, by, palette_matches(input.text()).len());
+                return;
+            }
+            Some(Overlay::Pick { items, at: picked, .. }) => {
+                *picked = step(*picked, by, items.len());
+                return;
+            }
+            Some(Overlay::Editor(editor)) => {
+                editor.at = step(editor.at, by, editor.rows.len());
+                return;
+            }
+            Some(Overlay::Link(link)) => {
+                link.at = step(link.at, by, link.found.len());
+                return;
+            }
+            Some(_) => return,
+            None => {}
+        }
+        let Screen::Vault(ui) = &mut self.screen else { return };
+        match ui.tab {
+            Tab::Items => {
+                if matches!(over, Some(Hit::Line(_))) || ui.areas.detail.contains(at) {
+                    ui.move_line(by);
+                } else if matches!(over, Some(Hit::Section(_))) || ui.areas.sidebar.contains(at) {
+                    ui.move_section(by);
+                } else {
+                    ui.move_list(by);
+                }
+            }
+            Tab::Codes => {
+                let cols = ui.areas.code_cols.max(1) as isize;
+                ui.code_at = step(ui.code_at, by * cols, ui.codes.len());
+            }
+            Tab::Generator => {
+                // Over a setting, the wheel changes it; elsewhere it moves between them.
+                if let Some(Hit::Knob(n)) = over {
+                    ui.generator.at = n;
+                    ui.generator.adjust(-by.signum() as i32);
+                    self.regenerate();
+                } else {
+                    let len = ui.generator.knobs().len();
+                    ui.generator.at = step(ui.generator.at, by, len);
+                }
+            }
+            Tab::Health => {
+                if let Some(Hit::HealthGroup(_)) = over {
+                    ui.health_group = step(ui.health_group, by, ui.health_groups());
+                    ui.health_at = 0;
+                } else {
+                    let len = ui.health_ids(ui.health_group).len();
+                    ui.health_at = step(ui.health_at, by, len);
+                }
+            }
         }
     }
 }

@@ -419,7 +419,7 @@ export const features = [
           'Site icons come with the extension, so showing them never tells anyone which sites are in your vault.',
         ],
         caveats: [
-          'The extension does not run breach checks, aliases, the disposable inbox, the username checker or server accounts. Use the desktop app or the phone for those.',
+          'The extension makes these calls from its background, where its permission to reach any site lets it talk to services a web page cannot. The vault page only sees the answers.',
           'The extension\'s backups and sync go to places on servers, so they need this on.',
         ],
       },
@@ -446,7 +446,8 @@ export const features = [
     what: 'Checks whether your passwords, or the email addresses in your vault, appear in published leaks. It runs only when you ask.',
     why: 'A password that has leaked anywhere is on the lists attackers try first, however strong it looks. Knowing which ones have leaked tells you what to change first.',
     how: [
-      '**Check every password** goes through each item with a password. WM Pass hashes the password with SHA-1 and sends only the first five characters of the hash to Have I Been Pwned. The service answers with every leaked hash that starts the same way, padded with dummy ones, and the comparison happens on your device, so the service cannot tell which password you asked about.',
+      '**Check every password** goes through each item with a password, with Have I Been Pwned or XposedOrNot. WM Pass hashes the password and sends only the start of the hash: five characters of SHA-1 to Have I Been Pwned, or ten of Keccak-512 to XposedOrNot. The service answers with every leaked hash that starts the same way, and the comparison happens on your device, so the service cannot tell which password you asked about.',
+      'The check keeps running when you leave the page, and **Stop** ends it early.',
       'Passwords it finds lead the list on the [[screen.health]], with how many times each was seen.',
       'Under **Your email addresses**, each address used in your items can be checked with one of three services:',
       '- **LeakCheck** names the services an address appeared in. The address goes to LeakCheck.',
@@ -465,7 +466,6 @@ export const features = [
     on: {
       extension: {
         caveats: [
-          'The browser extension does not make these calls itself. Use the desktop app or the phone.',
           'Results are kept in memory only, so they are gone once the vault locks.',
           'A check finds only leaks the service knows about. A password it does not find can still be weak or reused.',
         ],
@@ -504,7 +504,7 @@ export const features = [
           '- Accounts. With Google Drive, Dropbox, OneDrive and Box you sign in on the service\'s own page, and WM Pass never sees that password. With pCloud, MEGA and Proton Drive you sign in inside WM Pass.',
           '- Servers and storage, which covers WebDAV, S3, and Synology or QNAP NAS boxes. WebDAV and S3 fill in the address for many services.',
           '- Somewhere else, which here means a Git repository on GitHub, GitLab or Gitea.',
-          'A browser cannot open the raw connections that a folder, SFTP, FTP, SMB, NFS or IMAP need, and iCloud\'s sign-in needs headers a page may not send, so those are in the desktop and phone apps only.',
+          'A browser cannot open the raw connections that SFTP, FTP, SMB, NFS or IMAP need, and iCloud\'s sign-in needs headers a page may not send. The extension reaches those through the desktop app while it is connected; the web vault cannot.',
           PLACE_VERIFY,
         ],
         caveats: [
@@ -603,7 +603,7 @@ export const features = [
     why: 'Moving everything at once is not always possible. A work account on a Bitwarden server, or a KeePass file shared with others, can stay where it is while you use WM Pass for it.',
     how: [
       'Add one under Settings, Sync and accounts, with **Add an account**, or at the door with **Add another vault or account**. Choose **Bitwarden**, **Bitwarden EU**, **Own server** or **KeePass file**.',
-      'It then appears at the door beside your own vault. Choose it there and type its own password.',
+      'An account opens in place of your vault, so adding one under Settings offers **Sign in now**: the vault locks and the door opens with the account chosen and its password asked for. Added at the door, it comes chosen there. Later, it appears at the door beside your own vault; choose it and type its own password.',
       'For a server account, your password is never sent: a key made from it proves who you are, as with any Bitwarden app. The first sign-in from a new device may need a code Bitwarden emails you, or a two-step code, typed beside the password.',
       'Changes go up to the server after each edit. If it cannot be reached they wait, and WM Pass keeps an offline copy, encrypted as the server\'s is.',
       ACCOUNT_KDBX,
@@ -617,7 +617,7 @@ export const features = [
       extension: {
         how: [
           'Add one under Settings, Sync and accounts, with **Add an account**, or at the door with **Add another vault or account**. The extension can open a **KeePass file** only: signing in to a server is in the desktop and phone apps.',
-          'It then appears at the door beside your own vault. Choose it there and type its own password.',
+          'Added under Settings, it offers **Sign in now**, which locks the vault and opens the door with the file chosen. Added at the door, it comes chosen there. Later, it appears at the door beside your own vault; choose it and type its own password.',
           'The extension keeps its own copy of the file you choose, since a browser cannot reach the original again. Changes stay in that copy, not in the original file.',
         ],
         caveats: ACCOUNT_CAVEATS,
@@ -794,7 +794,6 @@ export const features = [
       extension: {
         caveats: [
           'A site can strip a plus tag or the dots and reach your real address. Only a forwarding service hides it.',
-          'The browser extension does not call forwarding services itself. Use the desktop app or the phone for those.',
         ],
       },
     },
@@ -805,8 +804,8 @@ export const features = [
     title: 'Checking usernames',
     what: 'The username checker asks a list of sites whether a name is already taken, so you can pick one that is free where you need it.',
     how: [
-      'Type a name on the [[page.usernames]] page and choose **Check**. Each site is asked in turn and answers **Free**, **Taken** or **No clear answer**.',
-      'Sites that refuse anonymous lookups, or give the same answer for every name, are left out, because a guess is worse than no answer. X, Instagram, npm and PyPI are among them.',
+      'Type a name on the [[page.usernames]] page and choose **Check**. Every site is asked at once and answers **Free**, **Taken** or **No clear answer**.',
+      'Sites that refuse anonymous lookups, or give the same answer for every name, get no answer, because a guess is worse than none. X, Threads and Reddit are among them, and the page links their profiles for you to open yourself.',
     ],
     caveats: [
       'Every site checked learns the name you looked up.',
@@ -816,7 +815,7 @@ export const features = [
     words: 'username handle availability taken free',
     on: {
       extension: {
-        caveats: 'The browser extension does not make these calls itself. Use the desktop app or the phone.',
+        caveats: 'TikTok and Instagram only answer a browser that runs their scripts. The extension asks the desktop app to check those two, while it is connected.',
       },
     },
   },

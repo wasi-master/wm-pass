@@ -116,8 +116,7 @@ export type AndroidPref =
   | 'panic_app'
   | 'shortcuts'
   | 'icon_sources'
-  | 'site_icon_from'
-  | 'health_skip_local';
+  | 'site_icon_from';
 
 // ---- tours ----
 

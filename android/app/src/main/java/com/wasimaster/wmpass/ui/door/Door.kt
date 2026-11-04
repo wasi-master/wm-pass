@@ -748,7 +748,7 @@ private fun FactorEntry(factors: List<NeededFactor>, enabled: Boolean, onOutput:
                     factor.slot?.let { put("slot", it) }
                 }.toString()
                 try {
-                    val (_, output) = HardwareKeys.tap(activity, factor.kind == "fido2", json)
+                    val (_, output) = HardwareKeys.tap(activity, factor.kind != "yubikey", json)
                     onOutput(factor.kind, output)
                     return@LaunchedEffect
                 } catch (failure: NativeFailure) {

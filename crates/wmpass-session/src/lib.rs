@@ -15,6 +15,8 @@
 mod combine;
 pub mod fields;
 #[cfg(feature = "net")]
+mod lan;
+#[cfg(feature = "online")]
 pub mod net;
 mod remote;
 mod service;

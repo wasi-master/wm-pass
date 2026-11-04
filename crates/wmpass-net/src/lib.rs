@@ -12,4 +12,4 @@ pub mod http;
 pub mod inbox;
 pub mod usernames;
 
-pub use http::{Call, Http, NetError, NetPolicy, Request, Response};
+pub use http::{AsyncHttp, Call, Http, NetError, NetPolicy, Request, Response};

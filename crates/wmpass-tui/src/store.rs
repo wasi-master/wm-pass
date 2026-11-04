@@ -40,7 +40,9 @@ pub struct Prefs {
     pub icons: String,
     /// Lock after this many minutes without a key press. Zero never locks.
     pub lock_minutes: u32,
-    /// Clear a copied secret after this many seconds. Zero leaves it.
+    /// Clear a copied secret after this many seconds. Zero leaves it. Stored under the apps' own
+    /// name: the 30 seconds older versions saved, with no way to change it, give way to 60.
+    #[serde(rename = "clipboard_seconds")]
     pub clip_seconds: u32,
     /// Hide a revealed secret after this many seconds.
     pub reveal_seconds: u32,
@@ -50,6 +52,10 @@ pub struct Prefs {
     pub sync_settings: bool,
     /// Keys from those that stay on this device, such as `tui_theme`.
     pub sync_skip: Vec<String>,
+    /// Items left out of one health check, as `check:id`, the way every app keeps them.
+    pub health_ignored: Vec<String>,
+    /// Leaves logins only for the router, a NAS or other devices at home out of Health.
+    pub health_skip_local: bool,
 }
 
 impl Default for Prefs {
@@ -59,11 +65,13 @@ impl Default for Prefs {
             theme: String::new(),
             icons: String::new(),
             lock_minutes: 5,
-            clip_seconds: 30,
+            clip_seconds: 60,
             reveal_seconds: 20,
             device: 0,
             sync_settings: true,
             sync_skip: Vec::new(),
+            health_ignored: Vec::new(),
+            health_skip_local: true,
         }
     }
 }
@@ -71,6 +79,38 @@ impl Default for Prefs {
 const RECENT_KEPT: usize = 8;
 
 impl Prefs {
+    /// The ignored items by check, as the health report takes them.
+    pub fn ignored_checks(&self) -> std::collections::BTreeMap<String, Vec<String>> {
+        let mut out: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
+        for pair in &self.health_ignored {
+            if let Some((check, id)) = pair.split_once(':').filter(|(check, id)| !check.is_empty() && !id.is_empty()) {
+                out.entry(check.to_owned()).or_default().push(id.to_owned());
+            }
+        }
+        out
+    }
+
+    /// Leaves one item out of one check, or counts it again.
+    pub fn ignore_health(&mut self, check: &str, id: &str, ignore: bool) {
+        let pair = format!("{check}:{id}");
+        self.health_ignored.retain(|p| *p != pair);
+        if ignore {
+            self.health_ignored.push(pair);
+        }
+        self.health_ignored.sort();
+    }
+
+    /// The ignored list as the other apps write it: pairs joined by commas.
+    pub fn ignored_text(&self) -> String {
+        self.health_ignored.join(",")
+    }
+
+    /// Takes the ignored list as another app wrote it.
+    pub fn set_ignored_text(&mut self, text: &str) {
+        self.health_ignored = text.split(',').filter(|p| p.contains(':')).map(str::to_owned).collect();
+        self.health_ignored.sort();
+    }
+
     fn path() -> Option<PathBuf> {
         state_dir().map(|dir| dir.join("tui.json"))
     }
@@ -199,9 +239,13 @@ fn restrict(path: &Path) {
 #[cfg(not(unix))]
 fn restrict(_path: &Path) {}
 
-/// Where a vault's attachments live, beside it, as the command line keeps them.
+/// Where a vault's attachments live: beside it, as the command line keeps them, or under
+/// `blobs/` for a vault in the desktop app's folder.
 pub fn blob_dir(vault: &Path) -> PathBuf {
-    vault.with_extension("blobs")
+    match (crate::app_folder::root_of(vault), vault.file_name()) {
+        (Some(root), Some(name)) => root.join("blobs").join(name),
+        _ => vault.with_extension("blobs"),
+    }
 }
 
 /// A file's size and time, to notice another program writing it.
@@ -236,6 +280,16 @@ mod tests {
         }
         assert_eq!(prefs.recent.len(), RECENT_KEPT);
         assert_eq!(prefs.recent[0], PathBuf::from("/v11"));
+    }
+
+    #[test]
+    fn the_clipboard_waits_a_minute_as_in_the_apps() {
+        assert_eq!(Prefs::default().clip_seconds, 60);
+        // The 30 seconds older versions saved, under the old key, give way to the new default.
+        let old: Prefs = serde_json::from_str(r#"{"clip_seconds": 30, "lock_minutes": 9}"#).expect("old prefs");
+        assert_eq!((old.clip_seconds, old.lock_minutes), (60, 9));
+        let new: Prefs = serde_json::from_str(r#"{"clipboard_seconds": 15}"#).expect("new prefs");
+        assert_eq!(new.clip_seconds, 15);
     }
 
     #[test]

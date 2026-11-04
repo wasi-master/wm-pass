@@ -8,6 +8,7 @@
   import { prefs } from '../engine/prefs.svelte';
   import { host } from '../engine/host';
   import { chordOf } from '../engine/text';
+  import BulkPanel from './BulkPanel.svelte';
   import CodesPage from './CodesPage.svelte';
   import Detail from './Detail.svelte';
   import Editor from './Editor.svelte';
@@ -15,6 +16,9 @@
   import HealthPage from './HealthPage.svelte';
   import ListPane from './ListPane.svelte';
   import Sidebar from './Sidebar.svelte';
+  import TagManage from './TagManage.svelte';
+  import { tags } from '../engine/tags.svelte';
+  import { siteIcons } from '../engine/siteIcons.svelte';
   import Settings from '../settings/Settings.svelte';
   import { TAB_INFO } from './tabs';
   import { ui } from './ui.svelte';
@@ -24,6 +28,7 @@
   let shelfPassword = $state('');
   let shelfError = $state<string | null>(null);
   let shelfOpen = $state(false);
+  let shelfChecking = $state(false);
   let dragging = $state<null | 'sidebar' | 'list'>(null);
   let folderName = $state('');
 
@@ -33,12 +38,34 @@
 
   $effect(() => {
     void pass.revision;
+    void tags.refresh();
+  });
+
+  // Locking takes the websites' icons out of memory with everything else.
+  $effect(() => () => siteIcons.forget());
+
+  $effect(() => {
+    void pass.revision;
     if (ui.section === 'shelf') void pass.info().then((info) => (shelfOpen = info.shelf_open));
+  });
+
+  // Leaving the shelf puts it away again; opening one of its items does not, since that stays here.
+  let onShelf = false;
+  $effect(() => {
+    const here = ui.section === 'shelf';
+    if (onShelf && !here) {
+      shelfPassword = '';
+      shelfError = null;
+      void pass
+        .info()
+        .then((info) => (info.shelf_open ? pass.change('shelf.close') : null))
+        .catch(() => undefined);
+    }
+    onShelf = here;
   });
 
   const isList = $derived(ui.isListSection(ui.section));
   const entry = $derived(pass.entries.find((e) => e.id === ui.selected));
-  const chosen = $derived(pass.entries.filter((e) => ui.multi.includes(e.id)));
 
   function current() {
     return pass.entries.find((e) => e.id === ui.selected);
@@ -72,7 +99,9 @@
       }
       case 'copy_password': {
         const e = current();
-        if (e?.has_password) void ui.copyPassword(e.id);
+        // With no password, the code and then the username, as the row's copy button does.
+        const action = e && ui.effective('password', e);
+        if (e && action) void ui.perform(action, e);
         break;
       }
       case 'copy_username': {
@@ -168,7 +197,9 @@
   }
 
   async function openShelf() {
+    if (shelfChecking || !shelfPassword) return;
     shelfError = null;
+    shelfChecking = true;
     const secret = bytesOf(shelfPassword);
     try {
       await pass.change('shelf.open', {}, { secret });
@@ -178,6 +209,7 @@
       shelfError = failure.message;
     } finally {
       secret.fill(0);
+      shelfChecking = false;
     }
   }
 
@@ -224,18 +256,7 @@
               <Editor bind:this={editor} editing={ui.editing} />
             {/key}
           {:else if ui.multi.length > 1}
-            <div class="detail-body" style="padding-top:40px">
-              <div class="detail-inner stack">
-                <h2 class="page-title">{ui.multi.length} selected</h2>
-                <div class="gap wrap">
-                  <Btn label="Add to favorites" icon="star" onclick={() => ui.bulk('favourite', { flag: true })} />
-                  <Btn label="Pin to the top" icon="keep" onclick={() => ui.bulk('pin', { flag: !chosen.every((e) => e.pinned) })} />
-                  <Btn label="Put on the hidden shelf" icon="visibility_lock" onclick={() => ui.bulk('hide', { flag: true })} />
-                  <Btn label="Move to trash" icon="delete" variant="danger" onclick={async () => { await ui.bulk(ui.section === 'trash' ? 'restore' : 'trash'); ui.multi = []; }} />
-                </div>
-                <p class="dim small">Hold the modifier key and click rows to add or remove them. Shift-click chooses a range.</p>
-              </div>
-            </div>
+            <BulkPanel />
           {:else if ui.selected && (entry || ui.section === 'trash' || ui.section === 'shelf')}
             {#key ui.selected}
               <Detail id={ui.selected} />
@@ -244,10 +265,10 @@
             <div class="detail-body" style="padding-top:60px">
               <div class="detail-inner stack" style="max-width:360px">
                 <h2 class="page-title">{TAB_INFO.shelf.label}</h2>
-                <p class="dim">Entries on the shelf stay out of every list, search and autofill until you open it with your password. It closes again when the vault locks.</p>
+                <p class="dim">Entries on the shelf stay out of every list, search and autofill until you open it with your password. It closes again when you leave this page or the vault locks.</p>
                 <PasswordField bind:value={shelfPassword} placeholder="Master password" error={!!shelfError} onenter={openShelf} />
                 {#if shelfError}<p class="danger-text small">{shelfError}</p>{/if}
-                <div><Btn label="Open the shelf" variant="primary" disabled={!shelfPassword} onclick={openShelf} /></div>
+                <div><Btn label={shelfChecking ? 'Checking the password…' : 'Open the shelf'} variant="primary" disabled={!shelfPassword || shelfChecking} onclick={openShelf} /></div>
               </div>
             </div>
           {:else}
@@ -272,6 +293,10 @@
     </nav>
   {/if}
 </div>
+
+{#if ui.managingTag}
+  <TagManage tag={ui.managingTag} onclose={() => (ui.managingTag = null)} />
+{/if}
 
 {#if ui.renamingFolder}
   <Dialog title={ui.renamingFolder.id ? 'Rename folder' : 'New folder'} onclose={() => (ui.renamingFolder = null)}>

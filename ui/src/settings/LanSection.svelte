@@ -5,6 +5,7 @@
   import Group from '../parts/Group.svelte';
   import Qr from '../parts/Qr.svelte';
   import Row from '../parts/Row.svelte';
+  import ScanDialog from '../parts/ScanDialog.svelte';
   import { overlays } from '../parts/floating.svelte';
   import { consumeText, pass } from '../engine/pass.svelte';
   import { host } from '../engine/host';
@@ -25,6 +26,8 @@
   let sendingVault = $state(false);
   let joining = $state(false);
   let pasteFor = $state<'pair' | 'join'>('pair');
+  /** What a camera scan is for, while the scanner is open. */
+  let scanning = $state<'pair' | 'join' | null>(null);
   /** Only the vault in this folder goes to a new device: not an account, not a vault inside it. */
   const canSend = $derived(!!pass.file && pass.account === null && pass.child === null);
 
@@ -86,6 +89,14 @@
     }
     mode = 'idle';
     void lan.stop();
+  }
+
+  function scanned(texts: string[]) {
+    const wanted = scanning;
+    scanning = null;
+    pasted = texts.find((t) => t.startsWith('wmpass-pair:')) ?? texts[0];
+    pasteFor = wanted ?? 'pair';
+    void usePasted();
   }
 
   async function usePasted() {
@@ -246,6 +257,7 @@
   <Dialog title="Pair a device" onclose={() => (adding = false)}>
     <div style="border:1px solid var(--hair);border-radius:var(--r-m);overflow:hidden">
       <Row title="Show a code" sub="The other device scans it" icon="qr_code_2" chevron onclick={showCode} />
+      <Row title="Scan a code" sub="The other device shows it; this computer's camera reads it" icon="qr_code_scanner" chevron onclick={() => { adding = false; scanning = 'pair'; }} />
       <Row title="Paste a code" sub="The other device shows it, and you copy its text" icon="content_paste" chevron onclick={() => { adding = false; pasteFor = 'pair'; pasting = true; }} />
       <Row title="Compare six digits" sub="This side waits" icon="pin" chevron onclick={compareWait} />
       <Row title="Compare six digits, finding the other" sub="The other device is already waiting" icon="pin" chevron onclick={compareConnect} />
@@ -257,12 +269,20 @@
     <div class="stack">
       <p class="dim">On the new device, choose <strong>I already have a vault</strong>, then <strong>Get it from another device</strong>. It shows a code and waits.</p>
       <div style="border:1px solid var(--hair);border-radius:var(--r-m);overflow:hidden">
+        <Row title="Scan its code" sub="With this computer's camera, or from a picture of it" icon="qr_code_scanner" chevron onclick={() => { joining = false; scanning = 'join'; }} />
         <Row title="Find it on this network" sub="Then compare six digits on both screens" icon="pin" chevron onclick={findNewDevice} />
         <Row title="Paste its code" sub="The text under the QR code on the new device" icon="content_paste" chevron onclick={() => { joining = false; pasteFor = 'join'; pasting = true; }} />
       </div>
       <p class="dim small">The vault goes over encrypted and opens there only with its master password.</p>
     </div>
   </Dialog>
+{/if}
+{#if scanning}
+  <ScanDialog
+    title={scanning === 'join' ? 'Scan the new device’s code' : 'Scan the other device’s code'}
+    onfound={scanned}
+    onclose={() => (scanning = null)}
+  />
 {/if}
 {#if pasting}
   <Dialog title="Paste a code" onclose={() => (pasting = false)}>

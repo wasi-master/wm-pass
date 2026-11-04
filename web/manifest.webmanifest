@@ -1,0 +1,14 @@
+{
+  "name": "WM Pass",
+  "short_name": "WM Pass",
+  "description": "A password manager that keeps its vault on your own devices.",
+  "start_url": "/vault/",
+  "scope": "/vault/",
+  "display": "standalone",
+  "background_color": "#101114",
+  "theme_color": "#101114",
+  "icons": [
+    { "src": "/vault/icons/wm-pass-256.png", "sizes": "256x256", "type": "image/png" },
+    { "src": "/vault/icons/wm-pass-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

@@ -8,50 +8,36 @@
   import { ui } from '../vault/ui.svelte';
   import EntryLines from './EntryLines.svelte';
   import NetGate from './NetGate.svelte';
-  import { breachCounts, online } from './net.svelte';
+  import { whenText } from '../engine/text';
+  import { breachCheck, breachCounts, breachLast, breachSourceName, online, type BreachLast, type BreachSource } from './net.svelte';
   import { saveServiceKey, serviceKey } from './aliasServices';
 
   /** The key is an item in the vault, so it follows the vault to every device. */
   const HIBP_KEY = 'Have I Been Pwned API key';
 
-  let running = $state(false);
-  let done = $state(0);
-  let total = $state(0);
-  let problem = $state<string | null>(null);
   let source = $state<'leakcheck' | 'hibp' | 'comb'>('leakcheck');
+  let passwordSource = $state<BreachSource>(breachCheck.running ? breachCheck.source : 'hibp');
+  let byCount = $state(true);
   let apiKey = $state('');
   let busy = $state<string | null>(null);
   let results = $state<Record<string, string>>({});
 
+  const running = $derived(breachCheck.running);
   const found = $derived(Object.keys(breachCounts.counts));
   const hibpKept = $derived(pass.entries.some((e) => e.kind === 'api' && e.title === HIBP_KEY));
-  const breached = $derived(pass.entries.filter((e) => e.id in breachCounts.counts));
+  const checkable = $derived(pass.entries.filter((e) => e.has_password));
+  const breached = $derived.by(() => {
+    const list = pass.entries.filter((e) => e.id in breachCounts.counts);
+    return byCount
+      ? list.sort((a, b) => (breachCounts.counts[b.id] ?? 0) - (breachCounts.counts[a.id] ?? 0))
+      : list.sort((a, b) => a.title.toLowerCase().localeCompare(b.title.toLowerCase()));
+  });
   const emails = $derived([...new Set(pass.entries.map((e) => e.subtitle.trim().toLowerCase()).filter((s) => s.includes('@')))]);
+  const last = $derived(breachLast());
 
-  async function checkAll() {
-    running = true;
-    problem = null;
-    const targets = pass.entries.filter((e) => e.has_password);
-    total = targets.length;
-    done = 0;
-    const counts: Record<string, number> = {};
-    try {
-      for (const entry of targets) {
-        const reply = await pass.engine('entry.reveal', { id: entry.id, field: 'password' }, { handle: pass.handle });
-        const secret = reply.secret;
-        try {
-          const check = await pass.engine<{ count: number }>('breach.password', {}, { secret, online: online() });
-          if (check.json.count > 0) counts[entry.id] = check.json.count;
-        } finally {
-          secret?.fill(0);
-        }
-        done++;
-      }
-      breachCounts.counts = counts;
-    } catch (failure: any) {
-      problem = failure.message;
-    }
-    running = false;
+  function lastText(at: BreachLast) {
+    const time = new Date(at.atMs).toLocaleTimeString(undefined, { timeStyle: 'short' });
+    return `Last checked ${whenText(at.atMs)} at ${time} with ${breachSourceName(at.source)}: ${at.found} of ${at.checked} found. What it found is kept only until the vault locks.`;
   }
 
   async function checkEmail(email: string) {
@@ -87,21 +73,28 @@
   );
 </script>
 
-<NetGate what="Checks your passwords against Have I Been Pwned. Only the first five characters of each password’s SHA-1 hash are sent, so the service cannot tell which password you asked about. Checking an email address sends that address.">
+<NetGate what="Checks your passwords against Have I Been Pwned or XposedOrNot. Only the start of each password’s hash is sent: five characters of SHA-1, or ten of Keccak-512. Neither service can tell which password you asked about. Checking an email address sends that address.">
   <Group title="Your passwords">
     <div class="set-body stack">
       <p class:dim={found.length === 0 || running} class:danger-text={found.length > 0 && !running}>
-        {#if running}Checked {done} of {total}.
-        {:else if found.length === 0}See whether any password in this vault has appeared in a known leak.
-        {:else}{found.length} of them have appeared in leaks. They now lead the list on the Health page.{/if}
+        {#if checkable.length === 0}No item in this vault holds a password yet, so there is nothing to check.
+        {:else if running}Checked {breachCheck.done} of {breachCheck.total} with {breachSourceName(breachCheck.source)}. You can leave this page; the check carries on.
+        {:else if found.length > 0}{found.length} of them have appeared in leaks. They now lead the list on the Health page.
+        {:else}See whether any password in this vault has appeared in a known leak.{/if}
       </p>
-      {#if running}<div class="progress"><i style="width:{total === 0 ? 0 : (done * 100) / total}%"></i></div>{/if}
-      <div><Btn label={running ? 'Checking…' : 'Check every password'} icon="gpp_good" variant="primary" disabled={running} onclick={checkAll} /></div>
-      {#if problem}<p class="danger-text">{problem}</p>{/if}
+      {#if last && !running}<p class="dimmer small">{lastText(last)}</p>{/if}
+      {#if running}<div class="progress"><i style="width:{breachCheck.total === 0 ? 0 : (breachCheck.done * 100) / breachCheck.total}%"></i></div>{/if}
+      {#if checkable.length > 0 && !running}
+        <Segmented value={passwordSource} options={[['hibp', 'Have I Been Pwned'], ['xon', 'XposedOrNot']]} onchange={(v) => (passwordSource = v)} />
+        <div><Btn label={last ? 'Check again' : 'Check every password'} icon="gpp_good" variant="primary" onclick={() => void breachCheck.start(checkable.map((e) => e.id), passwordSource)} /></div>
+      {/if}
+      {#if running}<div><Btn label="Stop" icon="close" onclick={() => breachCheck.stop()} /></div>{/if}
+      {#if breachCheck.problem}<p class="danger-text">{breachCheck.problem}</p>{/if}
     </div>
   </Group>
   {#if breached.length > 0}
-    <div style="margin-bottom:18px">
+    <div class="stack" style="margin-bottom:18px;gap:8px">
+      <div><Segmented value={byCount ? 'count' : 'name'} options={[['count', 'Most seen'], ['name', 'Name']]} onchange={(v) => (byCount = v === 'count')} /></div>
       <EntryLines items={breached} onpick={(e) => { ui.go('all'); ui.open(e.id); }}>
         {#snippet note(e)}<span class="small danger-text" style="display:block">Seen {breachCounts.counts[e.id].toLocaleString()} times</span>{/snippet}
       </EntryLines>

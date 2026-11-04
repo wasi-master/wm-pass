@@ -4,7 +4,8 @@ import { host } from '../engine/host';
 import type { NeededFactor } from '../engine/types';
 
 export function hardwareAvailable() {
-  return !!host().hardware;
+  const hardware = host().hardware;
+  return !!hardware && (hardware.kinds?.length ?? 2) > 0;
 }
 
 /** The key's answer for a factor the door was asked for. */

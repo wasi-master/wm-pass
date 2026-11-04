@@ -16,6 +16,14 @@
   let password = $state('');
   let problem = $state<string | null>(null);
 
+  const kinds = host().hardware?.kinds ?? ['fido2', 'yubikey'];
+  const fidoSub =
+    host().kind !== 'desktop'
+      ? 'YubiKey 5, SoloKey, Nitrokey and others. The browser asks for it, and it works in every WM Pass app afterwards.'
+      : host().os === 'windows'
+        ? 'Windows lets only administrators reach these directly. Run WM Pass as administrator, or use a YubiKey below.'
+        : 'YubiKey 5, SoloKey, Nitrokey and others, by USB';
+
   async function tap() {
     step = 'tap';
     problem = null;
@@ -41,8 +49,10 @@
   {#if step === 'choose'}
     <p class="dim">A hardware key adds something you hold to something you know. Someone who learns the password still gets nowhere without the key. Keep a second way in, in case you lose it.</p>
     <Group title="What kind of key">
-      <Row title="A FIDO2 security key" help="action.hardware_fido2" sub={host().os === 'windows' ? 'Windows lets only administrators reach these directly. Run WM Pass as administrator, or use a YubiKey below.' : 'YubiKey 5, SoloKey, Nitrokey and others, by USB'} icon="security_key" chevron onclick={() => { fido = true; step = 'details'; }} />
-      <Row title="A YubiKey with challenge-response" help="action.hardware_yubikey" sub="Uses slot 2, set up beforehand in Yubico’s own tool" icon="key" chevron onclick={() => { fido = false; step = 'details'; }} />
+      <Row title="A FIDO2 security key" help="action.hardware_fido2" sub={fidoSub} icon="security_key" chevron onclick={() => { fido = true; step = 'details'; }} />
+      {#if kinds.includes('yubikey')}
+        <Row title="A YubiKey with challenge-response" help="action.hardware_yubikey" sub="Uses slot 2, set up beforehand in Yubico’s own tool" icon="key" chevron onclick={() => { fido = false; step = 'details'; }} />
+      {/if}
     </Group>
   {:else if step === 'details'}
     <p class="dim">Choose the password that goes with this key. It can be a new one, used only with the key.</p>

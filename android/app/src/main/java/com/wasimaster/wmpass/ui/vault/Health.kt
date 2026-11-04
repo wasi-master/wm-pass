@@ -497,7 +497,7 @@ private fun HealthItemSheet(issue: Issue, entry: Summary, onDismiss: () -> Unit)
     val colors = palette
     val shell = LocalShell.current
     val context = androidx.compose.ui.platform.LocalContext.current
-    val change by androidx.compose.runtime.produceState(com.wasimaster.wmpass.system.ChangePassword.listed(context, entry.site), entry.site) {
+    val change by androidx.compose.runtime.produceState(com.wasimaster.wmpass.system.ChangePassword.remembered(entry.site), entry.site) {
         if (value == null) value = com.wasimaster.wmpass.system.ChangePassword.find(context, entry.site)
     }
     var setting by remember { mutableStateOf(false) }

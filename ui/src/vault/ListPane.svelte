@@ -17,7 +17,7 @@
 
   type Item =
     | { type: 'heading'; text: string }
-    | { type: 'one'; entry: Summary }
+    | { type: 'one'; entry: Summary; inside?: boolean }
     | { type: 'stack'; site: string; entries: Summary[] };
 
   let openSites = $state<string[]>([]);
@@ -148,7 +148,8 @@
         if (!done.has(entry.site!)) {
           done.add(entry.site!);
           out.push({ type: 'stack', site: entry.site!, entries: group });
-          if (openSites.includes(entry.site!)) group.forEach((e) => out.push({ type: 'one', entry: e }));
+          // Under their stack, set in, so they read as its accounts rather than more of the list.
+          if (openSites.includes(entry.site!)) group.forEach((e) => out.push({ type: 'one', entry: e, inside: true }));
         }
       } else {
         out.push({ type: 'one', entry });
@@ -178,8 +179,8 @@
     anchor = entry.id;
     void ui.guard(() => {
       ui.multi = [];
-      const action = prefs.v.tap_action;
-      if (action !== 'open' && ui.canDo(action, entry)) void ui.perform(action, entry);
+      const action = prefs.v.tap_action === 'open' ? null : ui.effective(prefs.v.tap_action, entry);
+      if (action) void ui.perform(action, entry);
       ui.open(entry.id);
     });
   }
@@ -235,8 +236,8 @@
   }
 
   function dbl(entry: Summary) {
-    const action = prefs.v.double_click;
-    if (ui.canDo(action, entry)) void ui.perform(action, entry);
+    const action = ui.effective(prefs.v.double_click, entry);
+    if (action) void ui.perform(action, entry);
   }
 
   function keyed(event: KeyboardEvent) {
@@ -280,12 +281,14 @@
   {/if}
 {/snippet}
 
-{#snippet row(entry: Summary)}
+{#snippet row(entry: Summary, inside = false)}
   {@const compact = prefs.v.layout === 'compact'}
-  {@const button = prefs.v.row_button}
+  {@const button = ui.effective(prefs.v.row_button, entry)}
+  {@const sub = prefs.v.row_subtitle ? entry.subtitle : ''}
   <div
     class="row"
     class:compact
+    class:inside
     role="option"
     tabindex="-1"
     aria-selected={isSelected(entry)}
@@ -298,10 +301,15 @@
       <Tile title={entry.title} site={entry.site} kind={entry.kind} label={entry.color} icon={entry.icon} size={compact ? 20 : 32} />
     {/if}
     <span class="grow">
-      <span class="gap" style="gap:4px"><span class="title ell">{entry.title || 'Untitled'}</span>{@render badges(entry)}</span>
-      {#if !compact && prefs.v.row_subtitle && entry.subtitle}<span class="sub ell" style="display:block">{entry.subtitle}</span>{/if}
+      <!-- Compact keeps what each row says, on one line: the detail beside the name. -->
+      <span class="gap" style="gap:4px">
+        <span class="title ell" style="flex:0 1 auto">{entry.title || 'Untitled'}</span>
+        {#if compact && sub}<span class="sub ell" style="flex:0 1 auto;padding-left:4px">{sub}</span>{/if}
+        {@render badges(entry)}
+      </span>
+      {#if !compact && sub}<span class="sub ell" style="display:block">{sub}</span>{/if}
     </span>
-    {#if ui.canDo(button, entry) && !entry.trashed}
+    {#if button && !entry.trashed}
       <span class="hover-only">
         <IconBtn icon="content_copy" size={16} label="Copy for {entry.title}" onclick={(e) => { e.stopPropagation(); void ui.perform(button, entry); }} />
       </span>
@@ -361,18 +369,26 @@
           <button
             type="button"
             class="row"
+            class:compact={prefs.v.layout === 'compact'}
             aria-expanded={open}
             onclick={() => (openSites = open ? openSites.filter((s) => s !== item.site) : [...openSites, item.site])}
           >
             <Tile title={name} site={item.site} size={prefs.v.layout === 'compact' ? 20 : 32} />
-            <span class="grow">
-              <span class="title ell" style="display:block">{name}</span>
-              <span class="sub">{item.entries.length} accounts</span>
-            </span>
+            {#if prefs.v.layout === 'compact'}
+              <span class="grow gap" style="gap:4px">
+                <span class="title ell">{name}</span>
+                <span class="sub" style="flex:none;padding-left:4px">{item.entries.length} accounts</span>
+              </span>
+            {:else}
+              <span class="grow">
+                <span class="title ell" style="display:block">{name}</span>
+                <span class="sub">{item.entries.length} accounts</span>
+              </span>
+            {/if}
             <span class="dimmer" style="display:flex;transform:rotate({open ? 180 : 0}deg);transition:transform var(--t-med)"><Icon name="expand_more" size={18} /></span>
           </button>
         {:else}
-          {@render row(item.entry)}
+          {@render row(item.entry, item.inside)}
         {/if}
       {/each}
     {/if}

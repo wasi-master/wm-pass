@@ -1,8 +1,9 @@
-// Sealing for what must rest on disk here: logins for backup places and the key that talks to the
-// desktop app. The sealing key cannot be read out of the browser by a script, though anyone who
-// can run code as this extension could ask it to decrypt, so this guards against copied files.
+// Sealing for what must rest on disk in a browser: logins for backup places, and the extension's
+// key for talking to the desktop app. The sealing key cannot be read out of the browser by a
+// script, though anyone who can run code as the extension, or on the web vault's site, could ask
+// it to decrypt, so this guards against copied files.
 
-import { database, request } from '../../ui/src/hosts/web';
+import { database, request } from './web';
 
 const STORE = 'settings';
 const KEY_NAME = 'sealing-key';

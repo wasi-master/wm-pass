@@ -53,6 +53,9 @@ const DEFS = {
   site_icon_style: { value: 'brand', allowed: ['brand', 'tinted', 'uniform', 'letters'] },
   site_icon_shape: { value: 'circle', allowed: ['circle', 'rounded', 'square', 'none'] },
   settings_icons: { value: 'coloured', allowed: ['coloured', 'mono', 'bare', 'off'] },
+  /** Where a tile's picture comes from, tried in order: brand marks, then website icons. */
+  icon_sources: { value: 'brand' },
+  site_icon_from: { value: 'site', allowed: ['site', 'duckduckgo'] },
 
   // ---- vault list ----
   layout: { value: 'list', allowed: ['list', 'compact', 'grid'] },
@@ -87,6 +90,7 @@ const DEFS = {
   editor_remember: { value: true },
   editor_fold_details: { value: true },
   editor_generate: { value: false },
+  auto_tag: { value: true },
 
   // ---- entry page ----
   entry_actions: { value: true },
@@ -114,6 +118,11 @@ const DEFS = {
   // ---- health ----
   health_hidden: { value: '' },
   health_score: { value: true },
+  // Items left out of one check, as `check:id` pairs.
+  health_ignored: { value: '' },
+  health_skip_local: { value: true },
+  // When the last password breach check ran, as `ms|source|found|checked`. Never which passwords.
+  breach_last: { value: '', portable: false },
 
   // ---- widgets on a Mac: what they show stays on this computer ----
   widget_buttons: { value: 'search,add,codes,lock' },

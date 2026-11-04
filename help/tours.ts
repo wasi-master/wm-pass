@@ -14,7 +14,7 @@ export const TOURS: readonly Tour[] = [
         anchor: 'sidebar.tabs',
         before: { go: 'all' },
         title: 'Places in your vault',
-        body: 'All items, favorites, one-time codes, the password generator, health checks and the trash. Which ones show, and in what order, is under Settings, Sidebar.',
+        body: 'All items, favorites, one-time codes, the password generator, health checks and the trash. Which ones show, and in what order, is under Settings, Appearance, Sidebar.',
         placement: 'right',
       },
       {
@@ -108,7 +108,7 @@ export const TOURS: readonly Tour[] = [
       {
         anchor: 'editor.folds',
         title: 'Everything else folds away',
-        body: 'Websites, a one-time code, notes and more open when you need them. Which ones start open is under Settings, Editor.',
+        body: 'Websites, a one-time code, notes and more open when you need them. Which ones start open is under Settings, Adding and editing, Editor.',
       },
       {
         anchor: 'editor.save',
@@ -153,7 +153,7 @@ export const TOURS: readonly Tour[] = [
       {
         anchor: 'generator.controls',
         title: 'Length and characters',
-        body: 'Changes apply at once. What the generator starts with is under Settings, Generator.',
+        body: 'Changes apply at once. What the generator starts with is under Settings, Adding and editing, Generator.',
       },
       {
         anchor: 'generator.save',

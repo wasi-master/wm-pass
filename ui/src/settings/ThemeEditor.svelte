@@ -3,7 +3,9 @@
   import Dialog from '../parts/Dialog.svelte';
   import Field from '../parts/Field.svelte';
   import Segmented from '../parts/Segmented.svelte';
+  import { host } from '../engine/host';
   import { prefs } from '../engine/prefs.svelte';
+  import { themeFonts } from '../theme/fonts.svelte';
   import { BUILT_IN, applyTheme, contrast, rgb, type ThemeColors, type ThemeFile } from '../theme/themes';
 
   // Starts from any theme. Saving a built-in one makes a copy, so the original stays as it was.
@@ -18,6 +20,46 @@
   let corners = $state(base.corners);
   let font = $state(base.font);
   let preview = $state<HTMLElement>();
+  let fontProblem = $state<string | null>(null);
+  /** How the sample line draws in the font chosen, before anything is saved. */
+  let sampleFamily = $state('');
+
+  const BUILT_IN_FONTS: [string, string][] = [
+    ['system', 'System'],
+    ['inter', 'Inter'],
+    ['serif', 'Serif'],
+    ['mono', 'Mono'],
+  ];
+  const FAMILIES: Record<string, string> = {
+    system: "-apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', Cantarell, 'Noto Sans', Ubuntu, system-ui, sans-serif",
+    inter: "Inter, -apple-system, 'Segoe UI', system-ui, sans-serif",
+    serif: "'Iowan Old Style', Georgia, 'Noto Serif', serif",
+    mono: 'var(--mono)',
+  };
+
+  void themeFonts.refresh();
+
+  $effect(() => {
+    const chosen = font;
+    if (!chosen.startsWith('file:')) {
+      sampleFamily = FAMILIES[chosen] ?? FAMILIES.system;
+      return;
+    }
+    void themeFonts.family(chosen).then((family) => {
+      if (font === chosen) sampleFamily = family ? `"${family}", ${FAMILIES.system}` : FAMILIES.system;
+    });
+  });
+
+  async function addFont() {
+    const file = await host().pickFile('Choose a font file', ['ttf', 'otf']);
+    if (!file) return;
+    try {
+      font = await themeFonts.add(file);
+      fontProblem = null;
+    } catch (failure: any) {
+      fontProblem = failure.message ?? 'That font could not be added.';
+    }
+  }
 
   type Slot = { label: string; key: keyof ThemeColors; accent?: boolean };
   const SLOTS: Slot[] = [
@@ -105,7 +147,7 @@
       </div>
     </div>
     {#if current}
-      <p class="section-title">Colours</p>
+      <p class="section-title">Colors</p>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:2px 20px">
         {#each SLOTS as slot (slot.key)}
           {@const hex = (current[slot.key] as string) || '#000000'}
@@ -123,7 +165,20 @@
       <span class="dim small" style="width:42px;text-align:right">{corners} px</span>
     </div>
     <p class="section-title">Font</p>
-    <div><Segmented value={font} options={[['system', 'System'], ['inter', 'Inter'], ['serif', 'Serif'], ['mono', 'Mono']]} onchange={(f) => (font = f)} /></div>
+    <div class="gap wrap">
+      {#each BUILT_IN_FONTS as [key, label] (key)}
+        <button type="button" class="chip" aria-pressed={font === key} onclick={() => (font = key)}>{label}</button>
+      {/each}
+      {#each themeFonts.saved as key (key)}
+        <button type="button" class="chip" aria-pressed={font === key} onclick={() => (font = key)}>{themeFonts.label(key)}</button>
+      {/each}
+      {#if font.startsWith('file:') && !themeFonts.saved.includes(font)}
+        <button type="button" class="chip" aria-pressed="true" title="Not on this device, so the system font draws instead">{themeFonts.label(font)}</button>
+      {/if}
+      <Btn label="Add a font file" icon="add" variant="quiet" onclick={addFont} />
+    </div>
+    {#if fontProblem}<p class="danger-text small">{fontProblem}</p>{/if}
+    <p style="font-family:{sampleFamily};font-size:calc(var(--fs) * 1.15)">The quick brown fox jumps over the lazy dog. 0123456789</p>
   </div>
   {#snippet foot()}
     <Btn label="Cancel" onclick={onclose} />

@@ -108,7 +108,7 @@ pub const KINDS: [(&str, &str); 12] = [
     ("ssh", "SSH keys"),
     ("api", "API keys"),
     ("database", "Databases"),
-    ("licence", "Licences"),
+    ("licence", "Licenses"),
     ("recovery", "Recovery codes"),
     ("wifi", "Wi-Fi"),
     ("document", "Documents"),
@@ -125,7 +125,7 @@ pub fn kind_name(kind: &str) -> &'static str {
         "ssh" => "SSH key",
         "api" => "API key",
         "database" => "Database",
-        "licence" => "Licence",
+        "licence" => "License",
         "recovery" => "Recovery codes",
         "wifi" => "Wi-Fi",
         "document" => "Document",
@@ -133,7 +133,7 @@ pub fn kind_name(kind: &str) -> &'static str {
     }
 }
 
-fn quoted(value: &str) -> String {
+pub fn quoted(value: &str) -> String {
     if value.contains(char::is_whitespace) { format!("\"{value}\"") } else { value.to_owned() }
 }
 
@@ -191,6 +191,10 @@ pub struct VaultUi {
     pub sort: Sort,
     pub rows: Vec<Row>,
     pub list: ListState,
+    /// Items marked with space, for acting on together. Kept while the same section is listed.
+    pub marked: Vec<String>,
+    /// The section the marks were made in.
+    marked_in: String,
     pub detail: Option<Detail>,
     pub lines: Vec<Line>,
     pub line: usize,
@@ -205,6 +209,8 @@ pub struct VaultUi {
     pub health: Option<Health>,
     pub health_group: usize,
     pub health_at: usize,
+    /// What the Ignored group lists, as `check:id`, kept in step with the settings.
+    pub health_ignored: Vec<String>,
     pub titles: HashMap<String, (String, String)>,
     pub folders: Vec<Folder>,
     pub shelf_open: bool,
@@ -216,16 +222,34 @@ pub struct VaultUi {
     last_codes: Instant,
 }
 
-/// The health report's groups, with the search word that lists each.
-pub const HEALTH_GROUPS: [(&str, &str); 7] = [
-    ("Weak passwords", "weak"),
-    ("Reused passwords", "reused"),
-    ("Not changed in a year", "old"),
-    ("No two-factor code", ""),
-    ("Plain http addresses", ""),
-    ("Duplicates", "duplicate"),
-    ("Expiring soon", ""),
+/// The health report's groups, with the search word that lists each and the check's name, the
+/// one every app files an ignored item under. The last group lists what was ignored.
+pub const HEALTH_GROUPS: [(&str, &str, &str); 8] = [
+    ("Weak passwords", "weak", "weak"),
+    ("Reused passwords", "reused", "reused"),
+    ("Not changed in a year", "old", "old"),
+    ("No two-factor code", "", "twofactor"),
+    ("Plain http addresses", "", "insecure"),
+    ("Duplicates", "duplicate", "duplicates"),
+    ("Expiring soon", "", "expiring"),
+    ("Ignored", "", ""),
 ];
+
+/// The group that lists ignored items.
+pub const IGNORED_GROUP: usize = HEALTH_GROUPS.len() - 1;
+
+/// A check's name as the Health tab shows it.
+pub fn check_label(check: &str) -> &str {
+    HEALTH_GROUPS.iter().find(|group| group.2 == check && !check.is_empty()).map_or(check, |group| group.0)
+}
+
+/// One line of a health group: an item, or the heading over items sharing one password.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum HealthLine {
+    Heading(String),
+    /// An item, with the check it was ignored for in the Ignored group.
+    Item { id: String, check: Option<String> },
+}
 
 impl VaultUi {
     pub fn new(engine: Box<Engine>) -> Self {
@@ -240,6 +264,8 @@ impl VaultUi {
             sort: Sort::Title,
             rows: Vec::new(),
             list: ListState::default(),
+            marked: Vec::new(),
+            marked_in: String::new(),
             detail: None,
             lines: Vec::new(),
             line: 0,
@@ -253,6 +279,7 @@ impl VaultUi {
             health: None,
             health_group: 0,
             health_at: 0,
+            health_ignored: Vec::new(),
             titles: HashMap::new(),
             folders: Vec::new(),
             shelf_open: false,
@@ -272,8 +299,54 @@ impl VaultUi {
     }
 
     /// The selected row's id.
+    /// The tag picked in the sidebar, if a tag is what is picked.
+    pub fn picked_tag(&self) -> Option<String> {
+        let section = self.sections.get(self.section)?;
+        (section.icon == Glyph::Tag && !section.heading).then(|| section.label.clone())
+    }
+
     pub fn current_id(&self) -> Option<String> {
         self.current().map(|r| r.id.clone())
+    }
+
+    /// What a command acts on: the marked items, or else the selected one.
+    pub fn targets(&self) -> Vec<String> {
+        if self.marked.is_empty() { self.current_id().into_iter().collect() } else { self.marked.clone() }
+    }
+
+    /// Marks the selected row, or unmarks it, and steps down to the next.
+    pub fn toggle_mark(&mut self) {
+        let Some(id) = self.current_id() else { return };
+        self.marked_in = self.section_query();
+        if let Some(at) = self.marked.iter().position(|m| *m == id) {
+            self.marked.remove(at);
+        } else {
+            self.marked.push(id);
+        }
+        self.move_list(1);
+    }
+
+    /// Marks every row listed, or, when they all are already, none.
+    pub fn mark_all(&mut self) {
+        let all = !self.rows.is_empty() && self.rows.iter().all(|r| self.marked.contains(&r.id));
+        if all {
+            self.marked.clear();
+        } else {
+            self.marked_in = self.section_query();
+            for row in &self.rows {
+                if !self.marked.contains(&row.id) {
+                    self.marked.push(row.id.clone());
+                }
+            }
+        }
+    }
+
+    pub fn is_marked(&self, id: &str) -> bool {
+        self.marked.iter().any(|m| m == id)
+    }
+
+    fn section_query(&self) -> String {
+        self.sections.get(self.section).map(|s| s.query.clone()).unwrap_or_default()
     }
 
     /// Whether the trash is what is listed.
@@ -295,6 +368,9 @@ impl VaultUi {
         self.folders = self.engine.folders().unwrap_or_default();
         self.build_sections(&all);
         self.refresh_list(keep);
+        // An item trashed, deleted or merged away is no longer marked.
+        let rows: Vec<&str> = self.rows.iter().map(|r| r.id.as_str()).collect();
+        self.marked.retain(|id| self.titles.contains_key(id) || rows.contains(&id.as_str()));
     }
 
     fn build_sections(&mut self, all: &[Row]) {
@@ -302,7 +378,7 @@ impl VaultUi {
         let count = |f: &dyn Fn(&Row) -> bool| all.iter().filter(|r| f(r)).count();
         let mut out = vec![
             Section::new(Glyph::All, "All items", "", all.len()),
-            Section::new(Glyph::Favourite, "Favourites", "favourite", count(&|r| r.favourite)),
+            Section::new(Glyph::Favourite, "Favorites", "favourite", count(&|r| r.favourite)),
             Section::new(Glyph::Codes, "With codes", "has:otp", count(&|r| r.has_otp)),
             Section::new(Glyph::Passkey, "Passkeys", "has:passkey", count(&|r| r.has_passkey)),
         ];
@@ -348,6 +424,9 @@ impl VaultUi {
 
     /// Runs the list query again.
     pub fn refresh_list(&mut self, keep: Option<String>) {
+        if !self.marked.is_empty() && self.marked_in != self.section_query() {
+            self.marked.clear();
+        }
         let query = self.query();
         self.rows = self.engine.list(&query, self.sort.arg()).unwrap_or_default();
         let at = keep
@@ -412,25 +491,42 @@ impl VaultUi {
         if detail.otp.is_some() {
             lines.push(Line::Code);
         }
-        let sites: Vec<String> = detail
+        // Websites first, then apps by the names people know them by.
+        let mut sites: Vec<(bool, String)> = detail
             .sites
             .iter()
             .filter_map(|s| {
                 let (kind, value) = s.as_object()?.iter().next()?;
                 Some(match kind.as_str() {
-                    "AndroidApp" => format!("app {}", value["package"].as_str().unwrap_or("")),
-                    "Regex" => format!("pattern {}", value.as_str().unwrap_or("")),
-                    _ => value.as_str()?.to_owned(),
+                    "AndroidApp" => {
+                        let package = value["package"].as_str().unwrap_or("");
+                        let text = match wmpass_core::related::app_name(package) {
+                            Some(name) => format!("{name} ({package})"),
+                            None => package.to_owned(),
+                        };
+                        (true, text)
+                    }
+                    "Regex" => (false, format!("pattern {}", value.as_str().unwrap_or(""))),
+                    _ => (false, value.as_str()?.to_owned()),
                 })
             })
             .collect();
-        for (n, site) in sites.into_iter().enumerate() {
-            lines.push(Line::Value {
-                label: if n == 0 { "Website".to_owned() } else { String::new() },
-                text: Some(site),
-                secret: None,
-                has_value: true,
-            });
+        sites.sort_by_key(|(app, _)| *app);
+        let mut last = None;
+        for (app, site) in sites {
+            let label = if last == Some(app) {
+                String::new()
+            } else if app {
+                "App".to_owned()
+            } else {
+                "Website".to_owned()
+            };
+            last = Some(app);
+            lines.push(Line::Value { label, text: Some(site), secret: None, has_value: true });
+        }
+        // The page the site keeps for changing the password, to copy into a browser.
+        if let Some(url) = &detail.change_password {
+            lines.push(Line::Value { label: "Change password".into(), text: Some(url.clone()), secret: None, has_value: true });
         }
         if let Some(alias) = &detail.alias {
             lines.push(Line::Value { label: "Alias".into(), text: Some(alias.clone()), secret: None, has_value: true});
@@ -605,17 +701,54 @@ impl VaultUi {
         (redraw, news)
     }
 
-    /// The ids in a health group.
+    /// How many groups the Health tab lists: Ignored only when something is.
+    pub fn health_groups(&self) -> usize {
+        if self.health_ignored.is_empty() { IGNORED_GROUP } else { HEALTH_GROUPS.len() }
+    }
+
+    /// The items in a health group, in the order the cursor moves through them.
     pub fn health_ids(&self, group: usize) -> Vec<String> {
+        self.health_items(group).into_iter().map(|(id, _)| id).collect()
+    }
+
+    /// The items in a health group, each with the check it was ignored for in the Ignored group.
+    pub fn health_items(&self, group: usize) -> Vec<(String, Option<String>)> {
+        self.health_lines(group)
+            .into_iter()
+            .filter_map(|line| match line {
+                HealthLine::Item { id, check } => Some((id, check)),
+                HealthLine::Heading(_) => None,
+            })
+            .collect()
+    }
+
+    /// The lines of a health group. Reused passwords come one group per password, each under a
+    /// heading, so each group is one password to change.
+    pub fn health_lines(&self, group: usize) -> Vec<HealthLine> {
+        let item = |id: &String| HealthLine::Item { id: id.clone(), check: None };
+        if group == IGNORED_GROUP {
+            return self
+                .health_ignored
+                .iter()
+                .filter_map(|pair| pair.split_once(':'))
+                .map(|(check, id)| HealthLine::Item { id: id.to_owned(), check: Some(check.to_owned()) })
+                .collect();
+        }
         let Some(h) = &self.health else { return Vec::new() };
         match group {
-            0 => h.weak.clone(),
-            1 => h.reused.iter().flatten().cloned().collect(),
-            2 => h.old.clone(),
-            3 => h.missing_two_factor.clone(),
-            4 => h.insecure_url.clone(),
-            5 => h.duplicates.iter().flatten().cloned().collect(),
-            6 => h.expiring.clone(),
+            0 => h.weak.iter().map(item).collect(),
+            1 => h
+                .reused
+                .iter()
+                .flat_map(|set| {
+                    std::iter::once(HealthLine::Heading(format!("{} items share one password", set.len()))).chain(set.iter().map(item))
+                })
+                .collect(),
+            2 => h.old.iter().map(item).collect(),
+            3 => h.missing_two_factor.iter().map(item).collect(),
+            4 => h.insecure_url.iter().map(item).collect(),
+            5 => h.duplicates.iter().flatten().map(item).collect(),
+            6 => h.expiring.iter().map(item).collect(),
             _ => Vec::new(),
         }
     }

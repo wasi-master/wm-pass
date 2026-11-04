@@ -13,6 +13,7 @@
   import { host } from './engine/host';
   import { icons } from './engine/icons.svelte';
   import { applyTheme } from './theme/themes';
+  import { themeFonts } from './theme/fonts.svelte';
   import { startWidgetFeed } from './settings/widgets.svelte';
   import { ui } from './vault/ui.svelte';
   import { onMount, untrack } from 'svelte';
@@ -56,6 +57,7 @@
     const look = prefs.v.look;
     const dark = look === 'SYSTEM' ? systemDark : look !== 'LIGHT';
     applyTheme(prefs.theme, dark, look === 'OBSIDIAN');
+    void themeFonts.use(prefs.theme.font);
     untrack(() => prefs.themeApplied++);
   });
 

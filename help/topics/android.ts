@@ -1,61 +1,8 @@
-// Android only: the Appearance, Adding and editing and Tools hubs, the phone's own rows on Settings, Security, and the ways in from outside the app.
+// Android only: the phone's own rows on Settings, Security, and the ways in from outside the app.
 
 import type { Topic } from '../schema.ts';
 
 export const android = [
-  // ---- appearance ----
-
-  {
-    id: 'page.appearance',
-    kind: 'page',
-    title: 'Appearance',
-    page: 'appearance',
-    shells: ['android'],
-    what: 'How WM Pass looks, and what its main screens show. Each row opens its own page.',
-    how: [
-      '**How it looks** holds [[page.look|Style and theme]], for the style, theme, dark mode, animations and vibration, and [[page.icons|Icons]], for the app\'s own icons, site icons and the icons in Settings.',
-      '**What it shows** holds a page for each main screen: [[page.list|Vault list]], [[page.navigation|Navigation]], [[page.entry|Item page]] and [[page.codes|Codes]].',
-    ],
-    caveats: 'All of these can be carried to another phone, or put back, under Settings, Settings file.',
-    related: ['page.look', 'page.themes', 'page.icons', 'page.list', 'page.file', 'feature.launch_guard'],
-    words: 'customize look theme layout',
-  },
-
-  // ---- adding and editing ----
-
-  {
-    id: 'page.editing',
-    kind: 'page',
-    title: 'Adding and editing',
-    page: 'editing',
-    shells: ['android'],
-    what: 'What a new item starts with, and how the editor opens. Each row opens its own page.',
-    how: [
-      '**New items** holds [[page.add|Add menu]], for which types the add button offers and in what order, and [[page.generator|Generator]], for what a new password looks like.',
-      '**Changing them** holds [[page.editor|Editor]], for which sections start open and which start folded.',
-    ],
-    related: ['page.add', 'page.generator', 'page.editor'],
-    words: 'new item editor generator add menu',
-  },
-
-  // ---- tools ----
-
-  {
-    id: 'page.tools',
-    kind: 'page',
-    title: 'Tools',
-    page: 'tools',
-    shells: ['android'],
-    what: 'Small tools that sit beside the vault: email aliases, a throwaway inbox, a username checker and a way to compare two passwords.',
-    how: [
-      '**Addresses and names** holds [[page.aliases|Email aliases]], [[page.inbox|Disposable inbox]] and [[page.usernames|Username checker]]. **Passwords** holds [[page.compare|Compare two passwords]].',
-      'The same tools, with Breaches and a way into Settings, can also be a page of their own in the navigation bar: tap **Add Tools** under Settings, Appearance, Navigation.',
-    ],
-    caveats: 'Email aliases, the disposable inbox and the username checker reach the internet. Until you allow network features, each of those pages says what it would send, and to whom, and sends nothing. Comparing two passwords stays on the phone.',
-    related: ['page.aliases', 'page.inbox', 'page.usernames', 'page.compare', 'page.breaches', 'page.navigation', 'setting.network_allowed'],
-    words: 'aliases inbox username compare utilities',
-  },
-
   // ---- security ----
 
   {

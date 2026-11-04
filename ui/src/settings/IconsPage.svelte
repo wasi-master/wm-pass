@@ -6,6 +6,21 @@
   import { icons, type IconName } from '../engine/icons.svelte';
   import { prefs } from '../engine/prefs.svelte';
   import Choice from './Choice.svelte';
+  import Reorder from './Reorder.svelte';
+  import Row from '../parts/Row.svelte';
+  import { siteIcons } from '../engine/siteIcons.svelte';
+
+  const SOURCE_NAMES: Record<string, string> = { brand: 'Brand marks', site: 'Website icons' };
+  const SOURCE_ABOUT: Record<string, string> = {
+    brand: 'Marks for well-known sites, built into the app',
+    site: 'Fetched once from each site or DuckDuckGo. Needs network features',
+  };
+  const sources = $derived(prefs.listOf('icon_sources').filter((s) => s in SOURCE_NAMES));
+
+  function setSources(next: string[]) {
+    if (sources.includes('site') && !next.includes('site')) siteIcons.forget();
+    prefs.setList('icon_sources', next);
+  }
 
   const ICON_STYLES = [
     ['outlined', 'Material Symbols', 'The standard look'],
@@ -66,6 +81,18 @@
   {/each}
   <Choice title="Shape" icon="image" pref="site_icon_shape" options={[['circle', 'Circle'], ['rounded', 'Rounded'], ['square', 'Square'], ['none', 'No background']]} />
 </Group>
+
+{#if siteIcons.possible}
+  <Group title="Pictures, in order" help="setting.icon_sources">
+    {#if sources.length}<Reorder items={sources} label={(s) => SOURCE_NAMES[s] ?? s} keepLast={false} onchange={setSources} />{/if}
+    {#each Object.keys(SOURCE_NAMES).filter((s) => !sources.includes(s)) as source (source)}
+      <Row title="Add {SOURCE_NAMES[source].toLowerCase()}" sub={SOURCE_ABOUT[source]} icon={source === 'site' ? 'language' : 'star'} onclick={() => setSources([...sources, source])} />
+    {/each}
+    {#if sources.includes('site')}
+      <Choice title="Website icons from" icon="public" pref="site_icon_from" options={[['site', 'Each site'], ['duckduckgo', 'DuckDuckGo']]} />
+    {/if}
+  </Group>
+{/if}
 
 <Group title="Settings icons">
   <Choice title="Style" icon="palette" pref="settings_icons" options={[['coloured', 'Colored'], ['mono', 'One color'], ['bare', 'No background'], ['off', 'None']]} />

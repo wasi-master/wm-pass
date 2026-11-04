@@ -5,6 +5,7 @@ export interface Brand {
   name: string;
   color: string;
   otherNames: string[];
+  domains: string[];
 }
 
 class Brands {
@@ -31,7 +32,8 @@ class Brands {
         const parts = line.split('\t');
         if (parts.length < 4) continue;
         const others = (parts[4] ?? '').split(',').filter(Boolean);
-        const brand: Brand = { slug: parts[0], name: parts[1], color: `#${parts[2]}`, otherNames: others };
+        const domains = parts[3].split(',').filter(Boolean);
+        const brand: Brand = { slug: parts[0], name: parts[1], color: `#${parts[2]}`, otherNames: others, domains };
         this.bySlugMap.set(brand.slug, brand);
         // The well-known sites come first in the file and keep their claim on a name.
         const claim = (key: string) => {
@@ -40,7 +42,7 @@ class Brands {
         claim(this.normal(brand.name));
         claim(brand.slug);
         others.forEach((o) => claim(this.normal(o)));
-        for (const domain of parts[3].split(',').filter(Boolean)) {
+        for (const domain of domains) {
           if (!this.byDomain.has(domain)) this.byDomain.set(domain, brand);
         }
       }

@@ -1635,7 +1635,24 @@
       },
       {
        "t": "text",
-       "s": " goes through each item with a password. WM Pass hashes the password with SHA-1 and sends only the first five characters of the hash to Have I Been Pwned. The service answers with every leaked hash that starts the same way, padded with dummy ones, and the comparison happens on your device, so the service cannot tell which password you asked about."
+       "s": " goes through each item with a password, with Have I Been Pwned or XposedOrNot. WM Pass hashes the password and sends only the start of the hash: five characters of SHA-1 to Have I Been Pwned, or ten of Keccak-512 to XposedOrNot. The service answers with every leaked hash that starts the same way, and the comparison happens on your device, so the service cannot tell which password you asked about."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "The check keeps running when you leave the page, and "
+      },
+      {
+       "t": "strong",
+       "s": "Stop"
+      },
+      {
+       "t": "text",
+       "s": " ends it early."
       }
      ]
     },
@@ -3448,7 +3465,7 @@
       },
       {
        "t": "text",
-       "s": ". Each site is asked in turn and answers "
+       "s": ". Every site is asked at once and answers "
       },
       {
        "t": "strong",
@@ -3481,7 +3498,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Sites that refuse anonymous lookups, or give the same answer for every name, are left out, because a guess is worse than no answer. X, Instagram, npm and PyPI are among them."
+       "s": "Sites that refuse anonymous lookups, or give the same answer for every name, get no answer, because a guess is worse than none. X, Threads and Reddit are among them, and the page links their profiles for you to open yourself."
       }
      ]
     }
@@ -4644,7 +4661,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "A login shows "
+       "s": "A login for a website also has "
       },
       {
        "t": "strong",
@@ -4652,7 +4669,7 @@
       },
       {
        "t": "text",
-       "s": " only for a site that has a page for it, found the way Health finds it. An app that is not installed offers the app stores on this phone, or Google Play and F-Droid in the browser when there are none."
+       "s": ", but only for a site that has a page for it, found the way Health finds it. An app that is not installed offers the app stores on this phone, or Google Play and F-Droid in the browser when there are none."
       }
      ]
     }
@@ -4797,7 +4814,7 @@
       },
       {
        "t": "strong",
-       "s": "Websites"
+       "s": "Websites and apps"
       },
       {
        "t": "text",
@@ -4850,6 +4867,32 @@
       {
        "t": "text",
        "s": " sets which empty ones do."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "A login's name, websites and apps suggest each other under "
+      },
+      {
+       "t": "strong",
+       "s": "Goes with this login"
+      },
+      {
+       "t": "text",
+       "s": ": facebook.com offers messenger.com and the Facebook, Lite and Messenger apps, and a login without a name is offered one. They are worked out on your device."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Fields with common values, such as a database's engine or a card's issuer, offer them as chips while you type."
       }
      ]
     },
@@ -7103,7 +7146,7 @@
       },
       {
        "t": "text",
-       "s": " checks every password against Have I Been Pwned without sending the passwords themselves. "
+       "s": " checks every password against Have I Been Pwned or XposedOrNot without sending the passwords themselves. "
       },
       {
        "t": "strong",
@@ -7193,7 +7236,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Looks up each password in this vault in Have I Been Pwned's list of leaked passwords, and lists the items whose password has been seen, with how many times."
+       "s": "Looks up each password in this vault in Have I Been Pwned's or XposedOrNot's list of leaked passwords, and lists the items whose password has been seen, with how many times."
       }
      ]
     }
@@ -7303,6 +7346,15 @@
        "s": "The results are never saved. After the vault locks, run the check again to see them on the Health page."
       }
      ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "A vault with no passwords has nothing to check, and the page says so."
+      }
+     ]
     }
    ],
    "related": [
@@ -7311,7 +7363,7 @@
     "setting.network_allowed"
    ],
    "words": "pwned passwords k-anonymity sha1 hash range xposedornot keccak",
-   "plain": "Looks up each password in this vault in Have I Been Pwned's list of leaked passwords, and lists the items whose password has been seen, with how many times."
+   "plain": "Looks up each password in this vault in Have I Been Pwned's or XposedOrNot's list of leaked passwords, and lists the items whose password has been seen, with how many times."
   },
   {
    "id": "group.breaches.emails",
@@ -8642,6 +8694,23 @@
      "runs": [
       {
        "t": "text",
+       "s": "With nested vaults, "
+      },
+      {
+       "t": "strong",
+       "s": "Import into"
+      },
+      {
+       "t": "text",
+       "s": " picks where the items go: this vault or one of them. The nested vault is opened for the import and closed again when you leave the page."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
        "s": "Folders in the file become folders here, matched by name. Attachments come along from KeePass, SafeInCloud and 1Password files. A KeePass or SafeInCloud database, or a password-protected Proton Authenticator export, asks for its password."
       }
      ]
@@ -8783,6 +8852,17 @@
       {
        "t": "text",
        "s": "."
+      }
+     ]
+    }
+   ],
+   "caveats": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "The codes hold the secret keys of your accounts. Delete any screenshot of them once the import is done."
       }
      ]
     }
@@ -9240,7 +9320,8 @@
    ],
    "related": [
     "group.export.plain",
-    "action.emergency_kit"
+    "action.emergency_kit",
+    "action.export_pdf"
    ],
    "words": "print paper html offline copy",
    "plain": "Writes a web page listing every item and its values, made to be printed and locked away."
@@ -12127,6 +12208,121 @@
    "plain": "Takes one item from another device through two codes, with nothing sent over a network."
   },
   {
+   "id": "page.tools",
+   "kind": "page",
+   "title": "Tools",
+   "page": "tools",
+   "what": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Small tools that sit beside the vault: email aliases, a throwaway inbox, a username checker and a way to compare two passwords."
+      }
+     ]
+    }
+   ],
+   "how": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "strong",
+       "s": "Addresses and names"
+      },
+      {
+       "t": "text",
+       "s": " holds "
+      },
+      {
+       "t": "link",
+       "id": "page.aliases",
+       "s": "Email aliases"
+      },
+      {
+       "t": "text",
+       "s": ", "
+      },
+      {
+       "t": "link",
+       "id": "page.inbox",
+       "s": "Disposable inbox"
+      },
+      {
+       "t": "text",
+       "s": " and "
+      },
+      {
+       "t": "link",
+       "id": "page.usernames",
+       "s": "Username checker"
+      },
+      {
+       "t": "text",
+       "s": ". "
+      },
+      {
+       "t": "strong",
+       "s": "Passwords"
+      },
+      {
+       "t": "text",
+       "s": " holds "
+      },
+      {
+       "t": "link",
+       "id": "page.compare",
+       "s": "Compare two passwords"
+      },
+      {
+       "t": "text",
+       "s": "."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "The same tools, with Breaches and a way into Settings, can also be a page of their own in the navigation bar: tap "
+      },
+      {
+       "t": "strong",
+       "s": "Add Tools"
+      },
+      {
+       "t": "text",
+       "s": " under Settings, Appearance, Navigation."
+      }
+     ]
+    }
+   ],
+   "caveats": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Email aliases, the disposable inbox and the username checker reach the internet. Until you allow network features, each of those pages says what it would send, and to whom, and sends nothing. Comparing two passwords stays on the phone."
+      }
+     ]
+    }
+   ],
+   "related": [
+    "page.aliases",
+    "page.inbox",
+    "page.usernames",
+    "page.compare",
+    "page.breaches",
+    "page.navigation",
+    "setting.network_allowed"
+   ],
+   "words": "aliases inbox username compare utilities",
+   "plain": "Small tools that sit beside the vault: email aliases, a throwaway inbox, a username checker and a way to compare two passwords."
+  },
+  {
    "id": "page.aliases",
    "kind": "page",
    "title": "Email aliases",
@@ -12808,7 +13004,7 @@
       },
       {
        "t": "text",
-       "s": ", which opens Settings, Email aliases."
+       "s": ", which opens Settings, Tools, Email aliases."
       }
      ]
     }
@@ -13018,7 +13214,16 @@
      "runs": [
       {
        "t": "text",
-       "s": "While the page is open, it asks api.mail.tm for new mail with the sign-in key. Opening a mail fetches its full text."
+       "s": "While an address is open, it asks api.mail.tm for new mail with the sign-in key. Opening a mail fetches all of it. The key and the password stay in the vault, and when the key runs out WM Pass signs in again with the password."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "mail.gw and a server of your own that speaks the same API work the same way, at their own address."
       }
      ]
     }
@@ -13069,7 +13274,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Opening a mail shows the opening lines that came with the list, not the whole message."
+       "s": "A quiet session lapses, so each visit first points the session back at the same address."
       }
      ]
     }
@@ -13182,7 +13387,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "TikTok and Instagram only answer a browser. Their pages load in a hidden, private browser view that runs their scripts, may only load pages on that site, and keeps no cookies or storage afterwards. WM Pass reads only the text the page shows."
+       "s": "TikTok and Instagram only answer a browser. Their pages load in a hidden, private browser view that runs their scripts, may only load pages on that site, and keeps no cookies or storage afterwards. WM Pass reads only the text the page shows. They take turns, so their rows can be the last to fill in."
       }
      ]
     },
@@ -13271,7 +13476,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Asks every site about the names in the box at once. A bar shows how many have answered, and each row fills in as its answer comes."
+       "s": "Asks every site about the name in the box at once. A bar shows how many have answered, and each row fills in as its answer comes."
       }
      ]
     }
@@ -13355,7 +13560,7 @@
     "page.usernames",
     "group.usernames.links"
    ],
-   "plain": "Asks every site about the names in the box at once. A bar shows how many have answered, and each row fills in as its answer comes."
+   "plain": "Asks every site about the name in the box at once. A bar shows how many have answered, and each row fills in as its answer comes."
   },
   {
    "id": "group.usernames.links",
@@ -13493,6 +13698,126 @@
    ],
    "words": "strength entropy zxcvbn crack time stronger",
    "plain": "Type two passwords to see which would take longer to guess, and by roughly how much."
+  },
+  {
+   "id": "page.appearance",
+   "kind": "page",
+   "title": "Appearance",
+   "page": "appearance",
+   "what": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "How WM Pass looks, and what its main screens show. Each row opens its own page."
+      }
+     ]
+    }
+   ],
+   "how": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "strong",
+       "s": "How it looks"
+      },
+      {
+       "t": "text",
+       "s": " holds "
+      },
+      {
+       "t": "link",
+       "id": "page.look",
+       "s": "Style and theme"
+      },
+      {
+       "t": "text",
+       "s": ", for the style, theme, dark mode, animations and vibration, and "
+      },
+      {
+       "t": "link",
+       "id": "page.icons",
+       "s": "Icons"
+      },
+      {
+       "t": "text",
+       "s": ", for the app's own icons, site icons and the icons in Settings."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "strong",
+       "s": "What it shows"
+      },
+      {
+       "t": "text",
+       "s": " holds a page for each main screen: "
+      },
+      {
+       "t": "link",
+       "id": "page.list",
+       "s": "Vault list"
+      },
+      {
+       "t": "text",
+       "s": ", "
+      },
+      {
+       "t": "link",
+       "id": "page.navigation",
+       "s": "Navigation"
+      },
+      {
+       "t": "text",
+       "s": ", "
+      },
+      {
+       "t": "link",
+       "id": "page.entry",
+       "s": "Item page"
+      },
+      {
+       "t": "text",
+       "s": " and "
+      },
+      {
+       "t": "link",
+       "id": "page.codes",
+       "s": "Codes"
+      },
+      {
+       "t": "text",
+       "s": "."
+      }
+     ]
+    }
+   ],
+   "caveats": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "All of these can be carried to another phone, or put back, under Settings, Settings file."
+      }
+     ]
+    }
+   ],
+   "related": [
+    "page.look",
+    "page.themes",
+    "page.icons",
+    "page.list",
+    "page.file",
+    "feature.launch_guard"
+   ],
+   "words": "customize look theme layout",
+   "plain": "How WM Pass looks, and what its main screens show. Each row opens its own page."
   },
   {
    "id": "page.look",
@@ -15690,7 +16015,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "The row shows the site and how many accounts it holds. Open it to see them, and again to fold them away."
+       "s": "The row shows the site and how many accounts it holds. Open it to see them, set in under it, and again to fold them away."
       }
      ]
     }
@@ -15897,7 +16222,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "The compact layout leaves it out to save room."
+       "s": "The compact layout puts it beside the name, on the same line."
       }
      ]
     }
@@ -15988,7 +16313,7 @@
        "runs": [
         {
          "t": "text",
-         "s": "Copies the item's password. Items without one have no button."
+         "s": "Copies the item's password. An item with none copies its one-time code, or else its username."
         }
        ]
       }
@@ -17271,6 +17596,85 @@
    ],
    "words": "reset restore",
    "plain": "Puts every type back in the add menu, in the order WM Pass started with."
+  },
+  {
+   "id": "page.editing",
+   "kind": "page",
+   "title": "Adding and editing",
+   "page": "editing",
+   "what": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "What a new item starts with, and how the editor opens. Each row opens its own page."
+      }
+     ]
+    }
+   ],
+   "how": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "strong",
+       "s": "New items"
+      },
+      {
+       "t": "text",
+       "s": " holds "
+      },
+      {
+       "t": "link",
+       "id": "page.add",
+       "s": "Add menu"
+      },
+      {
+       "t": "text",
+       "s": ", for which types the add button offers and in what order, and "
+      },
+      {
+       "t": "link",
+       "id": "page.generator",
+       "s": "Generator"
+      },
+      {
+       "t": "text",
+       "s": ", for what a new password looks like."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "strong",
+       "s": "Changing them"
+      },
+      {
+       "t": "text",
+       "s": " holds "
+      },
+      {
+       "t": "link",
+       "id": "page.editor",
+       "s": "Editor"
+      },
+      {
+       "t": "text",
+       "s": ", for which sections start open and which start folded."
+      }
+     ]
+    }
+   ],
+   "related": [
+    "page.add",
+    "page.generator",
+    "page.editor"
+   ],
+   "words": "new item editor generator add menu",
+   "plain": "What a new item starts with, and how the editor opens. Each row opens its own page."
   },
   {
    "id": "page.editor",
@@ -20035,320 +20439,6 @@
    "plain": "Shows a one-line note at the top of Codes, Health and the Hidden shelf the first time you open each one."
   },
   {
-   "id": "page.appearance",
-   "kind": "page",
-   "title": "Appearance",
-   "page": "appearance",
-   "what": [
-    {
-     "t": "p",
-     "runs": [
-      {
-       "t": "text",
-       "s": "How WM Pass looks, and what its main screens show. Each row opens its own page."
-      }
-     ]
-    }
-   ],
-   "how": [
-    {
-     "t": "p",
-     "runs": [
-      {
-       "t": "strong",
-       "s": "How it looks"
-      },
-      {
-       "t": "text",
-       "s": " holds "
-      },
-      {
-       "t": "link",
-       "id": "page.look",
-       "s": "Style and theme"
-      },
-      {
-       "t": "text",
-       "s": ", for the style, theme, dark mode, animations and vibration, and "
-      },
-      {
-       "t": "link",
-       "id": "page.icons",
-       "s": "Icons"
-      },
-      {
-       "t": "text",
-       "s": ", for the app's own icons, site icons and the icons in Settings."
-      }
-     ]
-    },
-    {
-     "t": "p",
-     "runs": [
-      {
-       "t": "strong",
-       "s": "What it shows"
-      },
-      {
-       "t": "text",
-       "s": " holds a page for each main screen: "
-      },
-      {
-       "t": "link",
-       "id": "page.list",
-       "s": "Vault list"
-      },
-      {
-       "t": "text",
-       "s": ", "
-      },
-      {
-       "t": "link",
-       "id": "page.navigation",
-       "s": "Navigation"
-      },
-      {
-       "t": "text",
-       "s": ", "
-      },
-      {
-       "t": "link",
-       "id": "page.entry",
-       "s": "Item page"
-      },
-      {
-       "t": "text",
-       "s": " and "
-      },
-      {
-       "t": "link",
-       "id": "page.codes",
-       "s": "Codes"
-      },
-      {
-       "t": "text",
-       "s": "."
-      }
-     ]
-    }
-   ],
-   "caveats": [
-    {
-     "t": "p",
-     "runs": [
-      {
-       "t": "text",
-       "s": "All of these can be carried to another phone, or put back, under Settings, Settings file."
-      }
-     ]
-    }
-   ],
-   "related": [
-    "page.look",
-    "page.themes",
-    "page.icons",
-    "page.list",
-    "page.file",
-    "feature.launch_guard"
-   ],
-   "words": "customize look theme layout",
-   "plain": "How WM Pass looks, and what its main screens show. Each row opens its own page."
-  },
-  {
-   "id": "page.editing",
-   "kind": "page",
-   "title": "Adding and editing",
-   "page": "editing",
-   "what": [
-    {
-     "t": "p",
-     "runs": [
-      {
-       "t": "text",
-       "s": "What a new item starts with, and how the editor opens. Each row opens its own page."
-      }
-     ]
-    }
-   ],
-   "how": [
-    {
-     "t": "p",
-     "runs": [
-      {
-       "t": "strong",
-       "s": "New items"
-      },
-      {
-       "t": "text",
-       "s": " holds "
-      },
-      {
-       "t": "link",
-       "id": "page.add",
-       "s": "Add menu"
-      },
-      {
-       "t": "text",
-       "s": ", for which types the add button offers and in what order, and "
-      },
-      {
-       "t": "link",
-       "id": "page.generator",
-       "s": "Generator"
-      },
-      {
-       "t": "text",
-       "s": ", for what a new password looks like."
-      }
-     ]
-    },
-    {
-     "t": "p",
-     "runs": [
-      {
-       "t": "strong",
-       "s": "Changing them"
-      },
-      {
-       "t": "text",
-       "s": " holds "
-      },
-      {
-       "t": "link",
-       "id": "page.editor",
-       "s": "Editor"
-      },
-      {
-       "t": "text",
-       "s": ", for which sections start open and which start folded."
-      }
-     ]
-    }
-   ],
-   "related": [
-    "page.add",
-    "page.generator",
-    "page.editor"
-   ],
-   "words": "new item editor generator add menu",
-   "plain": "What a new item starts with, and how the editor opens. Each row opens its own page."
-  },
-  {
-   "id": "page.tools",
-   "kind": "page",
-   "title": "Tools",
-   "page": "tools",
-   "what": [
-    {
-     "t": "p",
-     "runs": [
-      {
-       "t": "text",
-       "s": "Small tools that sit beside the vault: email aliases, a throwaway inbox, a username checker and a way to compare two passwords."
-      }
-     ]
-    }
-   ],
-   "how": [
-    {
-     "t": "p",
-     "runs": [
-      {
-       "t": "strong",
-       "s": "Addresses and names"
-      },
-      {
-       "t": "text",
-       "s": " holds "
-      },
-      {
-       "t": "link",
-       "id": "page.aliases",
-       "s": "Email aliases"
-      },
-      {
-       "t": "text",
-       "s": ", "
-      },
-      {
-       "t": "link",
-       "id": "page.inbox",
-       "s": "Disposable inbox"
-      },
-      {
-       "t": "text",
-       "s": " and "
-      },
-      {
-       "t": "link",
-       "id": "page.usernames",
-       "s": "Username checker"
-      },
-      {
-       "t": "text",
-       "s": ". "
-      },
-      {
-       "t": "strong",
-       "s": "Passwords"
-      },
-      {
-       "t": "text",
-       "s": " holds "
-      },
-      {
-       "t": "link",
-       "id": "page.compare",
-       "s": "Compare two passwords"
-      },
-      {
-       "t": "text",
-       "s": "."
-      }
-     ]
-    },
-    {
-     "t": "p",
-     "runs": [
-      {
-       "t": "text",
-       "s": "The same tools, with Breaches and a way into Settings, can also be a page of their own in the navigation bar: tap "
-      },
-      {
-       "t": "strong",
-       "s": "Add Tools"
-      },
-      {
-       "t": "text",
-       "s": " under Settings, Appearance, Navigation."
-      }
-     ]
-    }
-   ],
-   "caveats": [
-    {
-     "t": "p",
-     "runs": [
-      {
-       "t": "text",
-       "s": "Email aliases, the disposable inbox and the username checker reach the internet. Until you allow network features, each of those pages says what it would send, and to whom, and sends nothing. Comparing two passwords stays on the phone."
-      }
-     ]
-    }
-   ],
-   "related": [
-    "page.aliases",
-    "page.inbox",
-    "page.usernames",
-    "page.compare",
-    "page.breaches",
-    "page.navigation",
-    "setting.network_allowed"
-   ],
-   "words": "aliases inbox username compare utilities",
-   "plain": "Small tools that sit beside the vault: email aliases, a throwaway inbox, a username checker and a way to compare two passwords."
-  },
-  {
    "id": "action.fingerprint_unlock",
    "kind": "action",
    "title": "Unlock with fingerprint",
@@ -22636,7 +22726,7 @@
        "runs": [
         {
          "t": "text",
-         "s": "Changes apply at once. What the generator starts with is under Settings, Generator."
+         "s": "Changes apply at once. What the generator starts with is under Settings, Adding and editing, Generator."
         }
        ]
       }

@@ -7,7 +7,7 @@
   import Toggle from './Toggle.svelte';
 
   const SECTIONS: [string, string, IconName][] = [
-    ['sites', 'Websites', 'language'],
+    ['sites', 'Websites and apps', 'language'],
     ['otp', 'One-time code', 'pin'],
     ['notes', 'Notes', 'sticky_note_2'],
     ['custom', 'More fields', 'tag'],
@@ -29,4 +29,5 @@
   <Toggle title="Remember what I open" sub="A section you open or close stays that way next time." icon="history" pref="editor_remember" />
   <Toggle title="Fold less used fields" sub="Such as a card’s PIN or a database’s connection string." icon="expand_more" pref="editor_fold_details" />
   <Toggle title="Start logins with a password" sub="Fill in a generated password on every new login." icon="casino" pref="editor_generate" />
+  <Toggle title="Tag new items" sub="A new item without tags gets the ones its site suggests, such as Banking or Social." icon="sell" pref="auto_tag" />
 </Group>

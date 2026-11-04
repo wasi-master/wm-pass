@@ -1,7 +1,10 @@
 //! Everything drawn. No state changes here except where things were drawn, for the mouse,
 //! and the list's scroll position, which ratatui keeps in its state.
 
+use std::cell::RefCell;
+
 use ratatui::Frame;
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::{Alignment, Constraint, Layout, Margin, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
@@ -16,13 +19,120 @@ use crate::engine::{Code, Secret};
 use crate::generator::Knob;
 use crate::glyphs::Glyph;
 use crate::input::Input;
+use crate::join::{QUIET, Qr};
+use crate::link::{LinkUi, Role, Stage};
 use crate::theme::Theme;
 use crate::vault::{self, HEALTH_GROUPS, Line as DLine, Pane, Tab, VaultUi};
 
 const MASK: &str = "••••••••••••";
 
+/// Something on screen a click lands on.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Hit {
+    /// Does what this key does.
+    Key(KeyEvent),
+    DoorField(Field),
+    Recent(usize),
+    Section(usize),
+    Row(usize),
+    Line(usize),
+    Code(usize),
+    Knob(usize),
+    HealthGroup(usize),
+    HealthEntry(usize),
+    PaletteRow(usize),
+    PickRow(usize),
+    EditorRow(usize),
+    LinkDevice(usize),
+    /// An overlay's own area, so a click on it reaches nothing beneath.
+    Cover,
+}
+
+/// Where things were drawn this frame, in drawing order, and where the overlay's begin.
+type Hits = (Vec<(Rect, Hit)>, Option<usize>);
+
+thread_local! {
+    /// Whether the last QR code drawn used big cells.
+    static DREW_BIG: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static HITS: RefCell<Hits> = const { RefCell::new((Vec::new(), None)) };
+}
+
+/// Notes that a click inside `rect` means `hit`. Later notes sit on top of earlier ones.
+fn hit(rect: Rect, what: Hit) {
+    if rect.width > 0 && rect.height > 0 {
+        HITS.with(|h| h.borrow_mut().0.push((rect, what)));
+    }
+}
+
+/// What a click at `at` lands on: the topmost thing drawn there. With an overlay open, only
+/// what it drew counts, and `Some(None)` means the click fell outside it.
+pub fn hit_at(hits: &[(Rect, Hit)], overlay_from: Option<usize>, at: Position) -> Option<Option<Hit>> {
+    let from = overlay_from.unwrap_or(0).min(hits.len());
+    let found = hits[from..].iter().rev().find(|(r, _)| r.contains(at)).map(|(_, h)| h.clone());
+    match (overlay_from, found) {
+        (Some(_), found) => Some(found),
+        (None, Some(found)) => Some(Some(found)),
+        (None, None) => None,
+    }
+}
+
+/// The key a hint names, when a click can press it.
+fn key_of(name: &str) -> Option<KeyEvent> {
+    let code = match name {
+        "Enter" => KeyCode::Enter,
+        "Esc" => KeyCode::Esc,
+        "Tab" => KeyCode::Tab,
+        "Space" => KeyCode::Char(' '),
+        _ => {
+            if let Some(rest) = name.strip_prefix('^')
+                && let [ch] = rest.chars().collect::<Vec<_>>()[..]
+            {
+                return Some(KeyEvent::new(KeyCode::Char(ch.to_ascii_lowercase()), KeyModifiers::CONTROL));
+            }
+            let mut chars = name.chars();
+            match (chars.next(), chars.next()) {
+                (Some(ch), None) => KeyCode::Char(ch),
+                _ => return None,
+            }
+        }
+    };
+    Some(KeyEvent::new(code, KeyModifiers::NONE))
+}
+
+/// A row of key hints, each one a button.
+fn hint_bar(frame: &mut Frame, area: Rect, theme: &Theme, keys: &[(&str, &str)], align: Alignment) {
+    let line = key_hint(theme, keys);
+    let width = (line.width() as u16).min(area.width);
+    let start = match align {
+        Alignment::Left => area.x,
+        Alignment::Center => area.x + (area.width - width) / 2,
+        Alignment::Right => area.right() - width,
+    };
+    frame.render_widget(Paragraph::new(line), Rect { x: start, width, height: 1, ..area });
+    let mut x = start;
+    for (n, (key, what)) in keys.iter().enumerate() {
+        if n > 0 {
+            x += 2;
+        }
+        let w = (key.chars().count() + 1 + what.chars().count()) as u16;
+        if let Some(event) = key_of(key) {
+            hit(Rect { x, y: area.y, width: w.min(area.right().saturating_sub(x)), height: 1 }, Hit::Key(event));
+        }
+        x += w;
+    }
+}
+
 /// Draws a frame.
 pub fn draw(frame: &mut Frame, app: &mut App) {
+    HITS.with(|h| *h.borrow_mut() = (Vec::new(), None));
+    draw_all(frame, app);
+    let (hits, from) = HITS.with(|h| std::mem::take(&mut *h.borrow_mut()));
+    app.hits = hits;
+    app.overlay_from = from;
+    app.link_drew_big = DREW_BIG.get();
+}
+
+fn draw_all(frame: &mut Frame, app: &mut App) {
     let theme = app.theme;
     let area = frame.area();
     frame.render_widget(Block::new().style(theme.base()), area);
@@ -44,6 +154,10 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         frame.render_widget(Paragraph::new(toast_line(toast, &theme)).alignment(Alignment::Center), bottom);
     }
     if let Some(overlay) = &app.overlay {
+        HITS.with(|h| {
+            let mut h = h.borrow_mut();
+            h.1 = Some(h.0.len());
+        });
         let ui = match &app.screen {
             Screen::Vault(ui) => Some(&**ui),
             Screen::Door(_) => None,
@@ -200,6 +314,7 @@ fn draw_door(frame: &mut Frame, area: Rect, door: &Door, theme: &Theme, recent: 
     frame.render_widget(Paragraph::new(brand_word(theme)), Rect { y, height: 1, ..inner });
     y += 1;
     let subtitle = match door.mode {
+        door::Mode::Unlock if door::place_label(door.path.text()).is_some() => "Unlock the WM Pass app's vault".to_owned(),
         door::Mode::Unlock => {
             let name = std::path::Path::new(door.path.text())
                 .file_name()
@@ -226,9 +341,19 @@ fn draw_door(frame: &mut Frame, area: Rect, door: &Door, theme: &Theme, recent: 
             Field::Confirm => ("Password again", &door.confirm, true, String::new()),
             Field::KeyFile => ("Key file", &door.key_file, false, "Path to the key file".to_owned()),
         };
+        // The app's folder reads as what it is until the box is picked to change it.
+        let shown;
+        let input = match door::place_label(input.text()) {
+            Some(place) if *field == Field::Path && !focused => {
+                shown = Input::with(place);
+                &shown
+            }
+            _ => input,
+        };
         if let Some(at) = text_box(frame, rect, theme, input, &BoxLook { label, secret, focused, placeholder: &hint }) {
             cursor = Some(at);
         }
+        hit(rect, Hit::DoorField(*field));
         y += 3;
         if *field == Field::Password
             && door.mode == door::Mode::Create
@@ -268,7 +393,7 @@ fn draw_door(frame: &mut Frame, area: Rect, door: &Door, theme: &Theme, recent: 
     };
     let below = Rect { y: card.bottom().min(area.bottom() - 1), height: 1, ..area };
     if below.y < area.bottom() {
-        frame.render_widget(Paragraph::new(key_hint(theme, &hints).centered()), below);
+        hint_bar(frame, below, theme, &hints, Alignment::Center);
     }
     if let Some(at) = door.recent {
         let height = (recent.len() as u16 + 2).min(area.height - 2);
@@ -291,6 +416,13 @@ fn draw_door(frame: &mut Frame, area: Rect, door: &Door, theme: &Theme, recent: 
             .highlight_style(theme.selected(true))
             .highlight_symbol("▌");
         frame.render_stateful_widget(list, popup, &mut state);
+        hit(popup, Hit::Cover);
+        for n in 0..recent.len() {
+            let y = popup.y + 1 + (n - state.offset().min(n)) as u16;
+            if n >= state.offset() && y < popup.bottom() - 1 {
+                hit(Rect { x: popup.x + 1, y, width: popup.width - 2, height: 1 }, Hit::Recent(n));
+            }
+        }
     } else if let Some(at) = cursor {
         frame.set_cursor_position(at);
     }
@@ -347,6 +479,7 @@ fn draw_top(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme, lock
         let style = if *tab == ui.tab { theme.chip() } else { theme.dim() };
         frame.render_widget(Paragraph::new(Span::styled(label, style)), rect);
         ui.areas.tabs[n] = rect;
+        hit(rect, Hit::Key(KeyEvent::new(KeyCode::Char(char::from(b'1' + n as u8)), KeyModifiers::NONE)));
         x += w + 1;
     }
     let mut right = vec![Span::styled(ui.engine.name.clone(), Style::new().fg(theme.text).add_modifier(Modifier::BOLD))];
@@ -377,19 +510,21 @@ fn draw_bottom(frame: &mut Frame, area: Rect, ui: &VaultUi, theme: &Theme, toast
         Tab::Items if ui.in_trash() => vec![("u", "restore"), ("D", "delete for good"), ("?", "keys")],
         Tab::Items => match ui.pane {
             Pane::Detail => vec![("r", "show"), ("y", "copy line"), ("e", "edit"), (":", "commands"), ("?", "keys")],
-            _ => vec![("/", "search"), ("c", "copy"), ("u", "user"), ("n", "new"), (":", "commands"), ("?", "keys")],
+            _ if !ui.marked.is_empty() => vec![("Space", "mark"), ("Esc", "unmark"), ("d", "trash"), ("m", "folder"), (":", "more"), ("?", "keys")],
+            _ => vec![("/", "search"), ("c", "copy"), ("u", "user"), ("Space", "mark"), ("n", "new"), (":", "commands"), ("?", "keys")],
         },
         Tab::Codes => vec![("Enter", "copy"), ("/", "filter"), ("o", "open item"), ("?", "keys")],
         Tab::Generator => vec![("←→", "change"), ("Enter", "again"), ("c", "copy"), ("?", "keys")],
-        Tab::Health => vec![("←→", "group"), ("Enter", "open"), ("r", "check again"), ("?", "keys")],
+        Tab::Health => vec![("←→", "group"), ("Enter", "open"), ("i", "ignore"), ("r", "check again"), ("?", "keys")],
     };
-    let hint = key_hint(theme, &hints).right_aligned();
-    let hint_w = (hint.width() as u16 + 1).min(area.width);
+    let hint_w = (key_hint(theme, &hints).width() as u16 + 1).min(area.width);
     let left = match toast {
         Some(toast) => toast_line(toast, theme),
         None => {
             let shown = ui.rows.len();
-            let text = if ui.tab == Tab::Items {
+            let text = if ui.tab == Tab::Items && !ui.marked.is_empty() {
+                format!(" {} marked of {shown}", ui.marked.len())
+            } else if ui.tab == Tab::Items {
                 if shown == ui.total { format!(" {shown} items") } else { format!(" {shown} of {} items", ui.total) }
             } else {
                 String::new()
@@ -398,7 +533,7 @@ fn draw_bottom(frame: &mut Frame, area: Rect, ui: &VaultUi, theme: &Theme, toast
         }
     };
     frame.render_widget(Paragraph::new(left), Rect { width: area.width.saturating_sub(hint_w), ..area });
-    frame.render_widget(Paragraph::new(hint), Rect { x: area.right() - hint_w, width: hint_w - 1, ..area });
+    hint_bar(frame, Rect { x: area.right() - hint_w, width: hint_w - 1, ..area }, theme, &hints, Alignment::Right);
 }
 
 fn draw_items(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme) -> Option<Position> {
@@ -470,12 +605,25 @@ fn draw_sidebar(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme) 
         .collect();
     let scroll = ui.section.saturating_sub(usize::from(inner.height.saturating_sub(2))) as u16;
     frame.render_widget(Paragraph::new(lines).scroll((scroll, 0)), inner);
+    for (n, section) in ui.sections.iter().enumerate().skip(usize::from(scroll)) {
+        let y = inner.y + (n - usize::from(scroll)) as u16;
+        if y >= inner.bottom() {
+            break;
+        }
+        if !section.heading {
+            hit(Rect { y, height: 1, ..inner }, Hit::Section(n));
+        }
+    }
 }
 
 fn draw_list(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme) -> Option<Position> {
     let focused = ui.pane == Pane::List || ui.searching;
     let section = ui.sections.get(ui.section).map(|s| s.label.clone()).unwrap_or_default();
-    let block = panel(theme, Line::from(vec![Span::styled(format!(" {section} "), theme.brand())]), focused)
+    let mut heading = vec![Span::styled(format!(" {section} "), theme.brand())];
+    if !ui.marked.is_empty() {
+        heading.push(Span::styled(format!("{} marked ", ui.marked.len()), Style::new().fg(theme.primary).add_modifier(Modifier::BOLD)));
+    }
+    let block = panel(theme, Line::from(heading), focused)
         .title_bottom(Line::from(Span::styled(format!(" {} ", ui.sort.name()), theme.faint())).right_aligned());
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -503,12 +651,14 @@ fn draw_list(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme) -> 
                 Line::default(),
                 Line::from(Span::styled("Nothing here yet", theme.dim())).centered(),
                 Line::default(),
-                key_hint(theme, &[("n", "new item"), (":", "import")]).centered(),
             ]
         } else {
             vec![Line::default(), Line::from(Span::styled("No matches", theme.dim())).centered()]
         };
         frame.render_widget(Paragraph::new(text), list_area);
+        if ui.total == 0 && list_area.height > 4 {
+            hint_bar(frame, Rect { y: list_area.y + 3, height: 1, ..list_area }, theme, &[("n", "new item"), (":", "import")], Alignment::Center);
+        }
         return cursor;
     }
     let width = usize::from(list_area.width.saturating_sub(2));
@@ -546,8 +696,14 @@ fn draw_list(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme) -> 
                 title.push('…');
             }
             let pad = width.saturating_sub(title.chars().count() + badge_w + 2);
+            // A marked row wears a tick where its kind's icon was.
+            let lead = if ui.is_marked(&row.id) {
+                Span::styled("✓ ", Style::new().fg(theme.primary).add_modifier(Modifier::BOLD))
+            } else {
+                Span::styled(format!("{} ", theme.g.kind(&row.kind)), Style::new().fg(colour))
+            };
             let first = Line::from(vec![
-                Span::styled(format!("{} ", theme.g.kind(&row.kind)), Style::new().fg(colour)),
+                lead,
                 Span::styled(title, Style::new().fg(theme.text).add_modifier(Modifier::BOLD)),
                 Span::raw(" ".repeat(pad)),
                 Span::styled(badges, Style::new().fg(theme.warn)),
@@ -576,6 +732,14 @@ fn draw_list(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme) -> 
         .highlight_symbol(Span::styled("▌", Style::new().fg(theme.primary)))
         .repeat_highlight_symbol(true);
     frame.render_stateful_widget(list, list_area, &mut ui.list);
+    let first = ui.list.offset();
+    for n in first..ui.rows.len() {
+        let y = list_area.y + ((n - first) * 2) as u16;
+        if y >= list_area.bottom() {
+            break;
+        }
+        hit(Rect { y, height: 2.min(list_area.bottom() - y), ..list_area }, Hit::Row(n));
+    }
     if ui.rows.len() * 2 > usize::from(list_area.height) {
         let mut state = ScrollbarState::new(ui.rows.len()).position(ui.list.selected().unwrap_or(0));
         let bar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
@@ -784,7 +948,20 @@ fn draw_detail(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme) {
     let at = starts.get(ui.line).copied().unwrap_or(0);
     let scroll = (at + 2).saturating_sub(height);
     let scroll = if scroll > 0 { scroll.max(head_rows.min(scroll)) } else { 0 };
+    let total = lines.len();
     frame.render_widget(Paragraph::new(lines).scroll((scroll as u16, 0)), inner);
+    for (n, start) in starts.iter().enumerate() {
+        if !ui.lines[n].selectable() || *start < scroll {
+            continue;
+        }
+        let end = starts.get(n + 1).copied().unwrap_or(total.saturating_sub(2)).max(start + 1);
+        let y = inner.y + (start - scroll) as u16;
+        if y >= inner.bottom() {
+            break;
+        }
+        let height = ((end - start) as u16).min(inner.bottom() - y);
+        hit(Rect { y, height, ..inner }, Hit::Line(n));
+    }
 }
 
 fn draw_codes(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme) -> Option<Position> {
@@ -839,6 +1016,7 @@ fn draw_codes(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme) ->
         }
         let body = block.inner(rect).inner(Margin::new(1, 0));
         frame.render_widget(block, rect);
+        hit(rect, Hit::Code(n));
         let mut lines = code_lines(code, theme, body.width);
         let who = [code.otp.account.as_str(), code.site.as_deref().unwrap_or("")]
             .iter()
@@ -903,6 +1081,12 @@ fn draw_generator(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme
         })
         .collect();
     frame.render_widget(Paragraph::new(lines), inner);
+    for n in 0..knobs.len() {
+        let y = inner.y + n as u16;
+        if y < inner.bottom() {
+            hit(Rect { y, height: 1, ..inner }, Hit::Knob(n));
+        }
+    }
 
     let block = panel(theme, Line::from(Span::styled(format!(" {} ", generator.mode.name()), theme.brand())), false);
     let inner = block.inner(right).inner(Margin::new(2, 1));
@@ -940,9 +1124,11 @@ fn draw_generator(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme
             lines.push(Line::from(Span::styled(warning.clone(), Style::new().fg(theme.warn))).centered());
         }
     }
-    lines.push(Line::default());
-    lines.push(key_hint(theme, &[("Enter", "make another"), ("c", "copy"), ("Shift ←→", "faster")]).centered());
+    let used = lines.len() as u16;
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+    if used + 1 < inner.height {
+        hint_bar(frame, Rect { y: inner.y + used + 1, height: 1, ..inner }, theme, &[("Enter", "make another"), ("c", "copy"), ("Shift ←→", "faster")], Alignment::Center);
+    }
 }
 
 fn draw_health(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme) {
@@ -983,52 +1169,92 @@ fn draw_health(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme) {
     let block = panel(theme, Line::from(Span::styled(" Findings ", theme.dim())), true);
     let inner = block.inner(groups).inner(Margin::new(1, 0));
     frame.render_widget(block, groups);
+    let shown = ui.health_groups();
     let lines: Vec<Line> = HEALTH_GROUPS
         .iter()
+        .take(shown)
         .enumerate()
-        .map(|(n, (label, _))| {
+        .map(|(n, (label, _, _))| {
             let count = ui.health_ids(n).len();
             let picked = n == ui.health_group;
             let base = if picked { theme.selected(true) } else { Style::new() };
-            let badge_colour = if count == 0 { theme.ok } else if n <= 1 { theme.danger } else { theme.warn };
-            let badge = if count == 0 { "✓".to_owned() } else { count.to_string() };
+            let ignored = n == vault::IGNORED_GROUP;
+            let badge_colour = if ignored { theme.low } else if count == 0 { theme.ok } else if n <= 1 { theme.danger } else { theme.warn };
+            let badge = if count == 0 && !ignored { "✓".to_owned() } else { count.to_string() };
             let pad = usize::from(inner.width).saturating_sub(label.chars().count() + badge.chars().count() + 3);
             Line::from(vec![
                 Span::styled(if picked { "▌" } else { " " }, base.fg(theme.primary)),
-                Span::styled(format!("{label}{}", " ".repeat(pad)), base.fg(theme.text)),
+                Span::styled(format!("{label}{}", " ".repeat(pad)), base.fg(if ignored { theme.low } else { theme.text })),
                 Span::styled(format!(" {badge} "), base.fg(badge_colour).add_modifier(Modifier::BOLD)),
             ])
         })
         .collect();
     frame.render_widget(Paragraph::new(lines), inner);
+    for n in 0..shown {
+        let y = inner.y + n as u16;
+        if y < inner.bottom() {
+            hit(Rect { y, height: 1, ..inner }, Hit::HealthGroup(n));
+        }
+    }
 
-    let ids = ui.health_ids(ui.health_group);
+    let rows = ui.health_lines(ui.health_group);
     let title = HEALTH_GROUPS.get(ui.health_group).map_or("", |g| g.0);
     let block = panel(theme, Line::from(Span::styled(format!(" {title} "), theme.dim())), false);
     let inner = block.inner(entries).inner(Margin::new(1, 0));
     frame.render_widget(block, entries);
-    if ids.is_empty() {
+    if rows.is_empty() {
         frame.render_widget(Paragraph::new(Line::from(Span::styled("Nothing to fix here", Style::new().fg(theme.ok)))), inner);
         return;
     }
-    let skip = ui.health_at.saturating_sub(usize::from(inner.height.saturating_sub(1)));
-    let lines: Vec<Line> = ids
+    // Each line with the item number it stands for, so the cursor and clicks skip headings.
+    let mut numbered = Vec::with_capacity(rows.len());
+    let mut item = 0;
+    for row in &rows {
+        match row {
+            vault::HealthLine::Heading(_) => numbered.push(None),
+            vault::HealthLine::Item { .. } => {
+                numbered.push(Some(item));
+                item += 1;
+            }
+        }
+    }
+    let picked_line = numbered.iter().position(|n| *n == Some(ui.health_at)).unwrap_or(0);
+    let skip = picked_line.saturating_sub(usize::from(inner.height.saturating_sub(1)));
+    let hint = if ui.health_group == vault::IGNORED_GROUP { "   i counts it again" } else { "   Enter opens, i ignores" };
+    let lines: Vec<Line> = rows
         .iter()
-        .enumerate()
+        .zip(&numbered)
         .skip(skip)
-        .map(|(n, id)| {
-            let (title, kind) = ui.titles.get(id).cloned().unwrap_or_else(|| ("(hidden)".into(), String::new()));
-            let picked = n == ui.health_at;
-            let base = if picked { theme.selected(true) } else { Style::new() };
-            Line::from(vec![
-                Span::styled(if picked { "▌" } else { " " }, base.fg(theme.primary)),
-                Span::styled(format!("{} ", theme.g.kind(&kind)), base.fg(theme.label(None, &kind))),
-                Span::styled(title, base.fg(theme.text)),
-                Span::styled(if picked { "   Enter opens" } else { "" }, base.fg(theme.low)),
-            ])
+        .map(|(row, n)| match row {
+            vault::HealthLine::Heading(text) => Line::from(Span::styled(format!(" {text}"), theme.dim())),
+            vault::HealthLine::Item { id, check } => {
+                let (title, kind) = ui.titles.get(id).cloned().unwrap_or_else(|| ("A deleted item".into(), String::new()));
+                let picked = *n == Some(ui.health_at);
+                let base = if picked { theme.selected(true) } else { Style::new() };
+                let indent = if ui.health_group == 1 { "  " } else { "" };
+                let mut spans = vec![
+                    Span::styled(if picked { "▌" } else { " " }, base.fg(theme.primary)),
+                    Span::styled(format!("{indent}{} ", theme.g.kind(&kind)), base.fg(theme.label(None, &kind))),
+                    Span::styled(title, base.fg(theme.text)),
+                ];
+                if let Some(check) = check {
+                    spans.push(Span::styled(format!("  {}", vault::check_label(check)), base.fg(theme.low)));
+                }
+                spans.push(Span::styled(if picked { hint } else { "" }, base.fg(theme.low)));
+                Line::from(spans)
+            }
         })
         .collect();
     frame.render_widget(Paragraph::new(lines), inner);
+    for (line, n) in numbered.iter().enumerate().skip(skip) {
+        let y = inner.y + (line - skip) as u16;
+        if y >= inner.bottom() {
+            break;
+        }
+        if let Some(n) = n {
+            hit(Rect { y, height: 1, ..inner }, Hit::HealthEntry(*n));
+        }
+    }
 }
 
 fn popup(frame: &mut Frame, area: Rect, width: u16, height: u16, theme: &Theme, title: &str, danger: bool) -> Rect {
@@ -1042,6 +1268,7 @@ fn popup(frame: &mut Frame, area: Rect, width: u16, height: u16, theme: &Theme, 
         .style(Style::new().bg(theme.raised).fg(theme.text));
     let inner = block.inner(rect).inner(Margin::new(1, 0));
     frame.render_widget(block, rect);
+    hit(rect, Hit::Cover);
     inner
 }
 
@@ -1074,6 +1301,13 @@ fn draw_overlay(frame: &mut Frame, area: Rect, overlay: &Overlay, theme: &Theme,
                 })
                 .collect();
             frame.render_widget(Paragraph::new(lines), list_area);
+            for n in skip..found.len() {
+                let y = list_area.y + (n - skip) as u16;
+                if y >= list_area.bottom() {
+                    break;
+                }
+                hit(Rect { y, height: 1, ..list_area }, Hit::PaletteRow(n));
+            }
         }
         Overlay::Confirm { title, body, danger, .. } => {
             let inner = popup(frame, area, 60, 9, theme, title, *danger);
@@ -1090,7 +1324,13 @@ fn draw_overlay(frame: &mut Frame, area: Rect, overlay: &Overlay, theme: &Theme,
                 Span::styled(" No", Style::new().fg(theme.text)),
             ])
             .right_aligned();
-            frame.render_widget(Paragraph::new(buttons), Rect { y: inner.bottom() - 1, height: 1, ..inner });
+            let row = Rect { y: inner.bottom() - 1, height: 1, ..inner };
+            frame.render_widget(Paragraph::new(buttons), row);
+            // " y  Yes    " is 11 cells, " n  No" 6, flush right.
+            let yes = Rect { x: row.right().saturating_sub(17), width: 9, ..row };
+            let no = Rect { x: row.right().saturating_sub(6), width: 6, ..row };
+            hit(yes, Hit::Key(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE)));
+            hit(no, Hit::Key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE)));
         }
         Overlay::Prompt { title, hint, input, secret, .. } => {
             let inner = popup(frame, area, 70, 8, theme, title, false);
@@ -1099,12 +1339,10 @@ fn draw_overlay(frame: &mut Frame, area: Rect, overlay: &Overlay, theme: &Theme,
             if let Some(at) = text_box(frame, Rect { y: inner.y + 2, height: 3, ..inner }, theme, input, &look) {
                 frame.set_cursor_position(at);
             }
-            frame.render_widget(
-                Paragraph::new(key_hint(theme, &[("Enter", "done"), ("Esc", "cancel")]).right_aligned()),
-                Rect { y: inner.bottom() - 1, height: 1, ..inner },
-            );
+            hint_bar(frame, Rect { y: inner.bottom() - 1, height: 1, ..inner }, theme, &[("Enter", "done"), ("Esc", "cancel")], Alignment::Right);
         }
-        Overlay::Pick { title, items, at, .. } => {
+        Overlay::Pick { title, items, at, then } => {
+            let colors = matches!(then, crate::app::PickFor::Color(_));
             let height = (items.len() as u16 + 4).min(area.height - 2);
             let inner = popup(frame, area, 64, height, theme, title, false);
             let skip = at.saturating_sub(usize::from(inner.height.saturating_sub(3)));
@@ -1116,17 +1354,28 @@ fn draw_overlay(frame: &mut Frame, area: Rect, overlay: &Overlay, theme: &Theme,
                     let picked = n == *at;
                     let base = if picked { theme.selected(true) } else { Style::new() };
                     let width = usize::from(inner.width).saturating_sub(label.chars().count() + 1);
-                    Line::from(vec![
-                        Span::styled(if picked { "▌" } else { " " }, base.fg(theme.primary)),
-                        Span::styled(format!("{label}{}", " ".repeat(width)), base.fg(theme.text)),
-                    ])
+                    let mut line = vec![Span::styled(if picked { "▌" } else { " " }, base.fg(theme.primary))];
+                    if colors {
+                        // Each color shows itself; the first, the site's own, shows the login's.
+                        let id = &items[n].0;
+                        let swatch = theme.label((!id.is_empty()).then_some(id.as_str()), "login");
+                        line.push(Span::styled("● ", base.fg(swatch)));
+                    }
+                    let width = width.saturating_sub(if colors { 2 } else { 0 });
+                    line.push(Span::styled(format!("{label}{}", " ".repeat(width)), base.fg(theme.text)));
+                    Line::from(line)
                 })
                 .collect();
-            frame.render_widget(Paragraph::new(lines), Rect { y: inner.y + 1, height: inner.height.saturating_sub(2), ..inner });
-            frame.render_widget(
-                Paragraph::new(key_hint(theme, &[("↑↓", "move"), ("Enter", "pick"), ("Esc", "cancel")]).right_aligned()),
-                Rect { y: inner.bottom() - 1, height: 1, ..inner },
-            );
+            let rows = Rect { y: inner.y + 1, height: inner.height.saturating_sub(2), ..inner };
+            frame.render_widget(Paragraph::new(lines), rows);
+            for n in skip..items.len() {
+                let y = rows.y + (n - skip) as u16;
+                if y >= rows.bottom() {
+                    break;
+                }
+                hit(Rect { y, height: 1, ..rows }, Hit::PickRow(n));
+            }
+            hint_bar(frame, Rect { y: inner.bottom() - 1, height: 1, ..inner }, theme, &[("↑↓", "move"), ("Enter", "pick"), ("Esc", "cancel")], Alignment::Right);
         }
         Overlay::Import(preview) => {
             let inner = popup(frame, area, 70, (area.height - 4).min(22), theme, "Import", false);
@@ -1150,12 +1399,11 @@ fn draw_overlay(frame: &mut Frame, area: Rect, overlay: &Overlay, theme: &Theme,
             lines.push(Line::default());
             lines.push(Line::from(Span::styled("Items already in the vault are left as they are.", theme.faint())));
             frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), Rect { height: inner.height - 1, ..inner });
-            frame.render_widget(
-                Paragraph::new(key_hint(theme, &[("y", "import"), ("n", "cancel")]).right_aligned()),
-                Rect { y: inner.bottom() - 1, height: 1, ..inner },
-            );
+            hint_bar(frame, Rect { y: inner.bottom() - 1, height: 1, ..inner }, theme, &[("y", "import"), ("n", "cancel")], Alignment::Right);
         }
         Overlay::Editor(editor) => draw_editor(frame, area, editor, theme, ui),
+        Overlay::Link(link) => draw_link(frame, area, link, theme),
+        Overlay::WifiCode { ssid, qr } => draw_wifi_code(frame, area, ssid, qr, theme),
     }
 }
 
@@ -1198,6 +1446,7 @@ fn draw_editor(frame: &mut Frame, area: Rect, editor: &Editor, theme: &Theme, ui
             Rect { x: body.x, y, width: label_w, height: 1 },
         );
         let field = Rect { x: body.x + label_w, y, width: body.width.saturating_sub(label_w), height: h };
+        hit(Rect { x: body.x, y, width: body.width, height: h }, Hit::EditorRow(n));
         let bg = if picked { Style::new().bg(theme.select) } else { Style::new().bg(theme.surface) };
         frame.render_widget(Block::new().style(bg), field);
         let text_area = Rect { x: field.x + 1, width: field.width.saturating_sub(2), ..field };
@@ -1258,7 +1507,7 @@ fn draw_editor(frame: &mut Frame, area: Rect, editor: &Editor, theme: &Theme, ui
     if row.multiline() {
         keys.insert(1, ("Enter", "new line"));
     }
-    frame.render_widget(Paragraph::new(key_hint(theme, &keys).right_aligned()), foot);
+    hint_bar(frame, foot, theme, &keys, Alignment::Right);
     if let Some(at) = cursor {
         frame.set_cursor_position(at);
     }
@@ -1266,13 +1515,15 @@ fn draw_editor(frame: &mut Frame, area: Rect, editor: &Editor, theme: &Theme, ui
 
 fn draw_help(frame: &mut Frame, area: Rect, theme: &Theme) {
     let inner = popup(frame, area, 92, (area.height - 2).min(32), theme, "Keys", false);
-    let groups: [(&str, &[(&str, &str)]); 6] = [
+    let groups: [(&str, &[(&str, &str)]); 8] = [
         ("Anywhere", &[("1-4", "Items, Codes, Generator, Health"), (": or ^K", "commands"), ("^L", "lock now"), ("^T", "next theme"), ("?", "this list"), ("q", "quit")]),
         ("Moving", &[("↑↓ or j k", "move"), ("←→ or h l", "pane"), ("Tab", "next pane"), ("g G", "top, bottom"), ("Enter", "open")]),
         ("Search", &[("/", "search"), ("Esc", "clear"), ("tag:work", "by tag"), ("kind:card", "by kind"), ("has:otp", "with codes"), ("weak reused old", "health")]),
-        ("Item", &[("c", "copy password"), ("u", "copy username"), ("t", "copy code"), ("r", "show password"), ("e n", "edit, new"), ("d", "trash"), ("f p", "favourite, pin"), ("m + -", "folder, tags"), ("a", "attach a file")]),
+        ("Item", &[("c", "copy password"), ("u", "copy username"), ("t", "copy code"), ("r", "show password"), ("e n", "edit, new"), ("d", "trash"), ("f p", "favorite, pin"), ("m + -", "folder, tags"), ("a", "attach a file"), ("w", "Wi-Fi QR code"), ("Space", "mark, to act on several")]),
         ("In an item", &[("r Space", "show or hide"), ("y Enter", "copy the line"), ("o", "save a file")]),
         ("In the trash", &[("u", "restore"), ("D", "delete for good")]),
+        ("In Health", &[("i", "ignore for this check, or count again"), ("r", "check again")]),
+        ("On a tag in the sidebar", &[("R", "rename it everywhere"), ("D", "delete it everywhere")]),
     ];
     let half = inner.width / 2;
     let mut col = [Vec::new(), Vec::new()];
@@ -1293,4 +1544,294 @@ fn draw_help(frame: &mut Frame, area: Rect, theme: &Theme) {
     ))
     .centered();
     frame.render_widget(Paragraph::new(foot), Rect { y: inner.bottom() - 1, height: 1, ..inner });
+}
+
+/// Digits five cells tall, for the six to compare.
+const BIG: [[&str; 5]; 10] = [
+    ["███", "█ █", "█ █", "█ █", "███"],
+    [" █ ", "██ ", " █ ", " █ ", "███"],
+    ["███", "  █", "███", "█  ", "███"],
+    ["███", "  █", "███", "  █", "███"],
+    ["█ █", "█ █", "███", "  █", "  █"],
+    ["███", "█  ", "███", "  █", "███"],
+    ["███", "█  ", "███", "█ █", "███"],
+    ["███", "  █", "  █", " █ ", " █ "],
+    ["███", "█ █", "███", "█ █", "███"],
+    ["███", "█ █", "███", "  █", "███"],
+];
+
+/// Six digits in large type, each cell doubled across so they keep their shape.
+fn big_digits<'a>(code: &str, colour: Color) -> Vec<Line<'a>> {
+    (0..5)
+        .map(|row| {
+            let mut text = String::new();
+            for (n, ch) in code.chars().enumerate() {
+                if n == 3 {
+                    text.push_str("    ");
+                } else if n > 0 {
+                    text.push_str("  ");
+                }
+                let glyph = ch.to_digit(10).map_or("   ", |d| BIG[d as usize][row]);
+                for c in glyph.chars() {
+                    text.push(c);
+                    text.push(c);
+                }
+            }
+            Line::from(Span::styled(text, Style::new().fg(colour))).centered()
+        })
+        .collect()
+}
+
+/// How big a QR code draws: two cells across and one down per module, or half that height
+/// with half blocks.
+fn qr_size(qr: &Qr, big: bool) -> (u16, u16) {
+    let side = qr.width as u16 + 2 * QUIET as u16;
+    if big { (side * 2, side) } else { (side, side.div_ceil(2)) }
+}
+
+/// Draws a QR code in fixed black and white, whatever the theme. Big codes paint whole cells,
+/// which leave no seam in the line spacing; small ones use a half block only where the two
+/// halves of a cell differ, so filled areas stay solid there too.
+fn draw_qr(frame: &mut Frame, at: Rect, qr: &Qr, big: bool) {
+    let (dark, light) = (Color::Indexed(16), Color::Indexed(231));
+    let buf = frame.buffer_mut();
+    let side = qr.width as isize + 2 * QUIET;
+    let (w, h) = qr_size(qr, big);
+    for row in 0..h.min(at.height) {
+        for col in 0..w.min(at.width) {
+            let cell = &mut buf[(at.x + col, at.y + row)];
+            if big {
+                let (x, y) = ((col / 2) as isize - QUIET, row as isize - QUIET);
+                cell.set_symbol(" ").set_bg(if qr.dark(x, y) { dark } else { light });
+            } else {
+                let (x, y) = (col as isize - QUIET, row as isize * 2 - QUIET);
+                let top = qr.dark(x, y);
+                let bottom = y + 1 < side - QUIET && qr.dark(x, y + 1);
+                if top == bottom {
+                    cell.set_symbol(" ").set_bg(if top { dark } else { light });
+                } else {
+                    cell.set_symbol("▀").set_fg(if top { dark } else { light }).set_bg(if bottom { dark } else { light });
+                }
+            }
+        }
+    }
+}
+
+fn button<'a>(key: &'a str, label: &'a str, colour: Color, theme: &Theme) -> Vec<Span<'a>> {
+    vec![
+        Span::styled(format!(" {key} "), Style::new().bg(colour).fg(theme.on_primary).add_modifier(Modifier::BOLD)),
+        Span::styled(format!(" {label} "), Style::new().bg(theme.surface).fg(theme.text)),
+    ]
+}
+
+/// Two buttons side by side, centred, each one clickable.
+fn answer_buttons(frame: &mut Frame, area: Rect, theme: &Theme, yes: &str, no: &str) {
+    let mut spans = button("y", yes, theme.primary, theme);
+    spans.push(Span::raw("    "));
+    spans.extend(button("n", no, theme.danger, theme));
+    let line = Line::from(spans);
+    let width = line.width() as u16;
+    let x = area.x + area.width.saturating_sub(width) / 2;
+    frame.render_widget(Paragraph::new(line), Rect { x, width: width.min(area.width), height: 1, ..area });
+    let yes_w = (yes.chars().count() + 5) as u16;
+    let no_w = (no.chars().count() + 5) as u16;
+    hit(Rect { x, width: yes_w, height: 1, ..area }, Hit::Key(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE)));
+    hit(Rect { x: x + yes_w + 4, width: no_w, height: 1, ..area }, Hit::Key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE)));
+}
+
+/// A Wi-Fi network's code, as big as the terminal allows, with what it gives away under it.
+fn draw_wifi_code(frame: &mut Frame, area: Rect, ssid: &str, qr: &Qr, theme: &Theme) {
+    let note = "Point another phone's camera at this to join the network. The password is in the code, so anyone who can see it can read it.";
+    let (bw, bh) = qr_size(qr, true);
+    let big = bw + 4 <= area.width && bh + 8 <= area.height;
+    let (w, h) = qr_size(qr, big);
+    let width = (w + 4).max(48).min(area.width);
+    let height = (h + 7).min(area.height);
+    let title = if ssid.is_empty() { "Wi-Fi network" } else { ssid };
+    let inner = popup(frame, area, width, height, theme, title, false);
+    let qr_area = Rect { x: inner.x + inner.width.saturating_sub(w) / 2, y: inner.y + 1, width: w.min(inner.width), height: h.min(inner.height) };
+    draw_qr(frame, qr_area, qr, big);
+    let below = Rect { y: qr_area.bottom() + 1, height: inner.bottom().saturating_sub(qr_area.bottom() + 1), ..inner };
+    let lines = vec![
+        Line::from(Span::styled(note, theme.dim())),
+        Line::from(vec![Span::styled(" Esc ", theme.brand()), Span::styled(" close", theme.faint())]),
+    ];
+    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }).centered(), below);
+}
+
+fn draw_link(frame: &mut Frame, area: Rect, link: &LinkUi, theme: &Theme) {
+    let title = match link.role {
+        Role::Receive => "Get your vault from another device",
+        Role::Send => "Add a new device",
+    };
+    // The whole screen: what is behind it has nothing to do with this.
+    let inner = popup(frame, area, area.width, area.height, theme, title, false);
+    let [body, foot] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(inner);
+    let body = body.inner(Margin::new(1, 0));
+    let text = |s: String| Line::from(Span::styled(s, Style::new().fg(theme.text)));
+    let dim = |s: String| Line::from(Span::styled(s, theme.dim()));
+    let faint = |s: String| Line::from(Span::styled(s, theme.faint()));
+    let mut keys: Vec<(&str, &str)> = Vec::new();
+
+    match &link.stage {
+        Stage::Starting => {
+            frame.render_widget(Paragraph::new(Line::from(Span::styled(format!("{} Getting ready…", link.spinner()), theme.brand()))), body);
+            keys.push(("Esc", "stop"));
+        }
+        Stage::Waiting { code, address } => {
+            let qr = code.as_deref().and_then(Qr::new);
+            // The code goes left and the steps right when both fit, else the steps go under.
+            let text_w = 50u16;
+            let mut steps = body;
+            if let Some(qr) = &qr {
+                let fits = |big: bool| {
+                    let (w, h) = qr_size(qr, big);
+                    (w + text_w + 3 <= body.width && h <= body.height) || (w <= body.width && h + 12 <= body.height)
+                };
+                let big = link.big.unwrap_or_else(|| fits(true));
+                let (w, h) = qr_size(qr, big);
+                let qr_area = if w + text_w + 3 <= body.width {
+                    steps = Rect { x: body.x + w + 3, width: body.width - w - 3, ..body };
+                    Rect { x: body.x, y: body.y + body.height.saturating_sub(h) / 2, width: w, height: h.min(body.height) }
+                } else {
+                    steps = Rect { y: body.y + h + 1, height: body.height.saturating_sub(h + 1), ..body };
+                    Rect { x: body.x + body.width.saturating_sub(w) / 2, y: body.y, width: w.min(body.width), height: h.min(body.height) }
+                };
+                draw_qr(frame, qr_area, qr, big);
+                DREW_BIG.set(big);
+                keys.push(("c", "copy the code"));
+                keys.push(("z", if big { "smaller code" } else { "bigger code" }));
+            }
+            let mut lines = vec![
+                Line::from(vec![Span::styled("1  ", theme.brand()), Span::styled("On the device that has your vault, open", Style::new().fg(theme.text))]),
+                Line::from(vec![Span::raw("   "), Span::styled("Settings › Sync and accounts › Add a new device", Style::new().fg(theme.accent).add_modifier(Modifier::BOLD))]),
+                Line::default(),
+                Line::from(vec![Span::styled("2  ", theme.brand()), Span::styled("Then do one of these:", Style::new().fg(theme.text))]),
+            ];
+            if qr.is_some() {
+                lines.push(Line::from(vec![Span::styled("   ▸ ", theme.brand()), Span::styled("Scan this code", Style::new().fg(theme.text).add_modifier(Modifier::BOLD)), Span::styled("  with a phone's camera", theme.faint())]));
+            }
+            lines.push(Line::from(vec![Span::styled("   ▸ ", theme.brand()), Span::styled("Find it on this network", Style::new().fg(theme.text).add_modifier(Modifier::BOLD)), Span::styled("  and compare six digits", theme.faint())]));
+            if let Some(code) = code {
+                lines.push(Line::from(vec![Span::styled("   ▸ ", theme.brand()), Span::styled("Paste its code", Style::new().fg(theme.text).add_modifier(Modifier::BOLD)), Span::styled("  c copies it here:", theme.faint())]));
+                let room = usize::from(steps.width.saturating_sub(5)).max(10);
+                let chars: Vec<char> = code.chars().collect();
+                for chunk in chars.chunks(room) {
+                    lines.push(Line::from(Span::styled(format!("     {}", chunk.iter().collect::<String>()), Style::new().fg(theme.mid))));
+                }
+            }
+            lines.push(Line::default());
+            let left = link.seconds_left();
+            lines.push(Line::from(vec![
+                Span::styled(format!("{} ", link.spinner()), theme.brand()),
+                Span::styled("Waiting for your other device", Style::new().fg(theme.text)),
+                Span::styled(format!("  {}:{:02} left", left / 60, left % 60), Style::new().fg(if left < 20 { theme.warn } else { theme.low })),
+            ]));
+            let here = match address {
+                Some(address) => format!("This computer: {} · {address}", crate::join::device_name()),
+                None => format!("This computer: {} · no network address for a code", crate::join::device_name()),
+            };
+            lines.push(faint(here));
+            lines.push(Line::default());
+            lines.push(faint("Both need the same network. The vault comes over encrypted and opens only with its master password.".into()));
+            frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), steps);
+            keys.push(("Esc", "stop"));
+        }
+        Stage::Searching => {
+            let mut lines = vec![
+                text("On the new device, choose I already have a vault, then Get it from another device.".into()),
+                dim("It shows a code and waits. Pick it below, or paste the text under its code.".into()),
+                Line::default(),
+                Line::from(vec![
+                    Span::styled("Devices waiting on this network  ", theme.brand()),
+                    Span::styled(link.spinner(), theme.faint()),
+                ]),
+            ];
+            let list_y = body.y + lines.len() as u16;
+            if link.found.is_empty() {
+                lines.push(faint("  Looking… none yet. Both need the same network.".into()));
+            }
+            for (n, address) in link.found.iter().enumerate() {
+                let picked = n == link.at;
+                let base = if picked { theme.selected(true) } else { Style::new() };
+                lines.push(Line::from(vec![
+                    Span::styled(if picked { "▌ " } else { "  " }, base.fg(theme.primary)),
+                    Span::styled(format!("{} ", theme.g.get(Glyph::Brand)), base.fg(theme.accent)),
+                    Span::styled(format!("New device at {address}"), base.fg(theme.text).add_modifier(Modifier::BOLD)),
+                    Span::styled(if picked { "   Enter sends, after six digits match" } else { "" }, base.fg(theme.low)),
+                ]));
+            }
+            for n in 0..link.found.len() {
+                hit(Rect { x: body.x, y: list_y + n as u16, width: body.width, height: 1 }, Hit::LinkDevice(n));
+            }
+            lines.push(Line::default());
+            lines.push(Line::from(Span::styled("Or paste its code", theme.brand())));
+            let used = lines.len() as u16;
+            frame.render_widget(Paragraph::new(lines), body);
+            let boxed = Rect { y: body.y + used, height: 3, ..body };
+            if boxed.bottom() <= body.bottom() {
+                let look = BoxLook { label: "Code", secret: false, focused: true, placeholder: "wmpass-pair:1:…  (paste with your terminal's paste keys)" };
+                if let Some(at) = text_box(frame, boxed, theme, &link.code, &look) {
+                    frame.set_cursor_position(at);
+                }
+            }
+            keys.extend([("↑↓", "pick"), ("Enter", "send"), ("Esc", "stop")]);
+        }
+        Stage::Busy(what) => {
+            let lines = vec![Line::default(), Line::from(Span::styled(format!("{} {what}", link.spinner()), theme.brand())).centered()];
+            frame.render_widget(Paragraph::new(lines), body);
+            keys.push(("Esc", "stop"));
+        }
+        Stage::Digits { code, peer } => {
+            let mut lines = vec![
+                Line::default(),
+                Line::from(Span::styled("Do both screens show these six digits?", Style::new().fg(theme.text).add_modifier(Modifier::BOLD))).centered(),
+                Line::default(),
+            ];
+            if body.width >= 60 && body.height >= 14 {
+                lines.extend(big_digits(code, theme.accent));
+            } else {
+                lines.push(Line::from(Span::styled(crate::join::spaced(code), Style::new().fg(theme.accent).add_modifier(Modifier::BOLD))).centered());
+            }
+            lines.push(Line::default());
+            lines.push(Line::from(Span::styled(format!("The other device is {peer}"), theme.dim())).centered());
+            lines.push(Line::default());
+            let used = lines.len() as u16;
+            frame.render_widget(Paragraph::new(lines), body);
+            if used < body.height {
+                answer_buttons(frame, Rect { y: body.y + used, height: 1, ..body }, theme, "They match", "They differ");
+            }
+            keys.extend([("y", "match"), ("n", "differ"), ("Esc", "stop")]);
+        }
+        Stage::Received { path, from } => {
+            let lines = vec![
+                Line::default(),
+                Line::from(Span::styled("✓ Your vault is here", Style::new().fg(theme.ok).add_modifier(Modifier::BOLD))).centered(),
+                Line::default(),
+                Line::from(Span::styled(format!("It came from {from}, and is kept in {}.", path.display()), Style::new().fg(theme.text))).centered(),
+                Line::from(Span::styled("The two are paired. Unlock it with the vault's master password.", theme.dim())).centered(),
+            ];
+            frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), body);
+            keys.push(("Enter", "unlock it"));
+        }
+        Stage::Sent { to } => {
+            let lines = vec![
+                Line::default(),
+                Line::from(Span::styled(format!("✓ Sent to {to}"), Style::new().fg(theme.ok).add_modifier(Modifier::BOLD))).centered(),
+                Line::default(),
+                Line::from(Span::styled("Unlock it there with this vault's master password.", Style::new().fg(theme.text))).centered(),
+            ];
+            frame.render_widget(Paragraph::new(lines), body);
+            keys.push(("Enter", "done"));
+        }
+        Stage::Failed(problem) => {
+            let lines = vec![
+                Line::default(),
+                Line::from(Span::styled(format!("✕ {problem}"), Style::new().fg(theme.danger))).centered(),
+            ];
+            frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), body);
+            keys.extend([("r", "try again"), ("Esc", "close")]);
+        }
+    }
+    hint_bar(frame, foot, theme, &keys, Alignment::Right);
 }

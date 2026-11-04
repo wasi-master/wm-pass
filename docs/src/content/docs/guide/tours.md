@@ -14,7 +14,7 @@ In the app, start a tour from Settings, Guide, from **Show me** on a page of the
 
 *For a wide window.*
 
-1. Places in your vault. All items, favorites, one-time codes, the password generator, health checks and the trash. Which ones show, and in what order, is under Settings, Sidebar.
+1. Places in your vault. All items, favorites, one-time codes, the password generator, health checks and the trash. Which ones show, and in what order, is under Settings, Appearance, Sidebar.
 2. Search. Type part of a name, a website, a username or a tag. <kbd>Ctrl+F</kbd> (<kbd>⌘F</kbd> on a Mac) brings you here from anywhere in the window.
 3. Add an item. Choose what kind it is: a login, a one-time code, a note, a card and more. <kbd>Ctrl+N</kbd> (<kbd>⌘N</kbd> on a Mac) adds the first kind on the menu.
 4. Your items. Click one to see it. Right-click for the rest: copy, edit, favorite, pin, hide on the shelf or move to the trash.
@@ -51,7 +51,7 @@ In the app, start a tour from Settings, Guide, from **Show me** on a page of the
 1. Every kind of item starts here. Logins, one-time codes, notes, cards, identities, Wi-Fi, SSH keys and more. This tour opens a new login for you.
 2. Its name. What the item is called in your list. Leave it empty and the website’s name is used.
 3. Username and password. Type them in, or generate a password from the button in its field. Nothing is saved until you save.
-4. Everything else folds away. Websites, a one-time code, notes and more open when you need them. Which ones start open is under Settings, Editor.
+4. Everything else folds away. Websites, a one-time code, notes and more open when you need them. Which ones start open is under Settings, Adding and editing, Editor.
 5. Save. Saves the item to the vault. Close leaves without saving, and asks first if you changed anything.
 
 ## One-time codes
@@ -63,7 +63,7 @@ In the app, start a tour from Settings, Guide, from **Show me** on a page of the
 
 1. A new password. A fresh one each time something changes. Copy it, or save it as a new login.
 2. What kind. Random characters, a few words, something you can say aloud, a PIN, or a pattern of your own.
-3. Length and characters. Changes apply at once. What the generator starts with is under Settings, Generator.
+3. Length and characters. Changes apply at once. What the generator starts with is under Settings, Adding and editing, Generator.
 4. Keep it. Starts a new login with this password already filled in.
 
 ## Health

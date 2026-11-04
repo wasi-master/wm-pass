@@ -8,7 +8,9 @@
   import type { IconName } from '../engine/icons.svelte';
   import { ui } from '../vault/ui.svelte';
   import { highlight, ROUTE_COLOURS } from './nav.svelte';
-  import { GROUPS, PAGES, SEARCH_INDEX, type Found, type PageInfo } from './pages';
+  import { GROUPS, PAGES, SEARCH_INDEX, rootOf, whereOf, type Found, type PageInfo } from './pages';
+  import { available } from './shown';
+  import HubPage from './HubPage.svelte';
   import HelpButton from '../help/HelpButton.svelte';
   import { help } from '../help/help.svelte';
   import GuidePage from '../help/GuidePage.svelte';
@@ -93,20 +95,18 @@
   let query = $state('');
   const pageId = $derived(ui.section.split('/')[1] ?? null);
   const page = $derived(pageId ? PAGES.find((p) => p.id === pageId) : null);
-  const Current = $derived(pageId ? COMPONENTS[pageId] : null);
+  const Current = $derived(pageId ? (COMPONENTS[pageId] ?? (page?.hub ? HubPage : null)) : null);
   const backTo = $derived(page?.parent ? PAGES.find((p) => p.id === page!.parent) : null);
   const isDesktop = host().kind === 'desktop';
+  // The page on the list that holds this one, so a page inside a hub keeps its hub marked.
+  const listed = $derived(pageId ? rootOf(pageId) : null);
 
+  /** On the list itself, rather than inside a hub or reached from another page. */
   function shown(info: PageInfo) {
-    if (info.desktop && !isDesktop) return false;
-    if (info.extension && host().kind !== 'extension') return false;
-    if (info.mac && host().os !== 'mac') return false;
-    if (info.parent) return false;
-    if (info.needsNetwork && !host().network && !(info.viaDesktop && host().usernames)) return false;
-    return true;
+    return !info.parent && available(info);
   }
 
-  type Hit = Found & { topic?: string };
+  type Hit = Found & { where: string; topic?: string };
 
   // The guide's words load with the first letter typed, so its pages can be found too.
   $effect(() => {
@@ -120,9 +120,16 @@
     const rows: Hit[] = SEARCH_INDEX.filter((item) => {
       if (item.desktop && !isDesktop) return false;
       if (item.mac && host().os !== 'mac') return false;
-      const text = `${item.title} ${item.where} ${item.words ?? ''}`.toLowerCase();
-      return words.every((w) => text.includes(w));
-    }).sort((a, b) => rank(a.title, q) - rank(b.title, q));
+      const page = PAGES.find((p) => p.id === item.route);
+      if (page && !available(page)) return false;
+      return true;
+    })
+      .map((item) => ({ ...item, where: whereOf(item) }))
+      .filter((item) => {
+        const text = `${item.title} ${item.where} ${item.words ?? ''}`.toLowerCase();
+        return words.every((w) => text.includes(w));
+      })
+      .sort((a, b) => rank(a.title, q) - rank(b.title, q));
     // A setting is already found as its row, which has its own "?". The rest of the guide (pages,
     // screens, how things work) is listed after the rows.
     const titles = new Set(rows.map((r) => r.title));
@@ -207,7 +214,7 @@
           {#if pages.length > 0}
             <div class="side-title" style="padding-left:8px">{group}</div>
             {#each pages as info (info.id)}
-              <button type="button" class="side-item" style="height:32px" aria-current={pageId === info.id || page?.parent === info.id} data-help-anchor={info.id === 'guide' ? 'settings.guide' : undefined} onclick={() => go(info.id)}>
+              <button type="button" class="side-item" style="height:32px" aria-current={listed === info.id} data-help-anchor={info.id === 'guide' ? 'settings.guide' : undefined} onclick={() => go(info.id)}>
                 {@render tile(info.id, info.icon)}
                 <span class="grow ell">{info.title}</span>
               </button>
@@ -230,7 +237,11 @@
         <HelpButton id="page.{page.id}" title={page.title} />
       </div>
       {#key pageId}
-        <Current />
+        {#if page.hub}
+          <HubPage id={page.id} />
+        {:else}
+          <Current />
+        {/if}
       {/key}
     </div>
   </div>

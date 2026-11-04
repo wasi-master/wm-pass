@@ -305,9 +305,73 @@ fn warn_if_rolled_back(vault_file: &[u8], generation: u64) {
 struct Opened {
     path: PathBuf,
     vault: Box<Vault>,
+    /// The desktop app's folder, when the vault is the one it keeps.
+    #[cfg(feature = "tui")]
+    root: Option<PathBuf>,
+}
+
+/// The desktop app's folder, for `@app` or the folder's own path.
+#[cfg(feature = "tui")]
+fn app_root(path: &Path) -> Option<PathBuf> {
+    use wmpass_tui::app_folder;
+    if path == Path::new("@app") {
+        return app_folder::default_root();
+    }
+    app_folder::is_app_folder(path).then(|| path.to_owned())
+}
+
+/// Opens the vault in the desktop app's folder that the password opens, counting a wrong one
+/// against the app's own limit, as the app and the terminal app do.
+#[cfg(feature = "tui")]
+fn open_in_app(root: &Path) -> Result<Opened, String> {
+    use wmpass_tui::app_folder::{self, DoorState};
+    let mut door = DoorState::load(root);
+    let now = now_ms();
+    if let Some(at) = door.waiting(now) {
+        return Err(format!("too many wrong passwords; try again in {} min", at.saturating_sub(now).div_ceil(60_000)));
+    }
+    let files = app_folder::files(root)?;
+    if files.is_empty() {
+        return Err("the WM Pass app has no vault on this computer yet".to_owned());
+    }
+    let secret = password("Vault password: ")?;
+    let mut factors = Vec::new();
+    if let Some(key_path) = std::env::var_os("WMPASS_KEY_FILE") {
+        factors.push(key_file_factor(&read_file(Path::new(&key_path))?));
+    }
+    let set: Vec<&[u8]> = files.iter().map(|(_, bytes)| bytes.as_slice()).collect();
+    match open_set(&set, secret.expose().as_bytes(), &factors, device()).map_err(|e| e.to_string())? {
+        OpenOutcome::Opened { index, vault } => {
+            door.opened();
+            door.save(root);
+            let (name, file) = &files[index];
+            warn_if_rolled_back(file, vault.doc.generation);
+            remember_generation(file, vault.doc.generation);
+            Ok(Opened { path: app_folder::vault_path(root, name), vault, root: Some(root.to_owned()) })
+        }
+        OpenOutcome::Duress { action, .. } => {
+            if action == SlotAction::WipeLocal {
+                app_folder::wipe(root);
+            } else {
+                door.hard_lock(now);
+                door.save(root);
+            }
+            Err("wrong password".to_owned())
+        }
+        OpenOutcome::NoMatch => {
+            door.failed(now);
+            door.save(root);
+            Err("wrong password".to_owned())
+        }
+        OpenOutcome::NeedsFactor(_) => Err("this vault also needs a second factor; set WMPASS_KEY_FILE".to_owned()),
+    }
 }
 
 fn open(path: &Path) -> Result<Opened, String> {
+    #[cfg(feature = "tui")]
+    if let Some(root) = app_root(path).or_else(|| wmpass_tui::app_folder::root_of(path)) {
+        return open_in_app(&root);
+    }
     let file = read_file(path)?;
     let secret = password("Vault password: ")?;
     let mut factors = Vec::new();
@@ -323,6 +387,8 @@ fn open(path: &Path) -> Result<Opened, String> {
             Ok(Opened {
                 path: path.to_owned(),
                 vault,
+                #[cfg(feature = "tui")]
+                root: None,
             })
         }
         // A duress password looks like a wrong one from here.
@@ -335,6 +401,17 @@ fn open(path: &Path) -> Result<Opened, String> {
 
 fn save(opened: &mut Opened) -> Result<(), String> {
     let bytes = opened.vault.save().map_err(|e| e.to_string())?;
+    #[cfg(feature = "tui")]
+    if let Some(root) = &opened.root {
+        // As the app writes its folder: no backup beside the file, the partner decoy kept the
+        // same size, and every file's time the same.
+        use wmpass_tui::app_folder;
+        app_folder::write(&opened.path, &bytes)?;
+        remember_generation(&bytes, opened.vault.doc.generation);
+        let partner = opened.vault.chaff_file_name().map_err(|e| e.to_string())?;
+        let config = opened.vault.kdf_config().map_err(|e| e.to_string())?;
+        return app_folder::cover_tracks(root, &partner, bytes.len(), |n| wmpass_core::format::chaff_like(&config, n).map_err(|e| e.to_string()));
+    }
     write_atomic(&opened.path, &bytes)?;
     remember_generation(&bytes, opened.vault.doc.generation);
     Ok(())
@@ -380,9 +457,9 @@ fn run(cli: Cli) -> Result<(), String> {
         #[cfg(feature = "tui")]
         Command::Tui { vault } => wmpass_tui::run(vault)?,
         #[cfg(feature = "tui")]
-        Command::Join { vault } => wmpass_tui::join::receive(&vault)?,
+        Command::Join { vault } => wmpass_tui::join(vault)?,
         #[cfg(feature = "tui")]
-        Command::AddDevice { vault, code } => wmpass_tui::join::send(&vault, code.as_deref())?,
+        Command::AddDevice { vault, code } => wmpass_tui::add_device(vault, code.as_deref())?,
         Command::Create { vault, name } => {
             if vault.exists() {
                 return Err(format!("{} already exists", vault.display()));

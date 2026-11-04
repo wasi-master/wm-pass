@@ -53,6 +53,9 @@ pub struct FieldSpec {
     pub secret: bool,
     /// The values of a [`Input::Choice`].
     pub choices: &'static [&'static str],
+    /// Values people type often, offered as the field is filled.
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    pub suggestions: &'static [&'static str],
 }
 
 const fn spec(key: &'static str, label: &'static str, input: Input) -> FieldSpec {
@@ -63,6 +66,15 @@ const fn spec(key: &'static str, label: &'static str, input: Input) -> FieldSpec
         input,
         secret,
         choices: &[],
+        suggestions: &[],
+    }
+}
+
+/// A line of text with common values to pick from.
+const fn suggested(key: &'static str, label: &'static str, suggestions: &'static [&'static str]) -> FieldSpec {
+    FieldSpec {
+        suggestions,
+        ..spec(key, label, Input::Text)
     }
 }
 
@@ -73,6 +85,7 @@ const fn hidden_multiline(key: &'static str, label: &'static str) -> FieldSpec {
         input: Input::Multiline,
         secret: true,
         choices: &[],
+        suggestions: &[],
     }
 }
 
@@ -87,10 +100,24 @@ const fn choice(
         input: Input::Choice,
         secret: false,
         choices,
+        suggestions: &[],
     }
 }
 
 const WIFI: &[&str] = &["open", "wep", "wpa", "sae", "eap"];
+const ENGINES: &[&str] = &[
+    "PostgreSQL", "MySQL", "MariaDB", "SQLite", "SQL Server", "Oracle", "MongoDB", "Redis", "CockroachDB", "ClickHouse",
+    "Cassandra", "DynamoDB", "Elasticsearch", "Supabase", "Firebird",
+];
+const PROVIDERS: &[&str] = &[
+    "OpenAI", "Anthropic", "Google Cloud", "AWS", "Azure", "GitHub", "GitLab", "Stripe", "Cloudflare", "Twilio",
+    "SendGrid", "Mailgun", "DigitalOcean", "Hugging Face", "Mistral", "Firebase", "Vercel", "Netlify",
+];
+const DOCUMENTS: &[&str] = &[
+    "Passport", "Driver's license", "ID card", "Residence permit", "Social security card", "Health insurance card",
+    "Birth certificate",
+];
+const ISSUERS: &[&str] = &["Visa", "Mastercard", "American Express", "Discover", "JCB", "UnionPay", "Diners Club"];
 const FORMS: &[&str] = &["phrase", "codes"];
 
 /// Every kind's name, in the order a chooser lists them.
@@ -111,7 +138,7 @@ pub fn fields_of(kind: &str) -> &'static [FieldSpec] {
         spec("expiry", "Expires", Input::Text),
         spec("cvv", "Security code", Input::Hidden),
         spec("pin", "PIN", Input::Hidden),
-        spec("issuer", "Issuer", Input::Text),
+        suggested("issuer", "Issuer", ISSUERS),
         spec("billing", "Billing address", Input::Multiline),
     ];
     const IDENTITY: &[FieldSpec] = &[
@@ -123,7 +150,7 @@ pub fn fields_of(kind: &str) -> &'static [FieldSpec] {
     ];
     const NOTE: &[FieldSpec] = &[hidden_multiline("body", "Note")];
     const DOCUMENT: &[FieldSpec] = &[
-        spec("label", "Document type", Input::Text),
+        suggested("label", "Document type", DOCUMENTS),
         spec("number", "Number", Input::Hidden),
     ];
     const SSH: &[FieldSpec] = &[
@@ -134,14 +161,14 @@ pub fn fields_of(kind: &str) -> &'static [FieldSpec] {
         spec("agent_allowed", "Offer to the SSH agent", Input::Toggle),
     ];
     const API: &[FieldSpec] = &[
-        spec("provider", "Provider", Input::Text),
+        suggested("provider", "Provider", PROVIDERS),
         spec("key", "Key", Input::Hidden),
         spec("secret", "Secret", Input::Hidden),
         spec("scopes", "Scopes", Input::Text),
         spec("expires_ms", "Expires", Input::Date),
     ];
     const DATABASE: &[FieldSpec] = &[
-        spec("engine", "Engine", Input::Text),
+        suggested("engine", "Engine", ENGINES),
         spec("host", "Host", Input::Text),
         spec("port", "Port", Input::Number),
         spec("name", "Database", Input::Text),
@@ -312,7 +339,7 @@ pub enum Shown {
     Number(u64),
 }
 
-fn wifi_name(value: WifiSecurity) -> &'static str {
+pub(crate) fn wifi_name(value: WifiSecurity) -> &'static str {
     match value {
         WifiSecurity::Open => "open",
         WifiSecurity::Wep => "wep",

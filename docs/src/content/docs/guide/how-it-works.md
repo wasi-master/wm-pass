@@ -539,7 +539,9 @@ A password that has leaked anywhere is on the lists attackers try first, however
 
 #### How it works
 
-**Check every password** goes through each item with a password. WM Pass hashes the password with SHA-1 and sends only the first five characters of the hash to Have I Been Pwned. The service answers with every leaked hash that starts the same way, padded with dummy ones, and the comparison happens on your device, so the service cannot tell which password you asked about.
+**Check every password** goes through each item with a password, with Have I Been Pwned or XposedOrNot. WM Pass hashes the password and sends only the start of the hash: five characters of SHA-1 to Have I Been Pwned, or ten of Keccak-512 to XposedOrNot. The service answers with every leaked hash that starts the same way, and the comparison happens on your device, so the service cannot tell which password you asked about.
+
+The check keeps running when you leave the page, and **Stop** ends it early.
 
 Passwords it finds lead the list on the [Health screen](/guide/screens/#screen-health), with how many times each was seen.
 
@@ -752,7 +754,7 @@ Moving everything at once is not always possible. A work account on a Bitwarden 
 
 Add one under Settings, Sync and accounts, with **Add an account**, or at the door with **Add another vault or account**. Choose **Bitwarden**, **Bitwarden EU**, **Own server** or **KeePass file**.
 
-It then appears at the door beside your own vault. Choose it there and type its own password.
+An account opens in place of your vault, so adding one under Settings offers **Sign in now**: the vault locks and the door opens with the account chosen and its password asked for. Added at the door, it comes chosen there. Later, it appears at the door beside your own vault; choose it and type its own password.
 
 For a server account, your password is never sent: a key made from it proves who you are, as with any Bitwarden app. The first sign-in from a new device may need a code Bitwarden emails you, or a two-step code, typed beside the password.
 
@@ -1063,9 +1065,9 @@ The username checker asks a list of sites whether a name is already taken, so yo
 
 #### How it works
 
-Type a name on the [Username checker](/guide/settings/usernames/) page and choose **Check**. Each site is asked in turn and answers **Free**, **Taken** or **No clear answer**.
+Type a name on the [Username checker](/guide/settings/usernames/) page and choose **Check**. Every site is asked at once and answers **Free**, **Taken** or **No clear answer**.
 
-Sites that refuse anonymous lookups, or give the same answer for every name, are left out, because a guess is worse than no answer. X, Instagram, npm and PyPI are among them.
+Sites that refuse anonymous lookups, or give the same answer for every name, get no answer, because a guess is worse than none. X, Threads and Reddit are among them, and the page links their profiles for you to open yourself.
 
 #### Limits
 
@@ -1346,7 +1348,7 @@ A theme holds colors and a few settings. Nothing from your vault is in it.
 
 Themes use the same format on the phone and the computer, so a theme shared from one opens on the other.
 
-See also [Theme](/guide/settings/themes/), [Appearance](/guide/settings/look/), [Dark mode](/guide/settings/look/#setting-look).
+See also [Theme](/guide/settings/themes/), [Style and theme](/guide/settings/look/), [Dark mode](/guide/settings/look/#setting-look).
 
 <a id="feature-lock-tile"></a>
 
@@ -1435,7 +1437,7 @@ The style, theme, animations, the app, site and settings icons, and the list lay
 
 Your vault, dark mode, accent and your other settings stay as they were. Leaving the app, locking it, the screen going off or swiping it away never counts.
 
-See also [Appearance](/guide/settings/appearance/).
+See also [Appearance](/guide/settings/appearance/), [Style and theme](/guide/settings/look/).
 
 <a id="feature-home-widget"></a>
 

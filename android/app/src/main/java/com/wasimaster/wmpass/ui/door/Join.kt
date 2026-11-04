@@ -30,6 +30,8 @@ import com.wasimaster.wmpass.core.Engine
 import com.wasimaster.wmpass.core.EngineReply
 import com.wasimaster.wmpass.core.NativeFailure
 import com.wasimaster.wmpass.core.Pass
+import com.wasimaster.wmpass.core.SecretBytes
+import com.wasimaster.wmpass.core.SecureClipboard
 import com.wasimaster.wmpass.system.Lan
 import com.wasimaster.wmpass.ui.parts.Listening
 import com.wasimaster.wmpass.ui.parts.PrimaryButton
@@ -121,11 +123,27 @@ internal fun JoinSheet(onDismiss: () -> Unit) {
                         style = MaterialTheme.typography.bodyLarge,
                         textAlign = TextAlign.Center,
                     )
-                    qrText?.takeIf { it.isNotEmpty() }?.let { QrCode(it, Modifier.padding(horizontal = 30.dp)) }
+                    val shown = qrText?.takeIf { it.isNotEmpty() }
+                    shown?.let { QrCode(it, Modifier.padding(horizontal = 30.dp)) }
                     Text(
-                        "Another phone scans this code. A computer or the terminal app finds this phone on the network instead, and you compare six digits. Both need the same Wi-Fi.",
+                        if (shown != null) {
+                            "There, scan this code, or choose Find it on this network and compare six digits. A computer can also paste this code's text."
+                        } else {
+                            "There, choose Find it on this network, then compare six digits on both screens."
+                        },
                         color = colors.textMid,
                         style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center,
+                    )
+                    shown?.let { text ->
+                        QuietButton("Copy the code", icon = PassIcons.ContentCopy) {
+                            SecureClipboard.copy(context, "WM Pass code", SecretBytes(text.toByteArray()))
+                        }
+                    }
+                    Text(
+                        "Both need the same Wi-Fi. The vault arrives encrypted and opens only with its master password.",
+                        color = colors.textLow,
+                        style = MaterialTheme.typography.bodySmall,
                         textAlign = TextAlign.Center,
                     )
                 }

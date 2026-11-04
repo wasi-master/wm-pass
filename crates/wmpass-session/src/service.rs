@@ -16,7 +16,7 @@ use wmpass_core::otp::OtpConfig;
 use wmpass_core::sharing::{self, Manifest, MemberKeys, MemberPublic};
 use wmpass_core::search::{self, Context, Flags, FolderNames, Query};
 use wmpass_core::vault::{Freshness, OpenOutcome, Vault, check_freshness, hex, new_id, open_set, unhex};
-use wmpass_core::{Error, Secret, categorise, emergency, health, io, passkey, recovery, ssh, strength};
+use wmpass_core::{Error, Secret, categorise, emergency, health, io, passkey, recovery, related, ssh, strength, wifi};
 use zeroize::Zeroizing;
 
 use crate::fields;
@@ -107,6 +107,14 @@ impl From<Error> for SessionError {
             message: error.to_string(),
         }
     }
+}
+
+/// A QR code as rows of dark and light cells, `1` for dark, for any shell to draw.
+fn qr_view(bytes: &[u8]) -> Result<Reply, SessionError> {
+    let code = qrcode::QrCode::new(bytes).map_err(|_| invalid("too long for a QR code"))?;
+    let size = code.width();
+    let rows: String = code.to_colors().iter().map(|c| if *c == qrcode::Color::Dark { '1' } else { '0' }).collect();
+    Ok(Reply::view(json!({"size": size, "rows": rows})))
 }
 
 fn invalid(message: impl Into<String>) -> SessionError {
@@ -313,6 +321,13 @@ pub fn factor_of(view: &FactorView) -> Result<FactorKind, SessionError> {
                 .map_err(|_| invalid("bad challenge"))?,
             slot: *slot,
         },
+        FactorView::Webauthn {
+            credential_id,
+            input,
+        } => FactorKind::WebAuthn {
+            credential_id: raw(credential_id)?,
+            input: raw(input)?.try_into().map_err(|_| invalid("bad input"))?,
+        },
     })
 }
 
@@ -335,6 +350,32 @@ fn split_factors<'a>(
         })
         .collect();
     Ok((outputs, rest))
+}
+
+/// Every QR code in a picture, as text.
+fn read_qr(pixels: &[u8], width: usize, height: usize, rgba: bool) -> Result<Zeroizing<Vec<String>>, SessionError> {
+    let per = if rgba { 4 } else { 1 };
+    if width == 0 || height == 0 || width.checked_mul(height).and_then(|n| n.checked_mul(per)) != Some(pixels.len()) {
+        return Err(invalid("the picture's size does not match its pixels"));
+    }
+    let grey = |x: usize, y: usize| -> u8 {
+        let at = (y * width + x) * per;
+        if rgba {
+            // Rec. 601 weights, in integers.
+            let (r, g, b) = (u32::from(pixels[at]), u32::from(pixels[at + 1]), u32::from(pixels[at + 2]));
+            u8::try_from((r * 299 + g * 587 + b * 114) / 1000).unwrap_or(u8::MAX)
+        } else {
+            pixels[at]
+        }
+    };
+    let mut image = rqrr::PreparedImage::prepare_from_greyscale(width, height, grey);
+    let mut out = Zeroizing::new(Vec::new());
+    for grid in image.detect_grids() {
+        if let Ok((_, text)) = grid.decode() {
+            out.push(text);
+        }
+    }
+    Ok(out)
 }
 
 fn blob<'a>(call: &Call<'a>, at: usize) -> Result<&'a [u8], SessionError> {
@@ -431,7 +472,7 @@ impl Service {
 
     /// The address a Proxynova check may ask about, and the passwords to compare. Refuses an
     /// address that is not in this vault, so the check cannot look up someone else.
-    #[cfg(feature = "net")]
+    #[cfg(feature = "online")]
     pub fn comb_inputs(
         &mut self,
         handle: u64,
@@ -459,7 +500,7 @@ impl Service {
     }
 
     /// Shows a Bitwarden account through a mirror.
-    #[cfg(feature = "net")]
+    #[cfg(feature = "online")]
     pub fn adopt_bitwarden(
         &mut self,
         name: &str,
@@ -475,7 +516,7 @@ impl Service {
     }
 
     /// Passes changes on to a Bitwarden account and takes it out for a trip to the server.
-    #[cfg(feature = "net")]
+    #[cfg(feature = "online")]
     pub fn take_bitwarden(&mut self, handle: u64, now: u64) -> Result<Box<wmpass_bw::account::Account>, SessionError> {
         let session = self.session(handle)?;
         let vault = &mut session.vault;
@@ -490,7 +531,7 @@ impl Service {
     }
 
     /// Puts an account back after a trip to the server and shows what it brought.
-    #[cfg(feature = "net")]
+    #[cfg(feature = "online")]
     pub fn return_bitwarden(&mut self, handle: u64, account: Box<wmpass_bw::account::Account>, now: u64) -> Result<(), SessionError> {
         let session = self.session(handle)?;
         let mut remote = crate::remote::Remote::new(crate::remote::Account::Bitwarden(account));
@@ -538,12 +579,7 @@ impl Service {
         let now = call.now_ms;
         match method {
             // ---- files, keys, slots ----
-            "qr.encode" => {
-                let code = qrcode::QrCode::new(call.secret).map_err(|_| invalid("too long for a QR code"))?;
-                let size = code.width();
-                let rows: String = code.to_colors().iter().map(|c| if *c == qrcode::Color::Dark { '1' } else { '0' }).collect();
-                Ok(Reply::view(json!({"size": size, "rows": rows})))
-            }
+            "qr.encode" => qr_view(call.secret),
             "kinds" => {
                 let kinds: Vec<Value> = fields::KINDS
                     .iter()
@@ -617,6 +653,20 @@ impl Service {
                     }
                     _ => self.adopt(vault),
                 };
+                let session = self.session(handle)?;
+                Ok(Reply::view(Self::opened(handle, 0, &session.vault)))
+            }
+            // Quick unlock in a browser: the vault key, sealed by `vault.quick_seal` under what a
+            // passkey's PRF answered, opened again with a fresh answer. The key never leaves here.
+            "vault.quick_open" => {
+                let wrapping = quick_wrapping(call.secret)?;
+                let key = wmpass_core::crypto::open(&wrapping, blob(&call, 0)?, QUICK_AAD).ok_or_else(|| SessionError {
+                    code: "wrong_password",
+                    message: "the passkey's answer does not open this vault".to_owned(),
+                })?;
+                let raw: [u8; 32] = key.as_slice().try_into().map_err(|_| invalid("bad key"))?;
+                let vault = Vault::from_file(blob(&call, 1)?, VaultKey::from_bytes(raw), self.device)?;
+                let handle = self.adopt(vault);
                 let session = self.session(handle)?;
                 Ok(Reply::view(Self::opened(handle, 0, &session.vault)))
             }
@@ -716,6 +766,38 @@ impl Service {
                     blobs: Vec::new(),
                 })
             }
+            "qr.read" => {
+                // A picture or a camera frame, as RGBA or one byte of grey per pixel. What the
+                // codes say often holds a secret, such as a one-time code's seed, so it comes
+                // back as the secret, a JSON list of texts.
+                #[derive(Deserialize)]
+                struct A {
+                    width: usize,
+                    height: usize,
+                    #[serde(default)]
+                    rgba: bool,
+                }
+                let a: A = parse(call.args)?;
+                let pixels = blob(&call, 0)?;
+                let codes = read_qr(pixels, a.width, a.height, a.rgba)?;
+                let found = codes.len();
+                let secret = (found > 0).then(|| Zeroizing::new(serde_json::to_vec(&*codes).unwrap_or_default()));
+                Ok(Reply { json: json!({"found": found}).to_string(), secret, blobs: Vec::new() })
+            }
+            "site.change_password" => {
+                // Where a saved address lets you change the password, for any app's own button:
+                // the listed page, or for a site off the list the domain to ask, which the app
+                // passes to site.probe_change_password when it may use the network.
+                #[derive(Deserialize)]
+                struct A {
+                    site: String,
+                }
+                let a: A = parse(call.args)?;
+                Ok(Reply::view(json!({
+                    "url": wmpass_core::change_password::url(&a.site),
+                    "ask": wmpass_core::change_password::ask(&a.site),
+                })))
+            }
             "strength.assess" => {
                 #[derive(Deserialize, Default)]
                 #[serde(default)]
@@ -773,6 +855,39 @@ impl Service {
             "otp.parse" => {
                 let config = OtpConfig::from_uri(text(call.secret)?)?;
                 Ok(Reply::of(&views::otp_view(&config))?)
+            }
+            // The name, websites and apps of a login suggest each other.
+            "related.find" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    title: String,
+                    sites: Vec<String>,
+                    apps: Vec<String>,
+                    brand: Option<related::Brand>,
+                    site_brands: Vec<String>,
+                    installed: Option<Vec<related::App>>,
+                }
+                let a: A = parse(call.args)?;
+                let found = related::find(&related::Have {
+                    title: &a.title,
+                    sites: &a.sites,
+                    apps: &a.apps,
+                    brand: a.brand.as_ref(),
+                    site_brands: &a.site_brands,
+                    installed: a.installed.as_deref(),
+                });
+                Ok(Reply::of(&found)?)
+            }
+            "related.apps" => Ok(Reply::of(&related::known_apps())?),
+            // A `WIFI:` text read from a QR code. The password comes back as the secret.
+            "wifi.parse" => {
+                let network = wifi::parse(text(call.secret)?).ok_or_else(|| invalid("that is not a Wi-Fi network"))?;
+                Ok(Reply {
+                    json: json!({"ssid": network.ssid, "security": network.security, "hidden": network.hidden}).to_string(),
+                    secret: Some(Zeroizing::new(network.password.as_bytes().to_vec())),
+                    blobs: Vec::new(),
+                })
             }
             _ => self.vault_call(method, call),
         }
@@ -940,7 +1055,7 @@ impl Service {
             "remote.kind" => Ok(Reply::view(json!({"kind": match session.remote.as_ref().map(|r| &r.account) {
                 None => "vault",
                 Some(crate::remote::Account::Kdbx(_)) => "kdbx",
-                #[cfg(feature = "net")]
+                #[cfg(feature = "online")]
                 Some(crate::remote::Account::Bitwarden(_)) => "bitwarden",
             }}))),
             "vault.chaff_name" => Ok(Reply::view(json!({"name": session.vault.chaff_file_name()?}))),
@@ -955,6 +1070,11 @@ impl Service {
             // Handing the key to the platform's hardware right after an unlock, so the
             // password is not asked for twice in a row.
             "vault.key_for_wrapping" => Ok(wrapped_key(&session.vault)),
+            "vault.quick_seal" => {
+                let wrapping = quick_wrapping(call.secret)?;
+                let sealed = wmpass_core::crypto::seal(&wrapping, session.vault.key().expose_for_hardware_wrap(), QUICK_AAD)?;
+                Ok(Reply { json: "{}".to_owned(), secret: None, blobs: vec![sealed] })
+            }
             "vault.verify" => {
                 #[derive(Deserialize, Default)]
                 #[serde(default)]
@@ -1491,6 +1611,18 @@ impl Service {
                     })
                     .collect();
                 Ok(Reply::view(json!(rows)))
+            }
+            // The QR code another phone's camera reads to join a Wi-Fi item's network. The
+            // password goes into the code without leaving the session as text.
+            "wifi.qr" => {
+                let a: Id = parse(call.args)?;
+                let Kind::Wifi(network) = &session.entry(&a.id)?.kind else {
+                    return Err(invalid("only a Wi-Fi network has a QR code"));
+                };
+                let security = fields::wifi_name(network.security.v);
+                let code = wifi::code(&network.ssid.v, security, network.password.v.expose(), network.hidden_ssid.v)
+                    .ok_or_else(|| invalid("an enterprise network or one without a name has no QR code"))?;
+                qr_view(code.as_bytes())
             }
             "tags.icons" => {
                 let icons: BTreeMap<&str, &str> = session
@@ -2500,7 +2632,18 @@ fn base64_encode(bytes: &[u8]) -> String {
     B64.encode(bytes)
 }
 
+/// Shells encode with what their platform has to hand: `btoa` and Android's `Base64` give the
+/// standard alphabet with padding, Rust shells the URL-safe one without. Either is taken.
 pub(crate) fn base64_decode(text: &str) -> Result<Vec<u8>, SessionError> {
+    let text: String = text
+        .trim_end_matches('=')
+        .chars()
+        .map(|c| match c {
+            '+' => '-',
+            '/' => '_',
+            c => c,
+        })
+        .collect();
     B64.decode(text).map_err(|_| invalid("bad data"))
 }
 
@@ -2509,6 +2652,17 @@ fn wrong_password() -> SessionError {
         code: "wrong_password",
         message: "that password is not right".to_owned(),
     }
+}
+
+/// What a sealed quick-unlock key is bound to, so it cannot pass for anything else.
+const QUICK_AAD: &[u8] = b"wmpass quick unlock v1";
+
+/// The key that seals the vault key for quick unlock, from a passkey's PRF answer.
+fn quick_wrapping(prf: &[u8]) -> Result<Zeroizing<[u8; 32]>, SessionError> {
+    if prf.len() != 32 {
+        return Err(invalid("a passkey's answer is 32 bytes"));
+    }
+    Ok(wmpass_core::crypto::hkdf(prf, b"", "wmpass quick unlock")?)
 }
 
 fn wrapped_key(vault: &Vault) -> Reply {
@@ -2546,4 +2700,20 @@ fn match_rows(vault: &Vault, target: Target<'_>) -> Reply {
 
 fn format_by_name(name: &str) -> Option<io::Format> {
     io::Format::ALL.into_iter().find(|f| f.name() == name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The desktop shell's `btoa` and Android's `Base64.NO_WRAP` pad and use `+` and `/`.
+    #[test]
+    fn base64_from_any_shell_decodes() {
+        let bytes: Vec<u8> = (0..=255u8).chain([0xff]).collect();
+        let standard = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        assert!(standard.ends_with('=') && standard.contains('+') && standard.contains('/'));
+        assert_eq!(base64_decode(&standard).unwrap(), bytes);
+        assert_eq!(base64_decode(&B64.encode(&bytes)).unwrap(), bytes);
+        assert!(base64_decode("not base64!").is_err());
+    }
 }

@@ -28,6 +28,8 @@ export interface FieldSpec {
   input: string;
   secret: boolean;
   choices: string[];
+  /** Values people type often, offered as chips. */
+  suggestions?: string[];
 }
 
 export interface KindSpec {
@@ -97,6 +99,8 @@ export interface Detail extends Summary {
   history: RevisionView[];
   alias: string | null;
   questions: string[];
+  /** Where the site lets you change the password, for a login saved for a website. */
+  change_password?: string | null;
 }
 
 export interface OtpRow {
@@ -186,7 +190,7 @@ export interface LinkedView {
 }
 
 export interface NeededFactor {
-  kind: 'key_file' | 'fido2' | 'yubikey';
+  kind: 'key_file' | 'fido2' | 'webauthn' | 'yubikey';
   credential_id?: string;
   salt?: string;
   challenge?: string;
@@ -204,3 +208,15 @@ export type UnlockResult =
   | { kind: 'waiting'; retryAtMs: number }
   | { kind: 'needs_factor'; factors: NeededFactor[] }
   | { kind: 'hard_locked' };
+
+export interface RelatedApp {
+  package: string;
+  name: string;
+}
+
+/** What goes with a login: websites, apps and, for one without a name yet, a name. */
+export interface RelatedView {
+  sites: string[];
+  apps: RelatedApp[];
+  name: string | null;
+}

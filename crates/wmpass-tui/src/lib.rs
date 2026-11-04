@@ -6,6 +6,7 @@
 //! the vault locks after a quiet spell. The alternate screen leaves nothing in scrollback.
 
 mod app;
+pub mod app_folder;
 mod clip;
 mod door;
 mod draw;
@@ -15,6 +16,7 @@ mod generator;
 mod glyphs;
 mod input;
 pub mod join;
+mod link;
 mod store;
 mod theme;
 mod vault;
@@ -27,10 +29,35 @@ use ratatui::crossterm::execute;
 
 /// Runs the app until it is quit. `vault` is a file to open, or `None` for the last one.
 pub fn run(vault: Option<PathBuf>) -> Result<(), String> {
-    if !stdout().is_terminal() || !std::io::stdin().is_terminal() {
+    if !is_terminal() {
         return Err("the terminal app needs a terminal; for scripts, use the subcommands (wmpass --help)".to_owned());
     }
-    let mut app = app::App::new(vault);
+    run_app(app::App::new(vault))
+}
+
+fn is_terminal() -> bool {
+    stdout().is_terminal() && std::io::stdin().is_terminal()
+}
+
+/// Waits for a vault from another device, to keep at `vault`: full screen in a terminal, plain
+/// lines otherwise. Once it is here, the app goes on to unlock it.
+pub fn join(vault: PathBuf) -> Result<(), String> {
+    if !is_terminal() {
+        return join::receive(&vault);
+    }
+    run_app(app::App::linking(link::Role::Receive, vault))
+}
+
+/// Sends the vault in `vault` to a new device: full screen in a terminal, plain lines otherwise
+/// or when the new device's code is given.
+pub fn add_device(vault: PathBuf, code: Option<&str>) -> Result<(), String> {
+    if code.is_some() || !is_terminal() {
+        return join::send(&vault, code);
+    }
+    run_app(app::App::linking(link::Role::Send, vault))
+}
+
+fn run_app(mut app: app::App) -> Result<(), String> {
     let mut terminal = ratatui::init();
     let _ = execute!(stdout(), EnableMouseCapture, EnableBracketedPaste);
     let result = app.run(&mut terminal);

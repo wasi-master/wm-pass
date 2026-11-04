@@ -590,11 +590,11 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
     val webs = sites.filter { it.app == null }
     val apps = sites.mapNotNull { it.app }
     val context = androidx.compose.ui.platform.LocalContext.current
-    // Only a site that has such a page gets the line: the bundled list says at once, and any
+    // Only a site that has such a page gets the line: the core's list says at once, and any
     // other site is asked once whether its standard address leads anywhere.
     val firstWeb = webs.firstOrNull { it.openable != null }?.openable
     val change by androidx.compose.runtime.produceState(
-        com.wasimaster.wmpass.system.ChangePassword.listed(context, firstWeb) ?: com.wasimaster.wmpass.system.ChangePassword.remembered(firstWeb),
+        com.wasimaster.wmpass.system.ChangePassword.remembered(firstWeb),
         firstWeb,
         entry.kind,
     ) {

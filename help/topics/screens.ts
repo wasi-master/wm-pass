@@ -18,14 +18,19 @@ const LIST_ROWS = [
 const ITEM_FIELDS = [
   'Below come its fields. A secret shows as dots; the eye button shows it, and it hides again after the time set under [[setting.reveal_seconds]] or when you leave the item. When the password is showing, its strength is shown under it.',
   'A one-time code counts down with a ring and shows the next code in its last ten seconds. A counter-based code shows **New code** in place of the code.',
-  'Further down are the websites, passkeys, fields of your own, security questions, notes, an email alias, attachments, linked items, the reminder and the tags. With no tags yet, WM Pass may suggest one, guessed on your device.',
+  'Further down are the websites and apps, passkeys, fields of your own, security questions, notes, an email alias, attachments, linked items, the reminder and the tags. An app shows by its name when WM Pass knows it, with its package name under it.',
+  'A login for a website also has **Change the password on the site**, but only for a site that has a page for it: one on a list of known pages, or one that answers at its /.well-known/change-password address after first refusing an address no site has. A site off the list is asked only while WM Pass may use the network. Logins for apps and for devices on your own network have none.',
+  'Each tag has a cross that takes it off this item; clicking a tag lists everything with it. Right-click a tag to rename it, delete it from every item, or give it an icon. **Suggested** offers the tags the item\'s site and kind suggest, guessed on your device.',
+  'A Wi-Fi network has **QR code**, which shows the code another phone\'s camera reads to join it. An enterprise network has none.',
   'The history link at the bottom, such as **History, 2 earlier**, lists earlier values of secret fields, each hidden until you show it.',
 ];
 
 const EDITOR_PARTS = [
   'The name field comes first. Leave it empty and the website\'s name is used.',
   'The fields that kind of item needs come next. For some kinds, the less used ones wait under **More details**, unless [[setting.editor_fold_details]] is off.',
-  'Further sections open when you need them: **Websites** for a login, **One-time code** for a login or code, **Notes**, **More fields** for fields of your own, hidden or not, **Security questions** for a login, and **Organize** for the folder, tags, icon, color and favorite. A section that already holds something starts open; [[page.editor]] sets which empty ones do.',
+  'Further sections open when you need them: **Websites and apps** for a login, **One-time code** for a login or code, **Notes**, **More fields** for fields of your own, hidden or not, **Security questions** for a login, and **Organize** for the folder, tags, icon, color and favorite. A section that already holds something starts open; [[page.editor]] sets which empty ones do.',
+  'A login\'s name, websites and apps suggest each other under **Goes with this login**: facebook.com offers messenger.com and the Facebook, Lite and Messenger apps, and a login without a name is offered one. They are worked out on your device.',
+  'Fields with common values, such as a database\'s engine or a card\'s issuer, offer them as chips while you type.',
 ];
 
 const EDITOR_SECRETS = 'A secret that is already saved shows as **Saved. Click to change** and stays in the vault until you click it, so fixing a name never brings the password onto the screen.';
@@ -184,7 +189,7 @@ export const screens = [
       ...LIST_ROWS,
       'Clicking a row opens the item, and [[setting.tap_action]] can make it copy something as well. Double-clicking does what [[setting.double_click]] says. The copy button on a row\'s right edge shows when you point at it.',
       'Right-click a row for **Copy password**, **Copy username**, **Copy code**, **Open site**, **Edit**, **Duplicate**, favorites, **Pin to the top**, **Move to hidden shelf** and **Move to trash**.',
-      'Arrow keys move up and down the list. Hold Ctrl, or Cmd on a Mac, and click to choose several rows, or Shift-click to choose a run of them. The right pane then offers to add them to favorites, pin them, put them on the hidden shelf, or move them to the trash.',
+      'Arrow keys move up and down the list. Hold Ctrl, or Cmd on a Mac, and click to choose several rows, or Shift-click to choose a run of them. The right pane then offers to move them to a folder, give them a color or tags, link them together so each lists the others under Linked, add them to favorites, pin them, put them on the hidden shelf, or move them to the trash.',
     ],
     when: 'An empty vault offers **Add a login** and **Import**. A search that finds nothing offers **Add it as a login**, with what you typed as its name.',
     tour: 'tour.first_item',
@@ -234,7 +239,7 @@ export const screens = [
           'A one-time code counts down with a ring and shows the next code in its last ten seconds. A counter-based code shows **New code** in place of the code.',
           'Further down are the websites, passkeys, fields of your own, security questions, notes, attachments and linked items, then **History** with earlier values of secret fields.',
           '**More**, at the bottom, adds a tag, attaches a file, links another item, sets a reminder, a folder, a color or a self-destruct date, pins it, puts it on the hidden shelf, duplicates it, sends it to another device, or moves it to the trash.',
-          'A login shows **Change the password on the site** only for a site that has a page for it, found the way Health finds it. An app that is not installed offers the app stores on this phone, or Google Play and F-Droid in the browser when there are none.',
+          'A login for a website also has **Change the password on the site**, but only for a site that has a page for it, found the way Health finds it. An app that is not installed offers the app stores on this phone, or Google Play and F-Droid in the browser when there are none.',
         ],
         when: 'A copied secret is cleared from the clipboard after the time set under [[setting.clipboard_seconds]].',
       },
@@ -249,6 +254,8 @@ export const screens = [
       ...EDITOR_PARTS,
       EDITOR_SECRETS,
       'A password field has a show button, and **Generate**, which opens the generator; **Use this** puts the result in the field. While you type a password, a meter under it shows how strong it is. A username field has **Use an alias**. An SSH key\'s private key field has **Generate a key**.',
+      'A login\'s **Passkeys** section lists the passkeys sites have made, which cannot be typed in or changed. A one-time code has **Add a username and password**, which turns it into a login that keeps its code.',
+      'A Wi-Fi network has **Fill in from a QR code**, which reads the code a phone shows to share a network, from the camera or a picture. Pasting a `WIFI:` code into the network name fills in the rest. Typing a password on an open network sets it to WPA, and clearing it sets it back to open.',
       '**Save**, or Ctrl+S (Cmd+S on a Mac), saves and shows the item. **Close** leaves, and asks **Discard changes?** first if you changed anything.',
     ],
     when: '[[setting.editor_generate]] starts every new login with a generated password already in place.',
@@ -335,6 +342,9 @@ export const screens = [
     what: 'A score for your passwords, and a list of what to fix, worst first.',
     how: [
       ...HEALTH_PARTS,
+      'Under **Used more than once**, the logins are grouped by the password they share, so each group is one password to change. Under **In a known breach**, each item says how many times it was seen, and the most seen come first.',
+      'Clicking an item offers what fixes it: **Change the password on the site** opens the site\'s own page for that, and shows only for a site that has one: either it is on a list of known pages, or it answers at /.well-known/change-password after first refusing an address no site has. A missing second factor offers the site\'s settings. **Ignore for this check** takes the item off that list only, for sites with a second factor of their own and the like. **Ignored** lists them again, to put any back.',
+      '**Fix the most urgent** opens the first item of the most serious group in the editor.',
       '**Check for breaches** opens Settings, Breaches, and **Compare two passwords** opens a side-by-side comparison.',
     ],
     when: '{{key:health}} opens this screen from anywhere. Look after an import, and whenever the score drops.',

@@ -230,19 +230,6 @@ private fun fillWifi(fields: List<EditField>, title: TextFieldState, ssid: Strin
     if (title.text.isEmpty() && ssid.isNotEmpty()) title.setTextAndPlaceCursorAtEnd(ssid)
 }
 
-/** Values people type often, offered under the field as it is filled. */
-private val Suggestions = mapOf(
-    "engine" to listOf(
-        "PostgreSQL", "MySQL", "MariaDB", "SQLite", "SQL Server", "Oracle", "MongoDB", "Redis", "CockroachDB", "ClickHouse",
-        "Cassandra", "DynamoDB", "Elasticsearch", "Supabase", "Firebird",
-    ),
-    "provider" to listOf(
-        "OpenAI", "Anthropic", "Google Cloud", "AWS", "Azure", "GitHub", "GitLab", "Stripe", "Cloudflare", "Twilio",
-        "SendGrid", "Mailgun", "DigitalOcean", "Hugging Face", "Mistral", "Firebase", "Vercel", "Netlify",
-    ),
-    "label" to listOf("Passport", "Driver's license", "ID card", "Residence permit", "Social security card", "Health insurance card", "Birth certificate"),
-    "issuer" to listOf("Visa", "Mastercard", "American Express", "Discover", "JCB", "UnionPay", "Diners Club"),
-)
 
 private fun titleFromSite(url: String): String {
     val host = runCatching { URI(if ("://" in url) url else "https://$url").host }.getOrNull() ?: return ""
@@ -380,7 +367,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
             val spec = Pass.kinds().firstOrNull { it.kind == newKind }
             fields.addAll(
                 spec?.fields.orEmpty().map { f ->
-                    EditField(FieldView(f.key, f.label, f.input, f.secret, f.choices)).also { field ->
+                    EditField(FieldView(f.key, f.label, f.input, f.secret, f.choices, f.suggestions)).also { field ->
                         if (f.input == "choice" && f.choices.isNotEmpty()) field.text.setTextAndPlaceCursorAtEnd(f.choices.first())
                     }
                 },
@@ -433,7 +420,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
         scope.launch {
             val spec = Pass.kinds().firstOrNull { it.kind == "login" } ?: return@launch
             fields.clear()
-            fields.addAll(spec.fields.map { f -> EditField(FieldView(f.key, f.label, f.input, f.secret, f.choices)) })
+            fields.addAll(spec.fields.map { f -> EditField(FieldView(f.key, f.label, f.input, f.secret, f.choices, f.suggestions)) })
             if (sites.isEmpty()) sites.add(TextFieldState() to null)
             otpOpen = true
             kind = "login"
@@ -1606,7 +1593,7 @@ private fun FieldEditor(
                 if (spec.input == "password" && field.loaded && field.text.text.isNotEmpty()) {
                     LiveStrength(field.text, context)
                 }
-                Suggestions[spec.key]?.takeIf { !isSecret }?.let { FieldSuggestions(field.text, it) }
+                spec.suggestions.takeIf { it.isNotEmpty() && !isSecret }?.let { FieldSuggestions(field.text, it) }
             }
         } else {
             val isSecret = spec.secret
@@ -1688,7 +1675,7 @@ private fun FieldEditor(
                 if (spec.input == "password" && field.loaded && field.text.text.isNotEmpty()) {
                     LiveStrength(field.text, context)
                 }
-                Suggestions[spec.key]?.takeIf { !isSecret }?.let { FieldSuggestions(field.text, it) }
+                spec.suggestions.takeIf { it.isNotEmpty() && !isSecret }?.let { FieldSuggestions(field.text, it) }
             }
         }
     }

@@ -11,6 +11,9 @@ export default defineConfig({
       components: { PageTitle: './src/components/PageTitle.astro' },
       social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/wasi-master/wm-pass' }],
       customCss: ['./src/styles/guide.css'],
+      // Proves to Google Search Console that this site is ours, which Google's brand
+      // verification of the sign-in screen asks for. It has to stay for the proof to hold.
+      head: [{ tag: 'meta', attrs: { name: 'google-site-verification', content: 'iD_97pLxZEiUbIXCTrU4aRmKHGfZkguyIs_lldo2j2w' } }],
       sidebar: [
         { label: 'Start', items: [{ autogenerate: { directory: 'start' } }] },
         { label: 'Apps', items: [{ autogenerate: { directory: 'apps' } }] },

@@ -40,7 +40,9 @@ use agent::Agent;
 use bridge::Bridge;
 use engine::{Engine, now_ms};
 use store::Store;
-use widgets::{Link, Widgets};
+#[cfg(target_os = "macos")]
+use widgets::Link;
+use widgets::Widgets;
 
 struct Shell {
     close_to_tray: Mutex<bool>,
@@ -176,6 +178,7 @@ fn widgets_forget(widgets: State<'_, Arc<Widgets>>) {
 
 /// A `wmpass://widget/...` link: from a click on a widget, or from anything else that can open a
 /// link, so a panic lock and a copied password need the widgets' token.
+#[cfg(target_os = "macos")]
 fn open_link(app: &AppHandle, url: &str) {
     let widgets = app.state::<Arc<Widgets>>();
     let Some(link) = widgets::parse_link(url, &widgets.token) else { return };
@@ -218,11 +221,9 @@ fn open_link(app: &AppHandle, url: &str) {
 }
 
 /// Gives the front back to whatever had it, after a widget brought WM Pass forward to act.
+#[cfg(target_os = "macos")]
 fn hide_app(app: &AppHandle) {
-    #[cfg(target_os = "macos")]
     let _ = app.hide();
-    #[cfg(not(target_os = "macos"))]
-    let _ = app;
 }
 
 // ---- files in the app's folder ----
@@ -385,10 +386,11 @@ pub fn open_in_browser(url: &str) {
     let _ = std::process::Command::new(program).arg(url).spawn();
 }
 
-/// Only web addresses: a saved "site" comes from a vault that may hold anything.
+/// Only web addresses, and mail ones for the mail program: a saved "site" comes from a vault that
+/// may hold anything.
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
-    if !(url.starts_with("https://") || url.starts_with("http://")) || url.chars().any(char::is_control) {
+    if !(url.starts_with("https://") || url.starts_with("http://") || url.starts_with("mailto:")) || url.chars().any(char::is_control) {
         return Err("that is not a web address".to_owned());
     }
     open_in_browser(&url);

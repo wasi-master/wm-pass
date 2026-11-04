@@ -61,7 +61,8 @@ pub enum Ask {
 impl Door {
     /// A door for a file, or for the most recent one.
     pub fn new(path: Option<PathBuf>, recent: &[PathBuf]) -> Self {
-        let path = path.or_else(|| recent.first().cloned());
+        // The desktop app's vault comes first, so both open the same one.
+        let path = path.or_else(crate::app_folder::with_vaults).or_else(|| recent.first().cloned());
         let mut door = Self {
             mode: Mode::Unlock,
             focus: Field::Password,
@@ -204,8 +205,34 @@ impl Door {
     }
 }
 
-/// Where a first vault goes when nobody says: the home folder.
+/// Where a first vault goes when nobody says: the desktop app's folder when the app is on this
+/// computer, so both use it, else the home folder.
 pub fn default_new_path() -> PathBuf {
+    if let Some(root) = crate::app_folder::default_root().filter(|r| r.is_dir()) {
+        return root;
+    }
     let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from).unwrap_or_default();
     home.join("Personal.wmvault")
+}
+
+/// Where a vault coming from another device is kept: what was typed if that is free, else a
+/// new file in the desktop app's folder when the app is here, else beside the home folder.
+pub fn join_target(typed: &str) -> PathBuf {
+    let typed = crate::store::expand(typed);
+    if !typed.as_os_str().is_empty() && !typed.exists() {
+        return typed;
+    }
+    let base = default_new_path();
+    if base.is_dir()
+        && let Ok(name) = crate::app_folder::new_name()
+    {
+        return crate::app_folder::vault_path(&base, &name);
+    }
+    base
+}
+
+/// How the door shows a vault's place: the desktop app's folder by name, a file by its path.
+pub fn place_label(path: &str) -> Option<&'static str> {
+    let path = crate::store::expand(path);
+    (crate::app_folder::is_app_folder(&path) || crate::app_folder::root_of(&path).is_some()).then_some("The WM Pass app's vault on this computer")
 }
