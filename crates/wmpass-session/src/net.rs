@@ -603,7 +603,7 @@ pub async fn call_over(
                 return Ok(view(json!({"url": null})));
             }
             let policy = if online { NetPolicy::Any } else { NetPolicy::Offline };
-            let url = wmpass_net::change_password::find(&NativeHttp::default(), policy, &host).map_err(net_error)?;
+            let url = wmpass_net::change_password::find(http, policy, &host).await.map_err(net_error)?;
             Ok(view(json!({"url": url})))
         }
         // ---- accounts held elsewhere ----
@@ -653,7 +653,7 @@ pub async fn call_over(
             // Before an account is kept: the address answers as a Bitwarden server does. Says
             // nothing about the email, which a server answers the same for whether it knows it or not.
             if method == "bitwarden.check" {
-                wmpass_bw::api::run(wmpass_bw::api::prelogin(&endpoints, &a.email), &http, policy).map_err(|e| match e {
+                wmpass_bw::api::run_async(wmpass_bw::api::prelogin(&endpoints, &a.email), http, policy).await.map_err(|e| match e {
                     wmpass_bw::BwError::Net(NetError::Status(_) | NetError::BadAnswer) | wmpass_bw::BwError::BadAnswer => {
                         failed("bitwarden", "that address does not answer as a Bitwarden or Vaultwarden server does")
                     }

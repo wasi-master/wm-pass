@@ -4,10 +4,11 @@
 //! Most sites have no such address, and many answer every address with their home page, so an
 //! answer is trusted only when the site first says no to an address that cannot exist. Redirects
 //! are followed here, by hand, because the client follows none: each hop has to stay on https.
+//! Written against [`AsyncHttp`], so the browser builds can ask over `fetch` too.
 
 use url::Url;
 
-use crate::http::{Http, NetError, NetPolicy, Request, Response, check};
+use crate::http::{AsyncHttp, NetError, NetPolicy, Request, Response, check};
 
 /// Redirects followed before giving up.
 const HOPS: usize = 5;
@@ -27,13 +28,13 @@ fn plain_host(host: &str) -> bool {
 }
 
 /// GETs `url` and follows its redirects. The address it ended at, and that answer.
-fn follow(http: &dyn Http, policy: NetPolicy, url: String) -> Result<(Url, Response), NetError> {
+async fn follow(http: &impl AsyncHttp, policy: NetPolicy, url: String) -> Result<(Url, Response), NetError> {
     let mut at = Url::parse(&url).map_err(|_| NetError::Invalid("that address is not valid".into()))?;
     for _ in 0..=HOPS {
         let mut request = Request::get(at.as_str());
         request.timeout_ms = TIMEOUT_MS;
         check(&request, policy)?;
-        let response = http.send(&request)?;
+        let response = http.send(&request).await?;
         if !(300..400).contains(&response.status) {
             return Ok((at, response));
         }
@@ -52,16 +53,16 @@ fn follow(http: &dyn Http, policy: NetPolicy, url: String) -> Result<(Url, Respo
 /// The page where `host` changes passwords, or `None` when the site does not offer one this way.
 /// An error means no answer, such as no network, and is worth asking again later; `None` is the
 /// site's answer.
-pub fn find(http: &dyn Http, policy: NetPolicy, host: &str) -> Result<Option<String>, NetError> {
+pub async fn find(http: &impl AsyncHttp, policy: NetPolicy, host: &str) -> Result<Option<String>, NetError> {
     let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
     if !plain_host(&host) {
         return Err(NetError::Invalid("that is not a site's name".into()));
     }
-    let (_, probe) = follow(http, policy, format!("https://{host}{PROBE}"))?;
+    let (_, probe) = follow(http, policy, format!("https://{host}{PROBE}")).await?;
     if (200..300).contains(&probe.status) {
         return Ok(None);
     }
-    let (page, answer) = match follow(http, policy, format!("https://{host}{CHANGE}")) {
+    let (page, answer) = match follow(http, policy, format!("https://{host}{CHANGE}")).await {
         Ok(found) => found,
         // A redirect off https, or round in circles, is a site without a page to offer.
         Err(NetError::Insecure | NetError::BadAnswer) => return Ok(None),
@@ -78,6 +79,11 @@ pub fn find(http: &dyn Http, policy: NetPolicy, host: &str) -> Result<Option<Str
 mod tests {
     use super::*;
     use crate::http::fake::FakeHttp;
+    use crate::http::{Blocking, block_on};
+
+    fn find(http: &FakeHttp, policy: NetPolicy, host: &str) -> Result<Option<String>, NetError> {
+        block_on(super::find(&Blocking(http), policy, host))
+    }
 
     const SITE: &str = "https://example.com";
 
