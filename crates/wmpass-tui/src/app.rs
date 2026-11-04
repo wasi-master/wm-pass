@@ -50,8 +50,9 @@ pub enum Screen {
 /// What a prompt's answer is for.
 #[derive(Debug, Clone)]
 pub enum PromptFor {
-    NewFolder,
-    AddTag(String),
+    /// A new folder, and the items to move into it.
+    NewFolder(Vec<String>),
+    AddTag(Vec<String>),
     ImportPath,
     ImportPassword(PathBuf),
     ExportPath(String),
@@ -65,8 +66,8 @@ pub enum PromptFor {
 /// What a confirmation does on yes.
 #[derive(Debug, Clone)]
 pub enum Act {
-    Trash(String),
-    Purge(String),
+    Trash(Vec<String>),
+    Purge(Vec<String>),
     Export(String, PathBuf),
     Import,
 }
@@ -75,8 +76,9 @@ pub enum Act {
 #[derive(Debug, Clone)]
 pub enum PickFor {
     NewKind,
-    MoveFolder(String),
-    RemoveTag(String),
+    MoveFolder(Vec<String>),
+    RemoveTag(Vec<String>),
+    Color(Vec<String>),
     ExportFormat,
 }
 
@@ -92,6 +94,11 @@ pub enum Command {
     MoveFolder,
     AddTag,
     RemoveTag,
+    Color,
+    Hide,
+    Link,
+    Mark,
+    MarkAll,
     NewFolder,
     CopyPassword,
     CopyUsername,
@@ -120,17 +127,22 @@ pub enum Command {
 const SYNCED: [&str; 3] = ["tui_theme", "tui_icons", "reveal_seconds"];
 
 /// Every palette command, with its words and key.
-pub const COMMANDS: [(Command, &str, &str); 30] = [
+pub const COMMANDS: [(Command, &str, &str); 35] = [
     (Command::New, "New item", "n"),
     (Command::Edit, "Edit item", "e"),
     (Command::CopyPassword, "Copy password", "c"),
     (Command::CopyUsername, "Copy username", "u"),
     (Command::CopyCode, "Copy one-time code", "t"),
-    (Command::Favourite, "Favourite or not", "f"),
+    (Command::Favourite, "Favorite or not", "f"),
     (Command::Pin, "Pin to the top or not", "p"),
     (Command::MoveFolder, "Move to folder", "m"),
     (Command::AddTag, "Add a tag", "+"),
     (Command::RemoveTag, "Remove a tag", "-"),
+    (Command::Color, "Color", ""),
+    (Command::Hide, "Put on or take off the hidden shelf", ""),
+    (Command::Mark, "Mark or unmark, to act on several", "space"),
+    (Command::MarkAll, "Mark all listed, or none", ""),
+    (Command::Link, "Link the marked items together", ""),
     (Command::Duplicate, "Duplicate item", "ctrl+d"),
     (Command::Attach, "Attach a file", "a"),
     (Command::Trash, "Move to the trash", "d"),
@@ -152,6 +164,44 @@ pub const COMMANDS: [(Command, &str, &str); 30] = [
     (Command::Lock, "Lock now", "ctrl+l"),
     (Command::Quit, "Quit", "q"),
 ];
+
+/// The colors an item can wear: the apps' twelve hues, by the names the terminal shows them under.
+pub const HUES: [(&str, &str); 12] = [
+    ("25", "Red"),
+    ("55", "Orange"),
+    ("85", "Yellow"),
+    ("120", "Lime"),
+    ("150", "Green"),
+    ("180", "Teal"),
+    ("210", "Cyan"),
+    ("240", "Blue"),
+    ("270", "Indigo"),
+    ("300", "Purple"),
+    ("330", "Pink"),
+    ("355", "Rose"),
+];
+
+/// "1 item", "3 items".
+fn items(n: usize) -> String {
+    if n == 1 { "1 item".to_owned() } else { format!("{n} items") }
+}
+
+/// Has each item list the others under Linked, keeping the links it had.
+fn link_together(engine: &mut engine::Engine, ids: &[String]) -> Result<(), String> {
+    for id in ids {
+        let mut links = engine.detail(id)?.links;
+        let before = links.len();
+        for other in ids.iter().filter(|o| *o != id) {
+            if !links.contains(other) {
+                links.push(other.clone());
+            }
+        }
+        if links.len() != before {
+            engine.set_common(id, json!({"links": links}))?;
+        }
+    }
+    Ok(())
+}
 
 /// Something drawn over the screen.
 #[derive(Debug)]
@@ -711,6 +761,10 @@ impl App {
                 ui.pane = Pane::List;
                 return;
             }
+            KeyCode::Esc if !ui.marked.is_empty() => {
+                ui.marked.clear();
+                return self.say(Level::Info, "Nothing marked");
+            }
             KeyCode::Tab => {
                 ui.pane = match ui.pane {
                     Pane::Sidebar => Pane::List,
@@ -765,6 +819,7 @@ impl App {
                 KeyCode::Home | KeyCode::Char('g') => ui.move_list(-isize::MAX / 2),
                 KeyCode::End | KeyCode::Char('G') => ui.move_list(isize::MAX / 2),
                 KeyCode::Enter => ui.pane = Pane::Detail,
+                KeyCode::Char(' ') => ui.toggle_mark(),
                 _ => self.item_action(key),
             },
             Pane::Detail => match key.code {
@@ -831,14 +886,13 @@ impl App {
                 }
             }
             Command::Trash => {
-                if let Some(row) = ui.current().cloned() {
-                    self.overlay = Some(Overlay::Confirm {
-                        title: "Move to the trash?".into(),
-                        body: format!("{} stays in the trash for a while and can be brought back.", row.title),
-                        act: Act::Trash(row.id),
-                        danger: false,
-                    });
-                }
+                let ids = ui.targets();
+                let body = match (ids.len(), ui.current()) {
+                    (0, _) => return self.say(Level::Info, "Pick an item first"),
+                    (1, Some(row)) if ui.marked.is_empty() => format!("{} stays in the trash for a while and can be brought back.", row.title),
+                    (n, _) => format!("{} stay in the trash for a while and can be brought back.", items(n)),
+                };
+                self.overlay = Some(Overlay::Confirm { title: "Move to the trash?".into(), body, act: Act::Trash(ids), danger: false });
             }
             Command::Duplicate => {
                 let Some(id) = need(self) else { return };
@@ -853,14 +907,19 @@ impl App {
                 }
             }
             Command::Favourite | Command::Pin => {
-                let Some(row) = ui.current().cloned() else { return };
-                let (key, now) = if command == Command::Favourite { ("favourite", !row.favourite) } else { ("pinned", !row.pinned) };
-                match ui.engine.set_common(&row.id, json!({ key: now })) {
+                let ids = ui.targets();
+                if ids.is_empty() {
+                    return self.say(Level::Info, "Pick an item first");
+                }
+                let flag = |r: &engine::Row| if command == Command::Favourite { r.favourite } else { r.pinned };
+                let all = ids.iter().all(|id| ui.rows.iter().find(|r| r.id == *id).is_some_and(flag));
+                let op = if command == Command::Favourite { "favourite" } else { "pin" };
+                match ui.engine.bulk(&ids, op, json!({"flag": !all})) {
                     Ok(()) => {
                         ui.reload();
-                        let what = match (command, now) {
-                            (Command::Favourite, true) => "Added to favourites",
-                            (Command::Favourite, false) => "Taken out of favourites",
+                        let what = match (command, !all) {
+                            (Command::Favourite, true) => "Added to favorites",
+                            (Command::Favourite, false) => "Taken out of favorites",
                             (_, true) => "Pinned",
                             (_, false) => "Unpinned",
                         };
@@ -870,28 +929,95 @@ impl App {
                 }
             }
             Command::MoveFolder => {
-                let Some(id) = need(self) else { return };
-                let Screen::Vault(ui) = &self.screen else { return };
+                let ids = ui.targets();
+                if ids.is_empty() {
+                    return self.say(Level::Info, "Pick an item first");
+                }
                 let mut items = vec![(String::new(), "—  No folder".to_owned())];
                 let mut folders = ui.folders.clone();
                 folders.sort_by_key(|f| f.name.to_lowercase());
                 items.extend(folders.into_iter().map(|f| (f.id, format!("▸  {}", f.name))));
                 items.push(("+".into(), "+  New folder…".into()));
-                self.overlay = Some(Overlay::Pick { title: "Move to folder".into(), items, at: 0, then: PickFor::MoveFolder(id) });
+                self.overlay = Some(Overlay::Pick { title: "Move to folder".into(), items, at: 0, then: PickFor::MoveFolder(ids) });
             }
             Command::AddTag => {
-                let Some(id) = need(self) else { return };
-                self.prompt("Add a tag", "One word or a few, such as work", false, PromptFor::AddTag(id));
+                let ids = ui.targets();
+                if ids.is_empty() {
+                    return self.say(Level::Info, "Pick an item first");
+                }
+                self.prompt("Add a tag", "One word or a few, such as work", false, PromptFor::AddTag(ids));
             }
             Command::RemoveTag => {
-                let Some(row) = ui.current().cloned() else { return };
-                if row.tags.is_empty() {
-                    return self.say(Level::Info, "It has no tags");
+                let ids = ui.targets();
+                // Any tag one of them has; it comes off every one.
+                let mut tags: Vec<String> = Vec::new();
+                for row in ui.rows.iter().filter(|r| ids.contains(&r.id)) {
+                    for tag in &row.tags {
+                        if !tags.contains(tag) {
+                            tags.push(tag.clone());
+                        }
+                    }
                 }
-                let items = row.tags.iter().map(|t| (t.clone(), format!("#  {t}"))).collect();
-                self.overlay = Some(Overlay::Pick { title: "Remove a tag".into(), items, at: 0, then: PickFor::RemoveTag(row.id) });
+                if ids.is_empty() {
+                    return self.say(Level::Info, "Pick an item first");
+                }
+                if tags.is_empty() {
+                    return self.say(Level::Info, if ids.len() == 1 { "It has no tags" } else { "They have no tags" });
+                }
+                tags.sort_by_key(|t| t.to_lowercase());
+                let items = tags.into_iter().map(|t| (t.clone(), format!("#  {t}"))).collect();
+                self.overlay = Some(Overlay::Pick { title: "Remove a tag".into(), items, at: 0, then: PickFor::RemoveTag(ids) });
             }
-            Command::NewFolder => self.prompt("New folder", "Its name", false, PromptFor::NewFolder),
+            Command::Color => {
+                let ids = ui.targets();
+                if ids.is_empty() {
+                    return self.say(Level::Info, "Pick an item first");
+                }
+                let mut items = vec![(String::new(), "The site's own color".to_owned())];
+                items.extend(HUES.iter().map(|(hue, name)| ((*hue).to_owned(), (*name).to_owned())));
+                self.overlay = Some(Overlay::Pick { title: "Color".into(), items, at: 0, then: PickFor::Color(ids) });
+            }
+            Command::Hide => {
+                let ids = ui.targets();
+                if ids.is_empty() {
+                    return self.say(Level::Info, "Pick an item first");
+                }
+                let on_shelf = ui.sections.get(ui.section).is_some_and(|s| s.query == "hidden");
+                match ui.engine.bulk(&ids, "hide", json!({"flag": !on_shelf})) {
+                    Ok(()) => {
+                        ui.marked.clear();
+                        ui.reload();
+                        let text = if on_shelf {
+                            "Taken off the hidden shelf"
+                        } else {
+                            "Moved to the hidden shelf. Open it from the commands to see them"
+                        };
+                        self.say(Level::Good, text);
+                    }
+                    Err(e) => self.say(Level::Bad, e),
+                }
+            }
+            Command::Mark => ui.toggle_mark(),
+            Command::MarkAll => ui.mark_all(),
+            Command::Link => {
+                let ids = ui.marked.clone();
+                if ids.len() < 2 {
+                    return self.say(Level::Info, "Mark two or more with space first");
+                }
+                match link_together(&mut ui.engine, &ids) {
+                    Ok(()) => {
+                        ui.marked.clear();
+                        ui.reload();
+                        let text = if ids.len() == 2 { "Linked the two".to_owned() } else { format!("Linked all {}", ids.len()) };
+                        self.say(Level::Good, text);
+                    }
+                    Err(e) => self.say(Level::Bad, e),
+                }
+            }
+            Command::NewFolder => {
+                let ids = ui.current_id().into_iter().collect();
+                self.prompt("New folder", "Its name", false, PromptFor::NewFolder(ids));
+            }
             Command::CopyPassword => self.copy_main(),
             Command::CopyUsername => self.copy_username(),
             Command::CopyCode => self.copy_code(),
@@ -1038,9 +1164,12 @@ impl App {
         let Some(detail) = &ui.detail else { return self.say(Level::Info, "Pick an item first") };
         let main = detail.fields.iter().find(|f| f.secret && f.has_value).map(|f| (f.label.clone(), f.key.clone()));
         let has_code = detail.otp.is_some();
+        let has_user = detail.fields.iter().any(|f| matches!(f.key.as_str(), "username" | "email" | "holder" | "user" | "ssid") && f.has_value);
+        // As in the apps: with no password, the code, and then the username.
         match main {
             Some((label, key)) => self.copy_secret(&label, &Secret::Field(key)),
             None if has_code => self.copy_code(),
+            None if has_user => self.copy_username(),
             None => self.say(Level::Info, "Nothing secret to copy here"),
         }
     }
@@ -1144,9 +1273,13 @@ impl App {
 
     fn restore(&mut self) {
         let Screen::Vault(ui) = &mut self.screen else { return };
-        let Some(id) = ui.current_id() else { return };
-        match ui.engine.restore(&id) {
+        let ids = ui.targets();
+        if ids.is_empty() {
+            return;
+        }
+        match ui.engine.bulk(&ids, "restore", json!({})) {
             Ok(()) => {
+                ui.marked.clear();
                 ui.reload();
                 self.say(Level::Good, "Brought back");
             }
@@ -1156,11 +1289,16 @@ impl App {
 
     fn ask_purge(&mut self) {
         let Screen::Vault(ui) = &self.screen else { return };
-        let Some(row) = ui.current().cloned() else { return };
+        let ids = ui.targets();
+        let what = match (ids.len(), ui.current()) {
+            (0, _) => return,
+            (1, Some(row)) if ui.marked.is_empty() => format!("{} and its files go", row.title),
+            (n, _) => format!("{} and their files go", items(n)),
+        };
         self.overlay = Some(Overlay::Confirm {
             title: "Delete for good?".into(),
-            body: format!("{} and its files go now, on this device and, at the next sync, everywhere else. This cannot be undone.", row.title),
-            act: Act::Purge(row.id),
+            body: format!("{what} now, on this device and, at the next sync, everywhere else. This cannot be undone."),
+            act: Act::Purge(ids),
             danger: true,
         });
     }
@@ -1461,8 +1599,19 @@ impl App {
     fn confirmed(&mut self, act: Act) {
         let Screen::Vault(ui) = &mut self.screen else { return };
         let result = match act {
-            Act::Trash(id) => ui.engine.trash(&id).map(|()| "Moved to the trash. Restore it from Trash with u".to_owned()),
-            Act::Purge(id) => ui.engine.purge(&id).map(|()| "Deleted for good".to_owned()),
+            Act::Trash(ids) => {
+                ui.marked.clear();
+                let text = if ids.len() == 1 {
+                    "Moved to the trash. Restore it from Trash with u".to_owned()
+                } else {
+                    format!("{} moved to the trash. Restore them from Trash with u", items(ids.len()))
+                };
+                ui.engine.bulk(&ids, "trash", json!({})).map(|()| text)
+            }
+            Act::Purge(ids) => {
+                ui.marked.clear();
+                ui.engine.bulk(&ids, "purge", json!({})).map(|()| "Deleted for good".to_owned())
+            }
             Act::Import => ui
                 .engine
                 .import_apply()
@@ -1513,25 +1662,35 @@ impl App {
                 }
                 self.overlay = Some(Overlay::Editor(Box::new(editor)));
             }
-            PickFor::MoveFolder(_) if choice == "+" => {
-                self.prompt("New folder", "Its name. The item moves into it", false, PromptFor::NewFolder);
+            PickFor::MoveFolder(ids) if choice == "+" => {
+                let hint = if ids.len() == 1 { "Its name. The item moves into it" } else { "Its name. The items move into it" };
+                self.prompt("New folder", hint, false, PromptFor::NewFolder(ids));
             }
-            PickFor::MoveFolder(id) => {
+            PickFor::MoveFolder(ids) => {
                 let folder = (!choice.is_empty()).then_some(choice);
-                match ui.engine.set_common(&id, json!({"folder": folder})) {
+                match ui.engine.bulk(&ids, "folder", json!({"folder": folder})) {
                     Ok(()) => {
+                        ui.marked.clear();
                         ui.reload();
                         self.say(Level::Good, "Moved");
                     }
                     Err(e) => self.say(Level::Bad, e),
                 }
             }
-            PickFor::RemoveTag(id) => {
-                let tags: Vec<String> = ui.current().map(|r| r.tags.iter().filter(|t| **t != choice).cloned().collect()).unwrap_or_default();
-                match ui.engine.set_common(&id, json!({"tags": tags})) {
+            PickFor::RemoveTag(ids) => match ui.engine.bulk(&ids, "tag_remove", json!({"tag": choice})) {
+                Ok(()) => {
+                    ui.reload();
+                    self.say(Level::Good, format!("Removed #{choice}"));
+                }
+                Err(e) => self.say(Level::Bad, e),
+            },
+            PickFor::Color(ids) => {
+                let color = (!choice.is_empty()).then_some(choice);
+                match ui.engine.bulk(&ids, "color", json!({"color": color})) {
                     Ok(()) => {
+                        ui.marked.clear();
                         ui.reload();
-                        self.say(Level::Good, format!("Removed #{choice}"));
+                        self.say(Level::Good, if color.is_some() { "Color set" } else { "Back to the site's own color" });
                     }
                     Err(e) => self.say(Level::Bad, e),
                 }
@@ -1560,15 +1719,15 @@ impl App {
         let Screen::Vault(ui) = &mut self.screen else { return };
         let text = answer.trim();
         match then {
-            PromptFor::NewFolder => {
+            PromptFor::NewFolder(ids) => {
                 if text.is_empty() {
                     return;
                 }
-                let picked = ui.current_id();
                 match ui.engine.add_folder(text) {
                     Ok(folder) => {
-                        if let Some(id) = picked {
-                            let _ = ui.engine.set_common(&id, json!({"folder": folder}));
+                        if !ids.is_empty() {
+                            let _ = ui.engine.bulk(&ids, "folder", json!({"folder": folder}));
+                            ui.marked.clear();
                         }
                         ui.reload();
                         self.say(Level::Good, format!("Folder {text} made"));
@@ -1576,16 +1735,12 @@ impl App {
                     Err(e) => self.say(Level::Bad, e),
                 }
             }
-            PromptFor::AddTag(id) => {
+            PromptFor::AddTag(ids) => {
                 if text.is_empty() {
                     return;
                 }
-                let mut tags = ui.current().map(|r| r.tags.clone()).unwrap_or_default();
                 let tag = text.trim_start_matches('#').to_owned();
-                if !tags.contains(&tag) {
-                    tags.push(tag.clone());
-                }
-                match ui.engine.set_common(&id, json!({"tags": tags})) {
+                match ui.engine.bulk(&ids, "tag_add", json!({"tag": tag})) {
                     Ok(()) => {
                         ui.reload();
                         self.say(Level::Good, format!("Tagged #{tag}"));

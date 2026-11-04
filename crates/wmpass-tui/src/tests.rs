@@ -388,3 +388,56 @@ fn print_join_screens() {
     app.overlay = Some(Overlay::Link(Box::new(LinkUi::at_stage(Role::Send, Stage::Digits { code: "482913".into(), peer: "Pixel 9".into() }))));
     println!("{}", screen(&mut app, 110, 30));
 }
+
+#[test]
+fn marked_items_are_acted_on_together() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    press(&mut app, KeyCode::Char(' '));
+    press(&mut app, KeyCode::Char(' '));
+    assert!(screen(&mut app, 140, 40).contains("2 marked"));
+
+    let run = |app: &mut App, words: &str| {
+        press(app, KeyCode::Char(':'));
+        typed(app, words);
+        press(app, KeyCode::Enter);
+    };
+    run(&mut app, "add a tag");
+    typed(&mut app, "work");
+    press(&mut app, KeyCode::Enter);
+    run(&mut app, "favorite or");
+    let Screen::Vault(ui) = &app.screen else { panic!("locked") };
+    assert!(ui.rows.iter().all(|r| r.tags.contains(&"work".to_owned())), "tagged both");
+    assert!(ui.rows.iter().all(|r| r.favourite), "one was a favorite, so both became one");
+    assert_eq!(ui.marked.len(), 2, "still marked");
+
+    run(&mut app, "color");
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Enter);
+    let Screen::Vault(ui) = &app.screen else { panic!("locked") };
+    assert!(ui.rows.iter().all(|r| r.color.as_deref() == Some("25")), "both red");
+    assert!(ui.marked.is_empty(), "a color clears the marks, as on the phone");
+
+    press(&mut app, KeyCode::Char('g'));
+    press(&mut app, KeyCode::Char(' '));
+    press(&mut app, KeyCode::Char(' '));
+    run(&mut app, "link the marked");
+    let Screen::Vault(ui) = &mut app.screen else { panic!("locked") };
+    let ids: Vec<String> = ui.rows.iter().map(|r| r.id.clone()).collect();
+    for (n, id) in ids.iter().enumerate() {
+        let other = &ids[1 - n];
+        assert_eq!(ui.engine.detail(id).expect("detail").links, vec![other.clone()]);
+    }
+
+    press(&mut app, KeyCode::Char(' '));
+    press(&mut app, KeyCode::Esc);
+    let Screen::Vault(ui) = &app.screen else { panic!("locked") };
+    assert!(ui.marked.is_empty(), "Esc unmarks");
+    press(&mut app, KeyCode::Char('g'));
+    press(&mut app, KeyCode::Char(' '));
+    press(&mut app, KeyCode::Char(' '));
+    press(&mut app, KeyCode::Char('d'));
+    press(&mut app, KeyCode::Char('y'));
+    let Screen::Vault(ui) = &app.screen else { panic!("locked") };
+    assert!(ui.rows.is_empty() && ui.marked.is_empty(), "both in the trash");
+}

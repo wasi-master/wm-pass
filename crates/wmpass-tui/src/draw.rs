@@ -510,7 +510,8 @@ fn draw_bottom(frame: &mut Frame, area: Rect, ui: &VaultUi, theme: &Theme, toast
         Tab::Items if ui.in_trash() => vec![("u", "restore"), ("D", "delete for good"), ("?", "keys")],
         Tab::Items => match ui.pane {
             Pane::Detail => vec![("r", "show"), ("y", "copy line"), ("e", "edit"), (":", "commands"), ("?", "keys")],
-            _ => vec![("/", "search"), ("c", "copy"), ("u", "user"), ("n", "new"), (":", "commands"), ("?", "keys")],
+            _ if !ui.marked.is_empty() => vec![("Space", "mark"), ("Esc", "unmark"), ("d", "trash"), ("m", "folder"), (":", "more"), ("?", "keys")],
+            _ => vec![("/", "search"), ("c", "copy"), ("u", "user"), ("Space", "mark"), ("n", "new"), (":", "commands"), ("?", "keys")],
         },
         Tab::Codes => vec![("Enter", "copy"), ("/", "filter"), ("o", "open item"), ("?", "keys")],
         Tab::Generator => vec![("←→", "change"), ("Enter", "again"), ("c", "copy"), ("?", "keys")],
@@ -521,7 +522,9 @@ fn draw_bottom(frame: &mut Frame, area: Rect, ui: &VaultUi, theme: &Theme, toast
         Some(toast) => toast_line(toast, theme),
         None => {
             let shown = ui.rows.len();
-            let text = if ui.tab == Tab::Items {
+            let text = if ui.tab == Tab::Items && !ui.marked.is_empty() {
+                format!(" {} marked of {shown}", ui.marked.len())
+            } else if ui.tab == Tab::Items {
                 if shown == ui.total { format!(" {shown} items") } else { format!(" {shown} of {} items", ui.total) }
             } else {
                 String::new()
@@ -616,7 +619,11 @@ fn draw_sidebar(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme) 
 fn draw_list(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme) -> Option<Position> {
     let focused = ui.pane == Pane::List || ui.searching;
     let section = ui.sections.get(ui.section).map(|s| s.label.clone()).unwrap_or_default();
-    let block = panel(theme, Line::from(vec![Span::styled(format!(" {section} "), theme.brand())]), focused)
+    let mut heading = vec![Span::styled(format!(" {section} "), theme.brand())];
+    if !ui.marked.is_empty() {
+        heading.push(Span::styled(format!("{} marked ", ui.marked.len()), Style::new().fg(theme.primary).add_modifier(Modifier::BOLD)));
+    }
+    let block = panel(theme, Line::from(heading), focused)
         .title_bottom(Line::from(Span::styled(format!(" {} ", ui.sort.name()), theme.faint())).right_aligned());
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -689,8 +696,14 @@ fn draw_list(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme) -> 
                 title.push('…');
             }
             let pad = width.saturating_sub(title.chars().count() + badge_w + 2);
+            // A marked row wears a tick where its kind's icon was.
+            let lead = if ui.is_marked(&row.id) {
+                Span::styled("✓ ", Style::new().fg(theme.primary).add_modifier(Modifier::BOLD))
+            } else {
+                Span::styled(format!("{} ", theme.g.kind(&row.kind)), Style::new().fg(colour))
+            };
             let first = Line::from(vec![
-                Span::styled(format!("{} ", theme.g.kind(&row.kind)), Style::new().fg(colour)),
+                lead,
                 Span::styled(title, Style::new().fg(theme.text).add_modifier(Modifier::BOLD)),
                 Span::raw(" ".repeat(pad)),
                 Span::styled(badges, Style::new().fg(theme.warn)),
@@ -1301,7 +1314,8 @@ fn draw_overlay(frame: &mut Frame, area: Rect, overlay: &Overlay, theme: &Theme,
             }
             hint_bar(frame, Rect { y: inner.bottom() - 1, height: 1, ..inner }, theme, &[("Enter", "done"), ("Esc", "cancel")], Alignment::Right);
         }
-        Overlay::Pick { title, items, at, .. } => {
+        Overlay::Pick { title, items, at, then } => {
+            let colors = matches!(then, crate::app::PickFor::Color(_));
             let height = (items.len() as u16 + 4).min(area.height - 2);
             let inner = popup(frame, area, 64, height, theme, title, false);
             let skip = at.saturating_sub(usize::from(inner.height.saturating_sub(3)));
@@ -1313,10 +1327,16 @@ fn draw_overlay(frame: &mut Frame, area: Rect, overlay: &Overlay, theme: &Theme,
                     let picked = n == *at;
                     let base = if picked { theme.selected(true) } else { Style::new() };
                     let width = usize::from(inner.width).saturating_sub(label.chars().count() + 1);
-                    Line::from(vec![
-                        Span::styled(if picked { "▌" } else { " " }, base.fg(theme.primary)),
-                        Span::styled(format!("{label}{}", " ".repeat(width)), base.fg(theme.text)),
-                    ])
+                    let mut line = vec![Span::styled(if picked { "▌" } else { " " }, base.fg(theme.primary))];
+                    if colors {
+                        // Each color shows itself; the first, the site's own, shows the login's.
+                        let id = &items[n].0;
+                        let swatch = theme.label((!id.is_empty()).then_some(id.as_str()), "login");
+                        line.push(Span::styled("● ", base.fg(swatch)));
+                    }
+                    let width = width.saturating_sub(if colors { 2 } else { 0 });
+                    line.push(Span::styled(format!("{label}{}", " ".repeat(width)), base.fg(theme.text)));
+                    Line::from(line)
                 })
                 .collect();
             let rows = Rect { y: inner.y + 1, height: inner.height.saturating_sub(2), ..inner };
@@ -1471,7 +1491,7 @@ fn draw_help(frame: &mut Frame, area: Rect, theme: &Theme) {
         ("Anywhere", &[("1-4", "Items, Codes, Generator, Health"), (": or ^K", "commands"), ("^L", "lock now"), ("^T", "next theme"), ("?", "this list"), ("q", "quit")]),
         ("Moving", &[("↑↓ or j k", "move"), ("←→ or h l", "pane"), ("Tab", "next pane"), ("g G", "top, bottom"), ("Enter", "open")]),
         ("Search", &[("/", "search"), ("Esc", "clear"), ("tag:work", "by tag"), ("kind:card", "by kind"), ("has:otp", "with codes"), ("weak reused old", "health")]),
-        ("Item", &[("c", "copy password"), ("u", "copy username"), ("t", "copy code"), ("r", "show password"), ("e n", "edit, new"), ("d", "trash"), ("f p", "favourite, pin"), ("m + -", "folder, tags"), ("a", "attach a file")]),
+        ("Item", &[("c", "copy password"), ("u", "copy username"), ("t", "copy code"), ("r", "show password"), ("e n", "edit, new"), ("d", "trash"), ("f p", "favorite, pin"), ("m + -", "folder, tags"), ("a", "attach a file"), ("Space", "mark, to act on several")]),
         ("In an item", &[("r Space", "show or hide"), ("y Enter", "copy the line"), ("o", "save a file")]),
         ("In the trash", &[("u", "restore"), ("D", "delete for good")]),
     ];

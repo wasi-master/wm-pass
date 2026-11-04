@@ -283,6 +283,17 @@ impl Theme {
         if self.colourless() {
             return Color::Reset;
         }
+        // The apps keep a color as a hue in degrees; the terminal has a handful to show it with.
+        if let Some(hue) = color.and_then(|c| c.parse::<u16>().ok()) {
+            return match hue % 360 {
+                0..=40 | 341..=359 => self.danger,
+                41..=100 => self.warn,
+                101..=165 => self.ok,
+                166..=225 => self.accent,
+                226..=260 => self.info,
+                _ => Color::Magenta,
+            };
+        }
         match color.unwrap_or("") {
             "red" => return self.danger,
             "orange" | "yellow" => return self.warn,
