@@ -61,6 +61,9 @@ jobs:
       # The phone's help.json and the docs' Guide pages are written from help/ and committed.
       - run: npm run help && test -z "$(git status --porcelain data/help docs/src/content/docs/guide)"
       - run: npx playwright install --with-deps chromium
+      # The web vault, built first so the extension's test can check the hand-over from it.
+      - run: npm run web:build
+      - run: xvfb-run -a node web/test/run.mjs
       - run: xvfb-run -a node extension/test/run.mjs
 
   android:

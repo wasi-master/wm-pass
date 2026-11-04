@@ -93,6 +93,16 @@ pub enum FactorKind {
         /// OTP slot on the key, 1 or 2.
         slot: u8,
     },
+    /// A FIDO2 key as a browser reaches one, through WebAuthn's PRF extension. The credential
+    /// belongs to the relying party `wmpass.pages.dev`, and hmac-secret is asked with
+    /// `SHA-256("WebAuthn PRF" || 0x00 || input)`. Native shells ask exactly that over CTAP,
+    /// so a key set up in any shell opens the vault in every one.
+    WebAuthn {
+        /// Credential id on the authenticator.
+        credential_id: Vec<u8>,
+        /// The PRF input.
+        input: [u8; 32],
+    },
 }
 
 impl FactorKind {
@@ -102,15 +112,19 @@ impl FactorKind {
             Self::KeyFile => out[0] = 1,
             Self::Fido2 {
                 credential_id,
-                salt,
+                salt: bytes,
+            }
+            | Self::WebAuthn {
+                credential_id,
+                input: bytes,
             } => {
                 if credential_id.len() > HINT_PLAIN - 35 {
                     return Err(Error::TooLong);
                 }
-                out[0] = 2;
+                out[0] = if matches!(self, Self::Fido2 { .. }) { 2 } else { 4 };
                 let len = u16::try_from(credential_id.len()).map_err(|_| Error::TooLong)?;
                 out[1..3].copy_from_slice(&len.to_le_bytes());
-                out[3..35].copy_from_slice(salt);
+                out[3..35].copy_from_slice(bytes);
                 out[35..35 + credential_id.len()].copy_from_slice(credential_id);
             }
             Self::YubiKey { challenge, slot } => {
@@ -125,13 +139,20 @@ impl FactorKind {
     fn decode(bytes: &[u8]) -> Option<Self> {
         match *bytes.first()? {
             1 => Some(Self::KeyFile),
-            2 => {
+            tag @ (2 | 4) => {
                 let len = usize::from(u16::from_le_bytes(bytes.get(1..3)?.try_into().ok()?));
                 let salt = bytes.get(3..35)?.try_into().ok()?;
                 let credential_id = bytes.get(35..35 + len)?.to_vec();
-                Some(Self::Fido2 {
-                    credential_id,
-                    salt,
+                Some(if tag == 2 {
+                    Self::Fido2 {
+                        credential_id,
+                        salt,
+                    }
+                } else {
+                    Self::WebAuthn {
+                        credential_id,
+                        input: salt,
+                    }
                 })
             }
             3 => {
@@ -700,6 +721,10 @@ mod tests {
             challenge: [5; 32],
             slot: 2,
         };
+        let web = FactorKind::WebAuthn {
+            credential_id: vec![7; 48],
+            input: [6; 32],
+        };
         let output: FactorOutput = Zeroizing::new(vec![1; 32]);
         header
             .write_slot(1, &root, &key, SlotAction::Open, Some((&fido, &output)))
@@ -707,9 +732,12 @@ mod tests {
         header
             .write_slot(2, &root, &key, SlotAction::Open, Some((&yubi, &output)))
             .unwrap();
+        header
+            .write_slot(3, &root, &key, SlotAction::Open, Some((&web, &output)))
+            .unwrap();
         let file = seal_file(&header, &key, b"x").unwrap();
         match open_with(&file, b"pw", &[]) {
-            Unlock::NeedsFactor(kinds) => assert_eq!(kinds, vec![fido, yubi]),
+            Unlock::NeedsFactor(kinds) => assert_eq!(kinds, vec![fido, yubi, web]),
             other => panic!("unexpected {other:?}"),
         }
     }

@@ -1,0 +1,35 @@
+name: Site release
+
+# The site at wmpass.pages.dev: the docs, with the web vault under /vault/. The web vault's code is
+# whatever this uploads, so it runs only for a release tag, from this repository's own workflow,
+# and the `site` environment can be set to wait for an owner's approval.
+
+on:
+  push:
+    tags: ['site-v*']
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: site
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: rustup target add wasm32-unknown-unknown
+      - run: cargo install wasm-bindgen-cli --version 0.2.130 --locked
+      - run: npm ci
+      - run: npm ci
+        working-directory: docs
+      - run: npm run site:build
+      - run: npx playwright install --with-deps chromium
+      - run: xvfb-run -a node web/test/run.mjs
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy docs/dist --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT || 'wmpass' }} --branch=main

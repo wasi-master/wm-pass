@@ -313,6 +313,13 @@ pub fn factor_of(view: &FactorView) -> Result<FactorKind, SessionError> {
                 .map_err(|_| invalid("bad challenge"))?,
             slot: *slot,
         },
+        FactorView::Webauthn {
+            credential_id,
+            input,
+        } => FactorKind::WebAuthn {
+            credential_id: raw(credential_id)?,
+            input: raw(input)?.try_into().map_err(|_| invalid("bad input"))?,
+        },
     })
 }
 
@@ -431,7 +438,7 @@ impl Service {
 
     /// The address a Proxynova check may ask about, and the passwords to compare. Refuses an
     /// address that is not in this vault, so the check cannot look up someone else.
-    #[cfg(feature = "net")]
+    #[cfg(feature = "online")]
     pub fn comb_inputs(
         &mut self,
         handle: u64,
@@ -459,7 +466,7 @@ impl Service {
     }
 
     /// Shows a Bitwarden account through a mirror.
-    #[cfg(feature = "net")]
+    #[cfg(feature = "online")]
     pub fn adopt_bitwarden(
         &mut self,
         name: &str,
@@ -475,7 +482,7 @@ impl Service {
     }
 
     /// Passes changes on to a Bitwarden account and takes it out for a trip to the server.
-    #[cfg(feature = "net")]
+    #[cfg(feature = "online")]
     pub fn take_bitwarden(&mut self, handle: u64, now: u64) -> Result<Box<wmpass_bw::account::Account>, SessionError> {
         let session = self.session(handle)?;
         let vault = &mut session.vault;
@@ -490,7 +497,7 @@ impl Service {
     }
 
     /// Puts an account back after a trip to the server and shows what it brought.
-    #[cfg(feature = "net")]
+    #[cfg(feature = "online")]
     pub fn return_bitwarden(&mut self, handle: u64, account: Box<wmpass_bw::account::Account>, now: u64) -> Result<(), SessionError> {
         let session = self.session(handle)?;
         let mut remote = crate::remote::Remote::new(crate::remote::Account::Bitwarden(account));
@@ -617,6 +624,20 @@ impl Service {
                     }
                     _ => self.adopt(vault),
                 };
+                let session = self.session(handle)?;
+                Ok(Reply::view(Self::opened(handle, 0, &session.vault)))
+            }
+            // Quick unlock in a browser: the vault key, sealed by `vault.quick_seal` under what a
+            // passkey's PRF answered, opened again with a fresh answer. The key never leaves here.
+            "vault.quick_open" => {
+                let wrapping = quick_wrapping(call.secret)?;
+                let key = wmpass_core::crypto::open(&wrapping, blob(&call, 0)?, QUICK_AAD).ok_or_else(|| SessionError {
+                    code: "wrong_password",
+                    message: "the passkey's answer does not open this vault".to_owned(),
+                })?;
+                let raw: [u8; 32] = key.as_slice().try_into().map_err(|_| invalid("bad key"))?;
+                let vault = Vault::from_file(blob(&call, 1)?, VaultKey::from_bytes(raw), self.device)?;
+                let handle = self.adopt(vault);
                 let session = self.session(handle)?;
                 Ok(Reply::view(Self::opened(handle, 0, &session.vault)))
             }
@@ -940,7 +961,7 @@ impl Service {
             "remote.kind" => Ok(Reply::view(json!({"kind": match session.remote.as_ref().map(|r| &r.account) {
                 None => "vault",
                 Some(crate::remote::Account::Kdbx(_)) => "kdbx",
-                #[cfg(feature = "net")]
+                #[cfg(feature = "online")]
                 Some(crate::remote::Account::Bitwarden(_)) => "bitwarden",
             }}))),
             "vault.chaff_name" => Ok(Reply::view(json!({"name": session.vault.chaff_file_name()?}))),
@@ -955,6 +976,11 @@ impl Service {
             // Handing the key to the platform's hardware right after an unlock, so the
             // password is not asked for twice in a row.
             "vault.key_for_wrapping" => Ok(wrapped_key(&session.vault)),
+            "vault.quick_seal" => {
+                let wrapping = quick_wrapping(call.secret)?;
+                let sealed = wmpass_core::crypto::seal(&wrapping, session.vault.key().expose_for_hardware_wrap(), QUICK_AAD)?;
+                Ok(Reply { json: "{}".to_owned(), secret: None, blobs: vec![sealed] })
+            }
             "vault.verify" => {
                 #[derive(Deserialize, Default)]
                 #[serde(default)]
@@ -2426,6 +2452,17 @@ fn wrong_password() -> SessionError {
         code: "wrong_password",
         message: "that password is not right".to_owned(),
     }
+}
+
+/// What a sealed quick-unlock key is bound to, so it cannot pass for anything else.
+const QUICK_AAD: &[u8] = b"wmpass quick unlock v1";
+
+/// The key that seals the vault key for quick unlock, from a passkey's PRF answer.
+fn quick_wrapping(prf: &[u8]) -> Result<Zeroizing<[u8; 32]>, SessionError> {
+    if prf.len() != 32 {
+        return Err(invalid("a passkey's answer is 32 bytes"));
+    }
+    Ok(wmpass_core::crypto::hkdf(prf, b"", "wmpass quick unlock")?)
 }
 
 fn wrapped_key(vault: &Vault) -> Reply {

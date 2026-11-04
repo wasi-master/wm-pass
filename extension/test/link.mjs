@@ -59,6 +59,9 @@ try {
   }
   say('after answer', { status: state.status, unlocked: state.unlocked });
 
+  // What only the app can reach, offered to the extension's own vault while connected.
+  say('places through the app', (await send({ type: 'link.places.kinds' })).ok);
+
   const site = (await send({ type: 'site', url: address })).ok;
   say('site', { source: site.source, locked: site.locked, rows: site.rows.length });
 

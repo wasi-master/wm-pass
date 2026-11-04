@@ -313,7 +313,7 @@
       {#if message}<p class="danger-text small">{message}</p>{/if}
       {#if arrivedFrom && !message}<p class="dim small">Your vault came from {arrivedFrom}. Unlock it with its master password. The two are paired, so they can sync on this network.</p>{/if}
       {#if quick}
-        <Btn label="Unlock from the system keyring" wide onclick={unlockQuick} disabled={busy} />
+        <Btn label={host().quick?.title ?? 'Quick unlock'} wide onclick={unlockQuick} disabled={busy} />
       {/if}
       <Btn label={busy ? 'Unlocking…' : 'Unlock'} variant="primary" wide type="submit" disabled={!password || remaining > 0 || busy} />
       {#if source?.kind === 'kdbx'}

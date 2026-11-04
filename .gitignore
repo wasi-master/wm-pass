@@ -13,6 +13,7 @@ ui/src/wasm/
 ui/public/
 desktop/dist/
 extension/dist/
+web/dist/
 desktop/src-tauri/binaries/
 docs/node_modules/
 docs/dist/

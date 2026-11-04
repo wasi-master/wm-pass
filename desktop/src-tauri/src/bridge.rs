@@ -1,11 +1,15 @@
 //! The app's end of the conversation with the browser extension. Requests arrive sealed through
 //! the relay program, and only the few named here are answered. An extension can ask for what
 //! matches a site and fill an entry that matches it; it cannot read the vault at large. It can
-//! also have this app check a username, which the extension cannot do itself, while network
-//! features are allowed here.
+//! also have this app do what a browser cannot, for the extension's own vault: check a username
+//! on a site that only answers a browser, reach a backup place over a raw connection, and ask a
+//! security key over USB. Each place and the keys need a person's yes once, here.
 
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
+
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as B64;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -18,9 +22,12 @@ use tauri::AppHandle;
 use wmpass_core::matching;
 use wmpass_net::http::NativeHttp;
 use wmpass_net::{NetError, NetPolicy, usernames};
+use wmpass_sinks::Stored;
+use wmpass_sinks::places::{Done, Op};
 use zeroize::Zeroizing;
 
 use crate::engine::{Engine, now_ms};
+use crate::places::PlaceFile;
 use crate::probe;
 use crate::sealed;
 use crate::store::Store;
@@ -33,6 +40,10 @@ const KEY_NAME: &str = "bridge-key";
 const PREFS_FILE: &str = "settings/prefs.json";
 /// A menu with more than this is not one anybody would read.
 const MOST_MATCHES: usize = 50;
+/// File bytes cross in parts, since the browser refuses a message from the relay over 1 MiB.
+const PART: usize = 384 * 1024;
+/// The most one connection may have in flight, so an extension cannot fill this app's memory.
+const MOST_HELD: usize = 512 * 1024 * 1024;
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 #[serde(default)]
@@ -42,6 +53,8 @@ struct Paired {
     key: String,
     /// Sites a person has allowed this extension to fill.
     sites: Vec<String>,
+    /// Backup places, and security keys, a person has let this extension use through the app.
+    allowed: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -276,6 +289,104 @@ struct Request {
     site: String,
     #[serde(default)]
     name: String,
+    /// A backup place as the extension keeps it, and what to do there.
+    #[serde(default)]
+    place: Value,
+    #[serde(default)]
+    op: String,
+    #[serde(default)]
+    file: Option<PlaceFile>,
+    #[serde(default)]
+    step: Value,
+    /// Bytes crossing in parts: which transfer, the part, and where a read part starts.
+    #[serde(default)]
+    token: u64,
+    #[serde(default)]
+    part: String,
+    #[serde(default)]
+    offset: usize,
+    /// A security key: `fido2` or `yubikey`, and the factor a vault slot holds, if any.
+    #[serde(default)]
+    kind: String,
+    #[serde(default)]
+    factor: Value,
+}
+
+/// File bytes on their way through one connection, in parts.
+#[derive(Default)]
+struct Transfers {
+    next: u64,
+    held: HashMap<u64, Zeroizing<Vec<u8>>>,
+}
+
+impl Transfers {
+    fn room(&self, more: usize) -> Result<(), String> {
+        if self.held.values().map(|bytes| bytes.len()).sum::<usize>() + more > MOST_HELD {
+            return Err("too much at once".to_owned());
+        }
+        Ok(())
+    }
+
+    /// Adds a part to a transfer, starting one for token zero. Answers the token.
+    fn append(&mut self, token: u64, part: &[u8]) -> Result<u64, String> {
+        self.room(part.len())?;
+        let token = if token == 0 {
+            self.next += 1;
+            self.held.insert(self.next, Zeroizing::new(Vec::new()));
+            self.next
+        } else {
+            token
+        };
+        self.held.get_mut(&token).ok_or("that transfer is gone")?.extend_from_slice(part);
+        Ok(token)
+    }
+
+    fn keep(&mut self, bytes: Vec<u8>) -> Result<u64, String> {
+        self.room(bytes.len())?;
+        self.next += 1;
+        self.held.insert(self.next, Zeroizing::new(bytes));
+        Ok(self.next)
+    }
+
+    fn take(&mut self, token: u64) -> Result<Zeroizing<Vec<u8>>, String> {
+        self.held.remove(&token).ok_or_else(|| "that transfer is gone".to_owned())
+    }
+
+    /// One part of a read, from `offset`. The last part ends the transfer.
+    fn part(&mut self, token: u64, offset: usize) -> Result<(String, bool), String> {
+        let bytes = self.held.get(&token).ok_or("that transfer is gone")?;
+        let end = offset.saturating_add(PART).min(bytes.len());
+        let part = B64.encode(bytes.get(offset..end).ok_or("past the end")?);
+        let done = end == bytes.len();
+        if done {
+            self.held.remove(&token);
+        }
+        Ok((part, done))
+    }
+}
+
+/// How a person would know a place: its kind, where it is, and as whom.
+fn place_label(place: &Value) -> (String, String) {
+    let text = |value: Option<&Value>| value.and_then(Value::as_str).unwrap_or_default().trim().to_owned();
+    let host_of = |value: Option<&Value>| {
+        let address = text(value);
+        let rest = address.split_once("://").map_or("", |(_, rest)| rest);
+        rest.split(['/', '?', '#']).next().unwrap_or_default().rsplit('@').next().unwrap_or_default().to_owned()
+    };
+    let kind = text(place.get("kind"));
+    let extra = place.get("extra");
+    let at = [text(extra.and_then(|x| x.get("host"))), host_of(place.get("url")), host_of(place.get("endpoint")), text(place.get("bucket")), text(extra.and_then(|x| x.get("server")))]
+        .into_iter()
+        .find(|s| !s.is_empty())
+        .unwrap_or_default();
+    let user = text(place.get("user"));
+    let shown = format!(
+        "{}{}{}",
+        kind.to_uppercase(),
+        if at.is_empty() { String::new() } else { format!(" at {at}") },
+        if user.is_empty() { String::new() } else { format!(" as {user}") }
+    );
+    (format!("place:{kind}:{at}:{user}").to_lowercase(), shown)
 }
 
 #[derive(Clone)]
@@ -300,6 +411,7 @@ impl Conversation {
         // is only ever shown as a claim.
         let claim = String::from_utf8_lossy(&read_frame(&mut stream)?).chars().filter(|c| !c.is_control()).take(120).collect::<String>();
         let mut server = Server::start(&self.secret).map_err(broken)?;
+        let mut transfers = Transfers::default();
         let mut ready = false;
         let mut wanted_name = String::new();
         while !self.stop.load(Ordering::SeqCst) {
@@ -339,7 +451,7 @@ impl Conversation {
                 if !self.knows(&key) {
                     return Ok(());
                 }
-                let reply = self.answer(&message, &key);
+                let reply = self.answer(&message, &key, &mut transfers);
                 write_frame(&mut stream, &server.seal(&reply).map_err(broken)?)?;
             }
         }
@@ -352,22 +464,23 @@ impl Conversation {
         let wanted = hex(&key);
         saved.paired.retain(|p| p.key != wanted);
         let shown = if name.is_empty() { "Browser extension" } else { name };
-        saved.paired.push(Paired { id: fingerprint(&key), name: shown.to_owned(), key: wanted, sites: Vec::new() });
+        saved.paired.push(Paired { id: fingerprint(&key), name: shown.to_owned(), key: wanted, ..Paired::default() });
         persist(&self.store, &saved).map_err(io::Error::other)
     }
 
-    fn answer(&self, message: &[u8], key: &[u8; 32]) -> Zeroizing<Vec<u8>> {
+    fn answer(&self, message: &[u8], key: &[u8; 32], transfers: &mut Transfers) -> Zeroizing<Vec<u8>> {
         let Ok(request) = serde_json::from_slice::<Request>(message) else {
             return reply_bytes(&json!({"id": 0, "error": "unreadable"}));
         };
         let id = request.id;
-        match self.handle(&request, key) {
+        match self.handle(&request, key, transfers) {
             Ok(reply) => reply,
             Err(error) => reply_bytes(&json!({"id": id, "error": error})),
         }
     }
 
-    fn handle(&self, request: &Request, key: &[u8; 32]) -> Result<Zeroizing<Vec<u8>>, String> {
+    #[allow(clippy::too_many_lines)]
+    fn handle(&self, request: &Request, key: &[u8; 32], transfers: &mut Transfers) -> Result<Zeroizing<Vec<u8>>, String> {
         let id = request.id;
         let handle = self.engine.current.load(Ordering::SeqCst);
         match request.method.as_str() {
@@ -425,6 +538,58 @@ impl Conversation {
                     .map_err(|e| e.to_string())?;
                 Ok(reply_bytes(&json!({"id": id, "links": links})))
             }
+            // ---- backup places the browser cannot reach, for the extension's own vault ----
+            "places.kinds" => Ok(reply_bytes(&json!({"id": id, "kinds": crate::places::places_kinds()}))),
+            "places.put" => {
+                let part = Zeroizing::new(B64.decode(&request.part).map_err(|_| "an unreadable part")?);
+                Ok(reply_bytes(&json!({"id": id, "token": transfers.append(request.token, &part)?})))
+            }
+            "places.get" => {
+                let (part, done) = transfers.part(request.token, request.offset)?;
+                Ok(reply_bytes(&json!({"id": id, "part": part, "done": done})))
+            }
+            "places.run" => {
+                self.approve_place(&request.place, key)?;
+                let stored = request.file.as_ref().map(Stored::from);
+                let written = if request.op == "write" { transfers.take(request.token)? } else { Zeroizing::new(Vec::new()) };
+                let op = match (request.op.as_str(), &stored) {
+                    ("readiness", _) => Op::Readiness,
+                    ("list", _) => Op::List,
+                    ("write", _) => Op::Write(&request.name, &written),
+                    ("read", Some(file)) => Op::Read(file),
+                    ("delete", Some(file)) => Op::Delete(file),
+                    _ => return Err("unknown operation".to_owned()),
+                };
+                // The network switch here holds for the extension's runs too.
+                let (done, update) = crate::places::run_for(&request.place, self.network_allowed(), op);
+                let value = match done? {
+                    Done::Files(files) => json!(files.into_iter().map(PlaceFile::from).collect::<Vec<_>>()),
+                    Done::Bytes(bytes) => json!({"token": transfers.keep(bytes)?}),
+                    Done::Nothing | Done::Stored(_) => Value::Null,
+                };
+                Ok(reply_bytes(&json!({"id": id, "value": value, "update": update})))
+            }
+            "places.sign_in" => {
+                self.approve_place(&request.place, key)?;
+                let answer = crate::signin::step(&request.place, &request.step, self.network_allowed())?;
+                Ok(reply_bytes(&json!({"id": id, "answer": answer})))
+            }
+            // ---- security keys over USB: a YubiKey's challenge-response slot, and keys set up
+            // for this app before browsers could reach them ----
+            "hardware.tap" => {
+                if request.kind != "fido2" && request.kind != "yubikey" {
+                    return Err("unknown kind of key".to_owned());
+                }
+                self.approve_once(key, "keys", |name| {
+                    format!("Let {name} use your security keys through WM Pass?\n\nIt asks them to open its own vault. Each key still needs your touch. WM Pass will not ask again.")
+                })?;
+                let reply = crate::hardware::tap(&request.kind, &request.factor).map_err(|e| e.message)?;
+                let output = reply.secret.ok_or("the key answered with nothing")?;
+                let mut out = Zeroizing::new(format!("{{\"id\":{id},\"factor\":{},\"output\":\"", reply.json).into_bytes());
+                out.extend_from_slice(Zeroizing::new(B64.encode(&*output)).as_bytes());
+                out.extend_from_slice(b"\"}");
+                Ok(out)
+            }
             _ => Err("unknown request".to_owned()),
         }
     }
@@ -437,6 +602,36 @@ impl Conversation {
             .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
             .and_then(|prefs| prefs.get("network_allowed").and_then(Value::as_bool))
             .unwrap_or(false)
+    }
+
+    /// A person says yes once per place and extension. The app then connects where the extension
+    /// says, with the details it sends, and keeps none of them.
+    fn approve_place(&self, place: &Value, key: &[u8; 32]) -> Result<(), String> {
+        let (item, shown) = place_label(place);
+        self.approve_once(key, &item, |name| {
+            format!("Let {name} keep copies of its vault at {shown}, through WM Pass?\n\nWM Pass connects there with the details the extension sends, and keeps none of them. It will not ask again for this place.")
+        })
+    }
+
+    /// Asks once for `item`, in this app's own window, and remembers a yes for this extension.
+    fn approve_once(&self, key: &[u8; 32], item: &str, question: impl FnOnce(&str) -> String) -> Result<(), String> {
+        let wanted = hex(key);
+        let (already, name) = {
+            let saved = self.saved.lock().map_err(|_| "busy")?;
+            let paired = saved.paired.iter().find(|p| p.key == wanted).ok_or("this extension is not connected")?;
+            (paired.allowed.iter().any(|a| a == item), paired.name.clone())
+        };
+        if already {
+            return Ok(());
+        }
+        if !ask(question(&name), "Allow", "Refuse") {
+            return Err("refused".to_owned());
+        }
+        let mut saved = self.saved.lock().map_err(|_| "busy")?;
+        if let Some(paired) = saved.paired.iter_mut().find(|p| p.key == wanted) {
+            paired.allowed.push(item.to_owned());
+        }
+        persist(&self.store, &saved)
     }
 
     /// A person says yes once per site and extension, unless they turned the question off.
@@ -480,4 +675,57 @@ fn row(value: Value) -> Value {
 
 fn reply_bytes(value: &Value) -> Zeroizing<Vec<u8>> {
     Zeroizing::new(value.to_string().into_bytes())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_file_crosses_in_parts_and_is_gone_once_read() {
+        let mut transfers = Transfers::default();
+        let big: Vec<u8> = (0..PART * 2 + 7).map(|i| (i % 251) as u8).collect();
+        let token = transfers.append(0, &big[..PART]).unwrap();
+        assert_eq!(transfers.append(token, &big[PART..]).unwrap(), token);
+        let written = transfers.take(token).unwrap();
+        assert_eq!(written.as_slice(), big.as_slice());
+
+        let token = transfers.keep(big.clone()).unwrap();
+        let mut back = Vec::new();
+        loop {
+            let (part, done) = transfers.part(token, back.len()).unwrap();
+            back.extend(B64.decode(part).unwrap());
+            if done {
+                break;
+            }
+        }
+        assert_eq!(back, big);
+        assert!(transfers.part(token, 0).is_err(), "a finished read is not kept");
+    }
+
+    #[test]
+    fn an_empty_file_still_makes_a_transfer() {
+        let mut transfers = Transfers::default();
+        let token = transfers.append(0, &[]).unwrap();
+        assert!(transfers.take(token).unwrap().is_empty());
+    }
+
+    #[test]
+    fn an_extension_cannot_hold_without_limit() {
+        let mut transfers = Transfers::default();
+        transfers.keep(vec![0; 1024]).unwrap();
+        assert!(transfers.room(MOST_HELD - 1024).is_ok());
+        assert!(transfers.room(MOST_HELD - 1023).is_err());
+    }
+
+    #[test]
+    fn a_place_is_asked_about_by_where_it_is_and_as_whom() {
+        let sftp = json!({"kind": "sftp", "user": "Wasi", "extra": {"host": "nas.local", "port": 22}});
+        assert_eq!(place_label(&sftp), ("place:sftp:nas.local:wasi".to_owned(), "SFTP at nas.local as Wasi".to_owned()));
+        let webdav = json!({"kind": "webdav", "url": "https://me@dav.example.com/remote.php/webdav/", "user": ""});
+        assert_eq!(place_label(&webdav).1, "WEBDAV at dav.example.com");
+        // Another account on the same server is another place.
+        let other = json!({"kind": "sftp", "user": "someone", "extra": {"host": "nas.local"}});
+        assert_ne!(place_label(&sftp).0, place_label(&other).0);
+    }
 }
