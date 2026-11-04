@@ -4,6 +4,7 @@
 import { host } from '../engine/host';
 import { pass } from '../engine/pass.svelte';
 import { overlays } from '../parts/floating.svelte';
+import { keepassAnswer } from './hardware';
 import { online } from './net.svelte';
 
 export interface AccountRef {
@@ -140,9 +141,14 @@ class Accounts {
   }
 
   /** Opens a KeePass file in place. It stays where it is and is written back on each save. */
-  private async openKdbx(ref: AccountRef, password: Uint8Array, keyFile: Uint8Array | null) {
+  private async openKdbx(ref: AccountRef, password: Uint8Array, keyFile: Uint8Array | null, slot: 0 | 1 | 2) {
     const data = await this.readKdbx(ref);
-    const reply = await pass.engine('kdbx.open', { name: ref.label }, { secret: password, blobs: keyFile ? [data, keyFile] : [data] });
+    // A YubiKey answers this file's challenge; the answer then goes in with the password.
+    const answer = slot ? await keepassAnswer(data, slot) : null;
+    const blobs = [data, ...(keyFile ? [keyFile] : []), ...(answer ? [answer] : [])];
+    const reply = await pass
+      .engine('kdbx.open', { name: ref.label, response: !!answer }, { secret: password, blobs })
+      .finally(() => answer?.fill(0));
     await pass.adoptAccount(ref.id, reply, async (bytes) => {
       // The last good copy stays here, encrypted as the file itself is, in case the write is cut off.
       await host().writeFile(`${FOLDER}/${ref.id}.bak`, data);
@@ -193,9 +199,9 @@ class Accounts {
     }
   }
 
-  async open(ref: AccountRef, password: Uint8Array, options: { keyFile?: Uint8Array | null; code?: string | null; deviceCode?: boolean } = {}) {
+  async open(ref: AccountRef, password: Uint8Array, options: { keyFile?: Uint8Array | null; slot?: 0 | 1 | 2; code?: string | null; deviceCode?: boolean } = {}) {
     await (ref.kind === 'kdbx'
-      ? this.openKdbx(ref, password, options.keyFile ?? null)
+      ? this.openKdbx(ref, password, options.keyFile ?? null, options.slot ?? 0)
       : this.openBitwarden(ref, password, options.code ?? null, options.deviceCode ?? false));
     if (this.last !== ref.id) {
       this.last = ref.id;

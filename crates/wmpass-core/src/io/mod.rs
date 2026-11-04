@@ -431,16 +431,39 @@ pub fn import_with_key_file(
     key_file: Option<&[u8]>,
     at: Hlc,
 ) -> Result<Imported> {
+    import_with_keys(format, data, password, key_file, None, at)
+}
+
+/// Like [`import_with_key_file`], with a YubiKey's answer to [`kdbx::challenge`] for a
+/// KeePass database that one is part of the key to.
+pub fn import_with_keys(
+    format: Format,
+    data: &[u8],
+    password: Option<&str>,
+    key_file: Option<&[u8]>,
+    response: Option<&[u8]>,
+    at: Hlc,
+) -> Result<Imported> {
+    if response.is_some() && format != Format::Kdbx {
+        return Err(Error::Import(
+            "only KeePass databases are opened with a security key".into(),
+        ));
+    }
     match format {
         Format::Kdbx => {
-            let password = match (password, key_file) {
+            let password = match (password, key_file.or(response)) {
                 (Some(password), _) => password,
                 (None, Some(_)) => "",
                 (None, None) => {
                     return Err(Error::Import("this database needs its password".into()));
                 }
             };
-            kdbx::import(data, password, key_file, at)
+            let credentials = kdbx::Credentials {
+                password,
+                key_file,
+                response,
+            };
+            kdbx::import_with(data, &credentials, at)
         }
         Format::SafeInCloudDb => safeincloud::database(data, password, at),
         Format::OnePux => onepux::import_1pux(data, at),
@@ -582,6 +605,8 @@ pub fn apply(vault: &mut Vault, imported: Imported, now_ms: u64) -> Result<Apply
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
-mod tests_more;
-#[cfg(test)]
 mod tests_kdbx;
+#[cfg(test)]
+mod tests_kdbx_yubikey;
+#[cfg(test)]
+mod tests_more;

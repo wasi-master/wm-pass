@@ -31,7 +31,7 @@ It reads these files:
 
 With nested vaults, **Import into** picks where the items go: this vault or one of them. The nested vault is opened for the import and closed again when you leave the page.
 
-Folders in the file become folders here, matched by name. Attachments come along from KeePass, SafeInCloud and 1Password files. A KeePass or SafeInCloud database, or a password-protected Proton Authenticator export, asks for its password.
+Folders in the file become folders here, matched by name. Attachments come along from KeePass, SafeInCloud and 1Password files. A KeePass or SafeInCloud database, or a password-protected Proton Authenticator export, asks for its password. A KeePass database can also take its key file, and **Use security key** adds a YubiKey that KeePassXC set up for challenge-response, in slot 2 unless you chose slot 1.
 
 A login with the same site, username and password as one already in the vault is skipped, so importing the same file twice adds nothing.
 
@@ -47,7 +47,7 @@ Once, when you move to WM Pass, or to bring in one-time codes from an authentica
 
 Most export files hold your passwords in plain text. Delete the file once WM Pass has read it, and empty the recycle bin.
 
-Encrypted exports from Bitwarden, Proton Pass, Aegis, 2FAS and Authenticator Pro cannot be read. Export them again without encryption. A KeePass database that also needs a key file cannot be opened here.
+Encrypted exports from Bitwarden, Proton Pass, Aegis, 2FAS and Authenticator Pro cannot be read. Export them again without encryption. A KeePass database locked with a YubiKey opens only where WM Pass can reach the key: in the desktop app by USB, not in the browser extension.
 
 The importers were tested against sample files written from each format's published or observed layout, not against exports from every real app. Compare the count afterwards.
 
@@ -67,7 +67,7 @@ It reads these files:
 
 With nested vaults, **Import into** picks where the items go: this vault or one of them. The nested vault is opened for the import and closed again when you leave the page.
 
-Folders in the file become folders here, matched by name. Attachments come along from KeePass, SafeInCloud and 1Password files. A KeePass or SafeInCloud database, or a password-protected Proton Authenticator export, asks for its password.
+Folders in the file become folders here, matched by name. Attachments come along from KeePass, SafeInCloud and 1Password files. A KeePass or SafeInCloud database, or a password-protected Proton Authenticator export, asks for its password. A KeePass database can also take its key file, and **Use security key** adds a YubiKey that KeePassXC set up for challenge-response, in slot 2 unless you chose slot 1.
 
 A login with the same site, username and password as one already in the vault is skipped, so importing the same file twice adds nothing.
 
@@ -77,7 +77,7 @@ The file is read on the phone. Nothing is sent anywhere.
 
 Most export files hold your passwords in plain text. Delete the file once WM Pass has read it.
 
-Encrypted exports from Bitwarden, Proton Pass, Aegis, 2FAS and Authenticator Pro cannot be read. Export them again without encryption. A KeePass database that also needs a key file cannot be opened here.
+Encrypted exports from Bitwarden, Proton Pass, Aegis, 2FAS and Authenticator Pro cannot be read. Export them again without encryption. A KeePass database locked with a YubiKey needs the key by NFC or USB.
 
 The importers were tested against sample files written from each format's published or observed layout, not against exports from every real app. Compare the count afterwards.
 

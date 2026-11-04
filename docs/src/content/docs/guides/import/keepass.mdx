@@ -15,7 +15,7 @@ import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
 import Shot from '../../../../components/Shot.astro';
 
 <Aside type="tip" title="Which file">
-No export needed. WM Pass opens the `.kdbx` database itself, with its password, and its key file if it has one.
+No export needed. WM Pass opens the `.kdbx` database itself, with its password, and its key file or YubiKey if it has one.
 </Aside>
 
 <Tabs syncKey="device">
@@ -43,7 +43,7 @@ Steps from [KeePassDX FAQ](https://github.com/Kunzisoft/KeePassDX/wiki/FAQ).
 2. Look at the **Recent Databases** list to find your database, or use **Open existing database** and browse to it.
 3. Note the location of the .kdbx file; KeePassXC saves it wherever you chose when you created it.
 4. Copy that .kdbx file to your phone by a trusted route, such as a USB cable, or keep it in the cloud storage you already use.
-5. In WM Pass, choose the .kdbx file and enter the database password, plus the key file if the database has one.
+5. In WM Pass, choose the .kdbx file and enter the database password, plus the key file if the database has one. If KeePassXC locks it with a YubiKey too, choose **Use security key** and the slot shown under **Database Security** in KeePassXC (usually slot 2), then touch the key when it blinks.
 
 </Steps>
 
@@ -55,6 +55,7 @@ Steps from [KeePassXC User Guide: Creating and opening a database; Storing Your 
 ## Good to know
 
 - The database stays encrypted, but protect the key file if one is used; losing the master password or key file locks the database for good.
+- A database locked with a YubiKey opens in the desktop app with the key plugged in, and on Android by NFC or USB. The browser extension cannot reach a security key.
 
 ## Then, in WM Pass
 

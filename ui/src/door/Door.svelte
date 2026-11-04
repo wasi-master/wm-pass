@@ -22,7 +22,8 @@
   import PlaceDialog from '../settings/PlaceDialog.svelte';
   import { PLACE_KINDS } from '../settings/placeKinds';
   import { places, type Place } from '../settings/places.svelte';
-  import { hardwareTap, hardwareAvailable } from '../settings/hardware';
+  import { hardwareTap, hardwareAvailable, yubikeyAvailable } from '../settings/hardware';
+  import SecurityKeySlot from '../parts/SecurityKeySlot.svelte';
 
   // A KeePass file or a server account is something to unlock too, with no vault of its own here.
   let creating = $state(nothingToUnlock());
@@ -39,6 +40,8 @@
   // here to unlock, the account opened last does.
   let source = $state<AccountRef | null>(accounts.takeSignInNext() ?? (pass.state.kind === 'none' ? accounts.preferred() : null));
   let accountKeyFile = $state<Uint8Array | null>(null);
+  // A YubiKey's challenge-response slot, for a KeePass database locked with one. Zero is none.
+  let accountSlot = $state<0 | 1 | 2>(0);
   let code = $state('');
   let asksCode = $state(false);
   // Bitwarden's check on a device it has not seen before, rather than a two-step code.
@@ -159,8 +162,8 @@
     setTimeout(() => (refused = false), 400);
   }
 
-  // A KeePass database may be locked by its key file alone, with no password.
-  const keyFileOnly = $derived(source?.kind === 'kdbx' && accountKeyFile !== null);
+  // A KeePass database may be locked by its key file or security key alone, with no password.
+  const keyFileOnly = $derived(source?.kind === 'kdbx' && (accountKeyFile !== null || accountSlot !== 0));
 
   async function submitAccount(ref: AccountRef) {
     if (busy || (!password && !keyFileOnly) || remaining > 0) return;
@@ -168,7 +171,7 @@
     message = null;
     const bytes = bytesOf(password);
     try {
-      await accounts.open(ref, bytes, { keyFile: accountKeyFile, code: code.trim() || null, deviceCode: emailedCode });
+      await accounts.open(ref, bytes, { keyFile: accountKeyFile, slot: accountSlot, code: code.trim() || null, deviceCode: emailedCode });
       password = '';
     } catch (failure: any) {
       if (failure.code === 'two_factor' || failure.code === 'new_device') {
@@ -353,7 +356,7 @@
             <button type="button" class="chip" onclick={() => (creating = true)}>New vault</button>
           {/if}
           {#each accounts.list as account}
-            <button type="button" class="chip" aria-pressed={source?.id === account.id} onclick={() => { source = account; message = null; needed = null; asksCode = false; accountKeyFile = null; }}>{account.label}</button>
+            <button type="button" class="chip" aria-pressed={source?.id === account.id} onclick={() => { source = account; message = null; needed = null; asksCode = false; accountKeyFile = null; accountSlot = 0; }}>{account.label}</button>
           {/each}
         </div>
       {/if}
@@ -393,6 +396,7 @@
             if (file) accountKeyFile = file.bytes;
           }}
         />
+        {#if yubikeyAvailable()}<SecurityKeySlot bind:slot={accountSlot} />{/if}
       {/if}
       <Btn label="Add another vault or account" variant="quiet" wide onclick={() => (returning = true)} />
       <p class="small" style="text-align:center"><button type="button" class="link" onclick={() => help.open('screen.door')}>Help with unlocking</button></p>
@@ -466,6 +470,7 @@
       needed = null;
       asksCode = false;
       accountKeyFile = null;
+      accountSlot = 0;
     }}
   />
 {/if}

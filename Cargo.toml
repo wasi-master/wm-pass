@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "desktop/src-tauri"]
+# A patched copy of a crates.io crate, built as a dependency only.
+exclude = ["vendor"]
 # Everyday builds leave the desktop shell out: it takes minutes and needs a page build first.
 default-members = ["crates/*"]
 
@@ -82,3 +84,11 @@ opt-level = 3
 opt-level = 3
 [profile.test.package.aes]
 opt-level = 3
+
+# keepass 0.17 with two small additions, marked "WM Pass patch" in the source: a
+# challenge-response answer worked out by the app itself (`DatabaseKey::
+# with_challenge_response_answer`), and saving under a KDF seed the caller picks
+# (`Database::save_with_kdf_seed`). The crate's own `challenge_response` feature reaches
+# a YubiKey through a USB library, which a phone or a browser cannot use.
+[patch.crates-io]
+keepass = { path = "vendor/keepass" }

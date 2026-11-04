@@ -26,6 +26,10 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 
 /** A hardware key found on NFC or USB, ready to be spoken to. */
 class FoundKey(val device: HwDevice, val nfc: Boolean, val close: () -> Unit)
@@ -194,6 +198,21 @@ object HardwareKeys {
         } finally {
             key.close()
         }
+    }
+
+    /**
+     * A YubiKey's answer for a KeePass database it is part of the key to, from the slot
+     * KeePassXC set up. The caller wipes it.
+     */
+    suspend fun keepassAnswer(activity: FragmentActivity, data: ByteArray, slot: Int): ByteArray {
+        val reply = Engine.call("kdbx.challenge", blobs = listOf(data))
+        val challenge = (reply.json as JsonObject)["challenge"]!!.jsonPrimitive.content
+        val factor = buildJsonObject {
+            put("kind", "yubikey")
+            put("challenge", challenge)
+            put("slot", slot)
+        }.toString()
+        return tap(activity, false, factor).second
     }
 
     fun nfcAvailable(context: Context) = NfcAdapter.getDefaultAdapter(context)?.isEnabled == true
