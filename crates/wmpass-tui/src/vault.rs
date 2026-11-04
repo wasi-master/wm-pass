@@ -133,7 +133,7 @@ pub fn kind_name(kind: &str) -> &'static str {
     }
 }
 
-fn quoted(value: &str) -> String {
+pub fn quoted(value: &str) -> String {
     if value.contains(char::is_whitespace) { format!("\"{value}\"") } else { value.to_owned() }
 }
 
@@ -293,6 +293,12 @@ impl VaultUi {
     }
 
     /// The selected row's id.
+    /// The tag picked in the sidebar, if a tag is what is picked.
+    pub fn picked_tag(&self) -> Option<String> {
+        let section = self.sections.get(self.section)?;
+        (section.icon == Glyph::Tag && !section.heading).then(|| section.label.clone())
+    }
+
     pub fn current_id(&self) -> Option<String> {
         self.current().map(|r| r.id.clone())
     }
@@ -433,25 +439,38 @@ impl VaultUi {
         if detail.otp.is_some() {
             lines.push(Line::Code);
         }
-        let sites: Vec<String> = detail
+        // Websites first, then apps by the names people know them by.
+        let mut sites: Vec<(bool, String)> = detail
             .sites
             .iter()
             .filter_map(|s| {
                 let (kind, value) = s.as_object()?.iter().next()?;
                 Some(match kind.as_str() {
-                    "AndroidApp" => format!("app {}", value["package"].as_str().unwrap_or("")),
-                    "Regex" => format!("pattern {}", value.as_str().unwrap_or("")),
-                    _ => value.as_str()?.to_owned(),
+                    "AndroidApp" => {
+                        let package = value["package"].as_str().unwrap_or("");
+                        let text = match wmpass_core::related::app_name(package) {
+                            Some(name) => format!("{name} ({package})"),
+                            None => package.to_owned(),
+                        };
+                        (true, text)
+                    }
+                    "Regex" => (false, format!("pattern {}", value.as_str().unwrap_or(""))),
+                    _ => (false, value.as_str()?.to_owned()),
                 })
             })
             .collect();
-        for (n, site) in sites.into_iter().enumerate() {
-            lines.push(Line::Value {
-                label: if n == 0 { "Website".to_owned() } else { String::new() },
-                text: Some(site),
-                secret: None,
-                has_value: true,
-            });
+        sites.sort_by_key(|(app, _)| *app);
+        let mut last = None;
+        for (app, site) in sites {
+            let label = if last == Some(app) {
+                String::new()
+            } else if app {
+                "App".to_owned()
+            } else {
+                "Website".to_owned()
+            };
+            last = Some(app);
+            lines.push(Line::Value { label, text: Some(site), secret: None, has_value: true });
         }
         // The page the site keeps for changing the password, to copy into a browser.
         if let Some(url) = &detail.change_password {

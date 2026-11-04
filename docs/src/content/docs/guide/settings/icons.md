@@ -82,7 +82,7 @@ See also [Shape](/guide/settings/icons/#setting-site-icon-shape), [Icons](/guide
 
 ## Pictures, in order
 
-*Only in Android.*
+*Only in Android and the desktop app.*
 
 Where the picture beside each item comes from, tried from the top down until one has a picture.
 
@@ -104,7 +104,7 @@ See also [Website icons from](/guide/settings/icons/#setting-site-icon-from), [S
 
 ## Website icons from
 
-*Only in Android.*
+*Only in Android and the desktop app.*
 
 Who is asked for a website's icon, when website icons are in [the order](/guide/settings/icons/#setting-icon-sources).
 

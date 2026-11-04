@@ -1,11 +1,14 @@
 <script lang="ts">
   import HelpButton from '../help/HelpButton.svelte';
   import Btn from '../parts/Btn.svelte';
+  import Dialog from '../parts/Dialog.svelte';
+  import Qr from '../parts/Qr.svelte';
   import Icon from '../parts/Icon.svelte';
   import IconBtn from '../parts/IconBtn.svelte';
   import Ring from '../parts/Ring.svelte';
   import SecretText from '../parts/SecretText.svelte';
   import Strength from '../parts/Strength.svelte';
+  import TagChip from '../parts/TagChip.svelte';
   import Tile from '../parts/Tile.svelte';
   import { bytesOf, consumeText, pass } from '../engine/pass.svelte';
   import { prefs } from '../engine/prefs.svelte';
@@ -28,9 +31,11 @@
   let holds = $state<StrengthView | null>(null);
   let historyOpen = $state(false);
   let picker = $state<PickerKind | null>(null);
-  let guess = $state<string | null>(null);
+  /** Tags the item's site and kind suggest. */
+  let suggested = $state<string[]>([]);
   let sending = $state(false);
   let image = $state<{ name: string; url: string } | null>(null);
+  let wifiCode = $state(false);
 
   $effect(() => {
     void pass.revision;
@@ -55,7 +60,8 @@
     hotp = null;
     holds = null;
     historyOpen = false;
-    guess = null;
+    suggested = [];
+    wifiCode = false;
   });
 
   // Nothing stays on show by accident: after a while, all of it goes back.
@@ -89,13 +95,22 @@
   });
 
   $effect(() => {
-    if (detail && detail.tags.length === 0 && !detail.trashed) {
+    if (detail && !detail.trashed) {
       const current = detail.id;
-      pass.view<{ category: string | null }>('categorise.suggest', { id: current }).then((r) => {
-        if (current === id) guess = r.category;
-      });
+      void detail.title;
+      void detail.sites;
+      pass
+        .view<{ categories: string[] }>('categorise.suggest', { id: current })
+        .then((r) => {
+          if (current === id) suggested = r.categories ?? [];
+        })
+        .catch(() => undefined);
     }
   });
+
+  function setTags(next: string[]) {
+    void pass.change('entry.common', { id, tags: [...new Set(next)] });
+  }
 
   async function toggle(key: string, method: string, args: unknown) {
     if (revealed[key] !== undefined) {
@@ -113,6 +128,9 @@
     }
   }
 
+  // A network another phone can join from its code: any with a name but an enterprise one.
+  const wifiSsid = $derived(detail?.kind === 'wifi' ? String(detail.fields.find((f) => f.key === 'ssid')?.value ?? '') : '');
+  const wifiShareable = $derived(!!wifiSsid && (detail?.fields.find((f) => f.key === 'security')?.value ?? 'wpa') !== 'eap');
   const username = $derived(detail?.fields.find((f) => f.key === 'username' || f.key === 'user')?.value as string | undefined);
   const url = $derived.by(() => {
     for (const site of detail?.sites ?? []) {
@@ -278,11 +296,12 @@
           <Btn label="Restore" variant="primary" icon="restore_from_trash" onclick={() => runEntryMenu('restore', detail!)} />
           <Btn label="Delete for good" variant="danger" icon="delete" onclick={() => runEntryMenu('purge', detail!)} />
         </div>
-      {:else if prefs.v.entry_actions && (detail.has_password || username || url)}
+      {:else if prefs.v.entry_actions && (detail.has_password || username || url || wifiShareable)}
         <div class="actions" data-help-anchor="detail.actions">
           {#if detail.has_password}<Btn label="Copy password" variant="primary" icon="content_copy" onclick={() => ui.copyPassword(id)} />{/if}
           {#if username && prefs.v.entry_action_username}<Btn label="Copy username" icon="person" variant={detail.has_password ? '' : 'primary'} onclick={() => ui.copyPlain('Username', username!)} />{/if}
           {#if url && prefs.v.entry_action_open}<Btn label="Open site" icon="open_in_new" onclick={() => openUrl(url!)} />{/if}
+          {#if wifiShareable}<Btn label="QR code" icon="qr_code" variant={detail.has_password ? '' : 'primary'} onclick={() => (wifiCode = true)} />{/if}
         </div>
       {/if}
 
@@ -333,7 +352,13 @@
 
         {#each detail.sites as site}
           {@const line = siteLine(site)}
-          {#if line}
+          {#if line?.app}
+            <div class="field">
+              <span class="label">App</span>
+              <span class="value"><span class="selectable">{line.label}</span>{#if line.label !== line.app}<span class="dim small selectable" style="display:block">{line.app}</span>{/if}</span>
+              <span></span>
+            </div>
+          {:else if line}
             <div class="field">
               <span class="label">Website</span>
               <span class="value">
@@ -412,20 +437,34 @@
           </div>
         {/if}
 
-        {#if detail.tags.length > 0}
+        {#if !detail.trashed || detail.tags.length > 0}
+          {@const offered = detail.trashed ? [] : suggested.filter((t) => !detail!.tags.includes(t))}
           <div class="field">
             <span class="label">Tags</span>
-            <span class="value gap wrap">
-              {#each detail.tags as tag}
-                <button type="button" class="chip" onclick={() => void ui.guard(() => ui.go(`tag:${tag}`))}>{tag}</button>
-              {/each}
+            <span class="value stack" style="gap:8px">
+              <span class="gap wrap">
+                {#each detail.tags as tag (tag)}
+                  <TagChip
+                    {tag}
+                    selected
+                    onclick={() => void ui.guard(() => ui.go(`tag:${tag}`))}
+                    onremove={detail.trashed ? undefined : () => setTags(detail!.tags.filter((t) => t !== tag))}
+                    onmanage={() => (ui.managingTag = tag)}
+                  />
+                {/each}
+                {#if !detail.trashed}
+                  <button type="button" class="chip" onclick={() => (picker = 'tags')}><Icon name="add" size={14} />{detail.tags.length ? 'Add' : 'Add a tag'}</button>
+                {/if}
+              </span>
+              {#if offered.length}
+                <span class="dim small gap" style="gap:6px"><Icon name="auto_awesome" size={14} />Suggested</span>
+                <span class="gap wrap">
+                  {#each offered as tag (tag)}
+                    <button type="button" class="chip" onclick={() => setTags([...detail!.tags, tag])}><Icon name="add" size={14} />{tag}</button>
+                  {/each}
+                </span>
+              {/if}
             </span>
-            <span class="tools"><IconBtn icon="edit" size={16} label="Change tags" onclick={() => (picker = 'tags')} /></span>
-          </div>
-        {:else if guess}
-          <div class="field">
-            <span class="label">Tags</span>
-            <span class="value"><button type="button" class="link" onclick={() => pass.change('entry.common', { id, tags: [guess] })}>Tag as {guess}</button></span>
             <span></span>
           </div>
         {/if}
@@ -452,10 +491,19 @@
 {/if}
 
 {#if picker && detail}
-  <Pickers kind={picker} entry={detail} onclose={() => (picker = null)} />
+  <Pickers kind={picker} entry={detail} {suggested} onclose={() => (picker = null)} />
 {/if}
 {#if sending && detail}
   <SendItem id={detail.id} onclose={() => (sending = false)} />
+{/if}
+{#if wifiCode && detail}
+  <Dialog title={wifiSsid} onclose={() => (wifiCode = false)}>
+    <div class="stack" style="align-items:center;gap:14px">
+      <Qr from={{ method: 'wifi.qr', args: { id: detail.id } }} />
+      <p class="dim" style="text-align:center">Point another phone's camera at this to join the network. The password is in the code, so anyone who can see it can read it.</p>
+    </div>
+    {#snippet foot()}<Btn label="Done" variant="primary" onclick={() => (wifiCode = false)} />{/snippet}
+  </Dialog>
 {/if}
 {#if image}
   <!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->

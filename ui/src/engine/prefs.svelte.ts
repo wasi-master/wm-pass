@@ -53,6 +53,9 @@ const DEFS = {
   site_icon_style: { value: 'brand', allowed: ['brand', 'tinted', 'uniform', 'letters'] },
   site_icon_shape: { value: 'circle', allowed: ['circle', 'rounded', 'square', 'none'] },
   settings_icons: { value: 'coloured', allowed: ['coloured', 'mono', 'bare', 'off'] },
+  /** Where a tile's picture comes from, tried in order: brand marks, then website icons. */
+  icon_sources: { value: 'brand' },
+  site_icon_from: { value: 'site', allowed: ['site', 'duckduckgo'] },
 
   // ---- vault list ----
   layout: { value: 'list', allowed: ['list', 'compact', 'grid'] },
@@ -87,6 +90,7 @@ const DEFS = {
   editor_remember: { value: true },
   editor_fold_details: { value: true },
   editor_generate: { value: false },
+  auto_tag: { value: true },
 
   // ---- entry page ----
   entry_actions: { value: true },

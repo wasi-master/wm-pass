@@ -29,6 +29,8 @@ class Ui {
   showDetail = $state(false);
   searchFocus = $state(0);
   renamingFolder = $state<{ id: string; name: string } | null>(null);
+  /** A tag being renamed, deleted or given a symbol on every item. */
+  managingTag = $state<string | null>(null);
   /** Asked to stop by anything that would lose an edit. */
   editorDirty = false;
 

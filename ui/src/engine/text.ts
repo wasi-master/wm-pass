@@ -1,5 +1,7 @@
 // Small words shared by every screen.
 
+import { apps } from './apps.svelte';
+
 export function whenText(ms: number | null | undefined): string {
   if (!ms || ms <= 0) return 'never';
   const days = Math.floor((Date.now() - ms) / 86_400_000);
@@ -25,8 +27,8 @@ export function grouped(code: string): string {
   return out.join(' ');
 }
 
-/** What a site matcher says, in a form fit for a row. */
-export function siteLine(element: Record<string, any>): { label: string; openable: string | null } | null {
+/** What a site matcher says, in a form fit for a row. An app reads by its name when it is known. */
+export function siteLine(element: Record<string, any>): { label: string; openable: string | null; app?: string } | null {
   const [kind] = Object.keys(element);
   const value = element[kind];
   switch (kind) {
@@ -36,7 +38,7 @@ export function siteLine(element: Record<string, any>): { label: string; openabl
     case 'Url':
       return { label: String(value).replace(/^https:\/\//, '').replace(/\/$/, ''), openable: String(value) };
     case 'AndroidApp':
-      return value?.package ? { label: value.package, openable: null } : null;
+      return value?.package ? { label: apps.nameOf(value.package) ?? value.package, openable: null, app: value.package } : null;
     case 'Regex':
       return { label: String(value), openable: null };
     default:

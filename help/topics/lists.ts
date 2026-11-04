@@ -417,6 +417,7 @@ export const lists = [
     pref: 'sidebar_tags',
     shells: ['desktop', 'extension'],
     what: 'Lists every tag you have used, in alphabetical order, so one click shows the items that carry it.',
+    how: 'Each tag shows the icon picked for it, or one that suits its name. Right-click a tag to rename it or delete it from every item, or to give it another icon.',
     preview: 'preview.sidebar',
     words: 'labels',
   },

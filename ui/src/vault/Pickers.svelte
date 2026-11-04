@@ -7,9 +7,13 @@
   import Dialog from '../parts/Dialog.svelte';
   import Field from '../parts/Field.svelte';
   import Icon from '../parts/Icon.svelte';
+  import TagChip from '../parts/TagChip.svelte';
   import Tile from '../parts/Tile.svelte';
   import { brands } from '../engine/brands.svelte';
   import { GLYPH_CHOICES, kindIcon, oklch } from '../engine/face';
+  import { glyphName } from '../engine/glyphs';
+  import { tags as tagStore } from '../engine/tags.svelte';
+  import { ui } from './ui.svelte';
   import { pass } from '../engine/pass.svelte';
   import type { Detail } from '../engine/types';
 
@@ -19,12 +23,18 @@
     kind,
     entry,
     current,
+    look,
+    suggested = [],
     onclose,
     onpick,
   }: {
     kind: PickerKind;
     entry?: Detail;
     current?: any;
+    /** How the item looks, for previewing Automatic and the site's own colour. */
+    look?: { title: string; site: string | null; kind: string; color: string | null; icon: string | null };
+    /** Tags the item's site and kind suggest. */
+    suggested?: string[];
     onclose: () => void;
     onpick?: (value: any) => void;
   } = $props();
@@ -37,14 +47,42 @@
   const colour = $derived(current !== undefined ? current : entry?.color);
   const iconNow = $derived(current !== undefined ? current : entry?.icon);
 
-  const allTags = $derived([...new Set(pass.entries.flatMap((e) => e.tags))].sort());
+  const seen = $derived(look ?? (entry ? { title: entry.title, site: entry.site, kind: entry.kind, color: entry.color, icon: entry.icon } : { title: '', site: null, kind: 'login', color: null, icon: null }));
+
+  /** How many tags show before the "more" chip, past the item's own. */
+  const TAGS_AT_FIRST = 12;
+  let everyTag = $state(false);
+  const allTags = $derived(tagStore.mostUsed());
+  const shownTags = $derived.by(() => {
+    const q = text.trim().toLowerCase();
+    const matching = allTags.filter((t) => !q || t.toLowerCase().includes(q));
+    if (everyTag || q) return matching;
+    return [...new Set([...tags.filter((t) => matching.includes(t)), ...matching.filter((t) => !tags.includes(t)).slice(0, TAGS_AT_FIRST)])];
+  });
+  const hiddenTags = $derived(allTags.filter((t) => !text.trim() || t.toLowerCase().includes(text.trim().toLowerCase())).length - shownTags.length);
+  const offeredTags = $derived(suggested.filter((t) => !tags.includes(t) && !allTags.includes(t)));
+
+  const glyphs = $derived.by(() => {
+    const q = text.trim().toLowerCase();
+    return Object.entries(GLYPH_CHOICES).filter(([id]) => !q || id.includes(q) || glyphName(id).toLowerCase().includes(q));
+  });
   const matches = $derived.by(() => {
     const q = text.trim().toLowerCase();
-    return brands
-      .all()
-      .filter((b) => !q || b.name.toLowerCase().includes(q) || b.otherNames.some((n) => n.toLowerCase().includes(q)))
-      .slice(0, 60);
+    return brands.all().filter((b) => !q || b.name.toLowerCase().includes(q) || b.otherNames.some((n) => n.toLowerCase().includes(q)));
   });
+  // Brands draw a page at a time as the list scrolls, so all of them are there without searching.
+  let brandLimit = $state(96);
+  $effect(() => {
+    void text;
+    brandLimit = 96;
+  });
+  function more(node: HTMLElement) {
+    const watcher = new IntersectionObserver((seen) => {
+      if (seen.some((s) => s.isIntersecting)) brandLimit += 96;
+    });
+    watcher.observe(node);
+    return { destroy: () => watcher.disconnect() };
+  }
   const others = $derived.by(() => {
     const q = text.trim().toLowerCase();
     return pass.entries.filter((e) => e.id !== entry?.id && (!q || e.title.toLowerCase().includes(q))).slice(0, 60);
@@ -116,11 +154,28 @@
     </div>
   {:else if kind === 'tags'}
     <div class="stack">
+      {#if offeredTags.length}
+        <div>
+          <p class="dim small" style="padding-bottom:6px">Suggested</p>
+          <div class="gap wrap">
+            {#each offeredTags as tag (tag)}
+              <button type="button" class="chip" onclick={() => toggleTag(tag)}><Icon name="add" size={14} />{tag}</button>
+            {/each}
+          </div>
+        </div>
+      {/if}
       {#if allTags.length}
-        <div class="gap wrap">
-          {#each allTags as tag}
-            <button type="button" class="chip" aria-pressed={tags.includes(tag)} onclick={() => toggleTag(tag)}>{tag}</button>
-          {/each}
+        <div>
+          <p class="dim small" style="padding-bottom:6px">Click to add or take off. Right-click one to rename or delete it.</p>
+          <div class="gap wrap">
+            {#each shownTags as tag (tag)}
+              {@const on = tags.includes(tag)}
+              <TagChip {tag} selected={on} onclick={() => toggleTag(tag)} onremove={on ? () => toggleTag(tag) : undefined} onmanage={() => (ui.managingTag = tag)} />
+            {/each}
+            {#if hiddenTags > 0}
+              <button type="button" class="chip" onclick={() => (everyTag = true)}><Icon name="expand_more" size={14} />{hiddenTags} more</button>
+            {/if}
+          </div>
         </div>
       {/if}
       <div class="gap">
@@ -140,32 +195,59 @@
           ></button>
         {/each}
       </div>
-      <div><Btn label="Use the site's own color" onclick={() => choose('color', null)} /></div>
+      <button type="button" class="set-row" style="border:1px solid {colour == null ? 'var(--primary)' : 'var(--hair)'};border-radius:var(--r-m)" onclick={() => choose('color', null)}>
+        <Tile title={seen.title} site={seen.site} kind={seen.kind} label={null} icon={seen.icon} size={28} />
+        <span class="text">Use the site's own color</span>
+        {#if colour == null}<Icon name="check" />{/if}
+      </button>
     </div>
   {:else if kind === 'icon'}
     <div class="stack">
-      <div><Btn label="Automatic" onclick={() => choose('icon', null)} /></div>
-      <div class="gap wrap">
-        {#each Object.entries(GLYPH_CHOICES) as [name, glyph]}
-          <button
-            type="button"
-            class="icon-btn"
-            class:on={iconNow === `glyph:${name}`}
-            title={name}
-            aria-label={name}
-            style="width:34px;height:34px;background:var(--s1)"
-            onclick={() => choose('icon', `glyph:${name}`)}
-          ><Icon name={glyph} /></button>
-        {/each}
+      <button type="button" class="set-row" style="border:1px solid {iconNow ? 'var(--hair)' : 'var(--primary)'};border-radius:var(--r-m)" onclick={() => choose('icon', null)}>
+        <Tile title={seen.title} site={seen.site} kind={seen.kind} label={seen.color} icon={null} size={36} />
+        <span class="text"><span style="display:block">Automatic</span><span class="sub" style="display:block">The site's own mark when it is known, or a letter</span></span>
+        {#if !iconNow}<Icon name="check" />{/if}
+      </button>
+      <Field bind:value={text} placeholder="Search icons and {brands.all().length} brands" />
+      <div class="scroll" style="max-height:420px;padding-right:4px">
+        {#if glyphs.length}
+          <p class="dim small gap" style="padding:4px 2px 6px"><span class="grow">Symbols</span><span>{glyphs.length}</span></p>
+          <div class="gap wrap" style="gap:6px">
+            {#each glyphs as [id, glyph] (id)}
+              <button
+                type="button"
+                class="icon-btn"
+                class:on={iconNow === `glyph:${id}`}
+                title={glyphName(id)}
+                aria-label={glyphName(id)}
+                aria-pressed={iconNow === `glyph:${id}`}
+                style="width:40px;height:40px;background:var(--s1)"
+                onclick={() => choose('icon', `glyph:${id}`)}
+              ><Icon name={glyph} size={20} /></button>
+            {/each}
+          </div>
+        {/if}
+        {#if matches.length}
+          <p class="dim small gap" style="padding:14px 2px 6px"><span class="grow">Brands</span><span>{matches.length}</span></p>
+          <div class="gap wrap" style="gap:6px">
+            {#each matches.slice(0, brandLimit) as brand (brand.slug)}
+              <button
+                type="button"
+                title={brand.name}
+                aria-label={brand.name}
+                aria-pressed={iconNow === `brand:${brand.slug}`}
+                style="padding:2px;border:2px solid {iconNow === `brand:${brand.slug}` ? 'var(--primary)' : 'transparent'};border-radius:10px;background:none"
+                onclick={() => choose('icon', `brand:${brand.slug}`)}
+              >
+                <Tile title={brand.name} icon="brand:{brand.slug}" size={34} />
+              </button>
+            {/each}
+            {#if brandLimit < matches.length}<span use:more style="width:1px;height:1px"></span>{/if}
+          </div>
+        {/if}
+        {#if !glyphs.length && !matches.length}<p class="dim" style="padding:12px">Nothing called “{text.trim()}”.</p>{/if}
       </div>
-      <Field bind:value={text} placeholder="Search {brands.all().length} brands" />
-      <div class="gap wrap">
-        {#each matches as brand (brand.slug)}
-          <button type="button" title={brand.name} aria-label={brand.name} style="padding:0;border:0;background:none" onclick={() => choose('icon', `brand:${brand.slug}`)}>
-            <Tile title={brand.name} icon="brand:{brand.slug}" size={34} />
-          </button>
-        {/each}
-      </div>
+      <p class="dim small">Hover over an icon to see its name. The brand marks come from Simple Icons (CC0) and belong to their owners.</p>
     </div>
   {:else if kind === 'reminder'}
     <div style="border:1px solid var(--hair);border-radius:var(--r-m);overflow:hidden">

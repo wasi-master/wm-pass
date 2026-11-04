@@ -471,3 +471,73 @@ fn a_login_shows_where_to_change_its_password() {
     assert_eq!(line.as_deref(), Some("https://github.com/.well-known/change-password"), "{:?}", ui.lines);
     assert!(shown.contains("Change password"), "{shown}");
 }
+
+/// Picks the row with this title in the list.
+fn pick(app: &mut App, title: &str) {
+    let Screen::Vault(ui) = &mut app.screen else { panic!("locked") };
+    let at = ui.rows.iter().position(|r| r.title == title).expect("row");
+    ui.list.select(Some(at));
+    ui.load_detail();
+}
+
+#[test]
+fn apps_show_by_name_and_wifi_shows_its_code() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut engine = vault(dir.path());
+    engine
+        .create("login", "Chat", &serde_json::Map::new(), &[json!({"AndroidApp": {"package": "com.facebook.orca", "cert_sha256": null}})])
+        .expect("login");
+    let mut plain = serde_json::Map::new();
+    plain.insert("ssid".into(), json!("Home"));
+    plain.insert("security".into(), json!("wpa"));
+    let wifi = engine.create("wifi", "Home network", &plain, &[]).expect("wifi");
+    engine.set_secret(&wifi, "password", b"hunter22").expect("password");
+    let mut app = App::over(engine);
+
+    pick(&mut app, "Chat");
+    let shown = screen(&mut app, 140, 40);
+    assert!(shown.contains("Messenger (com.facebook.orca)"), "{shown}");
+    press(&mut app, KeyCode::Char('w'));
+    assert!(app.overlay.is_none(), "only a Wi-Fi network has a code");
+
+    pick(&mut app, "Home network");
+    press(&mut app, KeyCode::Char('w'));
+    let Some(Overlay::WifiCode { ssid, qr }) = &app.overlay else { panic!("no code") };
+    assert_eq!(ssid, "Home");
+    assert_eq!(qr.width, qrcode::QrCode::new(b"WIFI:T:WPA;S:Home;P:hunter22;;").expect("qr").width());
+    let shown = screen(&mut app, 160, 60);
+    assert!(shown.contains("join the network"), "{shown}");
+    assert!(!shown.contains("hunter22"), "the password is only in the code");
+    press(&mut app, KeyCode::Esc);
+    assert!(app.overlay.is_none());
+}
+
+#[test]
+fn a_tag_is_renamed_and_deleted_from_the_sidebar() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    let pick_tag = |app: &mut App, tag: &str| {
+        let Screen::Vault(ui) = &mut app.screen else { panic!("locked") };
+        ui.pane = crate::vault::Pane::Sidebar;
+        ui.section = ui.sections.iter().position(|s| s.label == tag && !s.heading).expect("tag in the sidebar");
+    };
+    pick_tag(&mut app, "dev");
+    press(&mut app, KeyCode::Char('R'));
+    assert!(matches!(app.overlay, Some(Overlay::Prompt { .. })), "R asks for the new name");
+    for _ in 0..3 {
+        press(&mut app, KeyCode::Backspace);
+    }
+    typed(&mut app, "code");
+    press(&mut app, KeyCode::Enter);
+    let Screen::Vault(ui) = &mut app.screen else { panic!("locked") };
+    let row = ui.engine.list("", "title").expect("list").into_iter().find(|r| r.title == "GitHub").expect("row");
+    assert_eq!(row.tags, vec!["code".to_owned()]);
+    assert!(ui.picked_tag().as_deref() == Some("code"), "the sidebar follows the new name");
+
+    press(&mut app, KeyCode::Char('D'));
+    assert!(matches!(app.overlay, Some(Overlay::Confirm { .. })), "D asks first");
+    press(&mut app, KeyCode::Char('y'));
+    let Screen::Vault(ui) = &mut app.screen else { panic!("locked") };
+    let row = ui.engine.list("", "title").expect("list").into_iter().find(|r| r.title == "GitHub").expect("row");
+    assert!(row.tags.is_empty(), "the tag came off, the item stayed");
+}

@@ -3,6 +3,7 @@
 import type { IconName } from './icons.svelte';
 import { contrast, hexOf, mix, rgb, type ThemeColors } from '../theme/themes';
 import { brands } from './brands.svelte';
+import { GLYPH_CHOICES } from './glyphs';
 
 export function kindIcon(kind: string): IconName {
   const table: Record<string, IconName> = {
@@ -58,31 +59,7 @@ export function kindPlural(kind: string): string {
   return table[kind] ?? kind;
 }
 
-export const GLYPH_CHOICES: Record<string, IconName> = {
-  key: 'key',
-  shield: 'shield_fill',
-  lock: 'lock_fill',
-  star: 'star_fill',
-  heart: 'favorite_fill',
-  bolt: 'bolt_fill',
-  fire: 'local_fire_department_fill',
-  person: 'person',
-  family: 'family_restroom',
-  mail: 'mail',
-  card: 'credit_card_fill',
-  folder: 'folder_fill',
-  note: 'sticky_note_2',
-  terminal: 'terminal',
-  database: 'database',
-  router: 'router',
-  wifi: 'wifi',
-  devices: 'devices',
-  globe: 'language',
-  contract: 'contract',
-  badge: 'badge',
-  home: 'home_storage',
-  hub: 'hub',
-};
+export { GLYPH_CHOICES };
 
 /** An OKLCH colour as sRGB, clamped. Equal lightness and chroma look equally bright at any hue. */
 export function oklch(l: number, c: number, hueDegrees: number): string {
@@ -153,15 +130,21 @@ export function faceOf(
   const brandColour = brand ? (roughLuminance(brand.color) < 0.16 ? '#3C4552' : brand.color) : null;
   const brandShown = !!brand && !!drawn && hue === null && style !== 'uniform' && style !== 'letters';
   const groundRgb = rgb(colors.ground);
+  const dark = roughLuminance(colors.ground) < 0.5;
+  // With brand colours on, a site without a mark still gets a colour of its own, soft as in
+  // Contacts, rather than every letter on the same grey.
+  const ownHue = hue === null && !brand && !chosenGlyph && style === 'brand' ? hueOf(site ?? (title || kind)) : null;
   let fill: string;
   if (bare) fill = 'transparent';
   else if (hue !== null) fill = oklch(0.58, 0.11, hue);
+  else if (ownHue !== null) fill = oklch(dark ? 0.4 : 0.86, dark ? 0.07 : 0.06, ownHue);
   else if (brandShown && style === 'brand' && contrast(rgb(brandColour!), groundRgb) >= 1.3) fill = brandColour!;
   else if (brandShown && style === 'tinted') fill = colors.neutral;
   else fill = colors.second;
 
   let ink: string;
   if (hue !== null) ink = bare ? oklch(0.62, 0.14, hue) : '#FFFFFF';
+  else if (ownHue !== null) ink = oklch(dark ? 0.9 : 0.36, 0.09, ownHue);
   else if (brandShown && !bare && fill === brandColour) {
     ink = roughLuminance(hexOf(mix(rgb(brandColour!), [0, 0, 0], 0.16))) > 0.62 ? '#16181C' : '#FFFFFF';
   } else if (brandShown && contrast(rgb(brandColour!), bare ? groundRgb : rgb(colors.neutral)) >= 2.2) ink = brandColour!;

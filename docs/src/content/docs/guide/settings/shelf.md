@@ -35,7 +35,7 @@ To put an item on the shelf, choose **Move to hidden shelf** from its menu. To m
 
 Type your master password here and choose **Open the shelf** to see what is on it. Open an item to change it, or choose **Remove from hidden shelf** from its menu to put it back in the list.
 
-The shelf closes when you choose **Close the shelf**, and whenever the vault locks. Every unlock starts with it closed. Autofill never offers shelf items, even while the shelf is open.
+The shelf closes when you choose **Close the shelf**, when you leave its page, and whenever the vault locks. Every unlock starts with it closed. Autofill never offers shelf items, even while the shelf is open.
 
 Settings, Appearance, Sidebar can add a Hidden shelf tab, which opens the same shelf from the sidebar.
 

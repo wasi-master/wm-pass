@@ -46,7 +46,7 @@ export const editing = [
     what: 'Which sections of the editor are open when it starts. The others show as one line that opens when you choose it.',
     how: [
       'Most sections also open by themselves when they already hold something, so a saved website or note is never out of sight.',
-      '- Websites, for logins.',
+      '- Websites and apps, for logins.',
       '- One-time code, for logins and codes.',
       '- Notes, for every type except a note.',
       '- More fields, for fields you name yourself.',
@@ -121,7 +121,6 @@ export const editing = [
     title: 'Tag new items',
     page: 'editor',
     pref: 'auto_tag',
-    shells: ['android'],
     what: 'Gives a new item the tags its site suggests, such as Banking or Social, when you save it without any.',
     how: 'The suggestions come from the site and from the kind of item, so a GitHub code suggests Developer and Authenticator. They are the same tags the editor offers as chips. An item you tag yourself keeps only your tags.',
     effects: [

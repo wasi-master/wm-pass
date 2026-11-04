@@ -36,7 +36,7 @@ Which sections of the editor are open when it starts. The others show as one lin
 
 Most sections also open by themselves when they already hold something, so a saved website or note is never out of sight.
 
-- Websites, for logins.
+- Websites and apps, for logins.
 - One-time code, for logins and codes.
 - Notes, for every type except a note.
 - More fields, for fields you name yourself.
@@ -123,8 +123,6 @@ See also [Generator](/guide/settings/generator/), [Type](/guide/settings/generat
 <a id="setting-auto-tag"></a>
 
 ## Tag new items
-
-*Only in Android.*
 
 Gives a new item the tags its site suggests, such as Banking or Social, when you save it without any.
 

@@ -102,6 +102,10 @@ Right-click a folder to rename or remove it. Removing a folder keeps what was in
 
 Lists every tag you have used, in alphabetical order, so one click shows the items that carry it.
 
+#### How it works
+
+Each tag shows the icon picked for it, or one that suits its name. Right-click a tag to rename it or delete it from every item, or to give it another icon.
+
 *The guide in the app shows this live, with your own settings.*
 
 <a id="setting-sidebar-counts"></a>

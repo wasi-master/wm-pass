@@ -711,6 +711,42 @@ impl Engine {
         made["id"].as_str().map(str::to_owned).ok_or_else(|| "no id came back".to_owned())
     }
 
+    /// The QR code another phone reads to join a Wi-Fi item's network. The engine builds it, so
+    /// the password never comes out as text.
+    pub fn wifi_qr(&mut self, id: &str) -> Result<crate::join::Qr, String> {
+        let view: Value = self.view("wifi.qr", &json!({"id": id}))?;
+        let width = view["size"].as_u64().and_then(|w| usize::try_from(w).ok()).unwrap_or(0);
+        crate::join::Qr::from_rows(width, view["rows"].as_str().unwrap_or("")).ok_or_else(|| "no QR code came back".to_owned())
+    }
+
+    /// The items a tag is on, in the lists and on the shelf when it is open.
+    fn holders(&mut self, tag: &str) -> Result<Vec<String>, String> {
+        Ok(self.list("", "title")?.into_iter().filter(|r| r.tags.iter().any(|t| t == tag)).map(|r| r.id).collect())
+    }
+
+    /// Renames a tag on every item that has it, and carries its icon over. Returns how many.
+    pub fn rename_tag(&mut self, from: &str, to: &str) -> Result<usize, String> {
+        let ids = self.holders(from)?;
+        self.change("entries.bulk", &json!({"ids": ids, "op": "tag_rename", "tag": from, "to": to}), &[])?;
+        let icons: Value = self.view("tags.icons", &json!({}))?;
+        if let Some(icon) = icons[from].as_str() {
+            self.change("tags.set_icon", &json!({"tag": to, "icon": icon}), &[])?;
+            self.change("tags.set_icon", &json!({"tag": from, "icon": null}), &[])?;
+        }
+        Ok(ids.len())
+    }
+
+    /// Takes a tag off every item. The items stay. Returns how many.
+    pub fn remove_tag(&mut self, tag: &str) -> Result<usize, String> {
+        let ids = self.holders(tag)?;
+        self.change("entries.bulk", &json!({"ids": ids, "op": "tag_remove", "tag": tag}), &[])?;
+        let icons: Value = self.view("tags.icons", &json!({}))?;
+        if icons.get(tag).is_some() {
+            self.change("tags.set_icon", &json!({"tag": tag, "icon": null}), &[])?;
+        }
+        Ok(ids.len())
+    }
+
     /// Opens the hidden shelf, which asks for the password again.
     pub fn open_shelf(&mut self, password: &[u8]) -> Result<(), String> {
         self.call("shelf.open", &json!({}), password, &[]).map(drop)

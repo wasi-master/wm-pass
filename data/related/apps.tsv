@@ -1,0 +1,88 @@
+# Android apps people sign in to, for naming an app a login is for and offering it beside its
+# website on a computer, where no apps are installed to ask. Written for this project (MIT).
+# package	name	website
+com.facebook.katana	Facebook	facebook.com
+com.facebook.lite	Facebook Lite	facebook.com
+com.facebook.orca	Messenger	messenger.com
+com.facebook.mlite	Messenger Lite	messenger.com
+com.instagram.android	Instagram	instagram.com
+com.instagram.barcelona	Threads	threads.net
+com.whatsapp	WhatsApp	whatsapp.com
+com.whatsapp.w4b	WhatsApp Business	whatsapp.com
+com.twitter.android	X	x.com
+com.google.android.gm	Gmail	gmail.com
+com.google.android.youtube	YouTube	youtube.com
+com.google.android.apps.youtube.music	YouTube Music	youtube.com
+com.google.android.apps.photos	Google Photos	google.com
+com.google.android.apps.docs	Google Drive	google.com
+com.google.android.apps.maps	Google Maps	google.com
+com.microsoft.office.outlook	Outlook	outlook.com
+com.microsoft.teams	Microsoft Teams	microsoft.com
+com.microsoft.skydrive	OneDrive	microsoft.com
+com.microsoft.office.word	Word	microsoft.com
+com.microsoft.office.excel	Excel	microsoft.com
+com.microsoft.xboxone.smartglass	Xbox	xbox.com
+com.skype.raider	Skype	skype.com
+com.linkedin.android	LinkedIn	linkedin.com
+com.snapchat.android	Snapchat	snapchat.com
+com.zhiliaoapp.musically	TikTok	tiktok.com
+com.reddit.frontpage	Reddit	reddit.com
+com.pinterest	Pinterest	pinterest.com
+com.tumblr	Tumblr	tumblr.com
+com.quora.android	Quora	quora.com
+com.discord	Discord	discord.com
+org.telegram.messenger	Telegram	telegram.org
+org.thoughtcrime.securesms	Signal	signal.org
+com.viber.voip	Viber	viber.com
+jp.naver.line.android	LINE	line.me
+com.kakao.talk	KakaoTalk	kakao.com
+com.tencent.mm	WeChat	wechat.com
+com.vkontakte.android	VK	vk.com
+com.imo.android.imoim	imo	imo.im
+com.truecaller	Truecaller	truecaller.com
+com.slack	Slack	slack.com
+us.zoom.videomeetings	Zoom	zoom.us
+com.spotify.music	Spotify	spotify.com
+com.netflix.mediaclient	Netflix	netflix.com
+com.disney.disneyplus	Disney+	disneyplus.com
+com.amazon.mShop.android.shopping	Amazon Shopping	amazon.com
+com.amazon.avod.thirdpartyclient	Prime Video	primevideo.com
+tv.twitch.android.app	Twitch	twitch.tv
+com.soundcloud.android	SoundCloud	soundcloud.com
+com.valvesoftware.android.steam.community	Steam	steampowered.com
+com.scee.psxandroid	PlayStation App	playstation.com
+com.roblox.client	Roblox	roblox.com
+com.paypal.android.p2pmobile	PayPal	paypal.com
+com.venmo	Venmo	venmo.com
+com.squareup.cash	Cash App	cash.app
+com.revolut.revolut	Revolut	revolut.com
+com.transferwise.android	Wise	wise.com
+com.coinbase.android	Coinbase	coinbase.com
+com.binance.dev	Binance	binance.com
+com.bkash.customerapp	bKash	bkash.com
+com.dropbox.android	Dropbox	dropbox.com
+com.github.android	GitHub	github.com
+com.notion.id	Notion	notion.so
+com.trello	Trello	trello.com
+com.atlassian.android.jira.core	Jira	atlassian.com
+com.evernote	Evernote	evernote.com
+com.canva.editor	Canva	canva.com
+com.adobe.reader	Adobe Acrobat	adobe.com
+com.openai.chatgpt	ChatGPT	openai.com
+com.anthropic.claude	Claude	claude.ai
+ch.protonmail.android	Proton Mail	proton.me
+com.yahoo.mobile.client.android.mail	Yahoo Mail	yahoo.com
+com.ubercab	Uber	uber.com
+com.lyft.android	Lyft	lyft.com
+com.grabtaxi.passenger	Grab	grab.com
+com.airbnb.android	Airbnb	airbnb.com
+com.booking	Booking.com	booking.com
+com.ebay.mobile	eBay	ebay.com
+com.etsy.android	Etsy	etsy.com
+com.alibaba.aliexpresshd	AliExpress	aliexpress.com
+com.duolingo	Duolingo	duolingo.com
+com.strava	Strava	strava.com
+com.patreon.android	Patreon	patreon.com
+com.medium.reader	Medium	medium.com
+org.wikipedia	Wikipedia	wikipedia.org
+org.wordpress.android	WordPress	wordpress.com

@@ -401,7 +401,7 @@ export const look = [
     title: 'Pictures, in order',
     page: 'icons',
     pref: 'icon_sources',
-    shells: ['android'],
+    shells: ['android', 'desktop'],
     what: 'Where the picture beside each item comes from, tried from the top down until one has a picture.',
     how: [
       '**Brand marks** are the logos that ship with the app. **App icons** are the icons of apps installed on this phone, for items saved for an app. **Website icons** are fetched from each site.',
@@ -411,6 +411,16 @@ export const look = [
     caveats: 'Website icons are the only ones that go online. They are fetched once per site through the same network switch as everything else, kept encrypted on this phone, and never asked for addresses on your own network.',
     related: ['setting.site_icon_from', 'setting.site_icon_style', 'setting.network_allowed'],
     words: 'favicon app icon picture logo fallback order',
+    on: {
+      desktop: {
+        how: [
+          '**Brand marks** are the logos that ship with the app. **Website icons** are fetched from each site.',
+          'Use the arrows to change the order, and remove any you do not want. An item none of them has a picture for shows its first letter, in a soft color of its own when [[setting.site_icon_style|Site icons]] is on brand colors.',
+          'A color or symbol you chose for one item always wins.',
+        ],
+        caveats: 'Website icons are the only pictures that go online. They are fetched once per site through the same network switch as everything else, kept in memory until the vault locks, and never asked for addresses on your own network. The browser extension has no network features, so it shows brand marks only.',
+      },
+    },
   },
   {
     id: 'setting.site_icon_from',
@@ -418,7 +428,7 @@ export const look = [
     title: 'Website icons from',
     page: 'icons',
     pref: 'site_icon_from',
-    shells: ['android'],
+    shells: ['android', 'desktop'],
     what: 'Who is asked for a website\'s icon, when website icons are in [[setting.icon_sources|the order]].',
     effects: [
       { value: 'site', label: 'Each site', text: 'Asks each site for its own icon, so only that site learns that it was asked.' },
