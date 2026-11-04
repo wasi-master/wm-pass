@@ -77,8 +77,8 @@ impl Default for Generator {
         Self {
             mode: Mode::Password,
             password: PasswordSpec::default(),
-            phrase: PassphraseSpec::default(),
-            syllables: 5,
+            phrase: PassphraseSpec { words: 4, ..PassphraseSpec::default() },
+            syllables: 6,
             pin: 6,
             at: 0,
             value: Zeroizing::new(String::new()),

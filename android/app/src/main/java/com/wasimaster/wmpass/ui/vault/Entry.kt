@@ -730,20 +730,25 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
             itemVerticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 2.dp).animateContentSize(Springs.glide()),
         ) {
-            entry.tags.forEach { tag ->
+            com.wasimaster.wmpass.ui.parts.AppearingEach(entry.tags) { tag ->
                 TagChip(tag, true, onRemove = { setTags(entry.tags - tag) }, onLongClick = { managing = tag }) { managing = tag }
             }
             if (!entry.trashed) Pill(if (entry.tags.isEmpty()) "Add a tag" else "Add", false, icon = PassIcons.Add) { sheet = "tags" }
         }
         val offered = suggested.filter { it !in entry.tags }
-        if (offered.isNotEmpty() && !entry.trashed) {
-            Row(Modifier.padding(start = 4.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(PassIcons.AutoAwesome, null, tint = colors.textMid, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Suggested", color = colors.textMid, style = MaterialTheme.typography.labelLarge)
-            }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(horizontal = 2.dp)) {
-                offered.forEach { tag -> Pill(tag, false, icon = PassIcons.Add) { setTags(entry.tags + tag) } }
+        // The heading folds away as its last chip leaves.
+        AnimatedVisibility(offered.isNotEmpty() && !entry.trashed) {
+            Column {
+                Row(Modifier.padding(start = 4.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(PassIcons.AutoAwesome, null, tint = colors.textMid, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Suggested", color = colors.textMid, style = MaterialTheme.typography.labelLarge)
+                }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(horizontal = 2.dp).animateContentSize(Springs.glide())) {
+                    com.wasimaster.wmpass.ui.parts.AppearingEach(offered) { tag ->
+                        Pill(tag, false, icon = PassIcons.Add) { setTags(entry.tags + tag) }
+                    }
+                }
             }
         }
     }
@@ -1104,8 +1109,9 @@ private fun StoreSheet(pkg: String, onDismiss: () -> Unit) {
     val stores = remember(pkg) {
         runCatching { context.packageManager.queryIntentActivities(market, 0) }.getOrDefault(emptyList())
             .distinctBy { it.activityInfo.packageName }
-            .map { it.activityInfo.packageName to it.loadLabel(context.packageManager).toString() }
+            .map { StoreApp(it.activityInfo.packageName, it.activityInfo.name, it.loadLabel(context.packageManager).toString()) }
     }
+    val play = remember { com.wasimaster.wmpass.ui.parts.Brands.bySlug(context, "googleplay")?.glyph }
     PassSheet(onDismiss, "Get the app") {
         Text(
             if (stores.isEmpty()) "No app store is installed here, so these open in your browser." else "It is not installed on this phone.",
@@ -1113,13 +1119,20 @@ private fun StoreSheet(pkg: String, onDismiss: () -> Unit) {
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 8.dp),
         )
-        stores.forEach { (store, name) ->
-            SheetRow(PassIcons.Storefront, name, pkg) {
+        stores.forEach { store ->
+            SheetRow(PassIcons.Storefront, store.label, pkg, leading = { StoreIcon(store.pkg) }) {
                 onDismiss()
-                runCatching { context.startActivity(android.content.Intent(market).setPackage(store).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                // Named down to the activity: some phones carry a helper that catches a link
+                // addressed only to a store's package and sends it to Google Play instead.
+                // Clearing the top delivers the link to a store that is already open.
+                val open = android.content.Intent(market)
+                    .setClassName(store.pkg, store.activity)
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                runCatching { context.startActivity(open) }
+                    .recoverCatching { context.startActivity(android.content.Intent(market).setPackage(store.pkg).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
             }
         }
-        SheetRow(PassIcons.Language, "Google Play on the web", "play.google.com") {
+        SheetRow(play ?: PassIcons.Language, "Google Play on the web", "play.google.com") {
             onDismiss()
             shell.openUrl("https://play.google.com/store/apps/details?id=$pkg")
         }
@@ -1127,6 +1140,22 @@ private fun StoreSheet(pkg: String, onDismiss: () -> Unit) {
             onDismiss()
             shell.openUrl("https://f-droid.org/packages/$pkg/")
         }
+    }
+}
+
+private class StoreApp(val pkg: String, val activity: String, val label: String)
+
+/** A store's own launcher icon, so each row looks like the app it opens. */
+@Composable
+private fun StoreIcon(pkg: String) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var icon by remember(pkg) { mutableStateOf(com.wasimaster.wmpass.system.ItemIcons.remembered(com.wasimaster.wmpass.system.ItemIcons.appKey(pkg))) }
+    LaunchedEffect(pkg) { if (icon == null) icon = com.wasimaster.wmpass.system.ItemIcons.app(context, pkg) }
+    val picture = icon
+    if (picture != null) {
+        androidx.compose.foundation.Image(picture, null, Modifier.fillMaxSize())
+    } else {
+        Icon(PassIcons.Storefront, null, tint = palette.textMid, modifier = Modifier.size(24.dp))
     }
 }
 

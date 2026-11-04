@@ -24,7 +24,7 @@ export class GenState {
   includeDigit = $state(true);
   syllables = $state(6);
   pin = $state(6);
-  pattern = $state('Cvcv-####');
+  pattern = $state('Cvcv-9999');
 
   private buffer = $state('');
   private whole = $state('');
@@ -91,7 +91,7 @@ export class GenState {
     } else if (r?.Passphrase) {
       const p = r.Passphrase;
       this.mode = 'passphrase';
-      this.words = p.words ?? 5;
+      this.words = p.words ?? 4;
       this.separator = p.separator ?? '-';
       this.capitalize = p.capitalize ?? false;
       this.includeDigit = p.include_digit ?? true;

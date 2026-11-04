@@ -41,6 +41,8 @@ pub const KIND_CATEGORIES: [&str; 11] = [
 ];
 
 static DOMAINS: &str = include_str!("../../../data/domains.tsv");
+/// Games people keep accounts for, by name: "Genshin Impact" has no domain to go by.
+static GAMES: &str = include_str!("../../../data/games.tsv");
 static MODEL: &[u8] = include_bytes!("../../../data/categoriser.bin");
 
 /// Buckets in the hashed feature space.
@@ -183,6 +185,31 @@ const NAME_LABELS: &[(&str, &str)] = &[
     ("chatgpt", "openai"),
 ];
 
+/// Letters and digits only, lowercased: "Honkai: Star Rail" and "honkai star rail" meet.
+fn squeeze(text: &str) -> String {
+    text.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect()
+}
+
+/// Whether a name is a game on the bundled list, as typed or before a note such as
+/// "Valorant (smurf)" or "Minecraft - server".
+pub fn is_game(title: &str) -> bool {
+    let whole = squeeze(title);
+    let lead = squeeze(title.split(['(', '[', '|', '-', '\u{2013}', '\u{2014}']).next().unwrap_or(""));
+    // A name of one or two letters says nothing on its own.
+    let names: Vec<&String> = [&whole, &lead].into_iter().filter(|n| n.chars().count() >= 3).collect();
+    if names.is_empty() {
+        return false;
+    }
+    GAMES
+        .lines()
+        .filter(|line| !line.starts_with('#'))
+        .filter_map(|line| line.split('\t').next())
+        .any(|game| {
+            let game = squeeze(game);
+            names.iter().any(|name| **name == game)
+        })
+}
+
 /// What a name alone says, the way a code's issuer or a bare login's title is usually the
 /// service's own: "PyPI", "Docker Hub", "GitHub (work)". The whole name squeezed together is
 /// tried first, then its first word, for names of three words or fewer.
@@ -192,18 +219,18 @@ fn name_category(title: &str) -> Option<&'static str> {
         .split(|c: char| !c.is_alphanumeric())
         .filter(|w| !w.is_empty())
         .collect();
-    let mut tries = vec![words.concat()];
-    if (2..=3).contains(&words.len()) {
-        tries.push(words[0].to_owned());
-    }
-    tries.iter().find_map(|name| {
-        let alias = NAME_LABELS.iter().find(|(known, _)| known == name).map(|(_, label)| *label);
+    let by_label = |name: &str| {
+        let alias = NAME_LABELS.iter().find(|(known, _)| *known == name).map(|(_, label)| *label);
         match alias {
             Some(label) => label_category(label),
             None if name.len() >= 3 => label_category(name),
             None => None,
         }
-    })
+    };
+    // A game's whole name comes before its first word: "Mobile Legends" is not about phones.
+    by_label(&words.concat())
+        .or_else(|| is_game(title).then_some("Gaming"))
+        .or_else(|| (2..=3).contains(&words.len()).then(|| by_label(words[0])).flatten())
 }
 
 /// The classifier's opinion of a name, if it is confident enough.
@@ -393,6 +420,34 @@ mod tests {
         }
         // A word that happens to be a short label says nothing on its own.
         assert_eq!(name_category("my"), None);
+    }
+
+    #[test]
+    fn games_are_known_by_name() {
+        for name in [
+            "Genshin Impact",
+            "genshin impact",
+            "Honkai: Star Rail",
+            "Valorant (smurf)",
+            "Clash of Clans",
+            "Mobile Legends - main",
+            "PUBG Mobile",
+            "CS:GO",
+            "Old School RuneScape",
+        ] {
+            assert_eq!(name_category(name), Some("Gaming"), "{name}");
+        }
+        // A site the list already files keeps its own heading, and words in passing are not games.
+        assert_eq!(name_category("Discord"), Some("Social"));
+        assert!(!is_game("Rust"));
+        assert!(!is_game("my game notes"));
+        assert!(!is_game("GO"));
+    }
+
+    #[test]
+    fn games_on_their_own_sites_are_gaming() {
+        assert_eq!(suggest(&site_entry("x", "https://www.hoyoverse.com")).unwrap().category, "Gaming");
+        assert_eq!(suggest(&site_entry("x", "https://supercell.com")).unwrap().category, "Gaming");
     }
 
     #[test]

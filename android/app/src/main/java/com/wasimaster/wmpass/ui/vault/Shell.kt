@@ -117,6 +117,9 @@ class Shell(
     /** Opened this session, newest first. Forgotten on lock, since this shell goes with it. */
     val recents = mutableStateListOf<String>()
 
+    /** Searches that led somewhere, kept in the vault. */
+    val searchHistory = SearchHistory(scope)
+
     /** A password just generated, waiting for the editor it was meant for. */
     var pendingPassword: String? = null
 
@@ -146,6 +149,7 @@ class Shell(
     }
 
     fun open(id: String) {
+        if (searching) searchHistory.remember(searchField.text.toString())
         recents.remove(id)
         recents.add(0, id)
         if (recents.size > 8) recents.removeAt(recents.lastIndex)

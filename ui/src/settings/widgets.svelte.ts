@@ -35,7 +35,7 @@ function recipe(): unknown {
     case 'pin':
       return { Pin: { length: 6 } };
     case 'pattern':
-      return { Pattern: 'Cvcv-####' };
+      return { Pattern: 'Cvcv-9999' };
     default:
       return {
         Password: {

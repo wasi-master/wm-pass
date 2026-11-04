@@ -144,6 +144,7 @@ fun SearchLayer() {
         return
     }
     val reach = rememberReach(shell.searching) ?: return
+    LaunchedEffect(Unit) { shell.searchHistory.load() }
     val all by Pass.entries.collectAsStateWithLifecycle()
     val focus = remember { FocusRequester() }
     var results by remember { mutableStateOf<List<Summary>>(emptyList()) }
@@ -199,6 +200,14 @@ fun SearchLayer() {
                         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = top + 16.dp, bottom = 12.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom),
                     ) {
+                        val earlier = shell.searchHistory.matching(lead)
+                        if (earlier.isNotEmpty()) {
+                            item("earlier") {
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    earlier.forEach { text -> Pill(text, false, icon = PassIcons.History) { shell.searchAgain(text) } }
+                                }
+                            }
+                        }
                         items(results, key = { it.id }) { entry ->
                             SearchRow(entry, lead, Modifier.animateItem(fadeInSpec = tween(120), fadeOutSpec = tween(80)))
                         }
@@ -373,6 +382,11 @@ private fun SearchStart(all: List<Summary>, top: androidx.compose.ui.unit.Dp) {
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = top + 16.dp, bottom = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom),
     ) {
+        // Nearest the thumb: what was looked for last time.
+        if (shell.searchHistory.items.isNotEmpty()) {
+            item("searches") { RecentSearchChips(shell.searchHistory) { shell.searchAgain(it) } }
+            item("searches-title") { RecentSearchesTitle(shell.searchHistory) }
+        }
         item("chips") {
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -536,6 +550,7 @@ internal fun StandardSearch() {
     val shell = LocalShell.current
     val colors = palette
     if (!shell.searching) return
+    LaunchedEffect(Unit) { shell.searchHistory.load() }
     val all by Pass.entries.collectAsStateWithLifecycle()
     val focus = remember { FocusRequester() }
     var results by remember { mutableStateOf<List<Summary>>(emptyList()) }
@@ -591,6 +606,17 @@ internal fun StandardSearch() {
                             }
                         }
                     }
+                    val searched = shell.searchHistory.items.toList()
+                    if (searched.isNotEmpty()) {
+                        item("searched") {
+                            Eyebrow("Recent searches", Modifier.padding(horizontal = 16.dp)) {
+                                androidx.compose.material3.TextButton(onClick = { shell.searchHistory.clear() }) { Text("Clear") }
+                            }
+                        }
+                        items(searched, key = { "s$it" }) { text ->
+                            RecentSearchRow(text, onPick = { shell.searchAgain(text) }, onForget = { shell.searchHistory.forget(text) }, modifier = Modifier.animateItem())
+                        }
+                    }
                     val recent = shell.recents.mapNotNull { id -> all.firstOrNull { it.id == id } }.take(5)
                     if (recent.isNotEmpty()) {
                         item("recent") { Eyebrow("Recent", Modifier.padding(horizontal = 16.dp)) }
@@ -608,7 +634,12 @@ internal fun StandardSearch() {
                         }
                     }
                 }
-                else -> items(results, key = { it.id }) { entry -> SearchRow(entry, lead) }
+                else -> {
+                    items(shell.searchHistory.matching(lead), key = { "m$it" }) { text ->
+                        RecentSearchRow(text, onPick = { shell.searchAgain(text) }, onForget = null)
+                    }
+                    items(results, key = { it.id }) { entry -> SearchRow(entry, lead) }
+                }
             }
         }
     }

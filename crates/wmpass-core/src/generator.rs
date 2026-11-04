@@ -121,8 +121,15 @@ pub enum Recipe {
         /// Digits.
         length: u32,
     },
-    /// `a` lower, `A` upper, `9` digit, `#` symbol, `?` any, `\` literal next.
+    /// `a` lower, `A` upper, `c` and `C` a consonant, `v` and `V` a vowel, `9` digit,
+    /// `#` symbol, `?` any, `\` literal next.
     Pattern(String),
+    /// A phone's unlock pattern on the 3×3 grid of dots, numbered 1 to 9 left to right, top
+    /// to bottom, and written as the dots in the order drawn: `2-6-7-1`.
+    LockPattern {
+        /// Dots joined, 4 to 9.
+        dots: u32,
+    },
 }
 
 impl Default for Recipe {
@@ -156,9 +163,13 @@ pub fn default_presets() -> Vec<Preset> {
             name: "No symbols".into(),
             recipe: Recipe::Password(symbols_off),
         },
+        // Four words are what people remember; six are what they write down.
         Preset {
             name: "Memorable".into(),
-            recipe: Recipe::Passphrase(PassphraseSpec::default()),
+            recipe: Recipe::Passphrase(PassphraseSpec {
+                words: 4,
+                ..PassphraseSpec::default()
+            }),
         },
         Preset {
             name: "PIN".into(),
@@ -316,12 +327,19 @@ fn pattern(template: &str) -> Result<Secret> {
         .chain(DIGITS.chars())
         .chain(SYMBOLS.chars())
         .collect();
+    let consonants: Vec<char> = CONSONANTS.chars().collect();
+    let vowels: Vec<char> = VOWELS.chars().collect();
+    let capital = |c: char| c.to_ascii_uppercase();
     let mut out = String::new();
     let mut chars = template.chars();
     while let Some(ch) = chars.next() {
         match ch {
             'a' => out.push(pick(&lower)?),
             'A' => out.push(pick(&upper)?),
+            'c' => out.push(pick(&consonants)?),
+            'C' => out.push(capital(pick(&consonants)?)),
+            'v' => out.push(pick(&vowels)?),
+            'V' => out.push(capital(pick(&vowels)?)),
             '9' => out.push(pick(&digits)?),
             '#' => out.push(pick(&symbols)?),
             '?' => out.push(pick(&any)?),
@@ -330,6 +348,101 @@ fn pattern(template: &str) -> Result<Secret> {
         }
     }
     Ok(Secret::from(out))
+}
+
+/// The dot a straight line from `a` to `b` passes over, if any. Dots are 0 to 8, left to
+/// right, top to bottom.
+fn between(a: usize, b: usize) -> Option<usize> {
+    let (rows, cols) = (a / 3 + b / 3, a % 3 + b % 3);
+    (rows % 2 == 0 && cols % 2 == 0 && a != b).then_some(rows / 2 * 3 + cols / 2)
+}
+
+/// Whether a pattern that has drawn `used`, ending on `from`, may go on to `to`. As on a phone,
+/// a line cannot pass over a dot that is not yet part of the pattern, since the phone would
+/// join that dot on the way.
+fn can_step(used: u16, from: usize, to: usize) -> bool {
+    used & (1 << to) == 0 && between(from, to).is_none_or(|middle| used & (1 << middle) != 0)
+}
+
+/// How many patterns finish from here with `left` more dots. Built once, by fewest dots left
+/// first, as a table of every set of dots drawn, the dot it ends on, and how many are to come.
+fn completions(used: u16, last: usize, left: u32) -> u64 {
+    static TABLE: std::sync::OnceLock<Vec<u64>> = std::sync::OnceLock::new();
+    let at = |used: usize, last: usize, left: usize| (left * 512 + used) * 9 + last;
+    let table = TABLE.get_or_init(|| {
+        let mut table = vec![0u64; 9 * 512 * 9];
+        for used in 0..512 {
+            for last in 0..9 {
+                table[at(used, last, 0)] = 1;
+            }
+        }
+        for left in 1..9 {
+            for used in 0..512usize {
+                for last in 0..9 {
+                    table[at(used, last, left)] = (0..9)
+                        .filter(|to| can_step(used as u16, last, *to))
+                        .map(|to| table[at(used | (1 << to), to, left - 1)])
+                        .sum();
+                }
+            }
+        }
+        table
+    });
+    if left > 8 {
+        return 0;
+    }
+    table[at(usize::from(used), last, left as usize)]
+}
+
+/// Every pattern of `dots` dots a phone accepts: 1,624 of four up to 140,704 of nine.
+pub fn lock_patterns(dots: u32) -> u64 {
+    if !(1..=9).contains(&dots) {
+        return 0;
+    }
+    (0..9)
+        .map(|start| completions(1 << start, start, dots - 1))
+        .sum()
+}
+
+/// One of `weights`, each as likely as its weight.
+fn pick_weighted(weights: &[(usize, u64)]) -> Result<usize> {
+    let total: u64 = weights.iter().map(|(_, w)| w).sum();
+    let bound = u32::try_from(total).map_err(|_| Error::TooLong)?;
+    let mut roll = u64::from(random_below(bound)?);
+    for (item, weight) in weights {
+        if roll < *weight {
+            return Ok(*item);
+        }
+        roll -= weight;
+    }
+    Err(Error::Invalid("no pattern fits".into()))
+}
+
+/// A lock pattern drawn uniformly from every one a phone accepts. Each dot is chosen in
+/// proportion to the patterns that can still follow it, which is what makes the whole uniform:
+/// picking each next dot evenly would favour the short dead ends near the corners.
+fn lock_pattern(dots: u32) -> Result<Secret> {
+    if !(4..=9).contains(&dots) {
+        return Err(Error::Invalid("choose between 4 and 9 dots".into()));
+    }
+    let starts: Vec<(usize, u64)> = (0..9)
+        .map(|start| (start, completions(1 << start, start, dots - 1)))
+        .collect();
+    let mut last = pick_weighted(&starts)?;
+    let mut used: u16 = 1 << last;
+    let mut path = vec![last];
+    for left in (0..dots - 1).rev() {
+        let next: Vec<(usize, u64)> = (0..9)
+            .filter(|to| can_step(used, last, *to))
+            .map(|to| (to, completions(used | (1 << to), to, left)))
+            .filter(|(_, ways)| *ways > 0)
+            .collect();
+        last = pick_weighted(&next)?;
+        used |= 1 << last;
+        path.push(last);
+    }
+    let text: Vec<String> = path.iter().map(|dot| (dot + 1).to_string()).collect();
+    Ok(Secret::from(text.join("-")))
 }
 
 /// Runs a recipe.
@@ -343,6 +456,7 @@ pub fn generate(recipe: &Recipe) -> Result<Secret> {
         } => pronounceable(*syllables, separator),
         Recipe::Pin { length } => pin(*length),
         Recipe::Pattern(template) => pattern(template),
+        Recipe::LockPattern { dots } => lock_pattern(*dots),
     }
 }
 
@@ -371,6 +485,8 @@ pub fn entropy_bits(recipe: &Recipe) -> f64 {
             while let Some(ch) = chars.next() {
                 bits += match ch {
                     'a' | 'A' => 26f64.log2(),
+                    'c' | 'C' => (CONSONANTS.len() as f64).log2(),
+                    'v' | 'V' => (VOWELS.len() as f64).log2(),
                     '9' => 10f64.log2(),
                     '#' => (SYMBOLS.len() as f64).log2(),
                     '?' => ((26 + 26 + 10 + SYMBOLS.len()) as f64).log2(),
@@ -383,6 +499,7 @@ pub fn entropy_bits(recipe: &Recipe) -> f64 {
             }
             bits
         }
+        Recipe::LockPattern { dots } => (lock_patterns(*dots).max(1) as f64).log2(),
     }
 }
 
@@ -665,6 +782,97 @@ mod tests {
         });
         assert!((entropy_bits(&digits_only) - 33.2).abs() < 0.1);
         assert!((entropy_bits(&Recipe::Pattern("99\\a".into())) - 6.64).abs() < 0.01);
+    }
+
+    #[test]
+    fn lock_patterns_are_counted_as_phones_count_them() {
+        let counts: Vec<u64> = (4..=9).map(lock_patterns).collect();
+        assert_eq!(counts, vec![1624, 7152, 26016, 72912, 140_704, 140_704]);
+        assert!((entropy_bits(&Recipe::LockPattern { dots: 4 }) - 10.67).abs() < 0.01);
+        assert_eq!(between(0, 8), Some(4));
+        assert_eq!(between(0, 2), Some(1));
+        assert_eq!(between(0, 5), None);
+        assert_eq!(between(1, 7), Some(4));
+        assert_eq!(between(3, 4), None);
+    }
+
+    #[test]
+    fn a_lock_pattern_never_jumps_a_dot_it_has_not_drawn() {
+        for dots in 4..=9 {
+            for _ in 0..200 {
+                let out = generate(&Recipe::LockPattern { dots }).unwrap();
+                let path: Vec<usize> = out
+                    .expose()
+                    .split('-')
+                    .map(|d| d.parse::<usize>().unwrap() - 1)
+                    .collect();
+                assert_eq!(path.len(), dots as usize);
+                let mut used = 1u16 << path[0];
+                for pair in path.windows(2) {
+                    assert!(can_step(used, pair[0], pair[1]), "{path:?}");
+                    used |= 1 << pair[1];
+                }
+            }
+        }
+        assert!(generate(&Recipe::LockPattern { dots: 3 }).is_err());
+        assert!(generate(&Recipe::LockPattern { dots: 10 }).is_err());
+    }
+
+    #[test]
+    fn lock_patterns_start_anywhere_in_proportion() {
+        // More patterns start from the middle dot than from a corner, since every dot is next to
+        // it. A generator that picked the first dot evenly would start there a ninth of the time.
+        let mut middle = 0u32;
+        let runs = 9000;
+        for _ in 0..runs {
+            if generate(&Recipe::LockPattern { dots: 4 })
+                .unwrap()
+                .expose()
+                .starts_with('5')
+            {
+                middle += 1;
+            }
+        }
+        let expected = f64::from(runs) * completions(1 << 4, 4, 3) as f64 / 1624.0;
+        assert!(
+            (f64::from(middle) - expected).abs() < expected * 0.15,
+            "{middle} vs {expected}"
+        );
+    }
+
+    #[test]
+    fn memorable_is_four_words() {
+        let memorable = default_presets()
+            .into_iter()
+            .find(|p| p.name == "Memorable")
+            .unwrap();
+        assert!(matches!(
+            memorable.recipe,
+            Recipe::Passphrase(PassphraseSpec { words: 4, .. })
+        ));
+    }
+
+    #[test]
+    fn pattern_knows_consonants_and_vowels() {
+        for _ in 0..50 {
+            let out = generate(&Recipe::Pattern("Cvcv-9999".into())).unwrap();
+            let chars: Vec<char> = out.expose().chars().collect();
+            assert_eq!(chars.len(), 9);
+            assert!(
+                chars[0].is_ascii_uppercase() && CONSONANTS.contains(chars[0].to_ascii_lowercase())
+            );
+            assert!(
+                VOWELS.contains(chars[1])
+                    && CONSONANTS.contains(chars[2])
+                    && VOWELS.contains(chars[3])
+            );
+            assert_eq!(chars[4], '-');
+            assert!(chars[5..].iter().all(char::is_ascii_digit));
+        }
+        let bits = entropy_bits(&Recipe::Pattern("Cvcv-9999".into()));
+        assert!(
+            (bits - (2.0 * 18f64.log2() + 2.0 * 5f64.log2() + 4.0 * 10f64.log2())).abs() < 0.01
+        );
     }
 
     #[test]

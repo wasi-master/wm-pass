@@ -2,9 +2,10 @@
 
 | File | Source | Licence |
 |---|---|---|
-| `domains.tsv` | [2FA directory](https://2fa.directory) (2factorauth and contributors), plus `domains-extra.tsv`; built by `tools/data/build_domains.py` | MIT |
+| `domains.tsv` | [2FA directory](https://2fa.directory) (2factorauth and contributors), plus `games.tsv` and `domains-extra.tsv`; built by `tools/data/build_domains.py` | MIT |
 | `domains-extra.tsv`, `keywords.tsv` | Written for this project | MIT |
-| `categoriser.bin` | Trained from the two files above by `cargo run -p wmpass-core --example train_categoriser` | MIT |
+| `games.tsv` | Written for this project: games played with an account, by name and site, which file under Gaming | MIT |
+| `categoriser.bin` | Trained from `domains.tsv`, `keywords.tsv` and `games.tsv` by `cargo run -p wmpass-core --example train_categoriser` | MIT |
 | `related/shared-credentials.json` | [Apple password-manager-resources](https://github.com/apple/password-manager-resources) `quirks/shared-credentials.json` | MIT, © Apple Inc. |
 | `related/change-password-urls.json` | [Apple password-manager-resources](https://github.com/apple/password-manager-resources) `quirks/change-password-URLs.json` | MIT, © Apple Inc. |
 | `related/accounts.txt` | Written for this project | MIT |

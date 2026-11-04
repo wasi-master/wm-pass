@@ -499,7 +499,7 @@ export const editing = [
     page: 'generator',
     pref: 'gen_words',
     what: 'How many words a passphrase starts with.',
-    how: 'Each word adds about 12.9 bits of strength, so five words give about 65 before the number is added.',
+    how: 'Each word adds about 12.9 bits of strength, so four words give about 52 before the number is added. Four is what most people can remember.',
     related: ['setting.gen_mode', 'setting.gen_show_bits'],
     words: 'passphrase diceware',
   },

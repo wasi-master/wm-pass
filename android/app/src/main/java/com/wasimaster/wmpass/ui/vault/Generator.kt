@@ -127,13 +127,14 @@ class GenState {
     var digits by mutableStateOf(true)
     var symbols by mutableStateOf(true)
     var noAmbiguous by mutableStateOf(false)
-    var words by mutableIntStateOf(5)
+    var words by mutableIntStateOf(4)
     var separator by mutableStateOf("-")
     var capitalize by mutableStateOf(false)
     var includeDigit by mutableStateOf(true)
     var syllables by mutableIntStateOf(6)
     var pin by mutableIntStateOf(6)
-    var pattern by mutableStateOf("Cvcv-####")
+    var dots by mutableIntStateOf(6)
+    var pattern by mutableStateOf("Cvcv-9999")
 
     private var buffer by mutableStateOf("")
     private var drawnBits by mutableStateOf(0.0)
@@ -176,6 +177,7 @@ class GenState {
                 },
             )
             "pin" -> put("Pin", buildJsonObject { put("length", pin) })
+            "lock" -> put("LockPattern", buildJsonObject { put("dots", dots) })
             else -> put("Pattern", pattern)
         }
     }
@@ -238,6 +240,10 @@ class GenState {
                 mode = "pronounceable"
                 syllables = obj["Pronounceable"]!!.jsonObject.int("syllables", 6)
             }
+            obj?.containsKey("LockPattern") == true -> {
+                mode = "lock"
+                dots = obj["LockPattern"]!!.jsonObject.int("dots", 6).coerceIn(4, 9)
+            }
             obj?.containsKey("Pin") == true -> {
                 mode = "pin"
                 pin = obj["Pin"]!!.jsonObject.int("length", 6)
@@ -253,6 +259,7 @@ private val Modes = listOf(
     "pronounceable" to "Pronounceable",
     "pin" to "PIN",
     "pattern" to "Pattern",
+    "lock" to "Lock pattern",
 )
 
 /**
@@ -267,6 +274,10 @@ fun GeneratedValue(state: GenState, modifier: Modifier = Modifier, large: Boolea
     val pull = remember { Animatable(0f) }
     val threshold = with(LocalDensity.current) { 72.dp.toPx() }
     var armed by remember { mutableStateOf(false) }
+    if (state.mode == "lock") {
+        LockPatternValue(state, modifier, large)
+        return
+    }
     if (colors.flat) {
         androidx.compose.material3.Surface(
             modifier.fillMaxWidth().heightIn(min = 112.dp),
@@ -351,10 +362,52 @@ fun GeneratedValue(state: GenState, modifier: Modifier = Modifier, large: Boolea
     }
 }
 
+/** A lock pattern on its grid, with its dots in writing below and a way to draw another. */
+@Composable
+private fun LockPatternValue(state: GenState, modifier: Modifier, large: Boolean) {
+    val colors = palette
+    val shell = LocalShell.current
+    val scope = rememberCoroutineScope()
+    Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        LockPatternGrid(state.value, size = if (large) 248.dp else 196.dp)
+        Spacer(Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SecretText(state.value.ifEmpty { " " }, style = PassType.secret.copy(fontSize = 18.sp, textAlign = TextAlign.Center))
+            if (colors.flat) {
+                androidx.compose.material3.IconButton(onClick = {
+                    shell.haptics.click()
+                    scope.launch { state.roll() }
+                }) { Icon(PassIcons.Refresh, "Another pattern") }
+            }
+        }
+    }
+}
+
 /** How strong the value is: a bar, its bits, and how long it would hold. */
 @Composable
 fun GeneratedStrength(state: GenState, modifier: Modifier = Modifier) {
     val colors = palette
+    if (state.mode == "lock") {
+        // A guess at a pattern is a try at the phone, not a hash run offline, so what matters
+        // is how many there are. A phone also stops answering after a few wrong tries.
+        val count = Math.round(Math.pow(2.0, state.bits))
+        val score = when {
+            state.bits < 12 -> 1
+            state.bits < 15 -> 2
+            state.bits < 16.5 -> 3
+            else -> 4
+        }
+        Column(modifier.fillMaxWidth()) {
+            StrengthBar(score, Modifier.fillMaxWidth())
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "One of ${"%,d".format(count)} patterns a phone accepts. Long ones with turns are hardest to guess over a shoulder.",
+                color = colors.textMid,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        return
+    }
     var strength by remember { mutableStateOf<StrengthView?>(null) }
     LaunchedEffect(state.value) {
         delay(90)
@@ -537,6 +590,10 @@ fun GeneratorControls(state: GenState, modesModifier: Modifier = Modifier) {
             }
             "pronounceable" -> StepDial("Syllables", state.syllables, 3..14, onChange = { state.syllables = it }, onSettle = { reroll() })
             "pin" -> StepDial("Digits", state.pin, 4..12, onChange = { state.pin = it }, onSettle = { reroll() })
+            "lock" -> {
+                StepDial("Dots", state.dots, 4..9, onChange = { state.dots = it }, onSettle = { reroll() })
+                LockPatternGuide(state.value)
+            }
             else -> {
                 val field = rememberTextFieldState(state.pattern)
                 LaunchedEffect(field.text) {
@@ -544,9 +601,9 @@ fun GeneratorControls(state: GenState, modesModifier: Modifier = Modifier) {
                     delay(200)
                     runCatching { state.roll() }
                 }
-                SheetField(field, "Cvcv-####")
+                SheetField(field, "Cvcv-9999")
                 Text(
-                    "C is a consonant, v a vowel, # a digit, ! a symbol. Anything else stays as typed.",
+                    "a is a small letter and A a capital, c a consonant and v a vowel (C and V as capitals), 9 a digit, # a symbol and ? anything. Anything else stays as typed; put \\ before a letter to keep it.",
                     color = palette.textMid,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(start = 6.dp),
