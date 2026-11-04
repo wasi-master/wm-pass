@@ -126,11 +126,11 @@ See also [Generator](/guide/settings/generator/), [Type](/guide/settings/generat
 
 *Only in Android.*
 
-Gives a new item the tags its site suggests, such as Banking or Social, when you save it without any.
+Gives a new item the tag its site suggests, such as Banking or Social, when you save it without any.
 
 #### How it works
 
-The suggestions come from the site and from the kind of item, so a GitHub code suggests Developer and Authenticator. They are the same tags the editor offers as chips. An item you tag yourself keeps only your tags.
+The tag comes from WM Pass's list of known sites, or from an item's name when that is a known site's, such as PyPI. The offline model's guesses tag only with [Use guesses too](/guide/settings/editor/#setting-auto-tag-guess) on. An item you tag yourself keeps only your tags.
 
 #### What each choice does
 
@@ -141,9 +141,53 @@ The suggestions come from the site and from the kind of item, so a GitHub code s
 
 #### Limits
 
-It applies when an item is first saved. Items already in the vault are left as they are.
+It applies when an item is first saved. [Add suggested tags](/guide/settings/editor/#action-bulk-tags) does the same for items already in the vault.
 
-See also [Item editor](/guide/screens/#screen-editor), [Kinds of item](/guide/how-it-works/#concept-item-kinds).
+See also [Item editor](/guide/screens/#screen-editor), [Kinds of item](/guide/how-it-works/#concept-item-kinds), [Add suggested tags](/guide/settings/editor/#action-bulk-tags).
+
+<a id="setting-auto-tag-guess"></a>
+
+## Use guesses too
+
+*Only in Android.*
+
+Lets [Tag new items](/guide/settings/editor/#setting-auto-tag) tag a new item from the offline model's guess when no list knows its site.
+
+#### How it works
+
+The model reads the item's name and address on this phone and answers only when it is fairly sure. It is still wrong more often than the list.
+
+#### What each choice does
+
+| Choice | What it does |
+| --- | --- |
+| On | A new item whose site is not on the list gets the model's guess. |
+| Off | Only the site list and known names tag a new item. |
+
+See also [Tag new items](/guide/settings/editor/#setting-auto-tag), [Add suggested tags](/guide/settings/editor/#action-bulk-tags).
+
+<a id="action-bulk-tags"></a>
+
+## Add suggested tags
+
+*Only in Android.*
+
+Tags the items already in your vault in one go, after you look through what would be added.
+
+#### How it works
+
+Each suggestion says where it came from, and you pick which sources count:
+
+- *Site list*: the site is on WM Pass's list of known sites. On to start with.
+- *Item's name*: the name is a known site's, such as PyPI. On to start with.
+- *Kind*: what the item is, such as Payment cards or SSH keys. Off to start with.
+- *Guesses*: the offline model's best guess from the name. Off to start with.
+
+Suggestions are grouped by tag. Open a group to leave out any item, or clear its box to leave out the whole tag. **Only items with no tags yet** skips anything you have tagged already.
+
+**Add** tags what is left, and the message after it offers **Undo**, which takes every one of those tags back off.
+
+See also [Tag new items](/guide/settings/editor/#setting-auto-tag), [Use guesses too](/guide/settings/editor/#setting-auto-tag-guess).
 
 <a id="setting-card-reader"></a>
 

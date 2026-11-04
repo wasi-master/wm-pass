@@ -2120,11 +2120,11 @@
       },
       {
        "t": "strong",
-       "s": "Pair a device"
+       "s": "Add a device"
       },
       {
        "t": "text",
-       "s": ". Either scan a code that the other device shows, or compare six digits on both screens and accept on both."
+       "s": ". It asks whether the other device already has this vault: one with none gets a copy and is paired, one that has it is only paired. Either scan a code that the other device shows, or compare six digits on both screens and accept on both."
       }
      ]
     },
@@ -4638,6 +4638,23 @@
        "s": ", at the bottom, adds a tag, attaches a file, links another item, sets a reminder, a folder, a color or a self-destruct date, pins it, puts it on the hidden shelf, duplicates it, sends it to another device, or moves it to the trash."
       }
      ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "A login shows "
+      },
+      {
+       "t": "strong",
+       "s": "Change the password on the site"
+      },
+      {
+       "t": "text",
+       "s": " only for a site that has a page for it, found the way Health finds it. An app that is not installed offers the app stores on this phone, or Google Play and F-Droid in the browser when there are none."
+      }
+     ]
     }
    ],
    "when": [
@@ -4850,6 +4867,15 @@
       {
        "t": "text",
        "s": " and stays in the vault until you tap it, so fixing a name never brings the password onto the screen."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Each custom field has a lock beside it that turns it secret, or back to plain, keeping its value: nothing has to be typed again."
       }
      ]
     },
@@ -5388,15 +5414,39 @@
      "runs": [
       {
        "t": "text",
-       "s": "Tapping an item offers what fixes it: "
+       "s": "Tapping an item offers what fixes it, there and then. "
       },
       {
        "t": "strong",
-       "s": "Change the password"
+       "s": "Set a new password"
       },
       {
        "t": "text",
-       "s": " opens the site's own page for that, from a list of known pages or the address a site lists at /.well-known/change-password, and a missing second factor offers the site's settings. "
+       "s": " makes one with the generator and saves it, the old one kept in the item's history. "
+      },
+      {
+       "t": "strong",
+       "s": "Change the password on the site"
+      },
+      {
+       "t": "text",
+       "s": " opens the site's own page for that, and shows only for a site that has one: either it is on a list of known pages, or it answers at /.well-known/change-password after first refusing an address no site has. An unencrypted address offers "
+      },
+      {
+       "t": "strong",
+       "s": "Switch the address to https"
+      },
+      {
+       "t": "text",
+       "s": ", and "
+      },
+      {
+       "t": "strong",
+       "s": "Try it with https first"
+      },
+      {
+       "t": "text",
+       "s": ". "
       },
       {
        "t": "strong",
@@ -5404,7 +5454,7 @@
       },
       {
        "t": "text",
-       "s": " takes the item off that list only, for sites with a second factor of their own and the like. "
+       "s": " takes the item off that list only. "
       },
       {
        "t": "strong",
@@ -5413,6 +5463,40 @@
       {
        "t": "text",
        "s": " lists them again, to put any back."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Where items that share a password look like one account saved twice, such as an email in one and a username in the other, Health offers to merge them, under "
+      },
+      {
+       "t": "strong",
+       "s": "Used more than once"
+      },
+      {
+       "t": "text",
+       "s": " and in "
+      },
+      {
+       "t": "strong",
+       "s": "Maybe the same account"
+      },
+      {
+       "t": "text",
+       "s": ". "
+      },
+      {
+       "t": "link",
+       "id": "action.merge_items",
+       "s": "Merging"
+      },
+      {
+       "t": "text",
+       "s": " asks which one stays and which value wins where they differ."
       }
      ]
     },
@@ -8021,7 +8105,16 @@
      "runs": [
       {
        "t": "text",
-       "s": "The Health page offers to merge each group. Choose the one that stays, and the others fold into it: their passwords move to its history, their extra fields come along, and the copies go to the trash."
+       "s": "The Health page offers to merge each group. "
+      },
+      {
+       "t": "link",
+       "id": "action.merge_items",
+       "s": "Merging"
+      },
+      {
+       "t": "text",
+       "s": " asks which one stays, and which value wins where they differ."
       }
      ]
     }
@@ -8032,6 +8125,84 @@
    ],
    "words": "duplicate copies merge twice",
    "plain": "Lists logins saved more than once: the same site, the same username and the same password."
+  },
+  {
+   "id": "action.health_check_similar",
+   "kind": "action",
+   "title": "Maybe the same account",
+   "page": "health",
+   "what": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Lists logins that share a password and look like one account saved twice."
+      }
+     ]
+    }
+   ],
+   "how": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Two logins with one password count when they are for the same site, or one is named for the other's site, and their usernames could be one person's:"
+      }
+     ]
+    },
+    {
+     "t": "ul",
+     "items": [
+      [
+       {
+        "t": "text",
+        "s": "one of them has no username;"
+       }
+      ],
+      [
+       {
+        "t": "text",
+        "s": "one is an email and the other is the part before its @;"
+       }
+      ],
+      [
+       {
+        "t": "text",
+        "s": "they differ by a slip of a key or two, by dots, or by capitals."
+       }
+      ]
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Two different email addresses are two accounts, so they do not count unless one is a typo of the other."
+      }
+     ]
+    }
+   ],
+   "caveats": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "It is a guess from names and addresses. Look before you merge: the merge asks which value wins wherever the two differ."
+      }
+     ]
+    }
+   ],
+   "related": [
+    "action.health_check_duplicates",
+    "action.health_check_reused",
+    "action.merge_items"
+   ],
+   "words": "similar same account twice email username spelling merge",
+   "plain": "Lists logins that share a password and look like one account saved twice."
   },
   {
    "id": "page.folders",
@@ -9401,7 +9572,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Choose the kind, give it a name and fill in what that kind needs. A backup runs as soon as it is saved, so you know at once whether it works."
+       "s": "Choose the kind, give it a name and fill in what that kind needs. Before a server or account is saved, WM Pass checks that it answers with what you typed, and says what went wrong if it does not; nothing is kept until it works. A backup then runs straight away."
       }
      ]
     },
@@ -10303,16 +10474,16 @@
      "runs": [
       {
        "t": "text",
-       "s": "Pair each device once with "
+       "s": "Start with "
       },
       {
        "t": "link",
-       "id": "action.lan_pair",
-       "s": "Pair a device"
+       "id": "action.lan_add",
+       "s": "Add a device"
       },
       {
        "t": "text",
-       "s": ". Pairing stores the other device's key, and later connections with any other key are refused."
+       "s": ", which asks whether the other device already has this vault: one with none gets a copy, one that has it is paired. Pairing stores the other device's key, and later connections with any other key are refused."
       }
      ]
     },
@@ -10365,7 +10536,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Click a paired device to forget it. It has to pair again before it can sync."
+       "s": "Tap a paired device to forget it. It has to pair again before it can sync."
       }
      ]
     }
@@ -10418,9 +10589,9 @@
    "plain": "Syncs this vault directly with a phone or another computer on the same network, with no server in between."
   },
   {
-   "id": "action.lan_pair",
+   "id": "action.lan_add",
    "kind": "action",
-   "title": "Pair a device",
+   "title": "Add a device",
    "page": "sync",
    "what": [
     {
@@ -10428,7 +10599,103 @@
      "runs": [
       {
        "t": "text",
-       "s": "Introduces another device to this one, once, so the two can sync over this network."
+       "s": "Starts syncing this vault with another phone or computer on this Wi-Fi."
+      }
+     ]
+    }
+   ],
+   "how": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "It first asks whether WM Pass on the other device already opens this vault."
+      }
+     ]
+    },
+    {
+     "t": "ul",
+     "items": [
+      [
+       {
+        "t": "strong",
+        "s": "No, it has no vault yet"
+       },
+       {
+        "t": "text",
+        "s": " sends it a copy of this one, then pairs the two. See "
+       },
+       {
+        "t": "link",
+        "id": "action.lan_join"
+       },
+       {
+        "t": "text",
+        "s": "."
+       }
+      ],
+      [
+       {
+        "t": "strong",
+        "s": "Yes, it has this vault"
+       },
+       {
+        "t": "text",
+        "s": ", from a backup or a sync folder, pairs the two so they can sync. See "
+       },
+       {
+        "t": "link",
+        "id": "action.lan_pair"
+       },
+       {
+        "t": "text",
+        "s": "."
+       }
+      ]
+     ]
+    }
+   ],
+   "caveats": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Two vaults made separately stay separate: pairing does not merge them, and a paired device syncs only if it holds this vault's key."
+      }
+     ]
+    }
+   ],
+   "related": [
+    "action.lan_join",
+    "action.lan_pair",
+    "group.sync.lan"
+   ],
+   "words": "add device new pair join phone computer",
+   "plain": "Starts syncing this vault with another phone or computer on this Wi-Fi."
+  },
+  {
+   "id": "action.lan_pair",
+   "kind": "action",
+   "title": "Pair a device that has this vault",
+   "page": "sync",
+   "what": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Introduces a device that already opens this vault to this one, once, so the two can sync over this network. Reached from "
+      },
+      {
+       "t": "link",
+       "id": "action.lan_add",
+       "s": "Add a device"
+      },
+      {
+       "t": "text",
+       "s": "."
       }
      ]
     }
@@ -10539,7 +10806,7 @@
    ],
    "docs": "/security/lan/",
    "words": "pair qr code six digits",
-   "plain": "Introduces another device to this one, once, so the two can sync over this network."
+   "plain": "Introduces a device that already opens this vault to this one, once, so the two can sync over this network. Reached from Add a device."
   },
   {
    "id": "action.join_device",
@@ -10651,7 +10918,7 @@
   {
    "id": "action.lan_join",
    "kind": "action",
-   "title": "Add a new device",
+   "title": "Send this vault to a new device",
    "page": "sync",
    "what": [
     {
@@ -10659,7 +10926,24 @@
      "runs": [
       {
        "t": "text",
-       "s": "Sends this vault to a phone or computer that has none yet, and pairs the two for syncing."
+       "s": "Sends this vault to a phone or computer that has none yet, and pairs the two for syncing. Reached from "
+      },
+      {
+       "t": "link",
+       "id": "action.lan_add",
+       "s": "Add a device"
+      },
+      {
+       "t": "text",
+       "s": ", choosing "
+      },
+      {
+       "t": "strong",
+       "s": "No, it has no vault yet"
+      },
+      {
+       "t": "text",
+       "s": "."
       }
      ]
     }
@@ -10769,7 +11053,7 @@
    ],
    "docs": "/security/lan/",
    "words": "new device add send vault transfer phone computer",
-   "plain": "Sends this vault to a phone or computer that has none yet, and pairs the two for syncing."
+   "plain": "Sends this vault to a phone or computer that has none yet, and pairs the two for syncing. Reached from Add a device, choosing No, it has no vault yet."
   },
   {
    "id": "action.lan_wait",
@@ -10861,7 +11145,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Turn on the switch beside a place to sync through it. "
+       "s": "Turn on the switch beside a place to sync through it. Tap the place itself to change its details or stop using it. "
       },
       {
        "t": "strong",
@@ -11177,7 +11461,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Adds a KeePass file or a server account to the door."
+       "s": "Adds a KeePass file or a server account to the door. Tap one in the list to open it, change its details or remove it."
       }
      ]
     }
@@ -11323,7 +11607,7 @@
    ],
    "docs": "/guides/backup-sync/",
    "words": "bitwarden vaultwarden keepass kdbx login sign in",
-   "plain": "Adds a KeePass file or a server account to the door."
+   "plain": "Adds a KeePass file or a server account to the door. Tap one in the list to open it, change its details or remove it."
   },
   {
    "id": "page.vaults",
@@ -12987,12 +13271,21 @@
      "runs": [
       {
        "t": "text",
-       "s": "Asks every site about the name in the box at once. A bar shows how many have answered, and each row fills in as its answer comes."
+       "s": "Asks every site about the names in the box at once. A bar shows how many have answered, and each row fills in as its answer comes."
       }
      ]
     }
    ],
    "how": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Type one name, or up to ten with spaces or commas between them. With several, a chip for each name shows how many sites it is free on, and tapping a chip lists that name's answer from every site."
+      }
+     ]
+    },
     {
      "t": "ul",
      "items": [
@@ -13062,7 +13355,7 @@
     "page.usernames",
     "group.usernames.links"
    ],
-   "plain": "Asks every site about the name in the box at once. A bar shows how many have answered, and each row fills in as its answer comes."
+   "plain": "Asks every site about the names in the box at once. A bar shows how many have answered, and each row fills in as its answer comes."
   },
   {
    "id": "group.usernames.links",
@@ -17376,7 +17669,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Gives a new item the tags its site suggests, such as Banking or Social, when you save it without any."
+       "s": "Gives a new item the tag its site suggests, such as Banking or Social, when you save it without any."
       }
      ]
     }
@@ -17387,7 +17680,15 @@
      "runs": [
       {
        "t": "text",
-       "s": "The suggestions come from the site and from the kind of item, so a GitHub code suggests Developer and Authenticator. They are the same tags the editor offers as chips. An item you tag yourself keeps only your tags."
+       "s": "The tag comes from WM Pass's list of known sites, or from an item's name when that is a known site's, such as PyPI. The offline model's guesses tag only with "
+      },
+      {
+       "t": "link",
+       "id": "setting.auto_tag_guess"
+      },
+      {
+       "t": "text",
+       "s": " on. An item you tag yourself keeps only your tags."
       }
      ]
     }
@@ -17430,17 +17731,340 @@
      "runs": [
       {
        "t": "text",
-       "s": "It applies when an item is first saved. Items already in the vault are left as they are."
+       "s": "It applies when an item is first saved. "
+      },
+      {
+       "t": "link",
+       "id": "action.bulk_tags",
+       "s": "Add suggested tags"
+      },
+      {
+       "t": "text",
+       "s": " does the same for items already in the vault."
       }
      ]
     }
    ],
    "related": [
     "screen.editor",
-    "concept.item_kinds"
+    "concept.item_kinds",
+    "action.bulk_tags"
    ],
    "words": "tags automatic category suggest label",
-   "plain": "Gives a new item the tags its site suggests, such as Banking or Social, when you save it without any."
+   "plain": "Gives a new item the tag its site suggests, such as Banking or Social, when you save it without any."
+  },
+  {
+   "id": "setting.auto_tag_guess",
+   "kind": "setting",
+   "title": "Use guesses too",
+   "page": "editor",
+   "pref": "auto_tag_guess",
+   "what": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Lets "
+      },
+      {
+       "t": "link",
+       "id": "setting.auto_tag"
+      },
+      {
+       "t": "text",
+       "s": " tag a new item from the offline model's guess when no list knows its site."
+      }
+     ]
+    }
+   ],
+   "how": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "The model reads the item's name and address on this phone and answers only when it is fairly sure. It is still wrong more often than the list."
+      }
+     ]
+    }
+   ],
+   "effects": [
+    {
+     "value": true,
+     "label": "On",
+     "text": [
+      {
+       "t": "p",
+       "runs": [
+        {
+         "t": "text",
+         "s": "A new item whose site is not on the list gets the model's guess."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "value": false,
+     "label": "Off",
+     "text": [
+      {
+       "t": "p",
+       "runs": [
+        {
+         "t": "text",
+         "s": "Only the site list and known names tag a new item."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "related": [
+    "setting.auto_tag",
+    "action.bulk_tags"
+   ],
+   "words": "tags guess model classifier automatic",
+   "plain": "Lets Tag new items tag a new item from the offline model's guess when no list knows its site."
+  },
+  {
+   "id": "action.bulk_tags",
+   "kind": "action",
+   "title": "Add suggested tags",
+   "page": "editor",
+   "what": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Tags the items already in your vault in one go, after you look through what would be added."
+      }
+     ]
+    }
+   ],
+   "how": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Each suggestion says where it came from, and you pick which sources count:"
+      }
+     ]
+    },
+    {
+     "t": "ul",
+     "items": [
+      [
+       {
+        "t": "em",
+        "s": "Site list"
+       },
+       {
+        "t": "text",
+        "s": ": the site is on WM Pass's list of known sites. On to start with."
+       }
+      ],
+      [
+       {
+        "t": "em",
+        "s": "Item's name"
+       },
+       {
+        "t": "text",
+        "s": ": the name is a known site's, such as PyPI. On to start with."
+       }
+      ],
+      [
+       {
+        "t": "em",
+        "s": "Kind"
+       },
+       {
+        "t": "text",
+        "s": ": what the item is, such as Payment cards or SSH keys. Off to start with."
+       }
+      ],
+      [
+       {
+        "t": "em",
+        "s": "Guesses"
+       },
+       {
+        "t": "text",
+        "s": ": the offline model's best guess from the name. Off to start with."
+       }
+      ]
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Suggestions are grouped by tag. Open a group to leave out any item, or clear its box to leave out the whole tag. "
+      },
+      {
+       "t": "strong",
+       "s": "Only items with no tags yet"
+      },
+      {
+       "t": "text",
+       "s": " skips anything you have tagged already."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "strong",
+       "s": "Add"
+      },
+      {
+       "t": "text",
+       "s": " tags what is left, and the message after it offers "
+      },
+      {
+       "t": "strong",
+       "s": "Undo"
+      },
+      {
+       "t": "text",
+       "s": ", which takes every one of those tags back off."
+      }
+     ]
+    }
+   ],
+   "related": [
+    "setting.auto_tag",
+    "setting.auto_tag_guess"
+   ],
+   "words": "bulk tags suggest categories review many at once",
+   "plain": "Tags the items already in your vault in one go, after you look through what would be added."
+  },
+  {
+   "id": "action.merge_items",
+   "kind": "action",
+   "title": "Merge into one",
+   "what": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Folds two or more items of one kind into a single item."
+      }
+     ]
+    }
+   ],
+   "how": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Hold an item, choose the others, then "
+      },
+      {
+       "t": "strong",
+       "s": "More"
+      },
+      {
+       "t": "text",
+       "s": " and "
+      },
+      {
+       "t": "strong",
+       "s": "Merge into one"
+      },
+      {
+       "t": "text",
+       "s": ". Health offers the same for duplicates and for items that look like one account."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "First choose "
+      },
+      {
+       "t": "strong",
+       "s": "Which one stays"
+      },
+      {
+       "t": "text",
+       "s": ". Then, for each field the items fill differently, choose the value to keep. A secret shows as dots until you tap "
+      },
+      {
+       "t": "strong",
+       "s": "Show"
+      },
+      {
+       "t": "text",
+       "s": "."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Where a value could be kept as well, "
+      },
+      {
+       "t": "strong",
+       "s": "Keep the other too"
+      },
+      {
+       "t": "text",
+       "s": " saves it as a field of its own, and for notes joins them one after the other. A password that loses always goes to the kept item's history."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Everything that adds up joins on its own: websites and apps, tags, attachments, passkeys, custom fields, security questions and history. A field one item leaves empty takes the other's value."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "The others go to the trash, where they can still be restored."
+      }
+     ]
+    }
+   ],
+   "caveats": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Only items of one kind merge: a login with a login, a card with a card."
+      }
+     ]
+    }
+   ],
+   "related": [
+    "action.health_check_duplicates",
+    "action.health_check_similar",
+    "page.trash"
+   ],
+   "words": "merge combine join duplicates same account fold",
+   "plain": "Folds two or more items of one kind into a single item."
   },
   {
    "id": "setting.card_reader",

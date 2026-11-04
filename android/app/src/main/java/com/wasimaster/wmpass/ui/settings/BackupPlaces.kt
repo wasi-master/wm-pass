@@ -341,6 +341,40 @@ fun DestinationSheet(existing: Destination?, onDismiss: () -> Unit, onSaved: (De
         onSaved(place)
     }
 
+    /**
+     * Saves only a place that answers: a wrong address or login is said here, with what was typed
+     * still in the sheet, rather than kept and failing at the first backup. A folder there that is
+     * missing is fine, since the first copy makes it; a missing bucket is not.
+     */
+    fun saveChecked(place: Destination) {
+        if (!place.remote) {
+            save(place)
+            return
+        }
+        prefs.updateNetworkAllowed(true)
+        busy = true
+        problem = null
+        scope.launch {
+            val failure = com.wasimaster.wmpass.system.Backups.copies(context, place).exceptionOrNull()
+            busy = false
+            val missing = failure != null && com.wasimaster.wmkeyboard.core.settings.sink.sinkErrorOf(failure) == SinkError.TARGET_MISSING && place.kind != "s3"
+            if (failure == null || missing) save(place) else problem = com.wasimaster.wmpass.system.sinkProblem(failure)
+        }
+    }
+
+    // A new place that signs in through the browser is stored before the browser opens, since the
+    // answer comes back to it by id. If the sign-in never finishes, it goes again with the sheet.
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            if (existing == null) {
+                val stored = Destinations.list.value.firstOrNull { it.id == id }
+                if (stored != null && CloudSignIn.signsInWithBrowser(stored.kind) && stored.refreshToken.isEmpty() && CloudSignIn.exchanging.value != id) {
+                    Destinations.remove(context, id)
+                }
+            }
+        }
+    }
+
     fun fail(error: SinkError) {
         busy = false
         problem = refusal(error)
@@ -358,6 +392,8 @@ fun DestinationSheet(existing: Destination?, onDismiss: () -> Unit, onSaved: (De
             CloudSignIn.Outcome.CANCELLED -> problem = "The sign-in was cancelled."
             CloudSignIn.Outcome.FAILED -> problem = "The service did not accept that sign-in. Try again."
         }
+        // A new place that did not sign in is not kept; the sheet still holds what was typed.
+        if (result.outcome != CloudSignIn.Outcome.SIGNED_IN && existing == null) Destinations.remove(context, id)
     }
 
     /** The sign-in for an account kind, from the password through any code. */
@@ -370,6 +406,7 @@ fun DestinationSheet(existing: Destination?, onDismiss: () -> Unit, onSaved: (De
             val activity = context.activity()
             if (activity == null || !CloudSignIn.start(activity, place)) {
                 problem = "No browser could open the sign-in page."
+                if (existing == null) Destinations.remove(context, id)
             } else {
                 waitingForBrowser = true
             }
@@ -670,7 +707,7 @@ fun DestinationSheet(existing: Destination?, onDismiss: () -> Unit, onSaved: (De
                     Modifier.fillMaxWidth(),
                     enabled = ready && !busy,
                 ) { signIn() }
-                else -> PrimaryButton("Save", Modifier.fillMaxWidth(), enabled = ready) { save(place) }
+                else -> PrimaryButton(if (busy) "Checking it answers…" else "Save", Modifier.fillMaxWidth(), enabled = ready && !busy) { saveChecked(place) }
             }
             if (existing != null && signsIn && existing.configured && !askCode) {
                 QuietButton("Keep the current sign-in", Modifier.fillMaxWidth()) {

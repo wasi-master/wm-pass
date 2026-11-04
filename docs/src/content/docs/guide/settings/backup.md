@@ -98,7 +98,7 @@ Sets up somewhere new to keep copies: a folder, an account, a server, a Git repo
 
 #### How it works
 
-Choose the kind, give it a name and fill in what that kind needs. A backup runs as soon as it is saved, so you know at once whether it works.
+Choose the kind, give it a name and fill in what that kind needs. Before a server or account is saved, WM Pass checks that it answers with what you typed, and says what went wrong if it does not; nothing is kept until it works. A backup then runs straight away.
 
 Only the encrypted file goes there. What WM Pass needs to sign in stays on this device, sealed.
 

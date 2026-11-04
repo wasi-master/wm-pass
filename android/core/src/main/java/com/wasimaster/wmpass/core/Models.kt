@@ -174,6 +174,7 @@ data class HealthView(
     @SerialName("missing_two_factor") val missingTwoFactor: List<String> = emptyList(),
     @SerialName("insecure_url") val insecureUrl: List<String> = emptyList(),
     val duplicates: List<List<String>> = emptyList(),
+    val similar: List<List<String>> = emptyList(),
     val expiring: List<String> = emptyList(),
     val score: Int = 100,
 )

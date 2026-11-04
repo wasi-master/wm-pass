@@ -130,8 +130,12 @@ fun SyncScreen() {
     var refreshing by remember { mutableStateOf(false) }
     var addingAccount by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<AccountRef?>(null) }
+    var managing by remember { mutableStateOf<AccountRef?>(null) }
+    var editingAccount by remember { mutableStateOf<AccountRef?>(null) }
     var fileSyncing by remember { mutableStateOf(false) }
     var addingPlace by remember { mutableStateOf(false) }
+    var placeOpen by remember { mutableStateOf<com.wasimaster.wmpass.system.Destination?>(null) }
+    var placeGone by remember { mutableStateOf<com.wasimaster.wmpass.system.Destination?>(null) }
     var fileMessage by remember { mutableStateOf<String?>(null) }
     WmScreen("Sync and accounts", route = "settings/sync", onBack = { shell.nav.popBackStack() }) {
         Column(Modifier.padding(horizontal = 16.dp)) {
@@ -175,10 +179,17 @@ fun SyncScreen() {
             GroupCard {
                 places.forEachIndexed { index, place ->
                     if (index > 0) Hairline(inset = 70.dp)
-                    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    // The row opens the place, to change or drop it; the switch only says whether it syncs.
+                    Row(
+                        Modifier.fillMaxWidth().clickable { placeOpen = place }.padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         GlyphTile(placeIcon(place.kind), colors.primary, size = 40.dp)
                         Spacer(Modifier.width(14.dp))
-                        Text(place.label, color = colors.text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Column(Modifier.weight(1f)) {
+                            Text(place.label, color = colors.text, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(if (place.sync) "Syncs this vault" else "Not used for sync", color = colors.textMid, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                        }
                         PassSwitch(place.sync) { on -> Destinations.put(context, place.copy(sync = on)) }
                     }
                 }
@@ -211,7 +222,8 @@ fun SyncScreen() {
                 accounts.forEachIndexed { index, item ->
                     if (index > 0) Hairline(inset = 70.dp)
                     val where = com.wasimaster.wmpass.system.accountHost(item)
-                    NavRow(item.label, if (item.kind == "kdbx") where else listOf(item.email, where).filter { it.isNotEmpty() }.joinToString(" on "), icon = if (item.kind == "kdbx") PassIcons.Key else PassIcons.Sync) { removing = item }
+                    val detail = if (item.kind == "kdbx") where else listOf(item.email, where).filter { it.isNotEmpty() }.joinToString(" on ")
+                    NavRow(item.label, if (item.opened) detail else "$detail. Not signed in yet", icon = if (item.kind == "kdbx") PassIcons.Key else PassIcons.Sync) { managing = item }
                 }
                 if (accounts.isNotEmpty()) Hairline()
                 NavRow("Add an account", icon = PassIcons.Add, help = "action.add_account") { addingAccount = true }
@@ -229,7 +241,47 @@ fun SyncScreen() {
         }
     }
     if (addingAccount) AddAccountSheet { addingAccount = false }
+    editingAccount?.let { item -> AddAccountSheet(existing = item) { editingAccount = null } }
+    managing?.let { item ->
+        PassSheet({ managing = null }, item.label) {
+            Text(
+                if (item.kind == "kdbx") "A KeePass file, opened where it is." else "${item.email} on ${com.wasimaster.wmpass.system.accountHost(item)}",
+                color = colors.textMid,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
+            )
+            if (account != item.id) {
+                SheetRow(PassIcons.LockOpen, "Open it now", "Locks this vault, and the door asks for the account's password") {
+                    managing = null
+                    Accounts.signInNext(item.id)
+                    kotlinx.coroutines.MainScope().launch { Pass.lock() }
+                }
+            }
+            SheetRow(PassIcons.Edit, "Change the details", if (item.kind == "kdbx") "Its name, or another file" else "Its name, email or server") {
+                managing = null
+                editingAccount = item
+            }
+            SheetRow(PassIcons.Delete, "Remove", "Forget it on this phone", tint = colors.danger) {
+                managing = null
+                removing = item
+            }
+        }
+    }
     if (addingPlace) DestinationSheet(null, { addingPlace = false }) { addingPlace = false }
+    placeOpen?.let { place ->
+        PlaceSheet(place, onDismiss = { placeOpen = null }, onRestore = null, onRemove = {
+            placeOpen = null
+            placeGone = place
+        })
+    }
+    placeGone?.let { place ->
+        ConfirmSheet(
+            "Stop using ${place.label}?",
+            "WM Pass forgets this place and its login, for backups and for sync. Copies already there stay where they are.",
+            "Stop using it",
+            onDismiss = { placeGone = null },
+        ) { Destinations.remove(context, place.id) }
+    }
     removing?.let { item ->
         ConfirmSheet(
             "Remove ${item.label}?",
@@ -242,13 +294,16 @@ fun SyncScreen() {
 
 /**
  * Adding an account stores only where it is. Signing in happens at the door, since an account opens
- * in place of the vault: added from Settings, it offers to lock this vault and go there.
+ * in place of the vault: added from Settings, it offers to lock this vault and go there. A server
+ * is asked first whether it answers as Bitwarden does, so a mistyped address is never kept; the
+ * password itself can only be tried at the door. With [existing] it changes that account instead.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun AddAccountSheet(onDismiss: () -> Unit) {
+fun AddAccountSheet(existing: AccountRef? = null, onDismiss: () -> Unit) {
     val colors = palette
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var added by remember { mutableStateOf<AccountRef?>(null) }
     added?.let { made ->
         PassSheet(onDismiss, "Sign in to ${made.label}") {
@@ -270,34 +325,42 @@ fun AddAccountSheet(onDismiss: () -> Unit) {
         }
         return
     }
-    var kind by remember { mutableStateOf("bitwarden") }
-    var region by remember { mutableStateOf("") }
-    val server = rememberTextFieldState()
-    val email = rememberTextFieldState()
-    val label = rememberTextFieldState()
-    var uri by remember { mutableStateOf<Uri?>(null) }
+    var kind by remember { mutableStateOf(existing?.let { if (it.kind == "kdbx") "kdbx" else if (it.server.isNotEmpty()) "server" else "bitwarden" } ?: "bitwarden") }
+    var region by remember { mutableStateOf(existing?.region.orEmpty()) }
+    val server = rememberTextFieldState(existing?.server.orEmpty())
+    val email = rememberTextFieldState(existing?.email.orEmpty())
+    val label = rememberTextFieldState(existing?.label.orEmpty())
+    var uri by remember { mutableStateOf(existing?.uri?.takeIf { it.isNotEmpty() }?.let(Uri::parse)) }
+    var checking by remember { mutableStateOf(false) }
+    var problem by remember { mutableStateOf<String?>(null) }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { picked ->
         if (picked != null) {
             context.contentResolver.takePersistableUriPermission(picked, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             uri = picked
         }
     }
-    PassSheet(onDismiss, "Add an account") {
+    PassSheet(onDismiss, if (existing == null) "Add an account" else "Change ${existing.label}") {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Pill("Bitwarden", kind == "bitwarden" && region != "eu") {
-                    kind = "bitwarden"
-                    region = ""
+            // The kind stays what it was: a KeePass file turned Bitwarden account is a new account.
+            if (existing == null || existing.kind != "kdbx") {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Pill("Bitwarden", kind == "bitwarden" && region != "eu") {
+                        kind = "bitwarden"
+                        region = ""
+                        problem = null
+                    }
+                    Pill("Bitwarden EU", region == "eu") {
+                        kind = "bitwarden"
+                        region = "eu"
+                        problem = null
+                    }
+                    Pill("Own server", kind == "server") {
+                        kind = "server"
+                        region = ""
+                        problem = null
+                    }
+                    if (existing == null) Pill("KeePass file", kind == "kdbx") { kind = "kdbx" }
                 }
-                Pill("Bitwarden EU", region == "eu") {
-                    kind = "bitwarden"
-                    region = "eu"
-                }
-                Pill("Own server", kind == "server") {
-                    kind = "server"
-                    region = ""
-                }
-                Pill("KeePass file", kind == "kdbx") { kind = "kdbx" }
             }
             when (kind) {
                 "kdbx" -> {
@@ -307,7 +370,7 @@ fun AddAccountSheet(onDismiss: () -> Unit) {
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(horizontal = 6.dp),
                     )
-                    QuietButton(if (uri == null) "Choose the file" else "File chosen", Modifier.fillMaxWidth(), PassIcons.Folder, colors.primary) { pick.launch(arrayOf("*/*")) }
+                    QuietButton(if (uri == null) "Choose the file" else "File chosen. Tap for another", Modifier.fillMaxWidth(), PassIcons.Folder, colors.primary) { pick.launch(arrayOf("*/*")) }
                 }
                 else -> {
                     if (kind == "server") SheetField(server, "https://vault.example.com")
@@ -321,31 +384,61 @@ fun AddAccountSheet(onDismiss: () -> Unit) {
                 }
             }
             SheetField(label, "A name for the door, such as Work")
+            problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 6.dp)) }
             Spacer(Modifier.height(4.dp))
             val ready = if (kind == "kdbx") uri != null else email.text.isNotBlank() && (kind != "server" || server.text.isNotBlank())
-            PrimaryButton("Add", Modifier.fillMaxWidth(), enabled = ready) {
+            PrimaryButton(
+                when {
+                    checking -> "Checking the server…"
+                    existing != null -> "Save"
+                    else -> "Add"
+                },
+                Modifier.fillMaxWidth(),
+                enabled = ready && !checking,
+            ) {
                 val fallback = when {
                     kind == "kdbx" -> "KeePass"
                     kind == "server" -> runCatching { Uri.parse(server.text.toString()).host }.getOrNull() ?: "Server"
                     else -> "Bitwarden"
                 }
-                if (kind != "kdbx") com.wasimaster.wmpass.app.Prefs.of(context).updateNetworkAllowed(true)
                 val ref = AccountRef(
-                    id = Accounts.newId(),
+                    id = existing?.id ?: Accounts.newId(),
                     kind = if (kind == "kdbx") "kdbx" else "bitwarden",
                     label = label.text.toString().trim().ifEmpty { fallback },
-                    server = if (kind == "server") server.text.toString().trim() else "",
+                    server = if (kind == "server") server.text.toString().trim().trimEnd('/') else "",
                     region = region,
                     email = email.text.toString().trim(),
                     uri = uri?.toString().orEmpty(),
+                    // A change to where it lives is a setup that has not been tried yet.
+                    opened = existing != null && existing.opened && existing.server == (if (kind == "server") server.text.toString().trim().trimEnd('/') else "") &&
+                        existing.region == region && existing.email == email.text.toString().trim() && existing.uri == uri?.toString().orEmpty(),
                 )
-                Accounts.add(context, ref)
-                if (Pass.state.value is com.wasimaster.wmpass.core.LockState.Unlocked) {
-                    added = ref
-                } else {
-                    // Added from the door itself: it opens with this account chosen.
-                    Accounts.signInNext(ref.id)
-                    onDismiss()
+                fun keep() {
+                    if (existing != null) {
+                        Accounts.update(context, ref)
+                        onDismiss()
+                    } else {
+                        Accounts.add(context, ref)
+                        if (Pass.state.value is com.wasimaster.wmpass.core.LockState.Unlocked) {
+                            added = ref
+                        } else {
+                            // Added from the door itself: it opens with this account chosen.
+                            Accounts.signInNext(ref.id)
+                            onDismiss()
+                        }
+                    }
+                }
+                if (kind == "kdbx") {
+                    keep()
+                    return@PrimaryButton
+                }
+                com.wasimaster.wmpass.app.Prefs.of(context).updateNetworkAllowed(true)
+                checking = true
+                problem = null
+                scope.launch {
+                    val refused = Accounts.checkServer(context, ref.server, ref.region, ref.email)
+                    checking = false
+                    if (refused != null) problem = refused else keep()
                 }
             }
         }
@@ -416,6 +509,8 @@ private fun LanSection() {
     var codePeer by remember { mutableStateOf<String?>(null) }
     var forgetting by remember { mutableStateOf<LanPeer?>(null) }
     var joining by remember { mutableStateOf(false) }
+    // First the question that decides between the two: whether the other device has this vault.
+    var choosing by remember { mutableStateOf(false) }
     /** Set while the digits on show are for sending this vault, not for pairing. */
     var sendingVault by remember { mutableStateOf(false) }
     val name = remember { Build.MODEL }
@@ -476,11 +571,7 @@ private fun LanSection() {
                                 }
                             }
                             if (peers.isNotEmpty()) Hairline()
-                            if (Pass.isFolderVault) {
-                                NavRow("Add a new device", "Send this vault to a phone or computer that has none yet", icon = PassIcons.Devices, help = "action.lan_join") { joining = true }
-                                Hairline()
-                            }
-                            NavRow("Pair a device", "This phone and a desktop, or two phones", icon = PassIcons.Add, help = "action.lan_pair") { adding = true }
+                            NavRow("Add a device", "A phone or computer to sync with on this Wi-Fi", icon = PassIcons.Add, help = "action.lan_add") { choosing = true }
                         }
                         if (peers.isNotEmpty()) {
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -574,10 +665,33 @@ private fun LanSection() {
         }
     }
     }
-    if (adding) {
-        PassSheet({ adding = false }, "Pair a device") {
+    if (choosing) {
+        PassSheet({ choosing = false }, "Add a device") {
             Text(
-                "On the other device, open WM Pass and go to Settings, then Sync and accounts, then Pair a device. Both need to be on the same Wi-Fi.",
+                "Does WM Pass on the other device already open this vault?",
+                color = colors.textMid,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 10.dp),
+            )
+            SheetRow(
+                PassIcons.Devices,
+                "No, it has no vault yet",
+                if (Pass.isFolderVault) "Send it a copy of this vault, then the two stay in sync" else "A vault inside another one cannot be sent this way. Use a backup instead",
+                enabled = Pass.isFolderVault,
+            ) {
+                choosing = false
+                joining = true
+            }
+            SheetRow(PassIcons.Sync, "Yes, it has this vault", "From a backup or a sync folder. Pairing lets the two sync here") {
+                choosing = false
+                adding = true
+            }
+        }
+    }
+    if (adding) {
+        PassSheet({ adding = false }, "Pair a device that has this vault") {
+            Text(
+                "On the other device, open WM Pass and go to Settings, then Sync and accounts, then Add a device, then Yes, it has this vault. Both need to be on the same Wi-Fi.",
                 color = colors.textMid,
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 10.dp),
@@ -671,7 +785,7 @@ private fun LanSection() {
         }
     }
     if (joining) {
-        PassSheet({ joining = false }, "Add a new device") {
+        PassSheet({ joining = false }, "Send this vault to a new device") {
             Text(
                 "On the new device, tap I already have a vault, then Get it from another device. It shows a code and waits. Both need to be on the same Wi-Fi.",
                 color = colors.textMid,

@@ -24,6 +24,7 @@ import kotlinx.serialization.json.putJsonArray
  * reply carries [STATE]: `open`, `locked`, `none` (no vault yet) or `off` (Let WM Keyboard fill is
  * off). Only an `open` reply carries anything else. The calls the tool makes:
  *
+ * - [STATUS]: nothing but [STATE], to learn whether the vault is open.
  * - [ITEMS], arg the package of the app in front, extra [QUERY]: [ROWS], a JSON array of the
  *   vault's items, every kind. Those saved for the app in front come first, then the rest by name,
  *   or in search order when [QUERY] is not empty. Each row is `id`, `kind`, `title`, `subtitle`,
@@ -53,6 +54,7 @@ object VaultWire {
     const val VERSION = 1
 
     const val STATE = "state"
+    const val STATUS = "status"
     const val ITEMS = "items"
     const val ITEM = "item"
     const val VALUE = "value"

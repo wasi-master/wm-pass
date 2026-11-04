@@ -138,10 +138,18 @@ private class EditField(val spec: FieldView) {
 private class EditCustom(val existing: CustomFieldView?, hidden: Boolean) {
     val name = TextFieldState(existing?.name.orEmpty())
     val value = TextFieldState(existing?.value.orEmpty())
-    val hidden = hidden
+    // Switchable either way: the value stays as it is, only how it shows changes.
+    var hidden by mutableStateOf(hidden)
+    val wasHidden = hidden
     var loaded by mutableStateOf(existing == null || existing.value != null)
     var remove by mutableStateOf(false)
     var original: String = existing?.value.orEmpty()
+
+    /** The kind to save: hidden, or what it was before, such as a link, when it is plain. */
+    val kind: String get() = if (hidden) "hidden" else existing?.kind?.takeIf { it != "hidden" } ?: "text"
+
+    val valueChanged: Boolean get() = loaded && value.text.toString() != original
+    val metaChanged: Boolean get() = existing != null && (hidden != wasHidden || name.text.toString().trim() != existing.name)
 }
 
 @Stable
@@ -474,7 +482,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
         sites.any { it.second == null && it.first.text.isNotBlank() } ||
         otpSeed.text.isNotEmpty() ||
         (notesLoaded && notes.text.toString() != notesOriginal) ||
-        customs.any { it.existing == null || it.remove || it.value.text.toString() != it.original } ||
+        customs.any { it.existing == null || it.remove || it.valueChanged || it.metaChanged } ||
         questions.any { it.answer.text.isNotEmpty() } ||
         color != detail?.color || icon != detail?.icon || folder != detail?.folder || favourite != (detail?.favourite ?: false) || tags != detail?.tags.orEmpty() ||
         apps.toList() != detail?.sites.orEmpty().filter(::isApp) || files.isNotEmpty() || links.toList() != detail?.links.orEmpty() ||
@@ -555,22 +563,36 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                     }
                     bytes.fill(0)
                 }
+                // Changed before any is removed, while every index still points where it did.
+                customs.filter { !it.remove && it.name.text.isNotBlank() }.forEach { custom ->
+                    val existing = custom.existing
+                    when {
+                        existing == null && custom.value.text.isEmpty() -> Unit
+                        existing == null || custom.valueChanged -> {
+                            val bytes = custom.value.text.toString().toByteArray()
+                            Pass.change("entry.custom_set", secret = bytes) {
+                                put("id", id)
+                                existing?.let { put("index", it.index) }
+                                put("name", custom.name.text.toString().trim())
+                                put("kind", custom.kind)
+                            }
+                            bytes.fill(0)
+                        }
+                        // Only its name or whether it is secret: the value stays in the vault untouched.
+                        custom.metaChanged -> Pass.change("entry.custom_meta") {
+                            put("id", id)
+                            put("index", existing.index)
+                            put("name", custom.name.text.toString().trim())
+                            put("kind", custom.kind)
+                        }
+                    }
+                }
                 // Removed from the end first, so earlier indexes stay right.
                 customs.filter { it.remove && it.existing != null }.sortedByDescending { it.existing!!.index }.forEach { custom ->
                     Pass.change("entry.custom_remove") {
                         put("id", id)
                         put("index", custom.existing!!.index)
                     }
-                }
-                customs.filter { !it.remove && it.name.text.isNotBlank() && it.value.text.toString() != it.original }.forEach { custom ->
-                    val bytes = custom.value.text.toString().toByteArray()
-                    Pass.change("entry.custom_set", secret = bytes) {
-                        put("id", id)
-                        custom.existing?.let { put("index", it.index) }
-                        put("name", custom.name.text.toString().trim())
-                        put("kind", if (custom.hidden) "hidden" else "text")
-                    }
-                    bytes.fill(0)
                 }
                 questions.filter { it.answer.text.isNotEmpty() && it.question.text.isNotBlank() }.forEach { q ->
                     val bytes = q.answer.text.toString().toByteArray()
@@ -612,9 +634,12 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                     }
                 }
                 // Tagged by its site, such as Banking or Social; the kind already says it is a card or a code.
+                // A guess only when asked for: a wrong tag costs the owner a hunt to undo it.
                 if (entryId == null && tags.isEmpty() && shell.prefs.autoTag.value) {
                     val site = runCatching {
-                        Pass.plainCall("categorise.suggest") { put("id", id) }.obj["site"]?.jsonPrimitive?.contentOrNull
+                        val found = Pass.plainCall("categorise.suggest") { put("id", id) }.obj
+                        val sure = found["site_source"]?.jsonPrimitive?.contentOrNull != "guess" || shell.prefs.autoTagGuess.value
+                        found["site"]?.jsonPrimitive?.contentOrNull?.takeIf { sure }
                     }.getOrNull()
                     if (site != null) {
                         Pass.change("entry.common") {
@@ -1741,6 +1766,25 @@ private fun CustomEditor(entryId: String?, custom: EditCustom) {
                 )
             } else {
                 PlainField(custom.value, "Value", mono = custom.hidden)
+            }
+        }
+        RowIconButton(
+            if (custom.hidden) PassIcons.Lock else PassIcons.LockOpen,
+            if (custom.hidden) "Secret field. Tap to show it in the clear" else "Plain field. Tap to make it secret",
+            tint = if (custom.hidden) colors.primary else colors.textMid,
+        ) {
+            val existing = custom.existing
+            if (custom.hidden && !custom.loaded && entryId != null && existing != null) {
+                // Made plain, it shows its value, so the value is read first.
+                scope.launch {
+                    val text = Pass.revealCustom(entryId, existing.index).consumeText()
+                    custom.value.setTextAndPlaceCursorAtEnd(text)
+                    custom.original = text
+                    custom.loaded = true
+                    custom.hidden = false
+                }
+            } else {
+                custom.hidden = !custom.hidden
             }
         }
         RowIconButton(PassIcons.Close, "Remove field") { custom.remove = true }

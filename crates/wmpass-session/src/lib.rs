@@ -12,6 +12,7 @@
 //!
 //! Secrets going the other way arrive in [`Call::secret`] for the same reason.
 
+mod combine;
 pub mod fields;
 #[cfg(feature = "net")]
 pub mod net;

@@ -42,6 +42,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -121,6 +122,8 @@ fun SheetRow(
     subtitle: String? = null,
     tint: Color = palette.primary,
     selected: Boolean = false,
+    // Off greys the row and lets the subtitle say why.
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     val colors = palette
@@ -131,7 +134,8 @@ fun SheetRow(
             .pressScale(source, 0.98f)
             .fillMaxWidth()
             .clip(Shapes.tile)
-            .clickable(source, androidx.compose.material3.ripple()) {
+            .then(if (enabled) Modifier else Modifier.alpha(0.45f))
+            .clickable(source, androidx.compose.material3.ripple(), enabled = enabled) {
                 shell.haptics.tick()
                 onClick()
             }
@@ -717,6 +721,7 @@ fun BulkActions() {
         "tag" -> TagSheet(emptyList(), { sheet = null }) { tag, on ->
             bulk(if (on) "tag_add" else "tag_remove") { put("tag", tag) }
         }
+        "merge" -> MergeSheet(shell.selection.toList(), { sheet = null }) { shell.selection.clear() }
         "more" -> {
             val entries by Pass.entries.collectAsStateWithLifecycle()
             val chosen = remember(entries, shell.selection.toList()) { entries.filter { it.id in shell.selection } }
@@ -737,6 +742,14 @@ fun BulkActions() {
                     sheet = null
                 }
                 if (chosen.size > 1) {
+                    Hairline(inset = 60.dp)
+                    val oneKind = chosen.map { it.kind }.distinct().size == 1
+                    SheetRow(
+                        PassIcons.Layers,
+                        "Merge into one",
+                        if (oneKind) "You pick which stays, and which value wins where they differ" else "Only items of one kind merge",
+                        enabled = oneKind,
+                    ) { sheet = "merge" }
                     Hairline(inset = 60.dp)
                     SheetRow(PassIcons.Link, "Link together", "Each one lists the others under Linked") {
                         val ids = chosen.map { it.id }

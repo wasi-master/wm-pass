@@ -726,7 +726,7 @@ A device you forget needs pairing again before it can sync.
 
 #### On Android
 
-Pair under Settings, Sync and accounts, with **Pair a device**. Either scan a code that the other device shows, or compare six digits on both screens and accept on both.
+Pair under Settings, Sync and accounts, with **Add a device**. It asks whether the other device already has this vault: one with none gets a copy and is paired, one that has it is only paired. Either scan a code that the other device shows, or compare six digits on both screens and accept on both.
 
 A shown code holds a one-off secret and stops working after two minutes. Six digits work without a camera: each side commits to its part before seeing the other's, so someone in the middle gets one chance in a million, and a failed try shows on both screens.
 

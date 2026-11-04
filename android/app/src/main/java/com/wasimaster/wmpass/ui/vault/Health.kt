@@ -77,7 +77,6 @@ import com.wasimaster.wmpass.ui.theme.palette
 import kotlin.math.roundToInt
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
 
 /**
  * What the last breach check found. Kept in memory only: a list on disk of which passwords
@@ -116,6 +115,7 @@ private val LeadWords = mapOf(
     "old" to "you have not changed in a year",
     "twofactor" to "with no second factor",
     "duplicates" to "saved twice",
+    "similar" to "that look like one account saved twice",
 )
 
 private fun issuesOf(h: HealthView): List<Issue> = listOf(
@@ -132,6 +132,11 @@ private fun issuesOf(h: HealthView): List<Issue> = listOf(
     Issue("old", "Not changed in a year", "Worth changing if the site holds anything you care about.", PassIcons.History, h.old, false),
     Issue("twofactor", "No second factor", "These sites offer one-time codes and you have none saved.", PassIcons.Pin, h.missingTwoFactor, false),
     Issue("duplicates", "Duplicate items", "The same login saved more than once. Merging keeps both histories.", PassIcons.Layers, h.duplicates.flatten(), false),
+    Issue(
+        "similar", "Maybe the same account",
+        "These share a password and look like one account saved twice: another spelling of the name, an email in place of a username, or another address for the same site.",
+        PassIcons.Layers, h.similar.flatten(), false,
+    ),
 )
 
 /** The state of the vault as one number, with what would raise it right below. */
@@ -250,8 +255,13 @@ fun HealthTab() {
                             issue,
                             entries,
                             if (index == 0) placed.helpAnchor("health.groups") else placed,
-                            if (issue.key == "duplicates") health?.duplicates.orEmpty() else emptyList(),
+                            when (issue.key) {
+                                "duplicates" -> health?.duplicates.orEmpty()
+                                "similar" -> health?.similar.orEmpty()
+                                else -> emptyList()
+                            },
                             sets = if (issue.key == "reused") health?.reused.orEmpty() else emptyList(),
+                            similar = if (issue.key == "reused") health?.similar.orEmpty() else emptyList(),
                             counts = if (issue.key == "breached") breachedCounts(health) else emptyMap(),
                         )
                     }
@@ -349,6 +359,8 @@ private fun IssueCard(
     sets: List<List<String>> = emptyList(),
     // How often each breached password has been seen.
     counts: Map<String, Long> = emptyMap(),
+    // Within the reused sets, the items that look like one account, to offer merging there too.
+    similar: List<List<String>> = emptyList(),
 ) {
     val colors = palette
     val shell = LocalShell.current
@@ -426,6 +438,9 @@ private fun IssueCard(
                             modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp),
                         )
                         set.forEach { line(it, indent = true) }
+                        similar.filter { group -> group.all { it in set } }.forEach { group ->
+                            MergeLine("These ${group.size} look like one account. Merge them") { merging = group }
+                        }
                     }
                     counts.isNotEmpty() -> {
                         Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -441,17 +456,7 @@ private fun IssueCard(
                 groups.forEach { group ->
                     val first = entries.firstOrNull { it.id == group.first() } ?: return@forEach
                     Hairline()
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clickable { merging = group }
-                            .padding(horizontal = 18.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(PassIcons.Layers, null, tint = colors.primary, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(12.dp))
-                        Text("Merge ${group.size} copies of ${first.title}", color = colors.primary, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
-                    }
+                    MergeLine(if (issue.key == "similar") "Merge ${group.size} items for ${first.title}" else "Merge ${group.size} copies of ${first.title}") { merging = group }
                 }
             }
         }
@@ -464,42 +469,74 @@ private fun IssueCard(
             HealthItemSheet(issue, entry) { acting = null }
         }
     }
-    merging?.let { group ->
-        PassSheet({ merging = null }, "Which one stays?") {
-            Text("The others fold into it. Their passwords move to its history and their extra fields come along, so nothing is lost.", color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
-            Spacer(Modifier.height(10.dp))
-            group.forEach { id ->
-                val entry = entries.firstOrNull { it.id == id } ?: return@forEach
-                SheetRow(PassIcons.Key, entry.title, entry.subtitle.ifEmpty { null }) {
-                    merging = null
-                    shell.launch {
-                        group.filter { it != id }.forEach { other ->
-                            Pass.change("health.merge_duplicates") {
-                                put("keep", id)
-                                put("remove", other)
-                            }
-                        }
-                        shell.haptics.confirm()
-                    }
-                }
-            }
-        }
+    merging?.let { group -> MergeSheet(group, { merging = null }) }
+}
+
+@Composable
+private fun MergeLine(text: String, onClick: () -> Unit) {
+    val colors = palette
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(PassIcons.Layers, null, tint = colors.primary, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(12.dp))
+        Text(text, color = colors.primary, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
     }
 }
 
-/** What can be done about one item a check found: fix it on the site, look at it, or let it be. */
+/**
+ * What can be done about one item a check found, right here: a new password, the site's own page
+ * for one, an address moved to https, or a merge; then the item itself, or leaving it be.
+ */
 @Composable
 private fun HealthItemSheet(issue: Issue, entry: Summary, onDismiss: () -> Unit) {
     val colors = palette
     val shell = LocalShell.current
     val context = androidx.compose.ui.platform.LocalContext.current
-    val change = remember(entry.site) { com.wasimaster.wmpass.system.ChangePassword.url(context, entry.site) }
+    val change by androidx.compose.runtime.produceState(com.wasimaster.wmpass.system.ChangePassword.listed(context, entry.site), entry.site) {
+        if (value == null) value = com.wasimaster.wmpass.system.ChangePassword.find(context, entry.site)
+    }
+    var setting by remember { mutableStateOf(false) }
+    if (setting) {
+        SetPasswordSheet(entry, change) {
+            setting = false
+            onDismiss()
+        }
+        return
+    }
+    val sites by androidx.compose.runtime.produceState<List<kotlinx.serialization.json.JsonElement>>(emptyList(), entry.id) {
+        if (issue.key == "insecure") value = runCatching { Pass.detail(entry.id).sites }.getOrDefault(emptyList())
+    }
     PassSheet(onDismiss, entry.title.ifEmpty { "Untitled" }) {
         Text(issue.why, color = colors.textMid, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 8.dp))
-        if (change != null && issue.key in setOf("breached", "reused", "weak", "old", "twofactor")) {
-            SheetRow(PassIcons.OpenInNew, if (issue.key == "twofactor") "Turn on a second factor on the site" else "Change the password on the site", change.removePrefix("https://")) {
-                onDismiss()
-                shell.openUrl(change)
+        if (issue.key in setOf("breached", "reused", "weak", "old") && entry.hasPassword) {
+            SheetRow(PassIcons.Password, "Set a new password", "Make one here and save it, without opening the item") { setting = true }
+        }
+        val page = change
+        if (page != null && issue.key in setOf("breached", "reused", "weak", "old", "twofactor")) {
+            SheetRow(PassIcons.LockReset, if (issue.key == "twofactor") "Turn on a second factor on the site" else "Change the password on the site", page.removePrefix("https://")) {
+                if (issue.key == "twofactor") onDismiss()
+                shell.openUrl(page)
+            }
+        }
+        if (issue.key == "insecure") {
+            val secure = httpsOf(sites)
+            if (secure != null) {
+                SheetRow(PassIcons.Lock, "Switch the address to https", secure.removePrefix("https://")) {
+                    shell.launch {
+                        val count = switchToHttps(entry.id)
+                        if (count > 0) {
+                            shell.haptics.confirm()
+                            shell.undo = UndoOffer(if (count == 1) "The address now uses https" else "$count addresses now use https")
+                        }
+                    }
+                    onDismiss()
+                }
+                SheetRow(PassIcons.OpenInNew, "Try it with https first", "Opens the site that way in your browser") { shell.openUrl(secure) }
             }
         }
         SheetRow(PassIcons.Key, "Open the item") {

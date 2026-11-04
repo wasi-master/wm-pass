@@ -241,17 +241,19 @@ fun BackupScreen() {
     }
 }
 
+/** What can be done with a place: its copies, its details, or letting it go. Sync has no copies to bring back. */
 @Composable
-private fun PlaceSheet(place: Destination, onDismiss: () -> Unit, onRestore: () -> Unit, onRemove: () -> Unit) {
+internal fun PlaceSheet(place: Destination, onDismiss: () -> Unit, onRestore: (() -> Unit)?, onRemove: () -> Unit) {
     var editing by remember { mutableStateOf(false) }
     if (editing) {
         DestinationSheet(place, onDismiss) { onDismiss() }
         return
     }
     PassSheet(onDismiss, place.label) {
-        com.wasimaster.wmpass.ui.vault.SheetRow(PassIcons.History, "Bring back a copy", "Merge an older copy into this vault", onClick = onRestore)
-        com.wasimaster.wmpass.ui.vault.SheetRow(PassIcons.Edit, "Change the details") { editing = true }
-        com.wasimaster.wmpass.ui.vault.SheetRow(PassIcons.Delete, "Stop using it", tint = palette.danger, onClick = onRemove)
+        Text(placeLabel(place.kind), color = palette.textMid, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 4.dp, bottom = 6.dp))
+        if (onRestore != null) com.wasimaster.wmpass.ui.vault.SheetRow(PassIcons.History, "Bring back a copy", "Merge an older copy into this vault", onClick = onRestore)
+        com.wasimaster.wmpass.ui.vault.SheetRow(PassIcons.Edit, "Change the details", "The address, login or folder") { editing = true }
+        com.wasimaster.wmpass.ui.vault.SheetRow(PassIcons.Delete, "Stop using it", "For backups and for sync", tint = palette.danger, onClick = onRemove)
     }
 }
 

@@ -165,6 +165,7 @@ class Prefs(context: Context) {
     val editorFoldDetails = flag("editor_fold_details", true)
     val editorGenerate = flag("editor_generate", false)
     val autoTag = flag("auto_tag", true)
+    val autoTagGuess = flag("auto_tag_guess", false)
     /**
      * Which reader the card scanner uses, in builds with Google's SDKs: `google` (ML Kit) or
      * `own`. Empty until the first scan asks. Not portable: a settings file from someone else

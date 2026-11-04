@@ -590,7 +590,16 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
     val webs = sites.filter { it.app == null }
     val apps = sites.mapNotNull { it.app }
     val context = androidx.compose.ui.platform.LocalContext.current
-    val change = remember(webs.firstOrNull()?.label) { com.wasimaster.wmpass.system.ChangePassword.url(context, webs.firstOrNull { it.openable != null }?.openable) }
+    // Only a site that has such a page gets the line: the bundled list says at once, and any
+    // other site is asked once whether its standard address leads anywhere.
+    val firstWeb = webs.firstOrNull { it.openable != null }?.openable
+    val change by androidx.compose.runtime.produceState(
+        com.wasimaster.wmpass.system.ChangePassword.listed(context, firstWeb) ?: com.wasimaster.wmpass.system.ChangePassword.remembered(firstWeb),
+        firstWeb,
+        entry.kind,
+    ) {
+        if (entry.kind == "login" && value == null) value = com.wasimaster.wmpass.system.ChangePassword.find(context, firstWeb)
+    }
     val heading = when {
         webs.isNotEmpty() && apps.isNotEmpty() -> "Websites and apps"
         apps.isNotEmpty() -> if (apps.size == 1) "App" else "Apps"
@@ -616,7 +625,7 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
                 }
             }
             apps.forEach { pkg -> AppLine(pkg) }
-            if (change != null && entry.kind == "login") ChangePasswordLine(change)
+            change?.takeIf { entry.kind == "login" }?.let { ChangePasswordLine(it) }
         }
     } else if (sites.isNotEmpty()) {
         Eyebrow(heading)
@@ -629,9 +638,9 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
                 if (index > 0 || webs.isNotEmpty()) Hairline()
                 AppLine(pkg)
             }
-            if (change != null && entry.kind == "login") {
+            change?.takeIf { entry.kind == "login" }?.let {
                 Hairline()
-                ChangePasswordLine(change)
+                ChangePasswordLine(it)
             }
         }
     }
@@ -1046,7 +1055,11 @@ private fun SecretRow(
     }
 }
 
-/** An app a login is for: its name and icon when it is installed here, its package either way. */
+/**
+ * An app a login is for: its name and icon when it is installed here, its package either way.
+ * Tapped, it opens; when it is not installed, the tap offers the app stores on this phone, or
+ * the stores' web pages when there are none.
+ */
 @Composable
 private fun AppLine(pkg: String) {
     val colors = palette
@@ -1057,10 +1070,12 @@ private fun AppLine(pkg: String) {
     val launch = remember(pkg) { context.packageManager.getLaunchIntentForPackage(pkg) }
     var icon by remember(pkg) { mutableStateOf(com.wasimaster.wmpass.system.ItemIcons.remembered(com.wasimaster.wmpass.system.ItemIcons.appKey(pkg))) }
     LaunchedEffect(pkg) { if (icon == null) icon = com.wasimaster.wmpass.system.ItemIcons.app(context, pkg) }
+    var finding by remember(pkg) { mutableStateOf(false) }
+    if (finding) StoreSheet(pkg) { finding = false }
     Row(
         Modifier
             .fillMaxWidth()
-            .then(if (launch != null) Modifier.clickable { runCatching { context.startActivity(launch) } } else Modifier)
+            .clickable { if (launch != null) runCatching { context.startActivity(launch) } else finding = true }
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1074,9 +1089,44 @@ private fun AppLine(pkg: String) {
         Column(Modifier.weight(1f)) {
             Text(if (palette.flat) "App" else label ?: pkg, color = if (palette.flat) colors.textMid else colors.text, style = if (palette.flat) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyLarge, maxLines = 1)
             if (palette.flat) Text(label ?: pkg, color = colors.text, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(if (label == null) "Not installed on this phone" else pkg, color = colors.textLow, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(if (label == null) "Not installed on this phone. Tap to get it" else pkg, color = colors.textLow, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        if (launch != null) Icon(PassIcons.OpenInNew, "Open ${label ?: pkg}", tint = colors.textLow, modifier = Modifier.size(18.dp))
+        Icon(if (launch != null) PassIcons.OpenInNew else PassIcons.Download, if (launch != null) "Open ${label ?: pkg}" else "Get $pkg", tint = colors.textLow, modifier = Modifier.size(18.dp))
+    }
+}
+
+/** The app stores on this phone that can show [pkg], then the stores' own web pages. */
+@Composable
+private fun StoreSheet(pkg: String, onDismiss: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val shell = LocalShell.current
+    val market = remember(pkg) { android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("market://details?id=$pkg")) }
+    val stores = remember(pkg) {
+        runCatching { context.packageManager.queryIntentActivities(market, 0) }.getOrDefault(emptyList())
+            .distinctBy { it.activityInfo.packageName }
+            .map { it.activityInfo.packageName to it.loadLabel(context.packageManager).toString() }
+    }
+    PassSheet(onDismiss, "Get the app") {
+        Text(
+            if (stores.isEmpty()) "No app store is installed here, so these open in your browser." else "It is not installed on this phone.",
+            color = palette.textMid,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 8.dp),
+        )
+        stores.forEach { (store, name) ->
+            SheetRow(PassIcons.Storefront, name, pkg) {
+                onDismiss()
+                runCatching { context.startActivity(android.content.Intent(market).setPackage(store).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            }
+        }
+        SheetRow(PassIcons.Language, "Google Play on the web", "play.google.com") {
+            onDismiss()
+            shell.openUrl("https://play.google.com/store/apps/details?id=$pkg")
+        }
+        SheetRow(PassIcons.Language, "F-Droid on the web", "f-droid.org") {
+            onDismiss()
+            shell.openUrl("https://f-droid.org/packages/$pkg/")
+        }
     }
 }
 

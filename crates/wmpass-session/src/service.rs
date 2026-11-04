@@ -1451,6 +1451,7 @@ impl Service {
                     "missing_two_factor": report.missing_two_factor,
                     "insecure_url": report.insecure_url,
                     "duplicates": report.duplicates,
+                    "similar": report.similar,
                     "expiring": report.expiring,
                     "score": report.score,
                 })))
@@ -1464,7 +1465,32 @@ impl Service {
                     "categories": categorise::suggest_all(entry),
                     // The site's alone, without the kind's, for tagging a new item.
                     "site": categorise::site_category(entry).map(|(category, _)| category),
+                    // How sure that is: the site list, the item's name, or the classifier's guess.
+                    "site_source": categorise::site_category(entry).map(|(_, source)| source.word()),
                 })))
+            }
+            // What each live item would be tagged, and how sure each tag is, for adding them in bulk.
+            "categorise.all" => {
+                let rows: Vec<Value> = session
+                    .vault
+                    .doc
+                    .entries
+                    .values()
+                    .filter(|entry| !entry.is_trashed())
+                    .map(|entry| {
+                        let site = categorise::site_category(entry);
+                        json!({
+                            "id": entry.id,
+                            "title": entry.common.title.v,
+                            "kind": entry.kind.name(),
+                            "tags": entry.common.tags.v,
+                            "site": site.map(|(category, _)| category),
+                            "source": site.map(|(_, source)| source.word()),
+                            "by_kind": categorise::kind_suggestion(entry),
+                        })
+                    })
+                    .collect();
+                Ok(Reply::view(json!(rows)))
             }
             "tags.icons" => {
                 let icons: BTreeMap<&str, &str> = session
@@ -1813,6 +1839,46 @@ impl Service {
                 session.touched();
                 Ok(Reply::ok())
             }
+            // A custom field's name or kind, keeping its value: a field made plain can turn secret
+            // without being typed again, and the other way.
+            "entry.custom_meta" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    id: String,
+                    index: usize,
+                    name: Option<String>,
+                    kind: Option<String>,
+                }
+                let a: A = parse(call.args)?;
+                session.entry(&a.id)?;
+                if a.name.as_deref().is_some_and(|name| name.trim().is_empty()) {
+                    return Err(invalid("a field has a name"));
+                }
+                session.vault.edit(&a.id, now, |entry, at| {
+                    let mut list = entry.common.custom_fields.v.clone();
+                    let Some(field) = list.get_mut(a.index) else { return Err(invalid("that field is gone")) };
+                    let mut changed = false;
+                    if let Some(name) = a.name.as_deref().map(str::trim)
+                        && field.name != name
+                    {
+                        field.name = name.to_owned();
+                        changed = true;
+                    }
+                    if let Some(kind) = a.kind.as_deref().map(views::field_kind_from)
+                        && field.kind != kind
+                    {
+                        field.kind = kind;
+                        changed = true;
+                    }
+                    if changed {
+                        entry.common.custom_fields = Lww::new(list, at);
+                    }
+                    Ok(())
+                })??;
+                session.touched();
+                Ok(Reply::ok())
+            }
             "entry.custom_remove" => {
                 #[derive(Deserialize, Default)]
                 #[serde(default)]
@@ -2008,6 +2074,23 @@ impl Service {
                 }
                 session.touched();
                 Ok(Reply::view(json!({"delete_blobs": delete_blobs})))
+            }
+            // Several items folded into one: first what differs between them, then the merge with
+            // the owner's answers.
+            "entries.merge_plan" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    ids: Vec<String>,
+                }
+                let a: A = parse(call.args)?;
+                Ok(Reply::view(crate::combine::plan(&session.vault, &a.ids)?))
+            }
+            "entries.merge" => {
+                let a: crate::combine::Choices = parse(call.args)?;
+                crate::combine::merge(&mut session.vault, &a, now)?;
+                session.touched();
+                Ok(Reply::ok())
             }
             "health.merge_duplicates" => {
                 #[derive(Deserialize, Default)]

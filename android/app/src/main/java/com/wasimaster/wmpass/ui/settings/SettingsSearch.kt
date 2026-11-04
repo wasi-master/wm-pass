@@ -66,6 +66,7 @@ private fun routeIcon(route: String): ImageVector = when (route) {
     "settings/codes" -> PassIcons.Pin
     "settings/compare" -> PassIcons.Balance
     "settings/editing", "settings/editor" -> PassIcons.Edit
+    "settings/tags" -> PassIcons.Sell
     "settings/entry" -> PassIcons.Description
     "settings/export" -> PassIcons.Upload
     "settings/file" -> PassIcons.ImportExport

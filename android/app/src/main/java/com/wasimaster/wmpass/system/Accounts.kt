@@ -33,6 +33,8 @@ data class AccountRef(
     val region: String = "",
     val email: String = "",
     val uri: String = "",
+    /** False until the first sign-in goes through, so a setup that never worked can be fixed or dropped. */
+    val opened: Boolean = true,
 )
 
 object Accounts {
@@ -66,6 +68,37 @@ object Accounts {
     }
 
     fun add(context: Context, ref: AccountRef) = save(context, mutableList.value.filter { it.id != ref.id } + ref)
+
+    /**
+     * Changes an account's details in place. A new server, email or file is another account to
+     * the server, so the offline copy of the old one goes.
+     */
+    fun update(context: Context, ref: AccountRef) {
+        val old = mutableList.value.firstOrNull { it.id == ref.id } ?: return add(context, ref)
+        if (old.server != ref.server || old.region != ref.region || old.email != ref.email || old.uri != ref.uri) {
+            cacheFile(context, ref.id).delete()
+        }
+        save(context, mutableList.value.map { if (it.id == ref.id) ref else it })
+    }
+
+    private fun markOpened(context: Context, id: String) {
+        if (mutableList.value.none { it.id == id && !it.opened }) return
+        save(context, mutableList.value.map { if (it.id == id) it.copy(opened = true) else it })
+    }
+
+    /**
+     * Whether a Bitwarden-compatible server answers at this address, before the account is kept.
+     * Null when it does, or the words to show. It cannot tell whether the email has an account.
+     */
+    suspend fun checkServer(context: Context, server: String, region: String, email: String): String? = runCatching {
+        Engine.net("bitwarden.check", online = online(context)) {
+            put("server", server)
+            put("region", region)
+            put("email", email)
+        }
+    }.exceptionOrNull()?.let { failure ->
+        (failure.message ?: "The server could not be reached").replaceFirstChar { it.uppercase() }.trimEnd('.') + "."
+    }
 
     fun remove(context: Context, id: String) {
         save(context, mutableList.value.filter { it.id != id })
@@ -110,6 +143,7 @@ object Accounts {
             bakFile(context, ref.id).writeBytes(data)
             context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(bytes) }
         }
+        markOpened(context, ref.id)
     }
 
     /**
@@ -134,6 +168,7 @@ object Accounts {
             }
         }
         val scope = CoroutineScope(Dispatchers.IO)
+        markOpened(context, ref.id)
         Pass.adoptAccount(ref.id, reply) { bytes -> cache.writeBytes(bytes) }
         Pass.afterAccountSave = {
             scope.launch { syncNow(context) }

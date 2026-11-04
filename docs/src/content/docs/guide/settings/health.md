@@ -166,4 +166,32 @@ Lists logins saved more than once: the same site, the same username and the same
 
 The Health page offers to merge each group. Choose the one that stays, and the others fold into it: their passwords move to its history, their extra fields come along, and the copies go to the trash.
 
+#### On Android
+
+The Health page offers to merge each group. Merging asks which one stays, and which value wins where they differ.
+
 See also [Used more than once](/guide/settings/health/#action-health-check-reused), [Trash](/guide/settings/trash/).
+
+<a id="action-health-check-similar"></a>
+
+## Maybe the same account
+
+*Only in Android.*
+
+Lists logins that share a password and look like one account saved twice.
+
+#### How it works
+
+Two logins with one password count when they are for the same site, or one is named for the other's site, and their usernames could be one person's:
+
+- one of them has no username;
+- one is an email and the other is the part before its @;
+- they differ by a slip of a key or two, by dots, or by capitals.
+
+Two different email addresses are two accounts, so they do not count unless one is a typo of the other.
+
+#### Limits
+
+It is a guess from names and addresses. Look before you merge: the merge asks which value wins wherever the two differ.
+
+See also [Duplicate items](/guide/settings/health/#action-health-check-duplicates), [Used more than once](/guide/settings/health/#action-health-check-reused).

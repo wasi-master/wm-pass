@@ -50,6 +50,11 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
+        <!-- App stores, to offer one for an app an item is saved for that is not installed here. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="market" />
+        </intent>
     </queries>
 
     <!-- allowBackup off: a vault leaves this phone only by the owner's hand. -->

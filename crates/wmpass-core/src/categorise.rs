@@ -58,8 +58,23 @@ pub enum Source {
     Kind,
     /// The site is on the bundled list.
     DomainList,
+    /// The item's name is a listed site's: "PyPI" for pypi.org. Nearly as sure as the list,
+    /// but a name can be a coincidence where an address cannot.
+    Name,
     /// The classifier's guess.
     Classifier,
+}
+
+impl Source {
+    /// The word shells use for it.
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Kind => "kind",
+            Self::DomainList => "list",
+            Self::Name => "name",
+            Self::Classifier => "guess",
+        }
+    }
 }
 
 /// A suggestion.
@@ -224,7 +239,7 @@ pub fn site_category(entry: &Entry) -> Option<(&'static str, Source)> {
     // A code has no website, only a name, and the name is usually the site's: GitHub, PyPI.
     // A website the list does not know gets the same chance before the classifier guesses.
     if let Some(category) = name_category(&entry.common.title.v) {
-        return Some((category, Source::DomainList));
+        return Some((category, Source::Name));
     }
     let name = domains
         .iter()
@@ -244,6 +259,11 @@ pub fn suggest(entry: &Entry) -> Option<Suggestion> {
         });
     }
     site_category(entry).map(|(category, source)| Suggestion { category, source })
+}
+
+/// The category an entry's kind gives it, whatever its site. Logins have none.
+pub fn kind_suggestion(entry: &Entry) -> Option<&'static str> {
+    kind_category(&entry.kind)
 }
 
 /// Every category worth offering, what the site is about before what the kind is: a code for
@@ -373,6 +393,18 @@ mod tests {
         }
         // A word that happens to be a short label says nothing on its own.
         assert_eq!(name_category("my"), None);
+    }
+
+    #[test]
+    fn a_name_is_told_apart_from_the_list() {
+        let mut code = Entry {
+            kind: Kind::Otp(crate::model::Otp::default()),
+            ..Entry::default()
+        };
+        code.common.title = Lww::new("PyPI".into(), Hlc::default());
+        assert_eq!(site_category(&code), Some(("Developer", Source::Name)));
+        assert_eq!(site_category(&site_entry("x", "https://pypi.org")), Some(("Developer", Source::DomainList)));
+        assert_eq!(Source::Classifier.word(), "guess");
     }
 
     #[test]

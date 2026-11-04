@@ -120,6 +120,7 @@ fun NavGraphBuilder.settingsGraph() {
     composable("settings/navigation") { NavigationSettingsScreen() }
     composable("settings/add") { AddMenuScreen() }
     composable("settings/editor") { EditorSettingsScreen() }
+    composable("settings/tags") { BulkTagsScreen() }
     composable("settings/entry") { EntrySettingsScreen() }
     composable("settings/codes") { CodesSettingsScreen() }
     composable("settings/widgets") { WidgetSettingsScreen() }

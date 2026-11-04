@@ -35,6 +35,8 @@ A new item starts with the fields its kind needs. Everything else waits behind *
 
 Some fields offer common values as you type, such as a database's engine or an API key's provider.
 
+The lock beside a custom field turns it secret, or back to plain, and keeps what it holds, so nothing has to be typed again. Renaming a custom field saves the new name without touching its value.
+
 For Wi-Fi, tap **Fill in from a QR code** and scan the code Android's Wi-Fi settings show when you share a network, or share that code's text to WM Pass. Typing a password on an open network switches its security to WPA, and clearing the password switches it back to open.
 
 **Pick a network saved on this phone** fills the item from a network Android already knows, password included, and Import has **Wi-Fi saved on this phone** to add several at once. A network already in your vault says so and starts unticked; tick it and its item is updated rather than copied. The sheet counts while it saves and ends on what it added and updated. Android keeps those passwords from apps, so this goes through [Shizuku](https://shizuku.rikka.app/), which you install and start yourself and which asks once whether WM Pass may use it. WM Pass uses it only to read saved networks, and only when you open one of these. The way of asking comes from [wifi-password-manager](https://github.com/Khh-vu/wifi-password-manager).
@@ -52,7 +54,9 @@ The standard build asks which one to use before the first scan, and you can chan
 
 Tags show as chips on the item's page. The cross on a chip takes the tag off that item. Holding a chip renames the tag, gives it an icon or deletes it, on every item that has it. Below them, WM Pass suggests tags from the site, such as Banking or Social, and for a code also Authenticator.
 
-A new item saved without tags gets the one its site suggests. Turn this off under Settings, Editor, **Tag new items**.
+A new item saved without tags gets the one its site suggests, from WM Pass's list of known sites, or from its name when that is a known site's, such as PyPI. The offline model's guesses tag a new item only with **Use guesses too** on. Turn tagging off under Settings, Editor, **Tag new items**.
+
+For the items you already have, Settings, Editor, **Add suggested tags** lists every tag WM Pass would add, grouped by tag. Each suggestion says where it came from: the site list and known names are on to start with, the item's kind and the model's guesses are off. Open a group to leave items out, or untick a whole tag, then add the rest in one go. The message afterwards offers **Undo**.
 
 **Add a tag** lists the item's own tags and the ones you use most, with a search and a button for the rest.
 
@@ -62,7 +66,7 @@ Tag names and their icons are stored inside the encrypted vault.
 
 The picture beside each item comes from the sources under Settings, Icons, **Pictures, in order**, tried from the top: the brand marks that ship with the app, then the icon of the app an item is for if it is installed. **Website icons** can be added to the order; they are fetched once per site, from the site itself or from DuckDuckGo, kept encrypted on the phone, and never asked for local addresses. An item none of them covers shows its first letter on a soft color of its own.
 
-The item's page lists **Websites and apps** together, every address in full however long, with its parts set apart: the site's own name strong, the rest of the address quieter. Each app shows with its name and icon, and opens an installed app when you tap it. For a login it also has **Change the password**, which opens the site's own page for that.
+The item's page lists **Websites and apps** together, every address in full however long, with its parts set apart: the site's own name strong, the rest of the address quieter. Each app shows with its name and icon, and opens an installed app when you tap it. One that is not installed offers the app stores on the phone, or Google Play and F-Droid in the browser when there are none. A login also has **Change the password on the site**, but only for a site that has a page for it: one on Apple's list of 805 known pages, or one that answers at its `/.well-known/change-password` address after first refusing an address no site has. A site is asked that once, and the answer is kept sealed on the phone for a month.
 
 The icon picker shows what Automatic would draw, then every symbol and every brand in one grid that fills the screen's width. Search narrows both. Hold an icon to see its name and where it comes from: symbols come from the icon style you picked, and brand marks come from Simple Icons (CC0) and belong to their owners.
 
@@ -74,7 +78,7 @@ Under Settings, Tools, **Disposable inbox** makes throwaway email addresses for 
 
 A mail opens the way a mail app shows it, with its layout and links, but no script in it runs, and pictures stay unloaded until you tap **Load**, so the sender cannot see that you opened it. The page is fitted to the phone's width, as a mail app would show it. A code in the mail gets its own copy button. The share button forwards the mail to another app, and the menu copies its text or saves it as a file; it can also be saved to the vault as a note. Closing an address can also delete it on the service. The service, and possibly others, can read what arrives at these addresses: never use one for an account you want to keep.
 
-**Username checker** asks every site at once whether a name is taken, and shows how far it has got. The sites are listed with the most used first. TikTok and Instagram only answer a browser, so they are read one after the other in a hidden browser view. A site that fails, for instance because it got too many requests, says so on its own row and can be asked again. Tapping a site opens that name's page there, and sites that give no readable answer are listed under **Look for yourself**.
+**Username checker** asks every site at once whether a name is taken, and shows how far it has got. Type up to ten names with spaces between them to check them together: each gets a chip saying how many sites it is free on, and tapping a chip lists that name's answer from every site. The sites are listed with the most used first. TikTok and Instagram only answer a browser, so they are read one after the other in a hidden browser view. A site that fails, for instance because it got too many requests, says so on its own row and can be asked again. Tapping a site opens that name's page there, and sites that give no readable answer are listed under **Look for yourself**.
 
 ## Passkeys
 
@@ -99,13 +103,17 @@ The list opens on types, then folders, the way Bitwarden's vault does: a row for
 
 A scroll bar runs down the right edge of the vault list and the Health page. Drag it to move through a long list fast; while it is held, a label says which letter or part you are in.
 
-Hold an item to start choosing several. With two or more chosen, **More**, **Link together** links each to the others, so every one lists the rest under **Linked**.
+Hold an item to start choosing several. With two or more chosen, **More**, **Link together** links each to the others, so every one lists the rest under **Linked**. **Merge into one**, for items of one kind, asks which one stays and, for each field they fill differently, which value to keep; a value that loses can be kept as a field of its own, and a losing password always goes to the history. Websites, tags, files, passkeys and custom fields from each join the kept item, and the others go to the trash.
+
+The scroll bar keeps the height of every row it has seen, so a list of short folder rows under a tall header no longer makes it jump as you scroll or as folders open and close.
 
 **Compact** fits more rows on screen, with a small icon and the second line beside the name.
 
 ## Health and breaches
 
-The vault list's health row can be put away until something new needs attention, or for good. On the Health page, **Used more than once** groups logins by the password they share, and tapping a login offers **Change the password** on its site, **Ignore for this check**, or opening it. Settings, Health checks, **Leave out local addresses** keeps routers, printers and other devices on your own network out of the checks, and is on to start with.
+The vault list's health row can be put away until something new needs attention, or for good. On the Health page, **Used more than once** groups logins by the password they share. Tapping a login fixes it there: **Set a new password** makes one with the generator and saves it, keeping the old one in the history; **Change the password on the site** shows for sites that have such a page; a plain http address offers **Switch the address to https**. **Ignore for this check** and opening the item are there too.
+
+**Maybe the same account** lists logins that share a password and look like one account saved twice: the same site or name, with usernames that differ by spelling, or one an email and the other its first part. Health offers to merge those, and plain duplicates, with the same sheet as the vault list. Settings, Health checks, **Leave out local addresses** keeps routers, printers and other devices on your own network out of the checks, and is on to start with.
 
 Settings, Breaches checks every password against Have I Been Pwned or XposedOrNot. The check keeps running after you leave the page, with a notification and a **Stop** button, and the page says when it last ran and lets you sort what it found by how often each password was seen.
 

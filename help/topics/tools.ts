@@ -334,8 +334,9 @@ export const tools = [
     related: ['page.usernames', 'group.usernames.links'],
     on: {
       android: {
-        what: 'Asks every site about the name in the box at once. A bar shows how many have answered, and each row fills in as its answer comes.',
+        what: 'Asks every site about the names in the box at once. A bar shows how many have answered, and each row fills in as its answer comes.',
         how: [
+          'Type one name, or up to ten with spaces or commas between them. With several, a chip for each name shows how many sites it is free on, and tapping a chip lists that name\'s answer from every site.',
           '- *Free* means the site showed no profile under that name.',
           '- *Taken* means somebody has it.',
           '- *No clear answer* means the site said something WM Pass could not read.',

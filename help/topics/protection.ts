@@ -313,5 +313,28 @@ export const protection = [
     how: 'The Health page offers to merge each group. Choose the one that stays, and the others fold into it: their passwords move to its history, their extra fields come along, and the copies go to the trash.',
     related: ['action.health_check_reused', 'page.trash'],
     words: 'duplicate copies merge twice',
+    on: {
+      android: {
+        how: 'The Health page offers to merge each group. [[action.merge_items|Merging]] asks which one stays, and which value wins where they differ.',
+      },
+    },
+  },
+  {
+    id: 'action.health_check_similar',
+    kind: 'action',
+    title: 'Maybe the same account',
+    page: 'health',
+    shells: ['android'],
+    what: 'Lists logins that share a password and look like one account saved twice.',
+    how: [
+      'Two logins with one password count when they are for the same site, or one is named for the other\'s site, and their usernames could be one person\'s:',
+      '- one of them has no username;',
+      '- one is an email and the other is the part before its @;',
+      '- they differ by a slip of a key or two, by dots, or by capitals.',
+      'Two different email addresses are two accounts, so they do not count unless one is a typo of the other.',
+    ],
+    caveats: 'It is a guess from names and addresses. Look before you merge: the merge asks which value wins wherever the two differ.',
+    related: ['action.health_check_duplicates', 'action.health_check_reused', 'action.merge_items'],
+    words: 'similar same account twice email username spelling merge',
   },
 ] as const satisfies readonly Topic[];

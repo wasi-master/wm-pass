@@ -234,6 +234,7 @@ export const screens = [
           'A one-time code counts down with a ring and shows the next code in its last ten seconds. A counter-based code shows **New code** in place of the code.',
           'Further down are the websites, passkeys, fields of your own, security questions, notes, attachments and linked items, then **History** with earlier values of secret fields.',
           '**More**, at the bottom, adds a tag, attaches a file, links another item, sets a reminder, a folder, a color or a self-destruct date, pins it, puts it on the hidden shelf, duplicates it, sends it to another device, or moves it to the trash.',
+          'A login shows **Change the password on the site** only for a site that has a page for it, found the way Health finds it. An app that is not installed offers the app stores on this phone, or Google Play and F-Droid in the browser when there are none.',
         ],
         when: 'A copied secret is cleared from the clipboard after the time set under [[setting.clipboard_seconds]].',
       },
@@ -259,6 +260,7 @@ export const screens = [
         how: [
           ...EDITOR_PARTS,
           'A secret that is already saved shows as **Saved. Tap to change** and stays in the vault until you tap it, so fixing a name never brings the password onto the screen.',
+          'Each custom field has a lock beside it that turns it secret, or back to plain, keeping its value: nothing has to be typed again.',
           'A password field has **Show** and **Generate**, which opens the generator; **Use this** puts the result in the field. A username field has **Use an alias**. Under **One-time code**, **Scan a QR code** reads the code a site shows.',
           '**Save** saves and shows the item. **Close** leaves, and asks first if you changed anything.',
         ],
@@ -345,7 +347,8 @@ export const screens = [
         how: [
           ...HEALTH_PARTS,
           'Under **Used more than once**, the logins are grouped by the password they share, so each group is one password to change.',
-          'Tapping an item offers what fixes it: **Change the password** opens the site\'s own page for that, from a list of known pages or the address a site lists at /.well-known/change-password, and a missing second factor offers the site\'s settings. **Ignore for this check** takes the item off that list only, for sites with a second factor of their own and the like. **Ignored** lists them again, to put any back.',
+          'Tapping an item offers what fixes it, there and then. **Set a new password** makes one with the generator and saves it, the old one kept in the item\'s history. **Change the password on the site** opens the site\'s own page for that, and shows only for a site that has one: either it is on a list of known pages, or it answers at /.well-known/change-password after first refusing an address no site has. An unencrypted address offers **Switch the address to https**, and **Try it with https first**. **Ignore for this check** takes the item off that list only. **Ignored** lists them again, to put any back.',
+          'Where items that share a password look like one account saved twice, such as an email in one and a username in the other, Health offers to merge them, under **Used more than once** and in **Maybe the same account**. [[action.merge_items|Merging]] asks which one stays and which value wins where they differ.',
           '**Check for breaches** opens Settings, Breaches, and **Compare two passwords** opens a side-by-side comparison.',
         ],
         when: 'Look after an import, and whenever the score drops.',

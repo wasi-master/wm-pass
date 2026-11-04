@@ -57,7 +57,7 @@ export const backup = [
     page: 'backup',
     what: 'Sets up somewhere new to keep copies: a folder, an account, a server, a Git repository or a mailbox.',
     how: [
-      'Choose the kind, give it a name and fill in what that kind needs. A backup runs as soon as it is saved, so you know at once whether it works.',
+      'Choose the kind, give it a name and fill in what that kind needs. Before a server or account is saved, WM Pass checks that it answers with what you typed, and says what went wrong if it does not; nothing is kept until it works. A backup then runs straight away.',
       'Only the encrypted file goes there. What WM Pass needs to sign in stays on this device, sealed.',
       '- A folder on this device. Syncthing, Nextcloud or a cloud provider\'s own app can carry it on from there.',
       '- With Google Drive, Dropbox, OneDrive and Box you sign in on the service\'s own page, in your browser. WM Pass never sees that password, and can reach only its own folder there. Google Drive can use a hidden app folder or a folder you can see.',
@@ -324,6 +324,13 @@ export const backup = [
     words: 'lan wifi local network direct peer mdns',
     on: {
       android: {
+        how: [
+          'Start with [[action.lan_add|Add a device]], which asks whether the other device already has this vault: one with none gets a copy, one that has it is paired. Pairing stores the other device\'s key, and later connections with any other key are refused.',
+          'To sync, choose [[action.lan_wait|Wait for one]] on one device and **Sync now** on the other. They send each other what differs, attachments included, and merge it field by field.',
+          'Being paired is not enough on its own. Before anything is sent, each side proves it holds this vault\'s key, so two devices with different vaults can pair but never sync.',
+          'Devices find each other with mDNS, under a random name that says nothing about you or the vault. Everything after that is encrypted end to end between the two.',
+          'Tap a paired device to forget it. It has to pair again before it can sync.',
+        ],
         caveats: [
           'Android files this under internet access, so it needs [[setting.network_allowed]] like the rest.',
           'After you rekey the vault, the other device fails the check until it is unlocked with the new key.',
@@ -331,6 +338,22 @@ export const backup = [
         ],
       },
     },
+  },
+  {
+    id: 'action.lan_add',
+    kind: 'action',
+    title: 'Add a device',
+    page: 'sync',
+    shells: ['android'],
+    what: 'Starts syncing this vault with another phone or computer on this Wi-Fi.',
+    how: [
+      'It first asks whether WM Pass on the other device already opens this vault.',
+      '- **No, it has no vault yet** sends it a copy of this one, then pairs the two. See [[action.lan_join]].',
+      '- **Yes, it has this vault**, from a backup or a sync folder, pairs the two so they can sync. See [[action.lan_pair]].',
+    ],
+    caveats: 'Two vaults made separately stay separate: pairing does not merge them, and a paired device syncs only if it holds this vault\'s key.',
+    related: ['action.lan_join', 'action.lan_pair', 'group.sync.lan'],
+    words: 'add device new pair join phone computer',
   },
   {
     id: 'action.lan_pair',
@@ -355,6 +378,8 @@ export const backup = [
     words: 'pair qr code six digits',
     on: {
       android: {
+        title: 'Pair a device that has this vault',
+        what: 'Introduces a device that already opens this vault to this one, once, so the two can sync over this network. Reached from [[action.lan_add|Add a device]].',
         how: [
           'Choose one of four ways. Each ends with both devices holding the other\'s key.',
           '- With **Show a code**, this phone shows a QR code for the other device to scan. It works once and stops in two minutes.',
@@ -407,6 +432,8 @@ export const backup = [
     words: 'new device add send vault transfer phone computer',
     on: {
       android: {
+        title: 'Send this vault to a new device',
+        what: 'Sends this vault to a phone or computer that has none yet, and pairs the two for syncing. Reached from [[action.lan_add|Add a device]], choosing **No, it has no vault yet**.',
         how: [
           'First, on the new device, choose **I already have a vault**, then [[action.join_device|Get it from another device]]. It shows a code and waits.',
           '- **Scan its code** reads the QR code on the new device\'s screen, from a computer, a phone or the terminal app.',
@@ -447,6 +474,15 @@ export const backup = [
     related: ['feature.sync', 'action.add_place', 'page.backup'],
     docs: '/guides/backup-sync/',
     words: 'file sync syncthing nextcloud dropbox drive',
+    on: {
+      android: {
+        how: [
+          'Turn on the switch beside a place to sync through it. Tap the place itself to change its details or stop using it. **Add a place** sets up a new one, the same way as under [[page.backup|Backups]].',
+          'A sync runs about 20 seconds after your last change, so a burst of edits makes one trip. **Sync now** runs one at once.',
+          'Each device writes only its own file, so two devices syncing at the same moment cannot overwrite each other. A file that belongs to some other vault does not open and is left alone. Attachments go up once each and stay.',
+        ],
+      },
+    },
   },
   {
     id: 'setting.sync_settings',
@@ -513,7 +549,7 @@ export const backup = [
     kind: 'action',
     title: 'Add an account',
     page: 'sync',
-    what: 'Adds a KeePass file or a server account to the door.',
+    what: 'Adds a KeePass file or a server account to the door. Tap one in the list to open it, change its details or remove it.',
     how: 'Signing in to a server sends your email address, a name and an id for this device, and a key derived from your password that proves who you are, as any Bitwarden client does. Your password itself is never sent. After that, your items travel encrypted.',
     effects: [
       { value: 'bitwarden', label: 'Bitwarden', text: 'An account at bitwarden.com.' },
@@ -523,6 +559,7 @@ export const backup = [
     ],
     caveats: [
       'Adding a server account turns on [[setting.network_allowed]].',
+      'Before an account is added, WM Pass checks that the address answers as a Bitwarden server does. Whether the email and password are right shows only at the first sign-in; until then the door offers **Change the details** and **Remove this account** when it fails.',
       'WM Pass refuses a server that asks for weaker password protection than it accepts.',
       'The first sign-in from a new device can be held back until you confirm it: Bitwarden emails a code, and the door asks for it beside your password.',
     ],

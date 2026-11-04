@@ -20,7 +20,7 @@ pub struct HealthInput {
     /// Breach counts by entry id, from an opt-in check.
     pub breached: BTreeMap<Id, u64>,
     /// Entries the person has said to leave out of one check, by check: `weak`, `reused`,
-    /// `old`, `breached`, `twofactor`, `insecure`, `expiring` or `duplicates`. Such an entry
+    /// `old`, `breached`, `twofactor`, `insecure`, `expiring`, `duplicates` or `similar`. Such an entry
     /// no longer counts against the score for that check.
     pub ignored: BTreeMap<String, BTreeSet<Id>>,
     /// Leaves out logins saved only for addresses on the local network, such as a router's
@@ -78,6 +78,9 @@ pub struct HealthReport {
     pub insecure_url: Vec<Id>,
     /// Groups of entries for one site, user and password.
     pub duplicates: Vec<Vec<Id>>,
+    /// Groups that share a password and look like one account saved more than once: the same
+    /// site or name, under usernames that differ only in spelling, or by one being the email.
+    pub similar: Vec<Vec<Id>>,
     /// Entries past or nearing a fixed expiry.
     pub expiring: Vec<Id>,
     /// 0 to 100.
@@ -192,6 +195,7 @@ pub fn report(vault: &Vault, input: &HealthInput) -> HealthReport {
             out.insecure_url.push(entry.id.clone());
         }
     }
+    out.similar = similar_groups(vault, by_password.values());
     out.reused = groups(by_password);
     out.duplicates = groups(by_identity);
     let skip = |check: &str, id: &Id| input.ignored.get(check).is_some_and(|ids| ids.contains(id));
@@ -209,6 +213,9 @@ pub fn report(vault: &Vault, input: &HealthInput) -> HealthReport {
     };
     out.reused = keep("reused", std::mem::take(&mut out.reused));
     out.duplicates = keep("duplicates", std::mem::take(&mut out.duplicates));
+    let exact = out.duplicates.clone();
+    out.similar = keep("similar", std::mem::take(&mut out.similar));
+    out.similar.retain(|group| !exact.contains(group));
 
     let bad: HashSet<&Id> = out
         .weak
@@ -223,6 +230,116 @@ pub fn report(vault: &Vault, input: &HealthInput) -> HealthReport {
         let good = logins.saturating_sub(bad.len());
         u8::try_from(good * 100 / logins).unwrap_or(100)
     };
+    out
+}
+
+/// Whether two edits or fewer turn one into the other, scaled to length: a slip of a key in a
+/// short name, two in a long one. Under four letters only an exact match counts.
+fn near(a: &str, b: &str) -> bool {
+    let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
+    let shorter = a.len().min(b.len());
+    let allowed = match shorter {
+        0..=3 => 0,
+        4..=7 => 1,
+        _ => 2,
+    };
+    if a.len().abs_diff(b.len()) > allowed {
+        return false;
+    }
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.iter().enumerate() {
+        let mut previous = row[0];
+        row[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let above = row[j + 1];
+            row[j + 1] = if ca == cb { previous } else { 1 + previous.min(above).min(row[j]) };
+            previous = above;
+        }
+    }
+    row[b.len()] <= allowed
+}
+
+/// A username with case, dots, dashes and underscores gone, for telling spellings apart.
+fn squeezed(text: &str) -> String {
+    text.trim().to_lowercase().chars().filter(|c| !matches!(c, '.' | '-' | '_' | ' ')).collect()
+}
+
+/// Whether two usernames could be one person's on one site. Either left empty could be; an
+/// email and a name are when the name is the email's own first part; two different emails are
+/// two accounts unless one is a slip of the other.
+fn same_user(a: &str, b: &str) -> bool {
+    let (a, b) = (a.trim().to_lowercase(), b.trim().to_lowercase());
+    if a.is_empty() || b.is_empty() || a == b {
+        return true;
+    }
+    let local = |text: &str| squeezed(text.split('@').next().unwrap_or(text));
+    match (a.contains('@'), b.contains('@')) {
+        (true, true) => near(&a, &b),
+        (false, false) => squeezed(&a) == squeezed(&b) || near(&a, &b),
+        _ => local(&a) == local(&b),
+    }
+}
+
+/// The name a site goes by in a title: the domain's own label for an address, the letters and
+/// digits otherwise. "github.com" and "GitHub" both come out as "github".
+fn site_name(title: &str) -> String {
+    let title = title.trim().to_lowercase();
+    if title.contains('.') && !title.contains(' ') {
+        let domain = registrable_domain(&host_of(&title).unwrap_or(title));
+        return domain.split('.').next().unwrap_or_default().to_owned();
+    }
+    title.chars().filter(|c| c.is_alphanumeric()).collect()
+}
+
+/// Whether two logins that share a password look like one account saved twice.
+fn same_account(a: &Entry, b: &Entry) -> bool {
+    let (Some(first), Some(second)) = (a.login(), b.login()) else { return false };
+    if !same_user(&first.username.v, &second.username.v) {
+        return false;
+    }
+    let (ours, theirs) = (entry_domains(a), entry_domains(b));
+    if ours.iter().any(|domain| theirs.contains(domain)) {
+        return true;
+    }
+    let (name_a, name_b) = (site_name(&a.common.title.v), site_name(&b.common.title.v));
+    let named = |domains: &[String], name: &str| {
+        !name.is_empty() && domains.iter().any(|domain| domain.split('.').next() == Some(name))
+    };
+    (!name_a.is_empty() && (name_a == name_b || near(&name_a, &name_b))) || named(&ours, &name_b) || named(&theirs, &name_a)
+}
+
+/// Within each set sharing a password, the logins that look like one account, grouped.
+fn similar_groups<'a>(vault: &Vault, sets: impl Iterator<Item = &'a Vec<Id>>) -> Vec<Vec<Id>> {
+    fn root(parent: &mut [usize], mut i: usize) -> usize {
+        while parent[i] != i {
+            parent[i] = parent[parent[i]];
+            i = parent[i];
+        }
+        i
+    }
+    let mut out = Vec::new();
+    for set in sets.filter(|set| set.len() > 1) {
+        let entries: Vec<&Entry> = set.iter().filter_map(|id| vault.get(id)).collect();
+        let mut parent: Vec<usize> = (0..entries.len()).collect();
+        for i in 0..entries.len() {
+            for j in i + 1..entries.len() {
+                if same_account(entries[i], entries[j]) {
+                    let (x, y) = (root(&mut parent, i), root(&mut parent, j));
+                    parent[x] = y;
+                }
+            }
+        }
+        let mut clusters: BTreeMap<usize, Vec<Id>> = BTreeMap::new();
+        for (i, entry) in entries.iter().enumerate() {
+            let at = root(&mut parent, i);
+            clusters.entry(at).or_default().push(entry.id.clone());
+        }
+        out.extend(clusters.into_values().filter(|group| group.len() > 1).map(|mut group| {
+            group.sort();
+            group
+        }));
+    }
+    out.sort();
     out
 }
 
@@ -292,6 +409,24 @@ mod tests {
                 ..HealthInput::default()
             },
         )
+    }
+
+    #[test]
+    fn one_account_saved_twice_is_told_from_a_reused_password() {
+        let mut vault = fast_vault(1);
+        let a = add(&mut vault, "GitHub", Some("https://github.com"), "jane.doe", STRONG);
+        let b = add(&mut vault, "github.com", None, "janedoe@example.com", STRONG);
+        let c = add(&mut vault, "Githb", Some("https://gist.github.com"), "", STRONG);
+        // The same password, but somebody else's site and another email: plain reuse.
+        add(&mut vault, "Bank", Some("https://bank.example"), "other@example.com", STRONG);
+        let found = run(&vault);
+        let mut expected = vec![a, b, c];
+        expected.sort();
+        assert_eq!(found.similar, vec![expected]);
+        assert!(same_user("Jane.Doe", "janedoe@mail.example"));
+        assert!(!same_user("jane@one.example", "jane@two.example"));
+        assert!(near("netflix", "netflx"));
+        assert!(!near("ebay", "etsy"));
     }
 
     #[test]

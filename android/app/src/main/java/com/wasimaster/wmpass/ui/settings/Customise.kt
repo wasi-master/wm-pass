@@ -537,7 +537,15 @@ internal fun EditorSettingsScreen() {
             item { SwitchRow("Remember what I open", "A section you open or close stays that way next time.", prefs.editorRemember, PassIcons.History) }
             item { SwitchRow("Fold less used fields", "Such as a card's PIN or a database's connection string.", prefs.editorFoldDetails, PassIcons.ExpandMore) }
             item { SwitchRow("Start logins with a password", "Fill in a generated password on every new login.", prefs.editorGenerate, PassIcons.Casino) }
-            item { SwitchRow("Tag new items", "A new item without tags gets the ones its site suggests, such as Banking or Social.", prefs.autoTag, PassIcons.Sell) }
+            item { SwitchRow("Tag new items", "A new item without tags gets the one its site or name suggests, such as Banking or Social.", prefs.autoTag, PassIcons.Sell) }
+            if (prefs.autoTag.value) {
+                item { SwitchRow("Use guesses too", "Tag a new item from the offline model's guess when no list knows its site. Off, only the site list and known names tag.", prefs.autoTagGuess, PassIcons.AutoAwesome) }
+            }
+            item {
+                NavRow("Add suggested tags", "To the items you already have, after a look through them", icon = PassIcons.Sell, info = Help.info("action.bulk_tags")) {
+                    shell.nav.navigate("settings/tags")
+                }
+            }
         }
         // Only builds with Google's SDKs have a second card reader to choose.
         if (com.wasimaster.wmpass.BuildConfig.GOOGLE_SDKS) {
@@ -696,6 +704,7 @@ internal fun HealthSettingsScreen() {
                 Triple("old", "Not changed in a year", PassIcons.History),
                 Triple("twofactor", "No second factor", PassIcons.Pin),
                 Triple("duplicates", "Duplicate items", PassIcons.Layers),
+                Triple("similar", "Maybe the same account", PassIcons.Layers),
             ).forEach { (key, name, icon) ->
                 item { ToggleSetting(name, null, key !in prefs.healthHidden, info = Help.info("action.health_check_$key"), icon = icon) { prefs.setHealthShown(key, it) } }
             }
@@ -815,6 +824,8 @@ internal val SearchIndex = listOf(
     Found("Fold less used fields", "Adding and editing › Editor", "settings/editor", "details"),
     Found("Start logins with a password", "Adding and editing › Editor", "settings/editor", "generate"),
     Found("Tag new items", "Adding and editing › Editor", "settings/editor", "auto tag category"),
+    Found("Use guesses too", "Adding and editing › Editor", "settings/editor", "auto tag classifier model guess"),
+    Found("Add suggested tags", "Adding and editing › Editor", "settings/tags", "bulk tags categories suggestions review"),
     Found("Card scanner", "Adding and editing › Editor", "settings/editor", "reader camera scan credit debit ml kit google"),
     Found("Tap a field to copy it", "Appearance › Item page", "settings/entry"),
     Found("Hide shown secrets after", "Appearance › Item page", "settings/entry", "reveal timeout"),

@@ -6,6 +6,7 @@
 
 pub mod aliases;
 pub mod breach;
+pub mod change_password;
 pub mod favicon;
 pub mod http;
 pub mod inbox;

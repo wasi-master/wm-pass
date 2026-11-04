@@ -91,6 +91,7 @@ export interface Topic extends TopicText {
 export type AndroidPref =
   | 'accent'
   | 'auto_tag'
+  | 'auto_tag_guess'
   | 'card_reader'
   | 'ui_style'
   | 'haptics'

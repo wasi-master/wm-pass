@@ -307,7 +307,7 @@ fn mail_rows(list: &[inbox::Message]) -> Value {
 
 /// Whether a call belongs here rather than on the service itself.
 pub fn is_net_method(method: &str) -> bool {
-    method == "remote.sync" || ["breach.", "alias.", "usernames.", "inbox.", "lan.", "share.", "bitwarden."].iter().any(|prefix| method.starts_with(prefix))
+    method == "remote.sync" || ["breach.", "alias.", "usernames.", "inbox.", "lan.", "share.", "bitwarden.", "site."].iter().any(|prefix| method.starts_with(prefix))
 }
 
 pub fn call(
@@ -916,8 +916,25 @@ pub fn call(
                 Ok(view(json!({"id": id})))
             })
         }
+        // ---- sites ----
+        "site.change_password" => {
+            #[derive(Deserialize, Default)]
+            #[serde(default)]
+            struct A {
+                host: String,
+            }
+            let a: A = parse(args)?;
+            let host = a.host.trim().trim_end_matches('.').to_ascii_lowercase();
+            // A router's page or a name on the home network is not asked about over the internet.
+            if host.is_empty() || wmpass_core::health::is_local_host(&host) {
+                return Ok(view(json!({"url": null})));
+            }
+            let policy = if online { NetPolicy::Any } else { NetPolicy::Offline };
+            let url = wmpass_net::change_password::find(&NativeHttp::default(), policy, &host).map_err(net_error)?;
+            Ok(view(json!({"url": url})))
+        }
         // ---- accounts held elsewhere ----
-        "bitwarden.login" | "bitwarden.open_cached" | "bitwarden.register" => {
+        "bitwarden.login" | "bitwarden.open_cached" | "bitwarden.register" | "bitwarden.check" => {
             #[derive(Deserialize, Default)]
             #[serde(default)]
             struct A {
@@ -958,6 +975,18 @@ pub fn call(
                 }
                 other => failed("bitwarden", other.to_string()),
             };
+            // Before an account is kept: the address answers as a Bitwarden server does. Says
+            // nothing about the email, which a server answers the same for whether it knows it or not.
+            if method == "bitwarden.check" {
+                wmpass_bw::api::run(wmpass_bw::api::prelogin(&endpoints, &a.email), &http, policy).map_err(|e| match e {
+                    wmpass_bw::BwError::Net(NetError::Status(_) | NetError::BadAnswer) | wmpass_bw::BwError::BadAnswer => {
+                        failed("bitwarden", "that address does not answer as a Bitwarden or Vaultwarden server does")
+                    }
+                    wmpass_bw::BwError::Net(error) => net_error(error),
+                    other => failed("bitwarden", other.to_string()),
+                })?;
+                return Ok(view(json!({})));
+            }
             if method == "bitwarden.register" {
                 wmpass_bw::account::register(
                     &http,

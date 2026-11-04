@@ -105,6 +105,16 @@ Keep both devices on this page until the sync is done. Leaving it stops the wait
 
 #### On Android
 
+Start with [Add a device](/guide/settings/sync/#action-lan-add), which asks whether the other device already has this vault: one with none gets a copy, one that has it is paired. Pairing stores the other device's key, and later connections with any other key are refused.
+
+To sync, choose [Wait for one](/guide/settings/sync/#action-lan-wait) on one device and **Sync now** on the other. They send each other what differs, attachments included, and merge it field by field.
+
+Being paired is not enough on its own. Before anything is sent, each side proves it holds this vault's key, so two devices with different vaults can pair but never sync.
+
+Devices find each other with mDNS, under a random name that says nothing about you or the vault. Everything after that is encrypted end to end between the two.
+
+Tap a paired device to forget it. It has to pair again before it can sync.
+
 Android files this under internet access, so it needs [Allow network features](/guide/settings/security/#setting-network-allowed) like the rest.
 
 After you rekey the vault, the other device fails the check until it is unlocked with the new key.
@@ -112,6 +122,27 @@ After you rekey the vault, the other device fails the check until it is unlocked
 Keep both devices on this page until the sync is done. Leaving it stops the wait.
 
 See also [Syncing over your own network](/guide/how-it-works/#feature-lan), [Pair a device](/guide/settings/sync/#action-lan-pair), [Wait for one](/guide/settings/sync/#action-lan-wait).
+
+<a id="action-lan-add"></a>
+
+## Add a device
+
+*Only in Android.*
+
+Starts syncing this vault with another phone or computer on this Wi-Fi.
+
+#### How it works
+
+It first asks whether WM Pass on the other device already opens this vault.
+
+- **No, it has no vault yet** sends it a copy of this one, then pairs the two. See [Add a new device](/guide/settings/sync/#action-lan-join).
+- **Yes, it has this vault**, from a backup or a sync folder, pairs the two so they can sync. See [Pair a device](/guide/settings/sync/#action-lan-pair).
+
+#### Limits
+
+Two vaults made separately stay separate: pairing does not merge them, and a paired device syncs only if it holds this vault's key.
+
+See also [Add a new device](/guide/settings/sync/#action-lan-join), [Pair a device](/guide/settings/sync/#action-lan-pair), [Your devices, on this network](/guide/settings/sync/#group-sync-lan).
 
 <a id="action-lan-pair"></a>
 
@@ -137,6 +168,10 @@ If the six digits differ, choose **They differ**, and nothing is stored.
 Pairing alone opens nothing: a paired device must also hold this vault's key to sync.
 
 #### On Android
+
+On the phone it is called Pair a device that has this vault.
+
+Introduces a device that already opens this vault to this one, once, so the two can sync over this network. Reached from [Add a device](/guide/settings/sync/#action-lan-add).
 
 Choose one of four ways. Each ends with both devices holding the other's key.
 
@@ -171,6 +206,10 @@ It sends the vault you opened at the door, not an account or a nested vault.
 If the six digits differ, choose **They differ**, and nothing is sent.
 
 #### On Android
+
+On the phone it is called Send this vault to a new device.
+
+Sends this vault to a phone or computer that has none yet, and pairs the two for syncing. Reached from [Add a device](/guide/settings/sync/#action-lan-add), choosing **No, it has no vault yet**.
 
 First, on the new device, choose **I already have a vault**, then Get it from another device. It shows a code and waits.
 
@@ -224,6 +263,14 @@ It syncs the vault you opened at the door, only while it is unlocked, and not an
 Any place but a folder needs [Allow network features](/guide/settings/security/#setting-network-allowed).
 
 Sync is not a backup: a change on one device, moving an item to the trash included, reaches the others. Keep backups as well.
+
+#### On Android
+
+Turn on the switch beside a place to sync through it. Tap the place itself to change its details or stop using it. **Add a place** sets up a new one, the same way as under [Backups](/guide/settings/backup/).
+
+A sync runs about 20 seconds after your last change, so a burst of edits makes one trip. **Sync now** runs one at once.
+
+Each device writes only its own file, so two devices syncing at the same moment cannot overwrite each other. A file that belongs to some other vault does not open and is left alone. Attachments go up once each and stay.
 
 See also [Keeping devices in sync](/guide/how-it-works/#feature-sync), [Add a place](/guide/settings/backup/#action-add-place), [Backups](/guide/settings/backup/).
 
@@ -291,7 +338,7 @@ See also [Add an account](/guide/settings/sync/#action-add-account), [This accou
 
 ## Add an account
 
-Adds a KeePass file or a server account to the door.
+Adds a KeePass file or a server account to the door. Tap one in the list to open it, change its details or remove it.
 
 #### How it works
 
@@ -309,6 +356,8 @@ Signing in to a server sends your email address, a name and an id for this devic
 #### Limits
 
 Adding a server account turns on [Allow network features](/guide/settings/security/#setting-network-allowed).
+
+Before an account is added, WM Pass checks that the address answers as a Bitwarden server does. Whether the email and password are right shows only at the first sign-in; until then the door offers **Change the details** and **Remove this account** when it fails.
 
 WM Pass refuses a server that asks for weaker password protection than it accepts.
 

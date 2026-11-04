@@ -586,7 +586,7 @@ export const features = [
     on: {
       android: {
         how: [
-          'Pair under Settings, Sync and accounts, with **Pair a device**. Either scan a code that the other device shows, or compare six digits on both screens and accept on both.',
+          'Pair under Settings, Sync and accounts, with **Add a device**. It asks whether the other device already has this vault: one with none gets a copy and is paired, one that has it is only paired. Either scan a code that the other device shows, or compare six digits on both screens and accept on both.',
           'A shown code holds a one-off secret and stops working after two minutes. Six digits work without a camera: each side commits to its part before seeing the other\'s, so someone in the middle gets one chance in a million, and a failed try shows on both screens.',
           'Pairing stores the other device\'s public key, and later connections from any other key are refused.',
           'To sync, tap **Wait for one** on one device and **Sync now** on the other. Before anything is sent, each side proves it holds the vault\'s key, so a paired device with another vault, or one still on the key from before a [[action.rekey|rekey]], gets nothing.',

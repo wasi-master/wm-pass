@@ -336,16 +336,7 @@ pub fn shown(entry: &mut Entry, key: &str) -> Option<(Option<Shown>, bool)> {
         Slot::Port(v) => (v.v.map(|p| Shown::Number(u64::from(p))), v.v.is_some()),
         Slot::Link(v) => (v.v.clone().map(Shown::Text), v.v.is_some()),
         Slot::Wifi(v) => (Some(Shown::Text(wifi_name(v.v).to_owned())), true),
-        Slot::Form(v) => (
-            Some(Shown::Text(
-                match v.v {
-                    RecoveryForm::Phrase => "phrase",
-                    RecoveryForm::Codes => "codes",
-                }
-                .to_owned(),
-            )),
-            true,
-        ),
+        Slot::Form(v) => (Some(Shown::Text(form_name(v.v).to_owned())), true),
     })
 }
 
@@ -455,6 +446,133 @@ pub fn set_secret(entry: &mut Entry, key: &str, value: &[u8], at: Hlc) -> Result
     }
     entry.history.extend(old);
     Ok(())
+}
+
+/// A field's value whatever its type, for comparing items and moving a value between them.
+/// It never leaves this crate: a merge decides with it, and a view gets [`Shown`] or nothing.
+#[derive(Clone, PartialEq)]
+pub(crate) enum Raw {
+    Text(String),
+    Secret(Secret),
+    Flag(bool),
+    Millis(Option<u64>),
+    Port(Option<u16>),
+    Link(Option<String>),
+    Wifi(WifiSecurity),
+    Form(RecoveryForm),
+}
+
+impl Raw {
+    /// Whether it holds nothing worth keeping. A choice always holds one of its values.
+    pub(crate) fn is_empty(&self) -> bool {
+        match self {
+            Self::Text(v) => v.is_empty(),
+            Self::Secret(v) => v.is_empty(),
+            Self::Flag(v) => !v,
+            Self::Millis(v) => v.is_none(),
+            Self::Port(v) => v.is_none(),
+            Self::Link(v) => v.is_none(),
+            Self::Wifi(_) | Self::Form(_) => false,
+        }
+    }
+
+    /// What a person may be shown of it: nothing for a secret.
+    pub(crate) fn shown(&self) -> Option<Shown> {
+        match self {
+            Self::Text(v) => Some(Shown::Text(v.clone())),
+            Self::Secret(_) => None,
+            Self::Flag(v) => Some(Shown::Flag(*v)),
+            Self::Millis(v) => v.map(Shown::Number),
+            Self::Port(v) => v.map(|p| Shown::Number(u64::from(p))),
+            Self::Link(v) => v.clone().map(Shown::Text),
+            Self::Wifi(v) => Some(Shown::Text(wifi_name(*v).to_owned())),
+            Self::Form(v) => Some(Shown::Text(form_name(*v).to_owned())),
+        }
+    }
+
+    /// The value as text, to keep a value that lost in a field of its own.
+    pub(crate) fn text(&self) -> Secret {
+        match self {
+            Self::Secret(v) => v.clone(),
+            other => Secret::new(match other.shown() {
+                Some(Shown::Text(text)) => text,
+                Some(Shown::Flag(flag)) => if flag { "On" } else { "Off" }.to_owned(),
+                Some(Shown::Number(number)) => number.to_string(),
+                None => String::new(),
+            }),
+        }
+    }
+}
+
+fn form_name(value: RecoveryForm) -> &'static str {
+    match value {
+        RecoveryForm::Phrase => "phrase",
+        RecoveryForm::Codes => "codes",
+    }
+}
+
+/// A field's value and when it was written. `None` for a key the kind does not have.
+pub(crate) fn raw(entry: &mut Entry, key: &str) -> Option<(Raw, Hlc)> {
+    Some(match slot(&mut entry.kind, key)? {
+        Slot::Text(v) => (Raw::Text(v.v.clone()), v.at),
+        Slot::Secret(v) => (Raw::Secret(v.v.clone()), v.at),
+        Slot::Flag(v) => (Raw::Flag(v.v), v.at),
+        Slot::Millis(v) => (Raw::Millis(v.v), v.at),
+        Slot::Port(v) => (Raw::Port(v.v), v.at),
+        Slot::Link(v) => (Raw::Link(v.v.clone()), v.at),
+        Slot::Wifi(v) => (Raw::Wifi(v.v), v.at),
+        Slot::Form(v) => (Raw::Form(v.v), v.at),
+    })
+}
+
+/// Writes a value read with [`raw`] from an item of the same kind. A secret it replaces joins
+/// the history, as with [`set_secret`]. False when the types do not line up.
+pub(crate) fn put_raw(entry: &mut Entry, key: &str, value: Raw, at: Hlc) -> bool {
+    let mut old: Option<Revision> = None;
+    let fits = match (slot(&mut entry.kind, key), value) {
+        (Some(Slot::Text(v)), Raw::Text(new)) => {
+            *v = Lww::new(new, at);
+            true
+        }
+        (Some(Slot::Secret(v)), Raw::Secret(new)) => {
+            if !v.v.is_empty() && v.v != new {
+                old = Some(Revision {
+                    field: key.to_owned(),
+                    value: v.v.clone(),
+                    at: v.at,
+                });
+            }
+            *v = Lww::new(new, at);
+            true
+        }
+        (Some(Slot::Flag(v)), Raw::Flag(new)) => {
+            *v = Lww::new(new, at);
+            true
+        }
+        (Some(Slot::Millis(v)), Raw::Millis(new)) => {
+            *v = Lww::new(new, at);
+            true
+        }
+        (Some(Slot::Port(v)), Raw::Port(new)) => {
+            *v = Lww::new(new, at);
+            true
+        }
+        (Some(Slot::Link(v)), Raw::Link(new)) => {
+            *v = Lww::new(new, at);
+            true
+        }
+        (Some(Slot::Wifi(v)), Raw::Wifi(new)) => {
+            *v = Lww::new(new, at);
+            true
+        }
+        (Some(Slot::Form(v)), Raw::Form(new)) => {
+            *v = Lww::new(new, at);
+            true
+        }
+        _ => false,
+    };
+    entry.history.extend(old);
+    fits
 }
 
 /// One line under an entry's title in a list. Never a secret: a card shows its last

@@ -323,6 +323,24 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
         val next = Accounts.takeSignInNext()?.let { id -> accounts.firstOrNull { it.id == id } }
         mutableStateOf(next ?: if (hasLocal) null else accounts.firstOrNull())
     }
+    // An account changed or removed in a sheet here is the one to use, or gone.
+    LaunchedEffect(accounts) { source = source?.let { chosen -> accounts.firstOrNull { it.id == chosen.id } } }
+    var editingAccount by remember { mutableStateOf<AccountRef?>(null) }
+    editingAccount?.let { ref -> com.wasimaster.wmpass.ui.settings.AddAccountSheet(existing = ref) { editingAccount = null } }
+
+    /** A setup that has never opened gets its fix where it failed: a wrong address or email shows up here. */
+    @Composable
+    fun StuckAccount() {
+        val stuck = source?.takeIf { !it.opened && message != null } ?: return
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
+            androidx.compose.material3.TextButton(onClick = { editingAccount = stuck }) { Text("Change the details") }
+            androidx.compose.material3.TextButton(onClick = {
+                Accounts.remove(context, stuck.id)
+                source = null
+                message = null
+            }) { Text("Remove this account", color = colors.danger) }
+        }
+    }
     // After a reset the look is standard, so only the standard door below says why.
     val notice = remember { LaunchGuard.takeNotice() }
     val codeField = rememberTextFieldState()
@@ -582,6 +600,7 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
             AnimatedVisibility(message != null, enter = fadeIn(), exit = fadeOut()) {
                 Text(message.orEmpty(), color = colors.danger, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 16.dp, top = 4.dp))
             }
+            StuckAccount()
             Spacer(Modifier.height(16.dp))
             // Stretching the password takes a second or two; the bar says it is happening.
             AnimatedVisibility(busy, enter = fadeIn() + androidx.compose.animation.expandVertically(), exit = fadeOut() + androidx.compose.animation.shrinkVertically()) {
@@ -676,6 +695,7 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
             ) {
                 GoButton(field.text.isNotEmpty() && remaining == 0L && shield != ShieldState.WORKING) { submit() }
             }
+            StuckAccount()
             if (source?.kind == "kdbx") {
                 Spacer(Modifier.height(12.dp))
                 QuietButton(
@@ -1044,7 +1064,7 @@ private fun ComingBack(onDismiss: () -> Unit) {
                     }
             }
         }
-        "account" -> com.wasimaster.wmpass.ui.settings.AddAccountSheet(onDismiss)
+        "account" -> com.wasimaster.wmpass.ui.settings.AddAccountSheet(onDismiss = onDismiss)
         "shares" -> SharesSheet(onDismiss)
         "join" -> JoinSheet(onDismiss)
     }

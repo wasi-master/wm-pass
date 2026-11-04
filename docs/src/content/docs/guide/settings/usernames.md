@@ -64,7 +64,9 @@ A site that limits how often it can be asked gives no clear answer until you try
 
 #### On Android
 
-Asks every site about the name in the box at once. A bar shows how many have answered, and each row fills in as its answer comes.
+Asks every site about the names in the box at once. A bar shows how many have answered, and each row fills in as its answer comes.
+
+Type one name, or up to ten with spaces or commas between them. With several, a chip for each name shows how many sites it is free on, and tapping a chip lists that name's answer from every site.
 
 - *Free* means the site showed no profile under that name.
 - *Taken* means somebody has it.
