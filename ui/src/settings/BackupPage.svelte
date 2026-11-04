@@ -6,19 +6,18 @@
   import Row from '../parts/Row.svelte';
   import { overlays } from '../parts/floating.svelte';
   import { pass } from '../engine/pass.svelte';
-  import { host, type PlaceFile } from '../engine/host';
+  import { host } from '../engine/host';
   import { shownName } from '../hosts/folders';
   import Choice from './Choice.svelte';
+  import CopiesDialog from './CopiesDialog.svelte';
   import PlaceDialog from './PlaceDialog.svelte';
   import { kindOf } from './placeKinds';
-  import { placeProblem, places, type Place } from './places.svelte';
+  import { places, type Place } from './places.svelte';
 
   let adding = $state(false);
   let editing = $state<Place | null>(null);
   let acting = $state<Place | null>(null);
   let restoring = $state<Place | null>(null);
-  let copies = $state<PlaceFile[] | null>(null);
-  let copiesProblem = $state<string | null>(null);
   let busy = $state<string | null>(null);
   let message = $state<string | null>(null);
 
@@ -57,26 +56,14 @@
     if (file) message = mergedText(await pass.mergeIn(file.bytes));
   }
 
-  async function openCopies(place: Place) {
+  function openCopies(place: Place) {
     acting = null;
     restoring = place;
-    copies = null;
-    copiesProblem = null;
-    try {
-      copies = await places.copies(place);
-    } catch (failure) {
-      copiesProblem = placeProblem(failure);
-    }
   }
 
-  async function bringBack(file: PlaceFile) {
-    try {
-      const bytes = await places.read(restoring!, file);
-      message = mergedText(await pass.mergeIn(bytes));
-      restoring = null;
-    } catch (failure) {
-      copiesProblem = placeProblem(failure);
-    }
+  async function bringBack(bytes: Uint8Array) {
+    message = mergedText(await pass.mergeIn(bytes));
+    restoring = null;
   }
 
   async function stopUsing(place: Place) {
@@ -127,18 +114,4 @@
     </div>
   </Dialog>
 {/if}
-{#if restoring}
-  <Dialog title="Copies at {restoring.label}" onclose={() => (restoring = null)}>
-    {#if copiesProblem}<p class="danger-text">{copiesProblem}</p>{/if}
-    {#if copies === null && !copiesProblem}<p class="dim">Looking…</p>{/if}
-    {#if copies?.length === 0}<p class="dim">There are no copies here yet.</p>{/if}
-    {#if copies?.length}
-      <div style="border:1px solid var(--hair);border-radius:var(--r-m);overflow:hidden">
-        {#each copies.slice(0, 30) as file}
-          <Row title={file.modified_ms > 0 ? whenShort(file.modified_ms) : file.name} icon="history" onclick={() => bringBack(file)} />
-        {/each}
-      </div>
-    {/if}
-    {#snippet foot()}<Btn label="Close" onclick={() => (restoring = null)} />{/snippet}
-  </Dialog>
-{/if}
+{#if restoring}<CopiesDialog place={restoring} onclose={() => (restoring = null)} onchoose={bringBack} />{/if}

@@ -22,7 +22,7 @@ If you have accounts or KeePass files, they show as choices above the password: 
 
 A vault that needs a security key asks you to plug it in and touch it. If you turned on [Unlock from the system keyring](/guide/settings/security/#action-keyring-unlock), **Unlock from the system keyring** opens the vault without the password.
 
-**Add another vault or account**, or **I already have a vault** on a new device, offers four ways in: Get it from another device, over this network; **Restore from a file**, for a .wmvault or .wmbackup file; **Open a KeePass file or sign in**; and **Recover with emergency shares**.
+**Add another vault or account**, or **I already have a vault** on a new device, offers these ways in: Get it from another device, over this network; **Restore from a file**, for a .wmvault or .wmbackup file; **Restore from a backup location**, which signs in to a place such as WebDAV or a cloud drive, lists the copies there and brings one back, and keeps it as a place for backups; **Open a KeePass file or sign in**; and **Recover with emergency shares**.
 
 #### When to use it
 

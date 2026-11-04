@@ -18,6 +18,10 @@
   import type { NeededFactor, StrengthView } from '../engine/types';
   import { accounts, nothingToUnlock, type AccountRef } from '../settings/accounts.svelte';
   import AddAccount from '../settings/AddAccount.svelte';
+  import CopiesDialog from '../settings/CopiesDialog.svelte';
+  import PlaceDialog from '../settings/PlaceDialog.svelte';
+  import { PLACE_KINDS } from '../settings/placeKinds';
+  import { places, type Place } from '../settings/places.svelte';
   import { hardwareTap, hardwareAvailable } from '../settings/hardware';
 
   // A KeePass file or a server account is something to unlock too, with no vault of its own here.
@@ -40,7 +44,9 @@
   // Bitwarden's check on a device it has not seen before, rather than a two-step code.
   let emailedCode = $state(false);
   let returning = $state(false);
-  let sheet = $state<'account' | 'shares' | 'join' | 'link' | null>(null);
+  let sheet = $state<'account' | 'shares' | 'join' | 'link' | 'place' | 'copies' | null>(null);
+  /** The backup place a vault is being brought back from. */
+  let fromPlace = $state<Place | null>(null);
   /** Said once a vault has come from another device, above the password field. */
   let arrivedFrom = $state<string | null>(null);
   let problem = $state<string | null>(null);
@@ -264,6 +270,26 @@
     }
   }
 
+  /** What this build can restore from, named briefly: the first few kinds it offers. */
+  function placeKindsText() {
+    const offered = new Set(host().places?.kinds ?? []);
+    const names = PLACE_KINDS.filter((k) => offered.has(k.id)).map((k) => k.name);
+    return names.length > 4 ? `${names.slice(0, 4).join(', ')} and more` : names.join(', ');
+  }
+
+  function openPlace(place: Place) {
+    returning = false;
+    fromPlace = place;
+    sheet = 'copies';
+  }
+
+  async function restorePlaceCopy(bytes: Uint8Array) {
+    await pass.restore(bytes);
+    sheet = null;
+    fromPlace = null;
+    creating = false;
+  }
+
   async function recover() {
     if (!sharesFile) return;
     busy = true;
@@ -390,6 +416,16 @@
       <button type="button" class="set-row" onclick={restoreFile}>
         <span class="text">Restore from a file<span class="sub" style="display:block">A .wmvault or .wmbackup file, from a backup or another device</span></span>
       </button>
+      {#if host().places}
+        {#each places.list as place (place.id)}
+          <button type="button" class="set-row" onclick={() => openPlace(place)}>
+            <span class="text">Restore from {place.label}<span class="sub" style="display:block">The newest copy kept there, or an older one</span></span>
+          </button>
+        {/each}
+        <button type="button" class="set-row" onclick={() => { returning = false; sheet = 'place'; }}>
+          <span class="text">Restore from a backup location<span class="sub" style="display:block">{placeKindsText()}</span></span>
+        </button>
+      {/if}
       <button type="button" class="set-row" onclick={() => { returning = false; sheet = 'account'; }}>
         <span class="text">Open a KeePass file or sign in<span class="sub" style="display:block">KeePass, Bitwarden, Vaultwarden or a WM Pass server</span></span>
       </button>
@@ -432,6 +468,21 @@
       accountKeyFile = null;
     }}
   />
+{/if}
+
+{#if sheet === 'place'}
+  <PlaceDialog
+    onclose={() => {
+      if (sheet === 'place') sheet = null;
+    }}
+    onsaved={(place) => {
+      fromPlace = place;
+      sheet = 'copies';
+    }}
+  />
+{/if}
+{#if sheet === 'copies' && fromPlace}
+  <CopiesDialog place={fromPlace} onclose={() => { sheet = null; fromPlace = null; }} onchoose={restorePlaceCopy} />
 {/if}
 
 {#if sheet === 'shares'}
