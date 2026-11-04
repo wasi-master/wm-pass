@@ -735,3 +735,41 @@ fn deep_xml_is_refused_not_overflowed() {
     );
     assert!(import(Format::KeePassXml, xml.as_bytes(), None, AT).is_err());
 }
+
+/// What SafeInCloud 27.14.4 on Android writes from Manage databases, Backup: the same
+/// database format, not an export. One login, one card and one note.
+const ANDROID_BACKUP: &[u8] = include_bytes!("../../tests/fixtures/safeincloud/android-backup.db");
+
+#[test]
+fn safeincloud_android_backup_is_a_database() {
+    assert_eq!(detect(ANDROID_BACKUP), Some(Format::SafeInCloudDb));
+    assert!(needs_password(ANDROID_BACKUP));
+    let imported = import(
+        Format::SafeInCloudDb,
+        ANDROID_BACKUP,
+        Some("sicdummy2026"),
+        AT,
+    )
+    .unwrap();
+    assert_eq!(imported.entries.len(), 3);
+
+    let github = titled(&imported, "github");
+    let login = github.entry.login().unwrap();
+    assert_eq!(login.username.v, "jacob@example.com");
+    assert_eq!(login.password.v.expose(), "hunter2 dummy");
+    assert_eq!(
+        github.entry.common.notes.v.expose(),
+        "dummy login for import test"
+    );
+
+    let Kind::Card(card) = &titled(&imported, "test visa").entry.kind else {
+        panic!("test visa is not a card");
+    };
+    assert_eq!(card.number.v.expose(), "4242424242424242");
+    assert_eq!(card.cvv.v.expose(), "123");
+
+    let Kind::Note(note) = &titled(&imported, "WiFi codes").entry.kind else {
+        panic!("WiFi codes is not a note");
+    };
+    assert_eq!(note.body.v.expose(), "router password is dummy123");
+}
