@@ -205,11 +205,11 @@ A one-time code counts down with a ring and shows the next code in its last ten 
 
 Further down are the websites and apps, passkeys, fields of your own, security questions, notes, an email alias, attachments, linked items, the reminder and the tags. An app shows by its name when WM Pass knows it, with its package name under it.
 
+A login for a website also has **Change the password on the site**, which opens the page the site keeps for that: one from a list of known pages, or the address the site lists at /.well-known/change-password. Logins for apps and for devices on your own network have none.
+
 Each tag has a cross that takes it off this item; clicking a tag lists everything with it. Right-click a tag to rename it, delete it from every item, or give it an icon. **Suggested** offers the tags the item's site and kind suggest, guessed on your device.
 
 A Wi-Fi network has **QR code**, which shows the code another phone's camera reads to join it. An enterprise network has none.
-
-A login for a website also has **Change the password on the site**, which opens the page the site keeps for that: one from a list of known pages, or the address the site lists at /.well-known/change-password. Logins for apps and for devices on your own network have none.
 
 The history link at the bottom, such as **History, 2 earlier**, lists earlier values of secret fields, each hidden until you show it.
 
@@ -290,8 +290,6 @@ Further sections open when you need them: **Websites and apps** for a login, **O
 A login's name, websites and apps suggest each other under **Goes with this login**: facebook.com offers messenger.com and the Facebook, Lite and Messenger apps, and a login without a name is offered one. They are worked out on your device.
 
 Fields with common values, such as a database's engine or a card's issuer, offer them as chips while you type.
-
-In **One-time code**, paste the site's setup key or `otpauth://` link, or choose **Scan its QR code**. On a computer, that reads the code with the webcam, or from a screenshot through **Choose a picture**. The picture is read on your device and sent nowhere.
 
 A secret that is already saved shows as **Saved. Tap to change** and stays in the vault until you tap it, so fixing a name never brings the password onto the screen.
 
