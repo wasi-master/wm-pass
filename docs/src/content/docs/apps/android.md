@@ -25,7 +25,7 @@ A login can name the apps it is for as well as its websites. In the editor, open
 
 When WM Pass offers to save a login you just typed somewhere, the name, username, password and website can all be changed before it is kept. A login typed into an app with no website of its own gets the sites that go with that app offered, the first one filled in, and is linked to the app as well.
 
-The name, the websites and the apps suggest each other. Type facebook.com and **Goes with this login** offers Facebook, Facebook Lite and Messenger if they are installed, messenger.com, and Facebook as the name; start from the name or from an app and the rest follow the same way. The families come from Apple's list of sites that share one sign-in, with a few of WM Pass's own added.
+The name, the websites and the apps suggest each other. Type facebook.com and **Goes with this login** offers Facebook, Facebook Lite and Messenger if they are installed, messenger.com, and Facebook as the name; start from the name or from an app and the rest follow the same way. The families come from Apple's list of sites that share one sign-in and from WM Pass's own, such as Google's sites in every country with YouTube and Gmail. Other names come before the same name under another ending, so google.com offers youtube.com before google.de, and an app is offered for a short word only when that word is the whole first word of its name: one.com does not bring OneDrive.
 
 ## Adding and editing items
 

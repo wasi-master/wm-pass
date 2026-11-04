@@ -21,6 +21,8 @@ struct Sample {
     text: String,
     class: usize,
     weight: u32,
+    /// Held out in turn to measure the model: the domains' own names.
+    check: bool,
 }
 
 fn class_of(name: &str) -> Option<usize> {
@@ -46,6 +48,7 @@ fn samples() -> Vec<Sample> {
                 text: name,
                 class,
                 weight: 1,
+                check: true,
             });
         }
     }
@@ -61,13 +64,13 @@ fn samples() -> Vec<Sample> {
             text: text.to_owned(),
             class: class_of(category).unwrap(),
             weight: KEYWORD_WEIGHT,
+            check: false,
         });
     }
     let gaming = class_of("Gaming").unwrap();
-    for line in fs::read_to_string(root().join("games.tsv"))
-        .unwrap()
-        .lines()
-    {
+    let games = fs::read_to_string(root().join("games.tsv")).unwrap()
+        + &fs::read_to_string(root().join("wikidata/games.tsv")).unwrap();
+    for line in games.lines() {
         if line.starts_with('#') || line.is_empty() {
             continue;
         }
@@ -76,6 +79,28 @@ fn samples() -> Vec<Sample> {
             text: name.to_owned(),
             class: gaming,
             weight: GAME_WEIGHT,
+            check: false,
+        });
+    }
+    // What organisations are called, which says more than their domains: "Banco do Brasil",
+    // "Universität Wien", "Air Canada".
+    for line in fs::read_to_string(root().join("wikidata/sites.tsv"))
+        .unwrap()
+        .lines()
+    {
+        if line.starts_with('#') || line.is_empty() {
+            continue;
+        }
+        let mut columns = line.split('\t');
+        let (_, category, name) = (columns.next().unwrap(), columns.next().unwrap(), columns.next().unwrap_or(""));
+        if name.is_empty() {
+            continue;
+        }
+        out.push(Sample {
+            text: name.to_owned(),
+            class: class_of(category).unwrap(),
+            weight: 1,
+            check: false,
         });
     }
     out
@@ -122,11 +147,11 @@ fn main() {
         let train_set = data
             .iter()
             .enumerate()
-            .filter(|(i, s)| s.weight > 1 || i % 5 != fold)
+            .filter(|(i, s)| !s.check || i % 5 != fold)
             .map(|(_, s)| s);
         let model = train(train_set);
         for (index, sample) in data.iter().enumerate() {
-            if sample.weight > 1 || index % 5 != fold {
+            if !sample.check || index % 5 != fold {
                 continue;
             }
             asked += 1;

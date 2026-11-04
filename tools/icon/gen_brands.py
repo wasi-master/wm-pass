@@ -251,6 +251,21 @@ def own_domain(icon, slug):
     return host
 
 
+def from_wikidata(icon, slug):
+    """Wikidata's sites for a brand, unless the logo's own source is a site that is none of them:
+    the Prisma logo comes from prisma.io, so the Finnish shop's prisma.fi is another Prisma."""
+    domains = wikidata.get(slug)
+    match = re.match(r"https?://([^/]+)", icon.get("source", ""))
+    if not domains or not match:
+        return domains
+    host = match.group(1).lower()
+    if NOT_THE_SITE.search(host):
+        return domains
+    if any(host == d or host.endswith("." + d) for d in domains.split(",")):
+        return domains
+    return None
+
+
 def other_names(icon):
     aliases = icon.get("aliases") or {}
     names = list(aliases.get("aka", [])) + list(aliases.get("old", []))
@@ -258,6 +273,16 @@ def other_names(icon):
     names += list((aliases.get("loc") or {}).values())
     return [n for n in names if "," not in n and "\t" not in n]
 
+
+# Official sites from Wikidata (CC0), by tools/data/wikidata.py, for brands whose logo's source
+# names none.
+wikidata = {}
+wikidata_file = pathlib.Path("data/wikidata/brands.tsv")
+if wikidata_file.exists():
+    for line in wikidata_file.read_text().splitlines():
+        if line and not line.startswith("#"):
+            slug, domains = line.split("\t")
+            wikidata[slug] = domains
 
 curated = {}
 for row in SITES:
@@ -293,7 +318,7 @@ for slug in order:
     if not found:
         missing.append(slug)
         continue
-    domains = curated.get(slug) or own_domain(icon, slug) or ""
+    domains = curated.get(slug) or own_domain(icon, slug) or from_wikidata(icon, slug) or ""
     index.append("\t".join([slug, icon["title"], icon["hex"], domains, ",".join(other_names(icon))]))
     chunks.setdefault(slug[0], []).append(f"{slug}\t{found.group(1)}")
 
