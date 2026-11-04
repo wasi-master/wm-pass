@@ -5,6 +5,12 @@ description: The Chrome and Firefox extension, how it fills logins, and how it c
 
 The extension runs the same core as the other apps, as WebAssembly. It can hold its own vault, use the one open in the desktop app, or both. Settings, Import reads other apps' exports, as the [import guide](/guides/import-export/) describes.
 
+## Installing in Firefox
+
+It needs Firefox 140 or later. Download `wm-pass-firefox.xpi` from the newest release tagged `extension-v` on the [releases page](https://github.com/wasi-master/wm-pass/releases) and open it in Firefox, by dragging it onto a window or through File, Open File. Mozilla has signed that file, so Firefox keeps it installed. Ctrl+Shift+L (Cmd+Shift+L on a Mac) opens the popup, and Firefox's Manage Extension Shortcuts page changes it.
+
+The `wm-pass-firefox.zip` beside it is the same build unsigned. Firefox loads it only for one session, from `about:debugging`, This Firefox, Load Temporary Add-on.
+
 ## Filling
 
 Click into a login field and a small key appears at its edge. Click that, then choose a login. Nothing fills when a page loads. The menu sits where the page's scripts cannot read or press it, and it ignores clicks that come too soon or land on a page that has faded or covered things, which is how sites try to steal a click.
@@ -42,5 +48,7 @@ A security key works through the browser, and one you add here works in every WM
 It cannot keep the SSH agent, type into other apps, or show widgets: those belong to the desktop app. Syncing directly with a phone or computer on your network is the desktop and phone apps' too; the extension's vault reaches them through a backup place. TikTok and Instagram answer only a browser that runs their scripts, so the username checker asks the desktop app for those two while it is connected.
 
 Self-hosted servers are reached through the browser, which cannot pin a certificate the way the apps do.
+
+Firefox lets no website talk to an extension, so the [web vault](/apps/web/) cannot hand over to it there.
 
 The browser can stop the extension's background at any quiet moment. Your main vault comes back open, since its key stays in the browser's memory until you lock or close the browser, but a nested vault locks.

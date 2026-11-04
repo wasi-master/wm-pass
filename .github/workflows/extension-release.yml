@@ -12,6 +12,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Mozilla signs each version once, so the tag has to name the version the manifest carries.
+      - env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=$(node -p "require('./extension/manifest.json').version")
+          if [ "extension-v$version" != "$TAG" ]; then
+            echo "::error::$TAG does not match the manifest's version $version."
+            exit 1
+          fi
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
@@ -19,10 +28,28 @@ jobs:
       - run: cargo install wasm-bindgen-cli --version 0.2.130 --locked
       - run: npm ci
       - run: npm run extension:build
+      - run: npm run extension:lint
       - run: |
           (cd extension/dist/chrome && zip -qr ../../../wm-pass-chrome.zip .)
           (cd extension/dist/firefox && zip -qr ../../../wm-pass-firefox.zip .)
+      # Release Firefox installs only add-ons Mozilla has signed. An unlisted signing comes back in
+      # minutes, without a store listing, and the .xpi it returns installs from the release page.
+      # Without the AMO_JWT_ISSUER and AMO_JWT_SECRET secrets the release carries only the zip.
+      - name: Sign for Firefox
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          if [ -z "$WEB_EXT_API_KEY" ] || [ -z "$WEB_EXT_API_SECRET" ]; then
+            echo "::warning::AMO_JWT_ISSUER or AMO_JWT_SECRET is not set, so the Firefox build is not signed."
+            exit 0
+          fi
+          npx --yes web-ext@10.8.0 sign --source-dir extension/dist/firefox --artifacts-dir web-ext-artifacts --channel unlisted
+          cp web-ext-artifacts/*.xpi wm-pass-firefox.xpi
       - env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
-        run: gh release create "$TAG" wm-pass-chrome.zip wm-pass-firefox.zip --draft --title "WM Pass extension $TAG"
+        run: |
+          files="wm-pass-chrome.zip wm-pass-firefox.zip"
+          [ -f wm-pass-firefox.xpi ] && files="$files wm-pass-firefox.xpi"
+          gh release create "$TAG" $files --draft --title "WM Pass extension $TAG"

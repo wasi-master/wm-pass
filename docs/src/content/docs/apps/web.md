@@ -7,7 +7,7 @@ The web vault is the whole app in a browser tab, at [wmpass.pages.dev/vault](htt
 
 ## With the extension installed
 
-The page offers to open your vault in the extension instead, and that is the better choice. The extension's code comes signed from the browser's store and changes only with an update, where the web vault's code is sent by the website on each visit. Choose **Always open the extension from here** to skip the question next time.
+The page offers to open your vault in the extension instead, and that is the better choice. The extension's code comes signed from the browser's store and changes only with an update, where the web vault's code is sent by the website on each visit. Choose **Always open the extension from here** to skip the question next time. Firefox does not let a page reach an extension, so there the page never offers.
 
 The two keep separate vaults. To use one vault in both, set up the same backup place in each, or move it with a backup file.
 
