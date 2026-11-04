@@ -59,6 +59,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -67,6 +68,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
@@ -382,6 +385,8 @@ object Backups {
             ).getOrThrow()
             Unit
         }
+        // Stopped, not failed: the worker or screen went away. Nothing to report about the place.
+        outcome.exceptionOrNull()?.let { if (it is CancellationException) throw it }
         val problem = outcome.exceptionOrNull()?.let(::sinkProblem)
         Destinations.noteRun(context, destination.id, RunResult(System.currentTimeMillis(), problem))
         problem?.let { Result.failure(IllegalStateException(it)) } ?: Result.success(Unit)
@@ -418,11 +423,15 @@ class BackupWorker(context: Context, params: WorkerParameters) : CoroutineWorker
 object FileSync {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var pending: Job? = null
+    private val trip = Mutex()
+
+    /** Set while a trip saves what it merged, so that save does not start another trip, or stop this one. */
+    @Volatile private var ownSave = false
     val problem = MutableStateFlow<String?>(null)
 
     /** A little after the last change, so that a burst of edits makes one trip. */
     fun soon(context: Context) {
-        if (Destinations.list.value.none { it.sync } || !NetAccess.allowed(context)) return
+        if (ownSave || Destinations.list.value.none { it.sync } || !NetAccess.allowed(context)) return
         pending?.cancel()
         pending = scope.launch {
             delay(20_000)
@@ -434,11 +443,15 @@ object FileSync {
         var trips = 0
         if (Pass.state.value !is LockState.Unlocked || Pass.account.value != null || Pass.child.value != null) return@withContext 0
         var failure: String? = null
-        Destinations.list.value.filter { it.sync }.forEach { place ->
-            val done = runCatching { one(context, place) }
-            done.exceptionOrNull()?.let { failure = sinkProblem(it) }
-            Destinations.noteRun(context, place.id, RunResult(System.currentTimeMillis(), done.exceptionOrNull()?.let(::sinkProblem)))
-            if (done.isSuccess) trips++
+        trip.withLock {
+            Destinations.list.value.filter { it.sync }.forEach { place ->
+                val done = runCatching { one(context, place) }
+                // A cancelled trip is not a problem at the place, so it is not written down as one.
+                done.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+                done.exceptionOrNull()?.let { failure = sinkProblem(it) }
+                Destinations.noteRun(context, place.id, RunResult(System.currentTimeMillis(), done.exceptionOrNull()?.let(::sinkProblem)))
+                if (done.isSuccess) trips++
+            }
         }
         problem.value = failure
         trips
@@ -454,7 +467,12 @@ object FileSync {
             val bytes = sink.read(other).getOrThrow().use { it.readBytes() }
             runCatching { Pass.mergeCopy(bytes) }
         }
-        Pass.flush()
+        ownSave = true
+        try {
+            Pass.flush()
+        } finally {
+            ownSave = false
+        }
         val group = Pass.plainCall("vault.chaff_name").obj["name"]!!.jsonPrimitive.content.take(16)
         // Attachments are sealed already. Each goes up once and stays, named under this vault.
         val blobPrefix = "$group-"
