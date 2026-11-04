@@ -57,6 +57,11 @@ abstract class CargoNdk @Inject constructor(private val exec: ExecOperations) : 
         exec.exec {
             workingDir = workspace.get().asFile
             environment("ANDROID_NDK_HOME", ndk)
+            // The workspace's release profile strips everything, which leaves nothing for Play to
+            // turn a native crash into names. Here it keeps symbols and line tables; AGP strips
+            // the copy that ships and puts the symbols in the bundle.
+            environment("CARGO_PROFILE_RELEASE_STRIP", "false")
+            environment("CARGO_PROFILE_RELEASE_DEBUG", "line-tables-only")
             val args = mutableListOf("cargo", "ndk")
             abis.get().forEach { args += listOf("-t", it) }
             args += listOf("-o", out.get().asFile.path, "build", "--release", "-p", "wmpass-jni")
