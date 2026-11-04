@@ -65,3 +65,20 @@ opt-level = "s"
 opt-level = 3
 [profile.test.package.argon2]
 opt-level = 3
+# The keepass crate's KeePass 1 reader computes padding with wrapping arithmetic, as
+# release builds do; with overflow checks a wrong password panics instead of failing.
+# Its key derivations (AES rounds, Argon2) are also far too slow unoptimised.
+[profile.dev.package.keepass]
+opt-level = 3
+overflow-checks = false
+[profile.test.package.keepass]
+opt-level = 3
+overflow-checks = false
+[profile.dev.package.rust-argon2]
+opt-level = 3
+[profile.test.package.rust-argon2]
+opt-level = 3
+[profile.dev.package.aes]
+opt-level = 3
+[profile.test.package.aes]
+opt-level = 3

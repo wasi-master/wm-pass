@@ -17,6 +17,9 @@
   let bytes = $state<Uint8Array | null>(null);
   let needsPassword = $state(false);
   let password = $state('');
+  // A KeePass database may also need its key file, or only that.
+  let keyFile = $state<{ name: string; bytes: Uint8Array } | null>(null);
+  const isKeePass = $derived(!!bytes && bytes.length > 4 && bytes[0] === 0x03 && bytes[1] === 0xd9 && bytes[2] === 0xa2 && bytes[3] === 0x9a);
   let error = $state<string | null>(null);
   let result = $state<string | null>(null);
 
@@ -88,12 +91,13 @@
     if (!bytes) return;
     const secret = bytesOf(password);
     try {
-      preview = (await pass.engine<ImportPreview>('import.read', {}, { handle: pass.handle, secret, blobs: [bytes] })).json;
+      const blobs = keyFile && isKeePass ? [bytes, keyFile.bytes] : [bytes];
+      preview = (await pass.engine<ImportPreview>('import.read', {}, { handle: pass.handle, secret, blobs })).json;
       needsPassword = false;
       error = null;
     } catch (failure: any) {
       needsPassword = failure.code === 'needs_password' || failure.code === 'wrong_password' || /password/i.test(failure.message ?? '');
-      error = needsPassword && !password ? null : failure.message;
+      error = needsPassword && !password && !keyFile ? null : failure.message;
     } finally {
       secret.fill(0);
     }
@@ -123,7 +127,17 @@
     preview = null;
     result = null;
     password = '';
+    keyFile?.bytes.fill(0);
+    keyFile = null;
     await read();
+  }
+
+  async function chooseKeyFile() {
+    const file = await host().pickFile('Choose the key file');
+    if (!file) return;
+    keyFile?.bytes.fill(0);
+    keyFile = { name: file.name, bytes: file.bytes };
+    error = null;
   }
 
   async function apply() {
@@ -132,6 +146,8 @@
     result = `Added ${reply.json.added}${into ? ` to ${into}` : ''}. Skipped ${reply.json.duplicates} already there.`;
     bytes?.fill(0);
     bytes = null;
+    keyFile?.bytes.fill(0);
+    keyFile = null;
     codes = [];
     preview = null;
   }
@@ -175,10 +191,14 @@
       <Btn label="Choose another file" onclick={another} />
     </div>
   {:else if needsPassword}
-    <p style="font-size:var(--fs-l);font-weight:600">This file has a password</p>
-    <PasswordField bind:value={password} placeholder="The file’s password" autofocus onenter={read} />
+    <p style="font-size:var(--fs-l);font-weight:600">{isKeePass ? 'This database is locked' : 'This file has a password'}</p>
+    {#if isKeePass}<p class="dim">Enter its password. If it also uses a key file, add that too. A database locked by a key file alone needs no password.</p>{/if}
+    <PasswordField bind:value={password} placeholder={keyFile ? 'The password, if it has one' : 'The file’s password'} autofocus onenter={read} />
     {#if error}<p class="danger-text">{error}</p>{/if}
-    <div><Btn label="Open" variant="primary" disabled={!password} onclick={read} /></div>
+    <div class="gap" style="flex-wrap:wrap">
+      <Btn label="Open" variant="primary" disabled={!password && !keyFile} onclick={read} />
+      {#if isKeePass}<Btn label={keyFile ? `Key file: ${keyFile.name}` : 'Add key file'} icon="key" onclick={chooseKeyFile} />{/if}
+    </div>
   {:else}
     <p style="font-size:var(--fs-l);font-weight:600">Bring everything over</p>
     <p class="dim">{FORMATS}</p>

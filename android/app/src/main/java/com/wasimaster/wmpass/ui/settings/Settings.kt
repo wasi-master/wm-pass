@@ -1236,17 +1236,20 @@ private fun ImportScreen() {
     var error by remember { mutableStateOf<String?>(null) }
     var result by remember { mutableStateOf<String?>(null) }
     val password = rememberTextFieldState()
+    // A KeePass database may also need its key file, or only that.
+    var keyFile by remember { mutableStateOf<ByteArray?>(null) }
+    val isKeePass = bytes?.let { it.size > 4 && it[0] == 0x03.toByte() && it[1] == 0xd9.toByte() && it[2] == 0xa2.toByte() && it[3] == 0x9a.toByte() } == true
     suspend fun read() {
         val data = bytes ?: return
         val secret = password.text.toString().toByteArray()
         try {
-            val reply = Pass.plainCall("import.read", secret = secret, blobs = listOf(data))
+            val reply = Pass.plainCall("import.read", secret = secret, blobs = listOfNotNull(data, keyFile?.takeIf { isKeePass }))
             preview = com.wasimaster.wmpass.core.Engine.json.decodeFromJsonElement(ImportPreview.serializer(), reply.json)
             needsPassword = false
             error = null
         } catch (failure: NativeFailure) {
             needsPassword = failure.code == "needs_password" || failure.code == "wrong_password" || failure.message.orEmpty().contains("password", ignoreCase = true)
-            error = if (needsPassword && password.text.isEmpty()) null else failure.message
+            error = if (needsPassword && password.text.isEmpty() && keyFile == null) null else failure.message
         } finally {
             secret.fill(0)
         }
@@ -1284,8 +1287,18 @@ private fun ImportScreen() {
                 bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                 preview = null
                 result = null
+                password.clearText()
+                keyFile?.fill(0)
+                keyFile = null
                 read()
             }
+        }
+    }
+    val pickKeyFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            keyFile?.fill(0)
+            keyFile = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            error = null
         }
     }
     var savedWifi by remember { mutableStateOf(false) }
@@ -1419,10 +1432,16 @@ private fun ImportScreen() {
                     }
                 }
                 needsPassword -> {
-                    Text("This file has a password", color = colors.text, style = MaterialTheme.typography.titleLarge)
-                    PasswordPill(password, "The file's password")
+                    Text(if (isKeePass) "This database is locked" else "This file has a password", color = colors.text, style = MaterialTheme.typography.titleLarge)
+                    if (isKeePass) {
+                        Text("Enter its password. If it also uses a key file, add that too. A database locked by a key file alone needs no password.", color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
+                    }
+                    PasswordPill(password, if (keyFile != null) "The password, if it has one" else "The file's password")
                     error?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
-                    PrimaryButton("Open", Modifier.fillMaxWidth(), enabled = password.text.isNotEmpty()) { shell.launch { read() } }
+                    PrimaryButton("Open", Modifier.fillMaxWidth(), enabled = password.text.isNotEmpty() || keyFile != null) { shell.launch { read() } }
+                    if (isKeePass) {
+                        QuietButton(if (keyFile == null) "Add key file" else "Key file added", Modifier.fillMaxWidth(), PassIcons.Key, colors.primary) { pickKeyFile.launch(arrayOf("*/*")) }
+                    }
                 }
                 else -> {
                     Text("Bring everything over", color = colors.text, style = MaterialTheme.typography.titleLarge)

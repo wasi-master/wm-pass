@@ -3,6 +3,7 @@
 
 import { host } from '../engine/host';
 import { pass } from '../engine/pass.svelte';
+import { overlays } from '../parts/floating.svelte';
 import { online } from './net.svelte';
 
 export interface AccountRef {
@@ -138,6 +139,12 @@ class Accounts {
       await host().writeFile(`${FOLDER}/${ref.id}.bak`, data);
       await this.writeKdbx(ref, bytes);
     });
+    if (reply.json.kdbx_upgrade) {
+      overlays.toast(
+        'This file is in the older KDBX 3 format. The first change saved rewrites it as KDBX 4, which KeePass 2.35 or later, KeePassXC 2.3 or later, KeePassDX and Strongbox open. WM Pass keeps a copy of the file as it was.',
+        { ms: 12000 },
+      );
+    }
   }
 
   /**

@@ -118,8 +118,11 @@
     setTimeout(() => (refused = false), 400);
   }
 
+  // A KeePass database may be locked by its key file alone, with no password.
+  const keyFileOnly = $derived(source?.kind === 'kdbx' && accountKeyFile !== null);
+
   async function submitAccount(ref: AccountRef) {
-    if (busy || !password || remaining > 0) return;
+    if (busy || (!password && !keyFileOnly) || remaining > 0) return;
     busy = true;
     message = null;
     const bytes = bytesOf(password);
@@ -305,7 +308,7 @@
       {#if asksCode}<Field bind:value={code} placeholder={emailedCode ? 'Code from the email' : 'Two-factor code'} mono />{/if}
       <PasswordField
         bind:value={password}
-        placeholder={source ? 'Password' : 'Master password'}
+        placeholder={source ? (keyFileOnly ? 'Password, if it has one' : 'Password') : 'Master password'}
         autofocus
         disabled={remaining > 0 || busy}
         error={message !== null}
@@ -316,7 +319,7 @@
       {#if quick}
         <Btn label={host().quick?.title ?? 'Quick unlock'} wide onclick={unlockQuick} disabled={busy} />
       {/if}
-      <Btn label={busy ? 'Unlocking…' : 'Unlock'} variant="primary" wide type="submit" disabled={!password || remaining > 0 || busy} />
+      <Btn label={busy ? 'Unlocking…' : 'Unlock'} variant="primary" wide type="submit" disabled={(!password && !keyFileOnly) || remaining > 0 || busy} />
       {#if source?.kind === 'kdbx'}
         <Btn
           label={accountKeyFile ? 'Key file added' : 'Add key file'}

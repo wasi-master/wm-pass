@@ -372,8 +372,11 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
         snapshotFlow { field.text.length }.collectLatest { typed++ }
     }
 
+    // A KeePass database may be locked by its key file alone, with no password.
+    fun keyFileOnly() = source?.kind == "kdbx" && keyFile != null
+
     fun submitAccount(ref: AccountRef) {
-        if (shield == ShieldState.WORKING || field.text.isEmpty() || remaining > 0) return
+        if (shield == ShieldState.WORKING || (field.text.isEmpty() && !keyFileOnly()) || remaining > 0) return
         val password = field.text.toString().toByteArray()
         shield = ShieldState.WORKING
         message = null
@@ -626,7 +629,7 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
             PrimaryButton(
                 if (busy) "Unlocking…" else "Unlock",
                 Modifier.fillMaxWidth().onGloballyPositioned { com.wasimaster.wmpass.ui.DoorRevealFrom.value = it.boundsInRoot().center },
-                enabled = field.text.isNotEmpty() && remaining == 0L && !busy,
+                enabled = (field.text.isNotEmpty() || keyFileOnly()) && remaining == 0L && !busy,
             ) { submit() }
             if (source?.kind == "kdbx") {
                 Spacer(Modifier.height(8.dp))
@@ -717,7 +720,7 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
                 focus = focus,
                 onSubmit = { submit() },
             ) {
-                GoButton(field.text.isNotEmpty() && remaining == 0L && shield != ShieldState.WORKING) { submit() }
+                GoButton((field.text.isNotEmpty() || keyFileOnly()) && remaining == 0L && shield != ShieldState.WORKING) { submit() }
             }
             StuckAccount()
             if (source?.kind == "kdbx") {

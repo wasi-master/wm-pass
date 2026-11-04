@@ -419,11 +419,28 @@ fn xml_kind(text: &str) -> Option<Format> {
 
 /// Reads a file. `at` stamps everything, so imported data loses to newer edits.
 pub fn import(format: Format, data: &[u8], password: Option<&str>, at: Hlc) -> Result<Imported> {
+    import_with_key_file(format, data, password, None, at)
+}
+
+/// Like [`import`], with a KeePass key file. A KeePass database with a key file may
+/// have no password at all, so then `password` may be empty or absent.
+pub fn import_with_key_file(
+    format: Format,
+    data: &[u8],
+    password: Option<&str>,
+    key_file: Option<&[u8]>,
+    at: Hlc,
+) -> Result<Imported> {
     match format {
         Format::Kdbx => {
-            let password =
-                password.ok_or_else(|| Error::Import("this database needs its password".into()))?;
-            kdbx::import(data, password, None, at)
+            let password = match (password, key_file) {
+                (Some(password), _) => password,
+                (None, Some(_)) => "",
+                (None, None) => {
+                    return Err(Error::Import("this database needs its password".into()));
+                }
+            };
+            kdbx::import(data, password, key_file, at)
         }
         Format::SafeInCloudDb => safeincloud::database(data, password, at),
         Format::OnePux => onepux::import_1pux(data, at),
@@ -566,3 +583,5 @@ pub fn apply(vault: &mut Vault, imported: Imported, now_ms: u64) -> Result<Apply
 mod tests;
 #[cfg(test)]
 mod tests_more;
+#[cfg(test)]
+mod tests_kdbx;

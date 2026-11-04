@@ -701,10 +701,14 @@ impl Service {
                 let password = Secret::new(text(call.secret)?);
                 let key_file = blob(&call, 1).ok().map(<[u8]>::to_vec);
                 let backend = wmpass_core::backend::KdbxBackend::open(blob(&call, 0)?, password, key_file)?;
+                // KDBX 3 is read but written as KDBX 4, which apps from before 2017 cannot open.
+                let upgrade = backend.will_upgrade();
                 let remote = crate::remote::Remote::new(crate::remote::Account::Kdbx(Box::new(backend)));
                 let handle = self.mirror(&a.name, remote, now)?;
                 let session = self.session(handle)?;
-                Ok(Reply::view(Self::opened(handle, 0, &session.vault)))
+                let mut view = Self::opened(handle, 0, &session.vault);
+                view["kdbx_upgrade"] = json!(upgrade);
+                Ok(Reply::view(view))
             }
             "emergency.recover" => {
                 #[derive(Deserialize, Default)]
@@ -2372,8 +2376,10 @@ impl Service {
                 let password = (!call.secret.is_empty())
                     .then(|| text(call.secret))
                     .transpose()?;
+                // A KeePass key file, when the database has one.
+                let key_file = blob(&call, 1).ok();
                 let at = session.vault.tick(now);
-                let imported = io::import(format, data, password, at)?;
+                let imported = io::import_with_key_file(format, data, password, key_file, at)?;
                 let titles: Vec<&str> = imported
                     .entries
                     .iter()
@@ -2424,8 +2430,12 @@ impl Service {
                     "bitwarden" => io::export::to_bitwarden_json(&session.vault)?,
                     "html" => io::export::to_print_html(&session.vault),
                     "kdbx" => {
-                        let entries: Vec<&Entry> = session.vault.visible().collect();
-                        let file = io::kdbx::export(&entries, text(call.secret)?)?;
+                        let entries: Vec<(&Entry, String)> = session
+                            .vault
+                            .visible()
+                            .map(|entry| (entry, io::export::folder_path(&session.vault, entry)))
+                            .collect();
+                        let file = io::kdbx::export_in_folders(&entries, text(call.secret)?)?;
                         return Ok(Reply {
                             json: "{}".to_owned(),
                             blobs: vec![file],

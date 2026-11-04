@@ -764,7 +764,7 @@ For a server account, your password is never sent: a key made from it proves who
 
 Changes go up to the server after each edit. If it cannot be reached they wait, and WM Pass keeps an offline copy, encrypted as the server's is.
 
-A KeePass file stays where it is, and WM Pass writes back to it on each save, keeping one earlier copy beside its own files. Syncthing or a cloud app can carry the file.
+A KeePass file stays where it is, and WM Pass writes back to it on each save, keeping one earlier copy beside its own files. Syncthing or a cloud app can carry the file. If the database uses a key file, choose **Add key file** at the door; one locked by its key file alone needs no password. Field references such as a password shared from another entry are followed, and deleting an item moves it to the database's recycle bin, as KeePass does. A file in the older KDBX 3 format is rewritten as KDBX 4 on its first save, which KeePass 2.35 or later, KeePassXC 2.3 or later, KeePassDX and Strongbox open. A KeePass 1 file (.kdb) can be imported but not opened in place.
 
 #### When to use it
 
@@ -790,7 +790,7 @@ For a server account, your password is never sent: a key made from it proves who
 
 Changes go up to the server after each edit. If it cannot be reached they wait, and WM Pass keeps an offline copy, encrypted as the server's is.
 
-A KeePass file stays where it is, and WM Pass writes back to it on each save, keeping one earlier copy beside its own files. Syncthing or a cloud app can carry the file.
+A KeePass file stays where it is, and WM Pass writes back to it on each save, keeping one earlier copy beside its own files. Syncthing or a cloud app can carry the file. If the database uses a key file, choose **Add key file** at the door; one locked by its key file alone needs no password. Field references such as a password shared from another entry are followed, and deleting an item moves it to the database's recycle bin, as KeePass does. A file in the older KDBX 3 format is rewritten as KDBX 4 on its first save, which KeePass 2.35 or later, KeePassXC 2.3 or later, KeePassDX and Strongbox open. A KeePass 1 file (.kdb) can be imported but not opened in place.
 
 See also [Sync and accounts](/guide/settings/sync/), [Unlock screen](/guide/screens/#screen-door), [Keeping devices in sync](/guide/how-it-works/#feature-sync), [Allow network features](/guide/settings/security/#setting-network-allowed).
 
@@ -859,7 +859,7 @@ Under Settings, Import, choose your old app's export file. WM Pass shows how man
 
 Password managers: 1Password, Apple Passwords, Avast, Avira, Bitwarden, Buttercup, Chrome and other Chromium browsers, Dashlane, Enpass, Firefox, Kaspersky, KeePass and KeePassXC, Keeper, LastPass, mSecure, NordPass, Password Safe, Proton Pass, Psono, RoboForm, SafeInCloud, Sticky Password and Zoho Vault. Authenticators: Aegis, 2FAS, andOTP, Authenticator Pro, Bitwarden Authenticator, Ente Auth, FreeOTP+, LastPass Authenticator, Proton Authenticator, Raivo, and Google Authenticator, whose export QR code you can choose as a screenshot.
 
-A file with a password, such as a KeePass or SafeInCloud database, asks for it first. Items already in the vault are skipped, and the result says how many.
+A file with a password, such as a KeePass or SafeInCloud database, asks for it first. A KeePass database can also take its key file, with or without a password, and KeePass 1 files (.kdb) import as well. Items already in the vault are skipped, and the result says how many.
 
 Under Settings, Export, a **WM Pass vault** or a **KeePass database** stays encrypted. **Bitwarden JSON**, **CSV** and a **Printable page** are plain text that anyone who opens them can read.
 
@@ -883,7 +883,7 @@ Under Settings, Import, choose your old app's export file. WM Pass shows how man
 
 Password managers: 1Password, Apple Passwords, Avast, Avira, Bitwarden, Buttercup, Chrome and other Chromium browsers, Dashlane, Enpass, Firefox, Kaspersky, KeePass and KeePassXC, Keeper, LastPass, mSecure, NordPass, Password Safe, Proton Pass, Psono, RoboForm, SafeInCloud, Sticky Password and Zoho Vault. Authenticators: Aegis, 2FAS, andOTP, Authenticator Pro, Bitwarden Authenticator, Ente Auth, FreeOTP+, LastPass Authenticator, Proton Authenticator and Raivo. For Google Authenticator, tap **Scan Google Authenticator's code** and scan each of its export codes in turn.
 
-A file with a password, such as a KeePass or SafeInCloud database, asks for it first. Items already in the vault are skipped, and the result says how many.
+A file with a password, such as a KeePass or SafeInCloud database, asks for it first. A KeePass database can also take its key file, with or without a password, and KeePass 1 files (.kdb) import as well. Items already in the vault are skipped, and the result says how many.
 
 Under Settings, Export, a **WM Pass vault** or a **KeePass database** stays encrypted. **Bitwarden JSON**, **CSV** and a **Printable page** are plain text that anyone who opens them can read.
 

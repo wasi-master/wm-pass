@@ -144,6 +144,17 @@ object Accounts {
             context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(bytes) }
         }
         markOpened(context, ref.id)
+        // KDBX 3 is read but written as KDBX 4, which apps from before 2017 cannot open.
+        val upgrade = (reply.json as? kotlinx.serialization.json.JsonObject)?.get("kdbx_upgrade")
+        if (upgrade is kotlinx.serialization.json.JsonPrimitive && upgrade.content == "true") {
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                android.widget.Toast.makeText(
+                    context,
+                    "This file is in the older KDBX 3 format. The first change saved rewrites it as KDBX 4, which KeePass 2.35 or later, KeePassXC 2.3 or later, KeePassDX and Strongbox open. WM Pass keeps a copy of the file as it was.",
+                    android.widget.Toast.LENGTH_LONG,
+                ).show()
+            }
+        }
     }
 
     /**

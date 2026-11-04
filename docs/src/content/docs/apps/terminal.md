@@ -138,7 +138,7 @@ The theme, the icons, how long a shown secret stays on screen and the Health cho
 
 ## In scripts
 
-Every subcommand reads the password from the terminal. For scripts and tests, `WMPASS_PASSWORD` can supply it, though any other program running as you can read a process's environment. `WMPASS_KEY_FILE` names a key file.
+Every subcommand reads the password from the terminal. For scripts and tests, `WMPASS_PASSWORD` can supply it, though any other program running as you can read a process's environment. `WMPASS_KEY_FILE` names a key file. `WMPASS_IMPORT_PASSWORD` supplies the password of a file being imported, such as a KeePass database, when it differs from the vault's; `wmpass import --key-file` names that database's key file, and a database locked by its key file alone takes an empty password.
 
 ```bash
 wmpass ls Personal.wmvault "tag:work has:otp"

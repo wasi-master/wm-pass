@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<KeePassFile>
+	<Meta>
+		<Generator>KeePass</Generator>
+		<DatabaseName>Fixture</DatabaseName>
+		<RecycleBinEnabled>True</RecycleBinEnabled>
+		<RecycleBinUUID>AAAAAAAAAAAAAAAAAAAAAg==</RecycleBinUUID>
+		<HistoryMaxItems>10</HistoryMaxItems>
+	</Meta>
+	<Root>
+		<Group>
+			<UUID>AAAAAAAAAAAAAAAAAAAAAA==</UUID>
+			<Name>Passwords</Name>
+			<Group>
+				<UUID>AAAAAAAAAAAAAAAAAAAAAQ==</UUID>
+				<Name>Team</Name>
+				<Entry>
+					<UUID>EREREREREREREREREREREQ==</UUID>
+					<Tags>work;mail</Tags>
+					<String><Key>Title</Key><Value>Mail</Value></String>
+					<String><Key>UserName</Key><Value>me</Value></String>
+					<String><Key>Password</Key><Va

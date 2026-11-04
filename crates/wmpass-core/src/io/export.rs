@@ -101,6 +101,25 @@ fn folder_name(vault: &Vault, entry: &Entry) -> String {
         .map_or_else(String::new, |f| f.name.v.clone())
 }
 
+/// An entry's folder with its parents, as `Parent/Child`. Empty when it has none.
+pub fn folder_path(vault: &Vault, entry: &Entry) -> String {
+    let mut parts = Vec::new();
+    let mut next = entry.common.folder.v.clone();
+    while let Some(id) = next {
+        let Some(folder) = vault.doc.folders.get(&id) else {
+            break;
+        };
+        // A loop in the parents would otherwise never end.
+        if parts.len() > 64 {
+            break;
+        }
+        parts.push(folder.name.v.clone());
+        next = folder.parent.v.clone();
+    }
+    parts.reverse();
+    parts.join("/")
+}
+
 fn exportable(vault: &Vault) -> impl Iterator<Item = &Entry> {
     vault.doc.entries.values().filter(|e| !e.is_trashed())
 }

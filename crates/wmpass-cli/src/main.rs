@@ -141,6 +141,10 @@ enum Command {
         vault: PathBuf,
         /// File to read.
         file: PathBuf,
+        /// A KeePass database's key file. Such a database may have no password, so an
+        /// empty one is then accepted.
+        #[arg(long)]
+        key_file: Option<PathBuf>,
     },
     /// Export. These formats hold every secret in the clear, except KDBX.
     Export {
@@ -643,20 +647,30 @@ fn run(cli: Cli) -> Result<(), String> {
             println!("Duplicate groups: {}", report.duplicates.len());
             println!("Expiring: {}", report.expiring.len());
         }
-        Command::Import { vault, file } => {
+        Command::Import {
+            vault,
+            file,
+            key_file,
+        } => {
             let mut opened = open(&vault)?;
             let data = read_file(&file)?;
             let format = io::detect(&data).ok_or("the format was not recognised")?;
+            let key_file = key_file.map(|path| read_file(&path)).transpose()?;
             let source_password = if io::needs_password(&data) {
-                Some(password("Password of the file being imported: ")?)
+                // The file's own password, which can differ from the vault's.
+                Some(match std::env::var("WMPASS_IMPORT_PASSWORD") {
+                    Ok(value) => Secret::from(value),
+                    Err(_) => password("Password of the file being imported: ")?,
+                })
             } else {
                 None
             };
             let at = opened.vault.tick(now);
-            let imported = io::import(
+            let imported = io::import_with_key_file(
                 format,
                 &data,
                 source_password.as_ref().map(Secret::expose),
+                key_file.as_deref(),
                 at,
             )
             .map_err(|e| e.to_string())?;
@@ -708,8 +722,10 @@ fn run(cli: Cli) -> Result<(), String> {
                         .entries
                         .values()
                         .filter(|e| !e.is_trashed())
+                        .map(|e| (e, io::export::folder_path(&opened.vault, e)))
                         .collect();
-                    io::kdbx::export(&entries, secret.expose()).map_err(|e| e.to_string())?
+                    io::kdbx::export_in_folders(&entries, secret.expose())
+                        .map_err(|e| e.to_string())?
                 }
                 other => return Err(format!("unknown format {other}")),
             };

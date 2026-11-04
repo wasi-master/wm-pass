@@ -831,9 +831,11 @@ impl Engine {
         reply_json(&reply)
     }
 
-    /// Reads a file from another app, without changing anything yet.
-    pub fn import_read(&mut self, data: &[u8], password: &[u8]) -> Result<ImportPreview, String> {
-        let reply = self.call("import.read", &json!({}), password, &[data])?;
+    /// Reads a file from another app, without changing anything yet. `key_file` is a
+    /// KeePass database's key file.
+    pub fn import_read(&mut self, data: &[u8], password: &[u8], key_file: Option<&[u8]>) -> Result<ImportPreview, String> {
+        let blobs: Vec<&[u8]> = std::iter::once(data).chain(key_file).collect();
+        let reply = self.call("import.read", &json!({}), password, &blobs)?;
         reply_json(&reply)
     }
 

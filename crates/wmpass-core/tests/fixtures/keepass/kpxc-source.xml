@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<KeePassFile>
+	<Meta>
+		<Generator>KeePass</Generator>
+		<DatabaseName>Fixture</DatabaseName>
+		<RecycleBinEnabled>True</RecycleBinEnabled>
+		<RecycleBinUUID>AAAAAAAAAAAAAAAAAAAAAg==</RecycleBinUUID>
+		<HistoryMaxItems>10</HistoryMaxItems>
+	</Meta>
+	<Root>
+		<Group>
+			<UUID>AAAAAAAAAAAAAAAAAAAAAA==</UUID>
+			<Name>Passwords</Name>
+			<Group>
+				<UUID>AAAAAAAAAAAAAAAAAAAAAQ==</UUID>
+				<Name>Team</Name>
+				<Entry>
+					<UUID>EREREREREREREREREREREQ==</UUID>
+					<Tags>work;mail</Tags>
+					<String><Key>Title</Key><Value>Mail</Value></String>
+					<String><Key>UserName</Key><Value>me</Value></String>
+					<String><Key>Password</Key><Value ProtectInMemory="True">first-pass</Value></String>
+					<String><Key>URL</Key><Value>https://t.example</Value></String>
+					<String><Key>Notes</Key><Value>team mailbox</Value></String>
+					<String><Key>PIN</Key><Value ProtectInMemory="True">1234</Value></String>
+					<String><Key>otp</Key><Value ProtectInMemory="True">otpauth://totp/Mail:me?secret=JBSWY3DPEHPK3PXP&amp;issuer=Mail&amp;period=30&amp;digits=6</Value></String>
+					<History>
+						<Entry>
+							<UUID>EREREREREREREREREREREQ==</UUID>
+							<Times><LastModificationTime>2020-01-01T00:00:00Z</LastModificationTime></Times>
+							<String><Key>Title</Key><Value>Mail</Value></String>
+							<String><Key>UserName</Key><Value>me</Value></String>
+							<String><Key>Password</Key><Value ProtectInMemory="True">older-pass</Value></String>
+						</Entry>
+					</History>
+				</Entry>
+			</Group>
+			<Entry>
+				<UUID>IiIiIiIiIiIiIiIiIiIiIg==</UUID>
+				<String><Key>Title</Key><Value>Shared login</Value></String>
+				<String><Key>UserName</Key><Value>{REF:U@I:11111111111111111111111111111111}</Value></String>
+				<String><Key>Password</Key><Value ProtectInMemory="True">{REF:P@I:11111111111111111111111111111111}</Value></String>
+				<String><Key>URL</Key><Value>https://shared.example</Value></String>
+			</Entry>
+			<Entry>
+				<UUID>MzMzMzMzMzMzMzMzMzMzMw==</UUID>
+				<String><Key>Title</Key><Value>KeePass 2 code</Value></String>
+				<String><Key>UserName</Key><Value>kp</Value></String>
+				<String><Key>Password</Key><Value ProtectInMemory="True">kp-pass</Value></String>
+				<String><Key>TimeOtp-Secret-Base32</Key><Value ProtectInMemory="True">GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ</Value></String>
+				<String><Key>TimeOtp-Length</Key><Value>8</Value></String>
+				<String><Key>TimeOtp-Period</Key><Value>60</Value></String>
+				<String><Key>TimeOtp-Algorithm</Key><Value>HMAC-SHA-256</Value></String>
+			</Entry>
+			<Entry>
+				<UUID>RERERERERERERERERERERA==</UUID>
+				<String><Key>Title</Key><Value>Counter code</Value></String>
+				<String><Key>Password</Key><Value ProtectInMemory="True">counter-pass</Value></String>
+				<String><Key>HmacOtp-Secret-Hex</Key><Value ProtectInMemory="True">3132333435363738393031323334353637383930</Value></String>
+				<String><Key>HmacOtp-Counter</Key><Value>5</Value></String>
+			</Entry>
+			<Group>
+				<UUID>AAAAAAAAAAAAAAAAAAAAAg==</UUID>
+				<Name>Recycle Bin</Name>
+				<IconID>43</IconID>
+				<Entry>
+					<UUID>VVVVVVVVVVVVVVVVVVVVVQ==</UUID>
+					<String><Key>Title</Key><Value>Deleted</Value></String>
+					<String><Key>Password</Key><Value ProtectInMemory="True">gone</Value></String>
+				</Entry>
+			</Group>
+		</Group>
+	</Root>
+</KeePassFile>

@@ -55,7 +55,9 @@ pub enum PromptFor {
     NewFolder(Vec<String>),
     AddTag(Vec<String>),
     ImportPath,
-    ImportPassword(PathBuf),
+    /// A KeePass database's key file, asked for before its password.
+    ImportKeyFile(PathBuf),
+    ImportPassword(PathBuf, Option<PathBuf>),
     ExportPath(String),
     ExportPassword(String, PathBuf),
     AttachAdd(String),
@@ -2036,20 +2038,36 @@ impl App {
                     Ok(data) => Zeroizing::new(data),
                     Err(e) => return self.say(Level::Bad, e),
                 };
-                if wmpass_core::io::needs_password(&data) {
-                    return self.prompt("File password", "The password of the file being imported", true, PromptFor::ImportPassword(path));
+                if wmpass_core::io::detect(&data) == Some(wmpass_core::io::Format::Kdbx) {
+                    return self.prompt("Key file", "Path of the database's key file. Leave empty if it has none", false, PromptFor::ImportKeyFile(path));
                 }
-                match ui.engine.import_read(&data, &[]) {
+                if wmpass_core::io::needs_password(&data) {
+                    return self.prompt("File password", "The password of the file being imported", true, PromptFor::ImportPassword(path, None));
+                }
+                match ui.engine.import_read(&data, &[], None) {
                     Ok(preview) => self.overlay = Some(Overlay::Import(preview)),
                     Err(e) => self.say(Level::Bad, e),
                 }
             }
-            PromptFor::ImportPassword(path) => {
+            PromptFor::ImportKeyFile(path) => {
+                let key = (!text.is_empty()).then(|| store::expand(text));
+                let hint = if key.is_some() {
+                    "The database's password. Leave empty if the key file alone opens it"
+                } else {
+                    "The password of the file being imported"
+                };
+                self.prompt("File password", hint, true, PromptFor::ImportPassword(path, key));
+            }
+            PromptFor::ImportPassword(path, key) => {
                 let data = match store::read(&path) {
                     Ok(data) => Zeroizing::new(data),
                     Err(e) => return self.say(Level::Bad, e),
                 };
-                match ui.engine.import_read(&data, answer.as_bytes()) {
+                let key = match key.map(|key| store::read(&key)).transpose() {
+                    Ok(key) => key.map(Zeroizing::new),
+                    Err(e) => return self.say(Level::Bad, e),
+                };
+                match ui.engine.import_read(&data, answer.as_bytes(), key.as_deref().map(Vec::as_slice)) {
                     Ok(preview) => self.overlay = Some(Overlay::Import(preview)),
                     Err(e) => self.say(Level::Bad, e),
                 }
