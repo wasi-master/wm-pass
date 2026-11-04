@@ -70,6 +70,18 @@ class PlayShots {
         prefs.updateTabs(Prefs.DEFAULT_TABS)
         prefs.helpHints.set(false)
         installFacebook()
+        forgetListScroll()
+    }
+
+    /**
+     * The vault list remembers where it was scrolled for the life of the process, which here is
+     * every test in the class: start each shot from the top.
+     */
+    private fun forgetListScroll() {
+        val memory = Class.forName("com.wasimaster.wmpass.ui.vault.VaultMemory")
+        for (name in listOf("index", "offset")) {
+            memory.getDeclaredField(name).apply { isAccessible = true }.setInt(null, 0)
+        }
     }
 
     /** Facebook as if it were installed, so the editor can show it among a login's apps. */
@@ -178,12 +190,18 @@ class PlayShots {
     }
 
     @Composable
-    private fun WithShell(tab: String? = null, content: @Composable () -> Unit) {
+    private fun WithShell(tab: String? = null, open: String? = null, content: @Composable () -> Unit) {
         val context = LocalContext.current
         val nav = rememberNavController()
         val scope = rememberCoroutineScope()
         val haptics = rememberHaptics()
-        val shell = remember { Shell(nav, prefs, scope, context, haptics).also { if (tab != null) it.tab = tab } }
+        val shell = remember {
+            Shell(nav, prefs, scope, context, haptics).also {
+                if (tab != null) it.tab = tab
+                // The item beside the list, on a tablet.
+                it.paneEntry = open
+            }
+        }
         CompositionLocalProvider(LocalShell provides shell) { com.wasimaster.wmpass.ui.settings.ProvideSettingsKit(prefs) { content() } }
     }
 
@@ -245,5 +263,99 @@ class PlayShots {
     @Test
     fun locked() {
         shot("locked") { DoorScreen(LockState.Locked, prefs) }
+    }
+
+    // ---- tablets, for Play's 7-inch and 10-inch slides: held sideways, list and item side by side ----
+
+    @Test
+    @Config(qualifiers = TABLET_7)
+    fun tablet7Vault() {
+        val ids = seed()
+        shot("tab7-vault") { WithShell(open = ids.getValue("Facebook")) { HomeScreen() } }
+    }
+
+    @Test
+    @Config(qualifiers = TABLET_7)
+    fun tablet7Codes() {
+        val ids = seed()
+        shot("tab7-codes") { WithShell("codes", open = ids.getValue("Proton Mail")) { HomeScreen() } }
+    }
+
+    @Test
+    @Config(qualifiers = TABLET_7)
+    fun tablet7Health() {
+        val ids = seed()
+        shot("tab7-health") { WithShell("health", open = ids.getValue("Amazon")) { HomeScreen() } }
+    }
+
+    @Test
+    @Config(qualifiers = TABLET_7)
+    fun tablet7Generator() {
+        seed()
+        shot("tab7-generator") { WithShell("generator") { HomeScreen() } }
+    }
+
+    @Test
+    @Config(qualifiers = TABLET_7)
+    fun tablet7Glass() {
+        val ids = seed()
+        shot("tab7-glass", style = "glass") { WithShell(open = ids.getValue("Facebook")) { HomeScreen() } }
+    }
+
+    @Test
+    @Config(qualifiers = TABLET_7)
+    fun tablet7Light() {
+        val ids = seed()
+        shot("tab7-light", Look.LIGHT) { WithShell(open = ids.getValue("Google")) { HomeScreen() } }
+    }
+
+    @Test
+    @Config(qualifiers = TABLET_10)
+    fun tablet10Vault() {
+        val ids = seed()
+        shot("tab10-vault") { WithShell(open = ids.getValue("Facebook")) { HomeScreen() } }
+    }
+
+    @Test
+    @Config(qualifiers = TABLET_10)
+    fun tablet10Codes() {
+        val ids = seed()
+        shot("tab10-codes") { WithShell("codes", open = ids.getValue("Proton Mail")) { HomeScreen() } }
+    }
+
+    @Test
+    @Config(qualifiers = TABLET_10)
+    fun tablet10Health() {
+        val ids = seed()
+        shot("tab10-health") { WithShell("health", open = ids.getValue("Amazon")) { HomeScreen() } }
+    }
+
+    @Test
+    @Config(qualifiers = TABLET_10)
+    fun tablet10Generator() {
+        seed()
+        shot("tab10-generator") { WithShell("generator") { HomeScreen() } }
+    }
+
+    @Test
+    @Config(qualifiers = TABLET_10)
+    fun tablet10Glass() {
+        val ids = seed()
+        shot("tab10-glass", style = "glass") { WithShell(open = ids.getValue("Facebook")) { HomeScreen() } }
+    }
+
+    @Test
+    @Config(qualifiers = TABLET_10)
+    fun tablet10Light() {
+        val ids = seed()
+        shot("tab10-light", Look.LIGHT) { WithShell(open = ids.getValue("Google")) { HomeScreen() } }
+    }
+
+    private companion object {
+        /** A 7-inch tablet on its side, as a Nexus 7 or a Galaxy Tab A 7: 1920x1200. */
+        const val TABLET_7 = "w960dp-h600dp-land-xhdpi"
+
+        /** A 10-inch tablet on its side, as a Pixel Tablet or a Galaxy Tab S: 2560x1600. */
+        const val TABLET_10 = "w1280dp-h800dp-land-xhdpi"
     }
 }

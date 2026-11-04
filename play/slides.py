@@ -8,6 +8,13 @@ android/app/build/play-shots/, which PlayShots.kt draws with fake data:
 
 Writes 1200x2400 PNGs (1:2, the tallest shape Play takes) to
 fastlane/metadata/android/en-US/images/phoneScreenshots/.
+
+The tablet slides lie on their side: the words on the left and a tablet held sideways on the
+right, showing the list and the item side by side. 16:9, at 1920x1080 for the 7-inch set and
+2560x1440 for the 10-inch one, into sevenInchScreenshots/ and tenInchScreenshots/.
+
+    python3 play/slides.py            # phone and both tablet sets
+    python3 play/slides.py tablets    # only the tablet sets
 """
 
 from __future__ import annotations
@@ -20,7 +27,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SHOTS = ROOT / "android/app/build/play-shots"
 FONTS = ROOT / "android/vendor/wm-suite/theme/src/main/res/font"
 LOGO = ROOT / "assets/icon/wm-pass-256.png"
-OUT = ROOT / "fastlane/metadata/android/en-US/images/phoneScreenshots"
+IMAGES = ROOT / "fastlane/metadata/android/en-US/images"
+OUT = IMAGES / "phoneScreenshots"
 
 SS = 2  # drawn at twice the size, then scaled down, so edges stay clean
 W, H = 1200, 2400
@@ -217,7 +225,164 @@ SLIDES = [
      [("Duress vault", AMBER), ("Hidden vaults", None), ("Hardware keys", None)], "locked"),
 ]
 
+# ---- tablets ----
+
+# Drawn on a 2560x1440 board, then scaled to each set's size.
+TW, TH = 2560, 1440
+TABLET_LEFT = 140           # the words' left edge
+TABLET_SCREEN_W = 1500      # the screen, without its bezel
+
+
+def tablet_chip_rows(img, x, y, labels, room):
+    """The chips, left-aligned, wrapping onto a second row when they run past [room]."""
+    f = font("inter_medium", 34)
+    pad_x, pad_y, gap, dot_w = 30, 17, 18, 22
+    h = 40 + pad_y * 2
+    d = ImageDraw.Draw(img, "RGBA")
+    cx = x
+    for s, accent in labels:
+        w = width(s, f) + pad_x * 2 + (dot_w if accent else 0)
+        if cx > x and cx + w > x + room:
+            cx = x
+            y += h + gap
+        outline = accent + (120,) if accent else (255, 255, 255, 30)
+        d.rounded_rectangle([cx * SS, y * SS, (cx + w) * SS, (y + h) * SS], (h // 2) * SS,
+                            fill=(255, 255, 255, 14), outline=outline, width=SS)
+        tx = cx + pad_x
+        if accent:
+            mid = y + h / 2
+            d.ellipse([(tx - 2) * SS, (mid - 5) * SS, (tx + 9) * SS, (mid + 6) * SS], fill=accent + (255,))
+            tx += dot_w
+        d.text((tx * SS, (y + h / 2) * SS), s, font=f, fill=accent or CHIP_TEXT, anchor="lm")
+        cx += w + gap
+    return y + h
+
+
+def tablet(img, shot, x, y, w):
+    """The screen in a tablet's slim dark bezel, with the same green glow as the phone."""
+    h = int(w * shot.height / shot.width)
+    bezel, radius = 22, 34
+    ob = (x - bezel, y - bezel, x + w + bezel, y + h + bezel)
+
+    glow = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    gd = ImageDraw.Draw(glow)
+    mid = (ob[0] + ob[2]) / 2
+    gd.rounded_rectangle([ob[0] * SS, ob[1] * SS, mid * SS, ob[3] * SS], (radius + bezel) * SS, fill=EMERALD + (55,))
+    gd.rounded_rectangle([mid * SS, ob[1] * SS, ob[2] * SS, ob[3] * SS], (radius + bezel) * SS, fill=TEAL + (55,))
+    glow = glow.filter(ImageFilter.GaussianBlur(90 * SS))
+    img.paste(Image.alpha_composite(img.convert("RGBA"), glow).convert("RGB"))
+
+    shade = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    ImageDraw.Draw(shade).rounded_rectangle([ob[0] * SS, (ob[1] + 30) * SS, ob[2] * SS, (ob[3] + 30) * SS],
+                                            (radius + bezel) * SS, fill=(0, 0, 0, 180))
+    shade = shade.filter(ImageFilter.GaussianBlur(46 * SS))
+    img.paste(Image.alpha_composite(img.convert("RGBA"), shade).convert("RGB"))
+
+    d = ImageDraw.Draw(img, "RGBA")
+    d.rounded_rectangle([v * SS for v in ob], (radius + bezel) * SS, fill=(18, 28, 26, 255),
+                        outline=(255, 255, 255, 28), width=SS)
+    screen = shot.convert("RGB").resize((w * SS, h * SS), Image.LANCZOS)
+    mask = Image.new("L", screen.size, 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, screen.width, screen.height], radius * SS, fill=255)
+    img.paste(screen, (x * SS, y * SS), mask)
+    return ob
+
+
+def tablet_slide(out, size, lines, sub, chips, shot):
+    img = Image.new("RGB", (TW * SS, TH * SS), GROUND)
+    for cx, cy, c in ((300, 200, EMERALD), (2300, 260, MINT), (1500, 1300, TEAL)):
+        blob(img, cx, cy, 520, c, 50)
+    screen = Image.open(SHOTS / f"{shot}.png")
+    sx = TW - 120 - TABLET_SCREEN_W
+    sh = int(TABLET_SCREEN_W * screen.height / screen.width)
+    tablet(img, screen, sx, (TH - sh) // 2, TABLET_SCREEN_W)
+
+    room = sx - 22 - 80 - TABLET_LEFT  # up to the bezel, with a gap
+    logo_size = 64
+    logo = Image.open(LOGO).convert("RGBA").resize((logo_size * SS, logo_size * SS), Image.LANCZOS)
+    img.paste(logo, (TABLET_LEFT * SS, 300 * SS), logo)
+    text(img, (TABLET_LEFT + logo_size + 22, 300 + logo_size // 2), "WM Pass", font("inter_semibold", 36),
+         fill=(226, 238, 234), anchor="lm")
+
+    # As large as the longest line allows, so no headline runs into the tablet.
+    pt = 92
+    while pt > 56 and max(sum(width(s, font("manrope_bold", pt)) for s, _ in parts) for parts in lines) > room:
+        pt -= 2
+    head = font("manrope_bold", pt)
+    y = 430
+    for parts in lines:
+        x = TABLET_LEFT
+        for s, accent in parts:
+            if accent:
+                gradient_text(img, (x, y), s, head)
+            else:
+                text(img, (x, y), s, head)
+            x += width(s, head)
+        y += int(pt * 1.26)
+
+    body = font("inter_regular", 40)
+    words, line = sub.split(), ""
+    y += 26
+    for word in words:
+        trial = f"{line} {word}".strip()
+        if width(trial, body) > room and line:
+            text(img, (TABLET_LEFT, y), line, body, fill=BODY)
+            y += 56
+            line = word
+        else:
+            line = trial
+    text(img, (TABLET_LEFT, y), line, body, fill=BODY)
+    y = tablet_chip_rows(img, TABLET_LEFT, y + 96, chips, room)
+    text(img, (TABLET_LEFT, TH - 300), "No account. No ads. Open source.", font("inter_medium", 36), fill=BODY)
+
+    vignette(img)
+    grain(img)
+    out.mkdir(parents=True, exist_ok=True)
+    img.resize(size, Image.LANCZOS).save(out / f"{len(list(out.glob('*.png'))) + 1}.png", optimize=True)
+
+
+TABLET_SLIDES = [
+    ([[("Your passwords,", False)], [("on ", False), ("your own devices", True)]],
+     "The list and the item side by side, with no account to make.",
+     [("Autofill", EMERALD), ("Passkeys", None), ("Open source", MINT)], "vault"),
+    ([[("Every login,", False)], [("one tap", True), (" away", False)]],
+     "Copy it, open the app, or go straight to the site.",
+     [("Light and dark", EMERALD), ("Fills in apps", None)], "light"),
+    ([[("Your ", False), ("authenticator", True)], [("is built in", False)]],
+     "Every one-time code on one screen, counting down.",
+     [("TOTP codes", EMERALD), ("Google Authenticator import", None)], "codes"),
+    ([[("Strong passwords,", False)], [("made ", False), ("to fit", True)]],
+     "Random, words or pronounceable, with the strength shown.",
+     [("Time to crack", EMERALD), ("Words or random", None)], "generator"),
+    ([[("Find the ", False), ("weak spots", True)], [("first", False)]],
+     "Reused, easy to guess and missing second factors, worst first.",
+     [("Vault health", AMBER), ("Reused passwords", None), ("Missing 2FA", None)], "health"),
+    ([[("Make it ", False), ("yours", True)]],
+     "Themes, layouts and styles, all in Settings.",
+     [("Glass", MINT), ("Your own themes", None)], "glass"),
+]
+
+TABLET_SETS = [
+    ("sevenInchScreenshots", "tab7", (1920, 1080)),
+    ("tenInchScreenshots", "tab10", (2560, 1440)),
+]
+
+
+def tablet_sets():
+    for folder, prefix, size in TABLET_SETS:
+        out = IMAGES / folder
+        for old in out.glob("*.png"):
+            old.unlink()
+        for lines, sub, chips, shot in TABLET_SLIDES:
+            tablet_slide(out, size, lines, sub, chips, f"{prefix}-{shot}")
+        print("wrote", len(TABLET_SLIDES), "slides to", out)
+
+
 if __name__ == "__main__":
-    for name, lines, sub, chips, shot in SLIDES:
-        slide(name, lines, sub, chips, shot)
-        print("wrote", OUT / f"{name}.png")
+    import sys
+
+    if "tablets" not in sys.argv[1:]:
+        for name, lines, sub, chips, shot in SLIDES:
+            slide(name, lines, sub, chips, shot)
+            print("wrote", OUT / f"{name}.png")
+    tablet_sets()
