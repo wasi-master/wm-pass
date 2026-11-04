@@ -16,7 +16,7 @@ use wmpass_core::{Error, Result};
 #[derive(Debug)]
 pub(crate) enum Account {
     Kdbx(Box<KdbxBackend>),
-    #[cfg(feature = "net")]
+    #[cfg(feature = "online")]
     Bitwarden(Box<wmpass_bw::account::Account>),
 }
 
@@ -24,7 +24,7 @@ impl Account {
     fn backend(&mut self) -> &mut dyn Backend {
         match self {
             Self::Kdbx(backend) => backend.as_mut(),
-            #[cfg(feature = "net")]
+            #[cfg(feature = "online")]
             Self::Bitwarden(account) => account.as_mut(),
         }
     }

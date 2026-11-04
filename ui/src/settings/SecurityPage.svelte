@@ -41,13 +41,14 @@
       .catch(() => (slots = []));
   });
 
+  const quick = host().quick;
+
   $effect(() => {
-    const desktop = host().desktop;
     const file = pass.fileName;
-    if (!desktop || !file) return;
-    void desktop.quickAvailable().then(async (ready) => {
+    if (!quick || !file) return;
+    void quick.available().then(async (ready) => {
       quickReady = ready;
-      quickOn = ready && (await desktop.quickEnrolled(file));
+      quickOn = ready && (await quick.enrolled(file));
     });
   });
 
@@ -146,12 +147,11 @@
   }
 
   async function setQuick(on: boolean) {
-    const desktop = host().desktop!;
     const file = pass.fileName;
-    if (!file) return;
+    if (!quick || !file) return;
     try {
-      if (on) await desktop.quickEnroll(pass.handle, file);
-      else await desktop.quickForget(file);
+      if (on) await quick.enroll(pass.handle, file);
+      else await quick.forget(file);
       quickOn = on;
     } catch (failure: any) {
       overlays.toast(failure.message);
@@ -184,9 +184,9 @@
     pref="clipboard_seconds"
     options={[[15, '15 seconds'], [30, '30 seconds'], [60, '1 minute'], [120, '2 minutes'], [300, '5 minutes'], [0, 'Never']] as [number, string][]}
   />
-  {#if host().desktop && quickReady}
-    <Row title="Unlock from the system keyring" help="action.keyring_unlock" sub="A convenience, not protection: any program in your session can ask the keyring for the key." icon="key">
-      <Switch checked={quickOn} label="Unlock from the system keyring" onchange={setQuick} />
+  {#if quick && quickReady}
+    <Row title={quick.title} help={quick.help} sub={quick.sub} icon="key">
+      <Switch checked={quickOn} label={quick.title} onchange={setQuick} />
     </Row>
   {/if}
 </Group>

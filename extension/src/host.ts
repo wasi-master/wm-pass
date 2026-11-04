@@ -1,11 +1,13 @@
 // What a page of the extension runs on. Files are shared IndexedDB, and the session is in the
 // background, so it survives the popup closing.
 
-import type { Host } from '../../ui/src/engine/host';
+import type { HardwareHost, Host, PlacesHost } from '../../ui/src/engine/host';
 import { decodeReply } from '../../ui/src/engine/frame';
+import { browserFiles, fileAccess } from '../../ui/src/hosts/folders';
+import { passkeyQuick, webHardware } from '../../ui/src/hosts/passkeys';
 import { webHost } from '../../ui/src/hosts/web';
 import { extensionPlaces } from './places';
-import { seal, unseal } from './sealed';
+import { seal, unseal } from '../../ui/src/hosts/sealed';
 import { fromB64, toB64 } from './shared';
 
 declare const chrome: any;
@@ -16,19 +18,88 @@ export async function send<T = any>(message: Record<string, unknown>): Promise<T
   return reply?.ok as T;
 }
 
+/**
+ * The extension's own places, and while the desktop app is connected, the kinds only it can reach:
+ * SFTP, FTP, SMB, NFS, IMAP, iCloud. Those run in the app, which asks its person once for each.
+ */
+function linkedPlaces(own: PlacesHost) {
+  let desktop: string[] = [];
+  const through = (place: any) => !own.kinds.includes(place?.kind) && desktop.includes(place?.kind);
+  const run = async (op: string, place: any, extra: Record<string, unknown> = {}) => {
+    const { value, update } = await send<{ value: any; update: Record<string, unknown> }>({ type: 'link.places', op, place, ...extra });
+    if (place?.id && Object.keys(update).length) places.onUpdate?.(place.id, update);
+    return value;
+  };
+  const places: PlacesHost = {
+    get kinds() {
+      return [...own.kinds, ...desktop.filter((kind) => kind !== 'folder' && !own.kinds.includes(kind))];
+    },
+    list: (place) => (through(place) ? run('list', place) : own.list(place)),
+    read: async (place, file) => (through(place) ? fromB64(await run('read', place, { file })) : own.read(place, file)),
+    write: async (place, name, bytes) => void (through(place) ? await run('write', place, { name, data: toB64(bytes) }) : await own.write(place, name, bytes)),
+    remove: async (place, file) => void (through(place) ? await run('delete', place, { file }) : await own.remove(place, file)),
+    chooseFolder: () => own.chooseFolder(),
+    signIn: (place, step) => (through(place) ? send({ type: 'link.places.sign_in', place, step }) : own.signIn!(place, step)),
+  };
+  // The places store listens on this object; the extension's own runs report through it too.
+  Object.defineProperty(own, 'onUpdate', { get: () => places.onUpdate, configurable: true });
+  const refresh = () =>
+    void send<string[]>({ type: 'link.places.kinds' }).then(
+      (kinds) => (desktop = kinds ?? []),
+      () => (desktop = []),
+    );
+  refresh();
+  return { places, refresh };
+}
+
+/**
+ * Security keys: through the browser's WebAuthn where it can, and through the desktop app, while
+ * it is connected, for a YubiKey's challenge-response slot and keys set up there before browsers
+ * could reach them.
+ */
+function linkedHardware(own: HardwareHost | undefined) {
+  let linked = false;
+  const hardware: HardwareHost = {
+    get kinds() {
+      return [...(own || linked ? (['fido2'] as const) : []), ...(linked ? (['yubikey'] as const) : [])];
+    },
+    async tap(kind, factor: any) {
+      const older = kind === 'fido2' && factor && factor.kind !== 'webauthn';
+      if (own && kind === 'fido2' && !older) return own.tap(kind, factor);
+      if (!linked) throw new Error('This key needs the desktop app. Connect it under Settings, Desktop app.');
+      const reply = await send<{ factor: any; output: string }>({ type: 'link.hardware', kind, factor: factor ?? null });
+      return { factor: reply.factor, output: fromB64(reply.output) };
+    },
+  };
+  const refresh = () =>
+    void send<any>({ type: 'link.state' }).then(
+      (state) => (linked = state?.status === 'ready'),
+      () => (linked = false),
+    );
+  refresh();
+  return { hardware, refresh };
+}
+
 export async function extensionHost(): Promise<Host> {
   const base = await webHost({
     call: async (frame) => fromB64((await send<{ frame: string }>({ type: 'call', frame: toB64(frame) })).frame),
     lockAll: () => send({ type: 'closed' }),
   });
+  const linkPlaces = linkedPlaces(extensionPlaces);
+  const linkKeys = linkedHardware(await webHardware());
   let onCommand: (command: string) => void = () => {};
   chrome.runtime.onMessage.addListener((message: any) => {
     if (message?.type === 'locked') onCommand('lock');
     if (message?.type === 'changed') onCommand('reload');
+    if (message?.type === 'link.changed') {
+      linkPlaces.refresh();
+      linkKeys.refresh();
+    }
   });
   const host: Host = {
     ...base,
     kind: 'extension',
+    network: true,
     onCommand: (run) => {
       onCommand = run;
     },
@@ -57,7 +128,10 @@ export async function extensionHost(): Promise<Host> {
     },
     loadSealed: (name) => unseal(name),
     saveSealed: (name, text) => seal(name, text),
-    places: extensionPlaces,
+    places: linkPlaces.places,
+    outside: fileAccess ? browserFiles : undefined,
+    hardware: linkKeys.hardware,
+    quick: await passkeyQuick(base.call, { load: base.loadSettings, save: base.saveSettings }),
     usernames: {
       sites: () => send({ type: 'usernames', what: 'sites' }),
       check: async (site, name) => (await send<{ answer: string }>({ type: 'usernames', what: 'check', site, name })).answer,

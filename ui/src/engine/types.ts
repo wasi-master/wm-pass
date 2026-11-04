@@ -186,7 +186,7 @@ export interface LinkedView {
 }
 
 export interface NeededFactor {
-  kind: 'key_file' | 'fido2' | 'yubikey';
+  kind: 'key_file' | 'fido2' | 'webauthn' | 'yubikey';
   credential_id?: string;
   salt?: string;
   challenge?: string;

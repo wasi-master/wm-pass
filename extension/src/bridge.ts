@@ -2,7 +2,7 @@
 // frames: everything is sealed in wasm before it leaves here.
 
 import { bridge_close, bridge_feed, bridge_new_keys, bridge_seal, bridge_start } from '../../ui/src/wasm/wmpass_wasm.js';
-import { seal, unseal } from './sealed';
+import { seal, unseal } from '../../ui/src/hosts/sealed';
 import { fromB64, fromHex, toB64, toHex, type LinkState } from './shared';
 
 declare const chrome: any;

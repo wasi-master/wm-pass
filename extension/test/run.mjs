@@ -3,9 +3,9 @@
 import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { createServer as createTlsServer } from 'node:https';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
@@ -22,6 +22,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const serve = (req, res) => {
   const path = new URL(req.url, 'http://x').pathname.replace(/^\//, '') || 'login.html';
+  // A stand-in Inbucket server, with no CORS headers: only the extension's background can read it.
+  if (path.startsWith('api/v1/mailbox/')) {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify([{ id: '1', from: 'a@example.com', subject: 'Hello from the fixture', 'posix-millis': 1 }]));
+    return;
+  }
   try {
     const body = readFileSync(join(here, 'fixtures', path.replace(/[^a-z-.]/g, '')));
     res.writeHead(200, { 'content-type': 'text/html' });
@@ -84,10 +90,10 @@ await vault.keyboard.press('Escape');
 check('the help sheet closes with Escape', await vault.locator('dialog.help-sheet').waitFor({ state: 'detached', timeout: 3000 }).then(() => true, () => false));
 
 // Calls the background the way the pages do.
-const call = async (page, method, args, secret) =>
+const call = async (page, method, args, secret, online = false) =>
   page.evaluate(
-    async ({ method, args, secret, handle }) => {
-      const text = new TextEncoder().encode(JSON.stringify({ method, handle, args, now_ms: Date.now() }));
+    async ({ method, args, secret, handle, online }) => {
+      const text = new TextEncoder().encode(JSON.stringify({ method, handle, args, now_ms: Date.now(), online }));
       const secretBytes = new TextEncoder().encode(secret ?? '');
       const out = new Uint8Array(4 + text.length + 4 + secretBytes.length + 4);
       const view = new DataView(out.buffer);
@@ -102,7 +108,7 @@ const call = async (page, method, args, secret) =>
       const length = new DataView(raw.buffer).getUint32(0, true);
       return JSON.parse(new TextDecoder().decode(raw.subarray(4, 4 + length)));
     },
-    { method, args, secret, handle: await page.evaluate(async () => (await chrome.runtime.sendMessage({ type: 'attach' })).ok.handle) },
+    { method, args, secret, online, handle: await page.evaluate(async () => (await chrome.runtime.sendMessage({ type: 'attach' })).ok.handle) },
   );
 
 const made = await call(vault, 'entry.create', { kind: 'login', title: 'Fixture', fields: { username: 'sample@example.com' }, sites: [{ Url: `http://localhost:${port}` }, { Url: `http://127.0.0.1:${port}` }] });
@@ -135,6 +141,14 @@ await vault.evaluate(async () => {
 await vault.reload();
 await vault.waitForFunction(() => document.body.innerText.includes('Fixture'), null, { timeout: 15_000 });
 check('a tab reattaches to the session after a reload', true);
+
+// Network calls go out from the background, where the host permissions lift CORS.
+const inbox = await call(vault, 'inbox.open', { provider: 'inbucket', base: `http://localhost:${port}`, domain: 'example.com', label: 'Fixture' });
+const mail = await call(vault, 'inbox.list', { id: inbox.id }, '', true);
+check('a network call runs from the extension', Array.isArray(mail) && mail[0]?.subject === 'Hello from the fixture', JSON.stringify(mail).slice(0, 160));
+const offline = await call(vault, 'inbox.list', { id: inbox.id }, '', false);
+check('with network features off it reaches nothing', offline?.error?.code === 'network', JSON.stringify(offline).slice(0, 160));
+await call(vault, 'inbox.close', { id: inbox.id });
 if (shots) await vault.screenshot({ path: join(shots, 'vault.png') });
 
 async function menuClick(page, field = '#user', wait = 600) {
@@ -269,6 +283,8 @@ await popup.goto(`chrome-extension://${id}/popup.html`);
 await sleep(800);
 if (shots) await popup.screenshot({ path: join(shots, 'popup-unlocked.png') });
 check('the popup opens unlocked', await popup.locator('input').first().isVisible());
+await popup.locator('input').first().fill('fixture');
+check('the popup searches the whole vault', await popup.locator('.row.chosen', { hasText: 'Fixture' }).waitFor({ timeout: 5000 }).then(() => true, () => false));
 await popup.close();
 
 // Lock.
@@ -290,6 +306,79 @@ await lockedPopup.goto(`chrome-extension://${id}/popup.html`);
 await sleep(500);
 if (shots) await lockedPopup.screenshot({ path: join(shots, 'popup-locked.png') });
 await lockedPopup.close();
+
+// Security keys and passkey unlock, through WebAuthn's PRF, on Chromium's own test authenticators.
+// WebAuthn answers only the page in front, so the site's tab goes.
+await page.close();
+await vault.locator('input[type=password]').first().fill(testPassword);
+await vault.keyboard.press('Enter');
+await vault.waitForFunction(() => !document.querySelector('.door-card'), null, { timeout: 60_000 });
+const authenticators = await context.newCDPSession(vault);
+await authenticators.send('WebAuthn.enable');
+const virtual = (transport) => authenticators.send('WebAuthn.addVirtualAuthenticator', {
+  options: { protocol: 'ctap2', ctap2Version: 'ctap2_1', transport, hasResidentKey: true, hasUserVerification: true, isUserVerified: true, hasPrf: true, automaticPresenceSimulation: true },
+});
+await virtual('internal');
+await virtual('usb');
+await vault.reload();
+await vault.waitForFunction(() => !document.querySelector('.door-card'), null, { timeout: 15_000 });
+// Making a credential needs the page's view to have focus, which headless Chromium hands over
+// some seconds after a reload. Until then it is refused for that reason alone, so this waits,
+// making throwaway credentials on the test key until one is not refused for it.
+await vault.bringToFront();
+for (let i = 0; i < 40; i++) {
+  const refusal = await vault.evaluate(() =>
+    navigator.credentials
+      .create({ publicKey: { rp: { name: 'Focus' }, user: { id: new Uint8Array(16), name: 'f', displayName: 'f' }, challenge: new Uint8Array(32), pubKeyCredParams: [{ type: 'public-key', alg: -7 }], authenticatorSelection: { authenticatorAttachment: 'cross-platform', userVerification: 'discouraged' } } })
+      .then(() => '', (e) => e.message),
+  );
+  if (!/focus/i.test(refusal)) break;
+  await sleep(500);
+}
+await vault.getByRole('button', { name: 'Settings', exact: true }).click();
+await vault.getByRole('button', { name: 'Security', exact: true }).first().click();
+const keyPassword = crypto.randomUUID();
+await vault.getByRole('button', { name: /^Add a security key/ }).click();
+await vault.getByRole('button', { name: /^A FIDO2 security key/ }).click();
+check('a browser offers no YubiKey slot of its own', (await vault.getByText('A YubiKey with challenge-response').count()) === 0);
+await vault.getByPlaceholder('A name for the key').fill('Test key');
+await vault.getByPlaceholder('Password to use with it').fill(keyPassword);
+await vault.getByRole('button', { name: 'Next' }).click();
+check('a security key is added through the browser', await vault.getByText('The key is added').waitFor({ timeout: 15_000 }).then(() => true, () => false), (await vault.locator('.danger-text').allTextContents()).join(' '));
+await vault.getByRole('button', { name: 'Done' }).click();
+const passkeySwitch = vault.getByRole('switch', { name: 'Unlock with a passkey' });
+check('passkey unlock is offered', await passkeySwitch.waitFor({ timeout: 5000 }).then(() => true, () => false));
+await passkeySwitch.click();
+check('passkey unlock turns on', await vault.waitForFunction(() => document.querySelector('[role=switch][aria-label="Unlock with a passkey"]')?.getAttribute('aria-checked') === 'true', null, { timeout: 10_000 }).then(() => true, () => false), (await vault.locator('.toast').allTextContents()).join(' '));
+await vault.evaluate(() => chrome.runtime.sendMessage({ type: 'closed' }));
+await vault.waitForSelector('input[type=password]', { timeout: 5000 });
+await vault.getByRole('button', { name: 'Unlock with a passkey' }).click();
+check('a passkey opens the vault', await vault.waitForFunction(() => !document.querySelector('.door-card'), null, { timeout: 15_000 }).then(() => true, () => false));
+await vault.evaluate(() => chrome.runtime.sendMessage({ type: 'closed' }));
+await vault.waitForSelector('input[type=password]', { timeout: 5000 });
+await vault.locator('input[type=password]').first().fill(keyPassword);
+await vault.keyboard.press('Enter');
+check('the key and its password open the vault', await vault.waitForFunction(() => !document.querySelector('.door-card'), null, { timeout: 60_000 }).then(() => true, () => false), (await vault.locator('.danger-text').allTextContents()).join(' '));
+if (shots) await vault.screenshot({ path: join(shots, 'after-key.png') });
+
+// The web vault hands over to the extension: its page asks, and the tab becomes the extension's own.
+const webDist = join(here, '../../web/dist');
+if (existsSync(webDist)) {
+  const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.wasm': 'application/wasm', '.png': 'image/png' };
+  await context.route('https://wmpass.pages.dev/vault/**', (route) => {
+    const rest = new URL(route.request().url()).pathname.slice('/vault/'.length);
+    const file = join(webDist, !rest || rest.endsWith('/') ? `${rest}index.html` : rest);
+    if (!file.startsWith(webDist) || !existsSync(file)) return route.fulfill({ status: 404, body: '' });
+    return route.fulfill({ status: 200, headers: { 'content-type': types[extname(file)] ?? 'application/octet-stream' }, body: readFileSync(file) });
+  });
+  const site = await context.newPage();
+  await site.goto('https://wmpass.pages.dev/vault/');
+  await site.getByRole('button', { name: 'Open in the extension' }).click({ timeout: 15_000 });
+  check('the web vault hands over to the extension', await site.waitForURL(`chrome-extension://${id}/vault.html`, { timeout: 10_000 }).then(() => true, () => false), site.url());
+  await site.close();
+} else {
+  console.log('skip the web vault hand-over: run `npm run web:build` first');
+}
 
 check('no script errors', errors.length === 0, errors.slice(0, 3).join(' | ').slice(0, 300));
 await context.close();

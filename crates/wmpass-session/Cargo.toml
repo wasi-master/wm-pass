@@ -13,8 +13,11 @@ workspace = true
 
 [features]
 default = []
-# Network features, for shells with a blocking HTTP client. The extension has none.
-net = ["dep:wmpass-net", "wmpass-net/native", "dep:wmpass-bw", "dep:wmpass-lan"]
+# Network features over HTTP: breach checks, aliases, inboxes, icons, Bitwarden accounts. The
+# browser builds have these, over fetch.
+online = ["dep:wmpass-net", "dep:wmpass-bw"]
+# Those on a blocking client, and the local network, for desktop and Android.
+net = ["online", "wmpass-net/native", "wmpass-bw/native", "dep:wmpass-lan"]
 
 [dependencies]
 wmpass-core.workspace = true

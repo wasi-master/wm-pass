@@ -1,54 +1,29 @@
 //! Everything that waits on a network. These calls run outside the lock on [`Service`], so a slow
 //! server leaves the vault usable. They hold no vault state of their own: a shell reveals
 //! what a call needs, such as an API key, and passes it in as bytes.
+//!
+//! The calls over HTTP are written once, against [`AsyncHttp`]. Desktop and Android run them on a
+//! blocking client, whose futures are ready at once; the browser runs them over `fetch`. The local
+//! network needs raw sockets, so it is native only, in `lan`.
 
-use std::collections::HashMap;
-use std::net::{TcpListener, TcpStream};
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use wmpass_core::crypto;
 use wmpass_core::Secret;
-use wmpass_lan::discovery::{self, Advert};
-use wmpass_lan::join::{self, Arrival, Joined, PendingJoin};
-use wmpass_lan::pair::{PairingQr, PendingCode, begin_code_pairing};
-use wmpass_lan::share::{self, ShareReceiver};
-use wmpass_lan::sync::{self, BlobStore};
-use wmpass_lan::{Identity, LanError, Peer, Role};
 use wmpass_net::aliases::{self, Alias, Provider};
 use wmpass_net::breach;
 use wmpass_net::favicon::{self, IconSource};
-use wmpass_net::http::{Call as NetCall, NativeHttp, NetError, NetPolicy};
+use wmpass_net::http::{AsyncHttp, Call as NetCall, NetError, NetPolicy};
 use wmpass_net::inbox;
 use wmpass_net::usernames::{self, Availability};
 use zeroize::Zeroizing;
 
 use crate::service::{Reply, Service, SessionError};
 
-/// What outlives a single call: open ports and half-finished pairings.
-#[derive(Default)]
-struct Held {
-    listener: Option<TcpListener>,
-    advert: Option<Advert>,
-    qr: Option<PairingQr>,
-    code: Option<PendingCode<TcpStream>>,
-    /// A new device waiting for its person to compare digits.
-    joining: Option<PendingJoin<TcpStream>>,
-    offers: HashMap<String, ShareReceiver>,
-    cancelled: bool,
-}
-
-static HELD: Mutex<Option<Held>> = Mutex::new(None);
-
-fn held<T>(run: impl FnOnce(&mut Held) -> T) -> Result<T, SessionError> {
-    let mut guard = HELD.lock().map_err(|_| failed("busy", "try that again"))?;
-    Ok(run(guard.get_or_insert_with(Held::default)))
-}
-
-fn failed(code: &'static str, message: impl Into<String>) -> SessionError {
+pub(crate) fn failed(code: &'static str, message: impl Into<String>) -> SessionError {
     SessionError { code, message: message.into() }
 }
 
@@ -56,11 +31,7 @@ fn net_error(error: NetError) -> SessionError {
     failed("network", error.to_string())
 }
 
-fn lan_error(error: LanError) -> SessionError {
-    failed("lan", error.to_string())
-}
-
-fn parse<T: DeserializeOwned>(args: &str) -> Result<T, SessionError> {
+pub(crate) fn parse<T: DeserializeOwned>(args: &str) -> Result<T, SessionError> {
     serde_json::from_str(if args.is_empty() { "{}" } else { args })
         .map_err(|e| failed("invalid", format!("bad arguments: {e}")))
 }
@@ -69,9 +40,9 @@ fn secret_text(secret: &[u8]) -> Result<Secret, SessionError> {
     Ok(Secret::new(std::str::from_utf8(secret).map_err(|_| failed("invalid", "not text"))?))
 }
 
-fn run<T>(call: NetCall<T>, online: bool) -> Result<T, SessionError> {
+async fn run<T>(http: &impl AsyncHttp, call: NetCall<T>, online: bool) -> Result<T, SessionError> {
     let policy = if online { NetPolicy::Any } else { NetPolicy::Offline };
-    call.run(&NativeHttp::default(), policy).map_err(net_error)
+    call.run_async(http, policy).await.map_err(net_error)
 }
 
 fn answer_word(answer: Availability) -> &'static str {
@@ -93,7 +64,7 @@ fn page_site(name: &str) -> Result<&'static usernames::PageSite, SessionError> {
     usernames::PAGE_SITES.iter().find(|s| s.name == name).ok_or_else(|| failed("invalid", "unknown site"))
 }
 
-fn view(value: Value) -> Reply {
+pub(crate) fn view(value: Value) -> Reply {
     Reply { json: value.to_string(), ..Reply::default() }
 }
 
@@ -133,136 +104,10 @@ struct AliasArgs {
     tag: String,
 }
 
-/// Attachment blobs in a folder. They are already sealed under their own keys.
-struct FolderBlobs(std::path::PathBuf);
-
-impl BlobStore for FolderBlobs {
-    fn get(&self, name: &str) -> Option<Vec<u8>> {
-        if name.contains(['/', '\\']) {
-            return None;
-        }
-        std::fs::read(self.0.join(name)).ok()
-    }
-
-    fn put(&mut self, name: &str, bytes: &[u8]) -> Result<(), LanError> {
-        // The name came from the other device.
-        if name.contains(['/', '\\']) || name.starts_with('.') {
-            return Err(LanError::Decode);
-        }
-        std::fs::write(self.0.join(name), bytes).map_err(LanError::from)
-    }
-}
-
-/// What a new device came away with: the device to trust as JSON, the sealed file as a blob.
-fn joined_reply(joined: Joined) -> Reply {
-    Reply {
-        json: json!({"done": true, "peer": peer_view(&joined.peer), "blobs": joined.blobs}).to_string(),
-        secret: None,
-        blobs: vec![joined.file],
-    }
-}
-
-type WithService<'a> = dyn Fn(&mut dyn FnMut(&mut Service) -> Result<Reply, SessionError>) -> Result<Reply, SessionError> + 'a;
-
-/// The open vault, sealed as it would be saved, and the attachments it refers to.
-fn vault_to_send(with_service: &WithService<'_>, handle: u64) -> Result<(Vec<u8>, Vec<String>), SessionError> {
-    let mut out = None;
-    with_service(&mut |service| {
-        out = Some(service.with_vault(handle, |vault| Ok::<_, wmpass_core::Error>((vault.save()?, vault.referenced_blobs())))??);
-        Ok(Reply::default())
-    })?;
-    out.ok_or_else(|| failed("invalid", "no vault is open"))
-}
-
-fn identity(secret: &[u8]) -> Result<Identity, SessionError> {
-    let raw: [u8; 32] = secret.try_into().map_err(|_| failed("invalid", "bad device key"))?;
-    Ok(Identity::from_secret(raw))
-}
-
-fn peer_view(peer: &Peer) -> Value {
-    json!({"key": hex(&peer.key), "name": peer.name})
-}
-
-fn hex(bytes: &[u8]) -> String {
+pub(crate) fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-fn unhex(text: &str) -> Option<Vec<u8>> {
-    if !text.len().is_multiple_of(2) {
-        return None;
-    }
-    (0..text.len()).step_by(2).map(|i| u8::from_str_radix(text.get(i..i + 2)?, 16).ok()).collect()
-}
-
-fn peers_from(list: &[PeerArg]) -> Vec<Peer> {
-    list.iter()
-        .filter_map(|p| {
-            let key: [u8; 32] = unhex(&p.key)?.try_into().ok()?;
-            Some(Peer { key, name: p.name.clone() })
-        })
-        .collect()
-}
-
-#[derive(Deserialize, Default, Clone)]
-#[serde(default)]
-struct PeerArg {
-    key: String,
-    name: String,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(default)]
-struct LanArgs {
-    address: String,
-    name: String,
-    text: String,
-    accepted: bool,
-    peers: Vec<PeerArg>,
-    blob_dir: String,
-    port: u16,
-    ms: u64,
-    token: String,
-    id: String,
-}
-
-/// Waits for one connection, for up to two minutes, unless cancelled.
-fn accept() -> Result<TcpStream, SessionError> {
-    let listener = held(|h| {
-        h.cancelled = false;
-        h.listener.as_ref().map(TcpListener::try_clone)
-    })?
-    .ok_or_else(|| failed("invalid", "not listening"))?
-    .map_err(|e| failed("lan", e.to_string()))?;
-    listener.set_nonblocking(true).map_err(|e| failed("lan", e.to_string()))?;
-    let deadline = Instant::now() + Duration::from_secs(120);
-    loop {
-        match listener.accept() {
-            Ok((stream, _)) => {
-                stream.set_nonblocking(false).map_err(|e| failed("lan", e.to_string()))?;
-                wmpass_lan::prepare(&stream).map_err(lan_error)?;
-                return Ok(stream);
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                if Instant::now() > deadline || held(|h| h.cancelled)? {
-                    return Err(failed("cancelled", "stopped waiting for the other device"));
-                }
-                std::thread::sleep(Duration::from_millis(120));
-            }
-            Err(error) => return Err(failed("lan", error.to_string())),
-        }
-    }
-}
-
-fn connect(address: &str) -> Result<TcpStream, SessionError> {
-    let target = address.parse().map_err(|_| failed("invalid", "that is not a device's address"))?;
-    let stream = TcpStream::connect_timeout(&target, Duration::from_secs(10))
-        .map_err(|_| failed("lan", "could not reach that device"))?;
-    wmpass_lan::prepare(&stream).map_err(lan_error)?;
-    Ok(stream)
-}
-
-/// One call. `service` is locked only for the moments vault state is needed.
-#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 /// Where a kept mailbox's service lives. The named ones are fixed; the rest are the owner's.
 fn inbox_base(provider: &str, base: &str) -> Result<String, SessionError> {
     match provider {
@@ -305,12 +150,44 @@ fn mail_rows(list: &[inbox::Message]) -> Value {
     json!(list.iter().map(|m| json!({"id": m.id, "from": m.from, "subject": m.subject, "preview": m.preview, "at_ms": m.at_ms})).collect::<Vec<_>>())
 }
 
-/// Whether a call belongs here rather than on the service itself.
-pub fn is_net_method(method: &str) -> bool {
-    method == "remote.sync" || ["breach.", "alias.", "usernames.", "inbox.", "lan.", "share.", "bitwarden."].iter().any(|prefix| method.starts_with(prefix))
+/// A kept mail.tm-style mailbox's list, or one message from it.
+async fn mailtm_mail(http: &impl AsyncHttp, base: &str, token: &Secret, reading: bool, message: &str, online: bool) -> Result<Value, SessionError> {
+    if reading {
+        let body = run(http, inbox::mailtm_read_at(base, token, message), online).await?;
+        Ok(json!({"from": body.from, "to": body.to, "subject": body.subject, "text": body.text, "html": body.html, "at_ms": body.at_ms}))
+    } else {
+        Ok(mail_rows(&run(http, inbox::mailtm_messages_at(base, token), online).await?))
+    }
 }
 
+/// Whether a call belongs here rather than on the service itself.
+pub fn is_net_method(method: &str) -> bool {
+    method == "remote.sync" || ["breach.", "alias.", "usernames.", "inbox.", "icon.", "lan.", "share.", "bitwarden."].iter().any(|prefix| method.starts_with(prefix))
+}
+
+/// One call, on a blocking client or over the local network. `service` is locked only for the
+/// moments vault state is needed.
+#[cfg(feature = "net")]
 pub fn call(
+    service: &Mutex<Option<Service>>,
+    method: &str,
+    handle: u64,
+    args: &str,
+    secret: &[u8],
+    online: bool,
+    now_ms: u64,
+) -> Result<Reply, SessionError> {
+    if crate::lan::is_lan_method(method) {
+        return crate::lan::call(service, method, handle, args, secret, now_ms);
+    }
+    let native = wmpass_net::http::NativeHttp::default();
+    wmpass_net::http::block_on(call_over(&wmpass_net::http::Blocking(&native), service, method, handle, args, secret, online, now_ms))
+}
+
+/// One call over HTTP, on whatever client the shell has.
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
+pub async fn call_over(
+    http: &impl AsyncHttp,
     service: &Mutex<Option<Service>>,
     method: &str,
     handle: u64,
@@ -325,7 +202,6 @@ pub fn call(
         run(service)
     };
     match method {
-        // ---- breaches ----
         "breach.password" => {
             #[derive(Deserialize, Default)]
             #[serde(default)]
@@ -335,8 +211,8 @@ pub fn call(
             let a: A = parse(args)?;
             let password = secret_text(secret)?;
             let count = match a.source.as_str() {
-                "" | "hibp" => run(breach::password_count(&password), online)?,
-                "xon" => run(breach::password_count_xon(&password), online)?,
+                "" | "hibp" => run(http, breach::password_count(&password), online).await?,
+                "xon" => run(http, breach::password_count_xon(&password), online).await?,
                 _ => return Err(failed("invalid", "unknown source")),
             };
             Ok(view(json!({"count": count})))
@@ -360,7 +236,11 @@ pub fn call(
             };
             let mut last = failed("not_found", "no icon");
             for source in tries {
-                match favicon::fetch(*source, &host).map_err(net_error).and_then(|call| run(call, online)) {
+                let fetched = match favicon::fetch(*source, &host) {
+                    Ok(call) => run(http, call, online).await,
+                    Err(error) => Err(net_error(error)),
+                };
+                match fetched {
                     Ok(bytes) => return Ok(Reply { json: json!({}).to_string(), blobs: vec![bytes], ..Reply::default() }),
                     Err(error) => last = error,
                 }
@@ -376,9 +256,9 @@ pub fn call(
             }
             let a: A = parse(args)?;
             let found = match a.source.as_str() {
-                "hibp" => run(breach::hibp_account(&a.email, &secret_text(secret)?), online)?,
-                "leakcheck" => run(breach::leakcheck_public(&a.email), online)?,
-                "leakcheck_pro" => run(breach::leakcheck_pro(&a.email, &secret_text(secret)?), online)?,
+                "hibp" => run(http, breach::hibp_account(&a.email, &secret_text(secret)?), online).await?,
+                "leakcheck" => run(http, breach::leakcheck_public(&a.email), online).await?,
+                "leakcheck_pro" => run(http, breach::leakcheck_pro(&a.email, &secret_text(secret)?), online).await?,
                 _ => return Err(failed("invalid", "unknown source")),
             };
             let rows: Vec<Value> = found.iter().map(|b| json!({"name": b.name, "date": b.date, "data": b.data})).collect();
@@ -398,29 +278,29 @@ pub fn call(
                 Ok(Reply::default())
             })?;
             let (email, candidates, ids) = prepared.ok_or_else(|| failed("invalid", "nothing to check"))?;
-            let result = run(breach::proxynova_check(&email, candidates), online)?;
+            let result = run(http, breach::proxynova_check(&email, candidates), online).await?;
             let matched: Vec<&String> = result.matched.iter().filter_map(|i| ids.get(*i)).collect();
             Ok(view(json!({"lines": result.lines, "matched": matched})))
         }
         // ---- aliases ----
         "alias.create" => {
             let a: AliasArgs = parse(args)?;
-            let made = run(provider(&a)?.create(&secret_text(secret)?, &a.note), online)?;
+            let made = run(http, provider(&a)?.create(&secret_text(secret)?, &a.note), online).await?;
             Ok(view(alias_view(&made)))
         }
         "alias.list" => {
             let a: AliasArgs = parse(args)?;
-            let list = run(provider(&a)?.list(&secret_text(secret)?).map_err(net_error)?, online)?;
+            let list = run(http, provider(&a)?.list(&secret_text(secret)?).map_err(net_error)?, online).await?;
             Ok(view(json!(list.iter().map(alias_view).collect::<Vec<_>>())))
         }
         "alias.set_enabled" => {
             let a: AliasArgs = parse(args)?;
-            run(provider(&a)?.set_enabled(&secret_text(secret)?, &a.id, a.enabled).map_err(net_error)?, online)?;
+            run(http, provider(&a)?.set_enabled(&secret_text(secret)?, &a.id, a.enabled).map_err(net_error)?, online).await?;
             Ok(view(json!({})))
         }
         "alias.delete" => {
             let a: AliasArgs = parse(args)?;
-            run(provider(&a)?.delete(&secret_text(secret)?, &a.id).map_err(net_error)?, online)?;
+            run(http, provider(&a)?.delete(&secret_text(secret)?, &a.id).map_err(net_error)?, online).await?;
             Ok(view(json!({})))
         }
         "alias.plus" => {
@@ -452,7 +332,7 @@ pub fn call(
         "usernames.check" => {
             let a: NameArgs = parse(args)?;
             let site = usernames::SITES.iter().find(|s| s.name == a.site).ok_or_else(|| failed("invalid", "unknown site"))?;
-            let answer = run(usernames::check(*site, &a.name).map_err(net_error)?, online)?;
+            let answer = run(http, usernames::check(*site, &a.name).map_err(net_error)?, online).await?;
             Ok(view(json!({"answer": answer_word(answer)})))
         }
         "usernames.pages" => {
@@ -493,14 +373,14 @@ pub fn call(
             let a: A = parse(args)?;
             match a.service.as_str() {
                 "mailtm" => {
-                    let domains = run(inbox::mailtm_domains(), online)?;
+                    let domains = run(http, inbox::mailtm_domains(), online).await?;
                     let domain = domains.first().ok_or_else(|| failed("network", "the service offered no addresses"))?;
                     let local: [u8; 8] = crypto::random_array()?;
                     let address = format!("{}@{domain}", hex(&local));
                     let password: [u8; 18] = crypto::random_array()?;
                     let password = Secret::from(hex(&password));
-                    let account = run(inbox::mailtm_create(&address, &password), online)?;
-                    let token = run(inbox::mailtm_token(&address, &password), online)?;
+                    let account = run(http, inbox::mailtm_create(&address, &password), online).await?;
+                    let token = run(http, inbox::mailtm_token(&address, &password), online).await?;
                     Ok(Reply {
                         json: json!({"address": address, "service": "mailtm", "account": account}).to_string(),
                         secret: Some(Zeroizing::new(token.expose().as_bytes().to_vec())),
@@ -508,7 +388,7 @@ pub fn call(
                     })
                 }
                 "guerrilla" => {
-                    let session = run(inbox::guerrilla_new(), online)?;
+                    let session = run(http, inbox::guerrilla_new(), online).await?;
                     Ok(Reply {
                         json: json!({"address": session.address, "service": "guerrilla"}).to_string(),
                         secret: Some(Zeroizing::new(session.token.expose().as_bytes().to_vec())),
@@ -528,9 +408,9 @@ pub fn call(
             let a: A = parse(args)?;
             let token = secret_text(secret)?;
             let list = if a.service == "mailtm" {
-                run(inbox::mailtm_messages(&token), online)?
+                run(http, inbox::mailtm_messages(&token), online).await?
             } else {
-                run(inbox::guerrilla_messages(&inbox::GuerrillaSession { address: a.address, token }), online)?
+                run(http, inbox::guerrilla_messages(&inbox::GuerrillaSession { address: a.address, token }), online).await?
             };
             let rows: Vec<Value> = list.iter().map(|m| json!({"id": m.id, "from": m.from, "subject": m.subject, "preview": m.preview})).collect();
             Ok(view(json!(rows)))
@@ -542,7 +422,7 @@ pub fn call(
                 id: String,
             }
             let a: A = parse(args)?;
-            let text = run(inbox::mailtm_body(&secret_text(secret)?, &a.id), online)?;
+            let text = run(http, inbox::mailtm_body(&secret_text(secret)?, &a.id), online).await?;
             Ok(view(json!({"text": text})))
         }
         // ---- kept inboxes: their tokens stay in the vault and never reach the app ----
@@ -550,7 +430,7 @@ pub fn call(
             let rows = service.with_vault(handle, |vault| {
                 let mut kept: Vec<(&String, &wmpass_core::model::Inbox)> =
                     vault.doc.prefs.inboxes.iter().filter_map(|(id, kept)| kept.v.as_ref().map(|inbox| (id, inbox))).collect();
-                kept.sort_by(|a, b| b.1.created_ms.cmp(&a.1.created_ms));
+                kept.sort_by_key(|kept| std::cmp::Reverse(kept.1.created_ms));
                 kept.iter()
                     .map(|(id, inbox)| {
                         json!({"id": id, "provider": inbox.provider, "base": inbox.base, "address": inbox.address, "label": inbox.label, "created_ms": inbox.created_ms})
@@ -572,18 +452,18 @@ pub fn call(
             let base = inbox_base(&a.provider, &a.base)?;
             let made = match a.provider.as_str() {
                 "mailtm" | "mailgw" | "custom" => {
-                    let domains = run(inbox::mailtm_domains_at(&base), online)?;
+                    let domains = run(http, inbox::mailtm_domains_at(&base), online).await?;
                     let domain = domains.first().ok_or_else(|| failed("network", "the service offered no addresses"))?;
                     let local: [u8; 8] = crypto::random_array()?;
                     let address = format!("{}@{domain}", hex(&local));
                     let password: [u8; 18] = crypto::random_array()?;
                     let password = Secret::from(hex(&password));
-                    let account = run(inbox::mailtm_create_at(&base, &address, &password), online)?;
-                    let token = run(inbox::mailtm_token_at(&base, &address, &password), online)?;
+                    let account = run(http, inbox::mailtm_create_at(&base, &address, &password), online).await?;
+                    let token = run(http, inbox::mailtm_token_at(&base, &address, &password), online).await?;
                     wmpass_core::model::Inbox { provider: a.provider.clone(), base, address, label: a.label.clone(), token, password, account, created_ms: now_ms }
                 }
                 "guerrilla" => {
-                    let session = run(inbox::guerrilla_new(), online)?;
+                    let session = run(http, inbox::guerrilla_new(), online).await?;
                     wmpass_core::model::Inbox {
                         provider: "guerrilla".to_owned(),
                         address: session.address,
@@ -629,20 +509,12 @@ pub fn call(
             let reply = match kept.provider.as_str() {
                 "mailtm" | "mailgw" | "custom" => {
                     let base = kept.base.clone();
-                    let attempt = |token: &Secret| -> Result<Value, SessionError> {
-                        if reading {
-                            let body = run(inbox::mailtm_read_at(&base, token, &a.message), online)?;
-                            Ok(json!({"from": body.from, "to": body.to, "subject": body.subject, "text": body.text, "html": body.html, "at_ms": body.at_ms}))
-                        } else {
-                            Ok(mail_rows(&run(inbox::mailtm_messages_at(&base, token), online)?))
-                        }
-                    };
-                    match attempt(&kept.token) {
+                    match mailtm_mail(http, &base, &kept.token, reading, &a.message, online).await {
                         Ok(reply) => reply,
                         Err(_) => {
                             // Tokens run out, so the mailbox signs in again with its own password.
-                            kept.token = run(inbox::mailtm_token_at(&base, &kept.address, &kept.password), online)?;
-                            let reply = attempt(&kept.token)?;
+                            kept.token = run(http, inbox::mailtm_token_at(&base, &kept.address, &kept.password), online).await?;
+                            let reply = mailtm_mail(http, &base, &kept.token, reading, &a.message, online).await?;
                             keep_inbox(service, handle, &a.id, Some(kept.clone()), now_ms)?;
                             reply
                         }
@@ -651,26 +523,26 @@ pub fn call(
                 "guerrilla" => {
                     // Guerrilla's sessions lapse when quiet, and a lapsed one hands out a new
                     // address, so each visit first points the session back at this one.
-                    let resumed = run(inbox::guerrilla_resume(&kept.token, &kept.address), online)?;
+                    let resumed = run(http, inbox::guerrilla_resume(&kept.token, &kept.address), online).await?;
                     if resumed.token != kept.token {
                         kept.token = resumed.token.clone();
                         keep_inbox(service, handle, &a.id, Some(kept.clone()), now_ms)?;
                     }
                     let session = inbox::GuerrillaSession { address: kept.address.clone(), token: resumed.token };
                     if reading {
-                        let body = run(inbox::guerrilla_read(&session, &a.message), online)?;
+                        let body = run(http, inbox::guerrilla_read(&session, &a.message), online).await?;
                         json!({"from": body.from, "to": body.to, "subject": body.subject, "text": body.text, "html": body.html, "at_ms": body.at_ms})
                     } else {
-                        mail_rows(&run(inbox::guerrilla_messages(&session), online)?)
+                        mail_rows(&run(http, inbox::guerrilla_messages(&session), online).await?)
                     }
                 }
                 "inbucket" => {
                     let mailbox = kept.address.split('@').next().unwrap_or_default().to_owned();
                     if reading {
-                        let body = run(inbox::inbucket_read(&kept.base, &mailbox, &a.message), online)?;
+                        let body = run(http, inbox::inbucket_read(&kept.base, &mailbox, &a.message), online).await?;
                         json!({"from": body.from, "to": body.to, "subject": body.subject, "text": body.text, "html": body.html, "at_ms": body.at_ms})
                     } else {
-                        mail_rows(&run(inbox::inbucket_messages(&kept.base, &mailbox), online)?)
+                        mail_rows(&run(http, inbox::inbucket_messages(&kept.base, &mailbox), online).await?)
                     }
                 }
                 _ => return Err(failed("invalid", "unknown inbox service")),
@@ -703,218 +575,13 @@ pub fn call(
             if a.delete && online {
                 // Best effort: the mailbox is forgotten here either way.
                 let _ = match kept.provider.as_str() {
-                    "mailtm" | "mailgw" | "custom" => run(inbox::mailtm_delete_at(&kept.base, &kept.token, &kept.account), online),
-                    "inbucket" => run(inbox::inbucket_purge(&kept.base, kept.address.split('@').next().unwrap_or_default()), online),
+                    "mailtm" | "mailgw" | "custom" => run(http, inbox::mailtm_delete_at(&kept.base, &kept.token, &kept.account), online).await,
+                    "inbucket" => run(http, inbox::inbucket_purge(&kept.base, kept.address.split('@').next().unwrap_or_default()), online).await,
                     _ => Ok(()),
                 };
             }
             keep_inbox(service, handle, &a.id, None, now_ms)?;
             Ok(view(json!({})))
-        }
-        // ---- the local network ----
-        "lan.new_identity" => {
-            let fresh = Identity::generate().map_err(lan_error)?;
-            Ok(Reply {
-                json: json!({"public": hex(fresh.public())}).to_string(),
-                secret: Some(Zeroizing::new(fresh.secret_bytes().to_vec())),
-                blobs: Vec::new(),
-            })
-        }
-        "lan.public" => Ok(view(json!({"public": hex(identity(secret)?.public())}))),
-        "lan.listen" => {
-            let listener = TcpListener::bind(("0.0.0.0", 0)).map_err(|e| failed("lan", e.to_string()))?;
-            let port = listener.local_addr().map_err(|e| failed("lan", e.to_string()))?.port();
-            held(|h| h.listener = Some(listener))?;
-            Ok(view(json!({"port": port})))
-        }
-        "lan.advertise" => {
-            let a: LanArgs = parse(args)?;
-            let advert = discovery::advertise(a.port).map_err(lan_error)?;
-            held(|h| h.advert = Some(advert))?;
-            Ok(view(json!({})))
-        }
-        "lan.browse" => {
-            let a: LanArgs = parse(args)?;
-            let found = discovery::browse(Duration::from_millis(a.ms.clamp(200, 10_000))).map_err(lan_error)?;
-            let rows: Vec<String> = found.iter().map(ToString::to_string).collect();
-            Ok(view(json!(rows)))
-        }
-        "lan.stop" => {
-            held(|h| {
-                h.cancelled = true;
-                h.listener = None;
-                h.advert = None;
-                h.qr = None;
-                h.code = None;
-                h.joining = None;
-            })?;
-            Ok(view(json!({})))
-        }
-        "lan.pair_show" => {
-            let a: LanArgs = parse(args)?;
-            let qr = PairingQr::new(&a.address, now_ms).map_err(lan_error)?;
-            let text = qr.text();
-            held(|h| h.qr = Some(qr))?;
-            Ok(Reply { json: "{}".to_owned(), secret: Some(Zeroizing::new(text.into_bytes())), blobs: Vec::new() })
-        }
-        "lan.pair_wait" => {
-            let a: LanArgs = parse(args)?;
-            let me = identity(secret)?;
-            let stream = accept()?;
-            let qr = held(|h| h.qr.clone())?.ok_or_else(|| failed("invalid", "no code on show"))?;
-            let peer = qr.pair(stream, &me, &a.name, Role::Responder, now_ms).map_err(lan_error)?;
-            held(|h| h.qr = None)?;
-            Ok(view(peer_view(&peer)))
-        }
-        "lan.pair_scan" => {
-            let a: LanArgs = parse(args)?;
-            let qr = PairingQr::parse(&a.text, now_ms).map_err(lan_error)?;
-            let stream = connect(&qr.address)?;
-            let peer = qr.pair(stream, &identity(secret)?, &a.name, Role::Initiator, now_ms).map_err(lan_error)?;
-            Ok(view(json!({"peer": peer_view(&peer), "address": qr.address})))
-        }
-        "lan.code_wait" | "lan.code_connect" => {
-            let a: LanArgs = parse(args)?;
-            let (stream, role) = if method == "lan.code_wait" {
-                (accept()?, Role::Responder)
-            } else {
-                (connect(&a.address)?, Role::Initiator)
-            };
-            let pending = begin_code_pairing(stream, &identity(secret)?, &a.name, role).map_err(lan_error)?;
-            let reply = json!({"code": pending.code(), "peer": peer_view(pending.peer())});
-            held(|h| h.code = Some(pending))?;
-            Ok(view(reply))
-        }
-        "lan.code_finish" => {
-            let a: LanArgs = parse(args)?;
-            let pending = held(|h| h.code.take())?.ok_or_else(|| failed("invalid", "no pairing under way"))?;
-            let peer = pending.finish(a.accepted).map_err(lan_error)?;
-            Ok(view(peer_view(&peer)))
-        }
-        "lan.sync" | "lan.serve" => {
-            let a: LanArgs = parse(args)?;
-            let me = identity(secret)?;
-            let peers = peers_from(&a.peers);
-            let (stream, role) = if method == "lan.serve" {
-                (accept()?, Role::Responder)
-            } else {
-                (connect(&a.address)?, Role::Initiator)
-            };
-            let mut blobs = FolderBlobs(a.blob_dir.clone().into());
-            with_service(&mut |service| {
-                let stream = stream.try_clone().map_err(|e| failed("lan", e.to_string()))?;
-                let report = service
-                    .with_vault(handle, |vault| sync::sync(stream, &me, &peers, vault, &mut blobs, role))?
-                    .map_err(lan_error)?;
-                Ok(view(json!({
-                    "peer": report.peer.name,
-                    "sent": report.sent,
-                    "received": report.received,
-                    "blobs_sent": report.blobs_sent,
-                    "blobs_received": report.blobs_received,
-                    "converged": report.converged,
-                })))
-            })
-        }
-        // ---- bringing a new device into the vault ----
-        // The new device listens and shows a code; the one with the vault connects.
-        "lan.join_listen" => {
-            let a: LanArgs = parse(args)?;
-            let listener = TcpListener::bind(("0.0.0.0", 0)).map_err(|e| failed("lan", e.to_string()))?;
-            let port = listener.local_addr().map_err(|e| failed("lan", e.to_string()))?.port();
-            let advert = discovery::advertise_joining(port).map_err(lan_error)?;
-            let qr = if a.address.is_empty() { None } else { Some(PairingQr::new(&format!("{}:{port}", a.address), now_ms).map_err(lan_error)?) };
-            let text = qr.as_ref().map(PairingQr::text).unwrap_or_default();
-            held(|h| {
-                h.listener = Some(listener);
-                h.advert = Some(advert);
-                h.qr = qr;
-            })?;
-            Ok(Reply { json: json!({"port": port}).to_string(), secret: Some(Zeroizing::new(text.into_bytes())), blobs: Vec::new() })
-        }
-        "lan.join_wait" => {
-            let a: LanArgs = parse(args)?;
-            let me = identity(secret)?;
-            let stream = accept()?;
-            let qr = held(|h| h.qr.clone())?;
-            let mut blobs = FolderBlobs(a.blob_dir.clone().into());
-            match join::arrive(stream, &me, &a.name, qr.as_ref(), now_ms, &mut blobs).map_err(lan_error)? {
-                Arrival::Done(joined) => Ok(joined_reply(joined)),
-                Arrival::Code(pending) => {
-                    let reply = json!({"code": pending.code(), "peer": peer_view(pending.peer())});
-                    held(|h| h.joining = Some(pending))?;
-                    Ok(view(reply))
-                }
-            }
-        }
-        "lan.join_finish" => {
-            let a: LanArgs = parse(args)?;
-            let pending = held(|h| h.joining.take())?.ok_or_else(|| failed("invalid", "no device is waiting"))?;
-            let mut blobs = FolderBlobs(a.blob_dir.clone().into());
-            Ok(joined_reply(pending.finish(a.accepted, &mut blobs).map_err(lan_error)?))
-        }
-        "lan.join_find" => {
-            let a: LanArgs = parse(args)?;
-            let found = discovery::browse_joining(Duration::from_millis(a.ms.clamp(200, 10_000))).map_err(lan_error)?;
-            Ok(view(json!(found.iter().map(ToString::to_string).collect::<Vec<_>>())))
-        }
-        "lan.join_scan" => {
-            let a: LanArgs = parse(args)?;
-            let qr = PairingQr::parse(&a.text, now_ms).map_err(lan_error)?;
-            let me = identity(secret)?;
-            let (file, names) = vault_to_send(&with_service, handle)?;
-            let stream = connect(&qr.address)?;
-            let blobs = FolderBlobs(a.blob_dir.clone().into());
-            let peer = join::send_by_qr(stream, &qr, &me, &a.name, now_ms, &file, &names, &blobs).map_err(lan_error)?;
-            Ok(view(json!({"peer": peer_view(&peer)})))
-        }
-        "lan.join_connect" => {
-            let a: LanArgs = parse(args)?;
-            let pending = join::begin_send_by_code(connect(&a.address)?, &identity(secret)?, &a.name).map_err(lan_error)?;
-            let reply = json!({"code": pending.code(), "peer": peer_view(pending.peer())});
-            held(|h| h.code = Some(pending))?;
-            Ok(view(reply))
-        }
-        "lan.join_send" => {
-            let a: LanArgs = parse(args)?;
-            let pending = held(|h| h.code.take())?.ok_or_else(|| failed("invalid", "no device is waiting"))?;
-            let (file, names) = if a.accepted { vault_to_send(&with_service, handle)? } else { (Vec::new(), Vec::new()) };
-            let blobs = FolderBlobs(a.blob_dir.clone().into());
-            let peer = join::finish_send(pending, a.accepted, &file, &names, &blobs).map_err(lan_error)?;
-            Ok(view(json!({"peer": peer_view(&peer)})))
-        }
-        // ---- one-time QR handover ----
-        "share.offer" => {
-            let receiver = ShareReceiver::new(now_ms).map_err(lan_error)?;
-            let text = receiver.offer_text();
-            let token: [u8; 8] = crypto::random_array()?;
-            let token = hex(&token);
-            held(|h| {
-                h.offers.clear();
-                h.offers.insert(token.clone(), receiver);
-            })?;
-            Ok(view(json!({"token": token, "text": text})))
-        }
-        "share.seal" => {
-            let a: LanArgs = parse(args)?;
-            with_service(&mut |service| {
-                let sealed = service.with_vault(handle, |vault| {
-                    let entry = vault.get(&a.id).ok_or_else(|| failed("invalid", "that entry is gone"))?;
-                    share::seal_to_offer(&a.text, entry, now_ms).map_err(lan_error)
-                })??;
-                Ok(view(json!({"text": sealed})))
-            })
-        }
-        "share.open" => {
-            let a: LanArgs = parse(args)?;
-            let receiver = held(|h| h.offers.remove(&a.token))?.ok_or_else(|| failed("invalid", "that offer has gone"))?;
-            let entry = receiver.open(&a.text, now_ms).map_err(lan_error)?;
-            with_service(&mut |service| {
-                let entry = entry.clone();
-                let id = service.with_vault(handle, |vault| vault.add(wmpass_core::model::Entry { id: String::new(), ..entry }, now_ms))??;
-                service.touch(handle)?;
-                Ok(view(json!({"id": id})))
-            })
         }
         // ---- accounts held elsewhere ----
         "bitwarden.login" | "bitwarden.open_cached" | "bitwarden.register" => {
@@ -940,7 +607,6 @@ pub fn call(
                 (_, Some("eu")) => Endpoints::official_eu(),
                 _ => Endpoints::official(),
             };
-            let http = NativeHttp::default();
             let policy = if online { NetPolicy::Any } else { NetPolicy::Offline };
             // Only a refused password is a guess. The unlock screen counts those towards its
             // wait, so a dropped connection or a server fault must not look like one.
@@ -959,8 +625,8 @@ pub fn call(
                 other => failed("bitwarden", other.to_string()),
             };
             if method == "bitwarden.register" {
-                wmpass_bw::account::register(
-                    &http,
+                wmpass_bw::account::register_async(
+                    http,
                     policy,
                     &endpoints,
                     &a.email,
@@ -968,6 +634,7 @@ pub fn call(
                     secret,
                     wmpass_bw::crypto::Kdf::Argon2id { iterations: 3, memory_mib: 64, parallelism: 4 },
                 )
+                .await
                 .map_err(bw_error)?;
                 return Ok(view(json!({})));
             }
@@ -978,7 +645,7 @@ pub fn call(
                     (None, Some(code)) => Some(SecondFactor::NewDevice(code)),
                     (None, None) => None,
                 };
-                Account::login(&http, policy, endpoints, &a.email, secret, &device, factor.as_ref()).map_err(bw_error)?
+                Account::login_async(http, policy, endpoints, &a.email, secret, &device, factor.as_ref()).await.map_err(bw_error)?
             } else {
                 let cached = crate::service::base64_decode(&a.cache)?;
                 Account::unlock_offline(endpoints, &cached, secret).map_err(bw_error)?
@@ -992,7 +659,6 @@ pub fn call(
             })
         }
         "remote.sync" => {
-            let http = NativeHttp::default();
             let policy = if online { NetPolicy::Any } else { NetPolicy::Offline };
             let mut taken = None;
             with_service(&mut |service| {
@@ -1000,7 +666,10 @@ pub fn call(
                 Ok(Reply::default())
             })?;
             let mut account = taken.ok_or_else(|| failed("invalid", "nothing to sync"))?;
-            let pushed = account.push(&http, policy).and_then(|()| account.pull(&http, policy));
+            let pushed = match account.push_async(http, policy).await {
+                Ok(()) => account.pull_async(http, policy).await,
+                Err(error) => Err(error),
+            };
             let mut account_slot = Some(account);
             with_service(&mut |service| {
                 if let Some(account) = account_slot.take() {
@@ -1015,6 +684,7 @@ pub fn call(
     }
 }
 
+#[cfg(all(test, feature = "net"))]
 #[cfg(test)]
 mod tests {
     use super::*;

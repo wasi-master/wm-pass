@@ -205,6 +205,13 @@ impl<T> Call<T> {
         let response = http.send(&self.request)?;
         (self.parse)(&response)
     }
+
+    /// The same, over a client that may wait, such as the browser's `fetch`.
+    pub async fn run_async(self, http: &impl AsyncHttp, policy: NetPolicy) -> Result<T, NetError> {
+        check(&self.request, policy)?;
+        let response = http.send(&self.request).await?;
+        (self.parse)(&response)
+    }
 }
 
 /// Where plain http is acceptable, because nothing readable crosses a network: this
@@ -259,6 +266,34 @@ pub fn check_socket(policy: NetPolicy) -> Result<(), NetError> {
 pub trait Http: Send + Sync {
     /// Sends one request.
     fn send(&self, request: &Request) -> Result<Response, NetError>;
+}
+
+/// Sends requests, possibly over `fetch`. The same rule about redirects applies.
+pub trait AsyncHttp {
+    /// Sends one request.
+    fn send(&self, request: &Request) -> impl Future<Output = Result<Response, NetError>>;
+}
+
+/// Adapts a blocking client. Its futures are ready at once.
+#[allow(missing_debug_implementations)]
+pub struct Blocking<'a>(pub &'a dyn Http);
+
+impl AsyncHttp for Blocking<'_> {
+    async fn send(&self, request: &Request) -> Result<Response, NetError> {
+        self.0.send(request)
+    }
+}
+
+/// Runs a future built on a blocking client.
+pub fn block_on<F: Future>(future: F) -> F::Output {
+    let mut future = std::pin::pin!(future);
+    let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+    loop {
+        if let std::task::Poll::Ready(output) = future.as_mut().poll(&mut context) {
+            return output;
+        }
+        std::thread::yield_now();
+    }
 }
 
 /// A blocking client over rustls.

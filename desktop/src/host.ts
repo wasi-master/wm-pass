@@ -82,6 +82,17 @@ export async function desktopHost(): Promise<Host> {
       void invoke('state_changed', { unlocked, handle: handle ?? 0 });
     },
     setScreenProtection: (on) => invoke('set_screen_protection', { on }),
+    quick: {
+      title: 'Unlock from the system keyring',
+      sub: 'A convenience, not protection: any program in your session can ask the keyring for the key.',
+      help: 'action.keyring_unlock',
+      available: () => invoke('quick_available'),
+      enrolled: (file) => invoke('quick_enrolled', { file }),
+      enroll: (handle, file) => invoke('quick_enroll', { handle, file }),
+      forget: (file) => invoke('quick_forget', { file }),
+      // The key comes from the system's store and never reaches this page.
+      open: (file, sealed) => rawCall('quick_open', packed({ file }, sealed)),
+    },
     places,
     hardware: {
       async tap(kind, factor) {
@@ -103,11 +114,6 @@ export async function desktopHost(): Promise<Host> {
     desktop: {
       activity: () => invoke('activity'),
       setLockRule: (afterSeconds, onSleep) => invoke('set_lock_rule', { afterSeconds, onSleep }),
-      quickAvailable: () => invoke('quick_available'),
-      quickEnrolled: (file) => invoke('quick_enrolled', { file }),
-      quickEnroll: (handle, file) => invoke('quick_enroll', { handle, file }),
-      quickForget: (file) => invoke('quick_forget', { file }),
-      quickOpen: (file, sealed) => rawCall('quick_open', packed({ file }, sealed)),
       installBrowserHost: () => invoke('install_browser_host'),
       removeBrowserHost: () => invoke('remove_browser_host'),
       bridgeFingerprint: () => invoke('bridge_fingerprint'),

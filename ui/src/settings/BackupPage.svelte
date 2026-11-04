@@ -7,6 +7,7 @@
   import { overlays } from '../parts/floating.svelte';
   import { pass } from '../engine/pass.svelte';
   import { host, type PlaceFile } from '../engine/host';
+  import { shownName } from '../hosts/folders';
   import Choice from './Choice.svelte';
   import PlaceDialog from './PlaceDialog.svelte';
   import { kindOf } from './placeKinds';
@@ -29,7 +30,7 @@
     const last = places.runs[place.id];
     if (last?.problem) return last.problem;
     if (last) return `Last copy ${whenShort(last.at_ms)}`;
-    if (place.kind === 'folder') return place.path;
+    if (place.kind === 'folder') return shownName(place.path);
     if (place.kind === 'webdav') return place.url;
     if (place.kind === 's3') return place.bucket;
     return kindOf(place.kind)?.blurb ?? place.kind;

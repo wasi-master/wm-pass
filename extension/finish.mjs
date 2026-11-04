@@ -18,5 +18,7 @@ delete firefox.key;
 delete firefox.minimum_chrome_version;
 firefox.background = { scripts: ['background.js'], type: 'module' };
 firefox.permissions = firefox.permissions.filter((p) => p !== 'offscreen');
+// Firefox has no externally_connectable: the web vault finds no extension there and runs on its own.
+delete firefox.externally_connectable;
 firefox.browser_specific_settings = { gecko: { id: 'wmpass@wasimaster.com', strict_min_version: '128.0' } };
 writeFileSync('dist/firefox/manifest.json', JSON.stringify(firefox, null, 2));

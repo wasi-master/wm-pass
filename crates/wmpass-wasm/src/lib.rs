@@ -1,56 +1,78 @@
-//! The session as the extension sees it: one call, bytes in and bytes out.
+//! The session as the extension and the web vault see it: one call, bytes in and bytes out.
 //!
 //! The frame format is in `wmpass_session::wire`. Vault state stays in this module's memory,
 //! so nothing a page script can reach ever holds a key.
 
 use std::cell::RefCell;
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 mod places;
 
+use js_sys::Function;
 use wasm_bindgen::prelude::*;
 use wmpass_bridge::{Client, Keys};
-use wmpass_session::{Service, wire};
+use wmpass_session::{Service, SessionError, net, wire};
+use zeroize::Zeroizing;
+
+// A Mutex rather than a RefCell: a call that waits on the network borrows the service between
+// its requests, and other calls run in the meantime. Nothing holds it across a wait.
+static SERVICE: Mutex<Option<Service>> = Mutex::new(None);
 
 thread_local! {
-    static SERVICE: RefCell<Option<Service>> = const { RefCell::new(None) };
     static BRIDGE: RefCell<Option<Client>> = const { RefCell::new(None) };
+}
+
+fn service() -> MutexGuard<'static, Option<Service>> {
+    SERVICE.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+fn not_started() -> SessionError {
+    SessionError { code: "not_started", message: "the vault service has not started".to_owned() }
 }
 
 /// Starts the service, with this browser's own number for breaking ties in a merge.
 #[wasm_bindgen]
 pub fn start(device: u32) {
-    SERVICE.with(|cell| {
-        let mut service = cell.borrow_mut();
-        if service.is_none() {
-            *service = Some(Service::new(device));
-        }
-    });
+    let mut service = service();
+    if service.is_none() {
+        *service = Some(Service::new(device));
+    }
 }
 
 /// Runs one call. The caller fills its own copies with zeros when done with them.
 #[wasm_bindgen]
 pub fn call(frame: &[u8]) -> Vec<u8> {
-    SERVICE.with(|cell| {
-        let mut service = cell.borrow_mut();
-        let reply = match service.as_mut() {
-            Some(service) => wire::dispatch(service, frame),
-            None => wire::reply_frame(&Err(wmpass_session::SessionError {
-                code: "not_started",
-                message: "the vault service has not started".to_owned(),
-            })),
-        };
-        reply.to_vec()
-    })
+    let reply = match service().as_mut() {
+        Some(service) => wire::dispatch(service, frame),
+        None => wire::reply_frame(&Err(not_started())),
+    };
+    reply.to_vec()
+}
+
+/// Runs one call, including those that reach a network: breach checks, aliases, inboxes, icons,
+/// Bitwarden. Their requests go out through `fetch(method, url, headers, body, timeoutMs)`, which
+/// the page supplies; the policy check and the reading of answers stay here.
+#[wasm_bindgen]
+pub async fn call_async(frame: Vec<u8>, fetch: Function) -> Vec<u8> {
+    let frame = Zeroizing::new(frame);
+    let request = match wire::parse_request(&frame) {
+        Ok(request) => request,
+        Err(error) => return wire::reply_frame(&Err(error)).to_vec(),
+    };
+    if !net::is_net_method(&request.method) {
+        return call(&frame);
+    }
+    let http = places::JsFetch(fetch);
+    let result = net::call_over(&http, &SERVICE, &request.method, request.handle, &request.args, request.secret, request.online, request.now_ms).await;
+    wire::reply_frame(&result).to_vec()
 }
 
 /// Forgets every key.
 #[wasm_bindgen]
 pub fn lock_all() {
-    SERVICE.with(|cell| {
-        if let Some(service) = cell.borrow_mut().as_mut() {
-            service.lock_all();
-        }
-    });
+    if let Some(service) = service().as_mut() {
+        service.lock_all();
+    }
 }
 
 fn bridge_failed(error: wmpass_bridge::BridgeError) -> JsError {

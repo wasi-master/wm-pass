@@ -63,17 +63,24 @@ pub fn apps() -> Apps {
 static UPDATES: Mutex<Vec<(String, Map<String, Value>)>> = Mutex::new(Vec::new());
 
 fn run(place: &Place, online: bool, op: Op<'_>) -> Result<Done, String> {
-    let policy = if online { NetPolicy::Any } else { NetPolicy::Offline };
-    let http = NativeHttp::default();
-    let parsed = places::Place::from_json(&place.0);
-    let reach = places::Reach { client: || Client::new(Blocking(&http), policy), policy };
-    let ran = block_on(places::run(&reach, &apps(), &parsed, op, crate::engine::now_ms()));
-    if !ran.update.is_empty()
+    let (done, update) = run_for(&place.0, online, op);
+    if !update.is_empty()
         && let Ok(mut pending) = UPDATES.lock()
     {
-        pending.push((place.id(), ran.update));
+        pending.push((place.id(), update));
     }
-    ran.done.map_err(|fault| fault.to_string())
+    done
+}
+
+/// One run, with what it changed about the place handed back rather than kept for this app's
+/// page. The browser extension's places run here through its link, and their changes are its own.
+pub fn run_for(place: &Value, online: bool, op: Op<'_>) -> (Result<Done, String>, Map<String, Value>) {
+    let policy = if online { NetPolicy::Any } else { NetPolicy::Offline };
+    let http = NativeHttp::default();
+    let parsed = places::Place::from_json(place);
+    let reach = places::Reach { client: || Client::new(Blocking(&http), policy), policy };
+    let ran = block_on(places::run(&reach, &apps(), &parsed, op, crate::engine::now_ms()));
+    (ran.done.map_err(|fault| fault.to_string()), ran.update)
 }
 
 pub fn list(place: &Place, online: bool) -> Result<Vec<PlaceFile>, String> {

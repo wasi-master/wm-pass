@@ -349,6 +349,11 @@ pub fn run<T>(call: Call<T>, http: &dyn wmpass_net::Http, policy: wmpass_net::Ne
     Ok(call.run(http, policy)?)
 }
 
+/// The same, over a client that may wait.
+pub async fn run_async<T>(call: Call<T>, http: &impl wmpass_net::AsyncHttp, policy: wmpass_net::NetPolicy) -> Result<T> {
+    Ok(call.run_async(http, policy).await?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
