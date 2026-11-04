@@ -652,7 +652,7 @@ internal fun GeneratorSettingsScreen() {
                     "Type",
                     prefs.genMode,
                     PassIcons.Casino,
-                    options = listOf("password" to "Random", "passphrase" to "Words", "pronounceable" to "Pronounceable", "pin" to "PIN", "pattern" to "Pattern"),
+                    options = listOf("password" to "Random", "passphrase" to "Words", "pronounceable" to "Pronounceable", "pin" to "PIN", "pattern" to "Pattern", "lock" to "Lock pattern"),
                 )
             }
             item {

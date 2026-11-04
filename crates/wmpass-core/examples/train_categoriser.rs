@@ -13,6 +13,9 @@ use std::fs;
 use wmpass_core::categorise::{BUCKETS, CATEGORIES, SCALE, classify_with, features};
 
 const KEYWORD_WEIGHT: u32 = 8;
+/// A game's name is a name like any listed site's, with a little more say: most of them are
+/// nothing like a word, so the classifier needs every one it can get.
+const GAME_WEIGHT: u32 = 2;
 
 struct Sample {
     text: String,
@@ -58,6 +61,21 @@ fn samples() -> Vec<Sample> {
             text: text.to_owned(),
             class: class_of(category).unwrap(),
             weight: KEYWORD_WEIGHT,
+        });
+    }
+    let gaming = class_of("Gaming").unwrap();
+    for line in fs::read_to_string(root().join("games.tsv"))
+        .unwrap()
+        .lines()
+    {
+        if line.starts_with('#') || line.is_empty() {
+            continue;
+        }
+        let name = line.split('\t').next().unwrap();
+        out.push(Sample {
+            text: name.to_owned(),
+            class: gaming,
+            weight: GAME_WEIGHT,
         });
     }
     out

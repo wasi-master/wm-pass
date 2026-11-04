@@ -124,6 +124,8 @@ fun SheetRow(
     selected: Boolean = false,
     // Off greys the row and lets the subtitle say why.
     enabled: Boolean = true,
+    // Drawn in place of the icon's tile, for a row that names something with its own picture.
+    leading: (@Composable () -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     val colors = palette
@@ -142,7 +144,7 @@ fun SheetRow(
             .padding(vertical = 10.dp, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        GlyphTile(icon, tint, size = 42.dp)
+        if (leading != null) Box(Modifier.size(if (colors.flat) 32.dp else 42.dp), contentAlignment = Alignment.Center) { leading() } else GlyphTile(icon, tint, size = 42.dp)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(title, color = colors.text, style = MaterialTheme.typography.bodyLarge)
@@ -337,12 +339,14 @@ fun TagSheet(present: List<String>, onDismiss: () -> Unit, suggested: List<Strin
     var everything by remember { mutableStateOf(false) }
     PassSheet(onDismiss, "Tags") {
         val offered = suggested.filter { it !in present && it !in all }
-        if (offered.isNotEmpty()) {
-            Text("Suggested", color = colors.textMid, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 2.dp, bottom = 8.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
-                offered.forEach { tag -> Pill(tag, false, icon = PassIcons.Add) { onToggle(tag, true) } }
+        androidx.compose.animation.AnimatedVisibility(offered.isNotEmpty()) {
+            Column {
+                Text("Suggested", color = colors.textMid, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 2.dp, bottom = 8.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+                    com.wasimaster.wmpass.ui.parts.AppearingEach(offered) { tag -> Pill(tag, false, icon = PassIcons.Add) { onToggle(tag, true) } }
+                }
+                Spacer(Modifier.height(16.dp))
             }
-            Spacer(Modifier.height(16.dp))
         }
         if (all.isNotEmpty()) {
             Text("Tap to add or take off. Hold one to rename or delete it.", color = colors.textMid, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 2.dp, bottom = 8.dp))
@@ -356,7 +360,7 @@ fun TagSheet(present: List<String>, onDismiss: () -> Unit, suggested: List<Strin
                 itemVerticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.animateContentSize(Springs.glide()),
             ) {
-                shown.forEach { tag ->
+                com.wasimaster.wmpass.ui.parts.AppearingEach(shown) { tag ->
                     val on = tag in present
                     TagChip(tag, on, onRemove = if (on) ({ onToggle(tag, false) }) else null, onLongClick = { managing = tag }) { onToggle(tag, !on) }
                 }

@@ -34,6 +34,21 @@ MAP = {
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
+def merge_games(rows: dict) -> None:
+    """Files a game's own site under Gaming, where the directory gives it no other heading."""
+    with open(os.path.join(ROOT, "data", "games.tsv")) as fh:
+        for line in fh:
+            if line.startswith("#") or not line.strip():
+                continue
+            _, domains = line.rstrip("\n").split("\t")
+            for domain in domains.split(","):
+                if domain == "-":
+                    continue
+                category, methods = rows.get(domain, ("-", "-"))
+                if category == "-":
+                    rows[domain] = ("Gaming", methods)
+
+
 def main() -> None:
     rows = {}
     for _, site in json.load(open(sys.argv[1])):
@@ -41,6 +56,7 @@ def main() -> None:
         methods = ",".join(site.get("tfa", [])) or "-"
         for domain in [site["domain"], *site.get("additional-domains", [])]:
             rows[domain.lower()] = (category, methods)
+    merge_games(rows)
     with open(os.path.join(ROOT, "data", "domains-extra.tsv")) as fh:
         for line in fh:
             if line.startswith("#") or not line.strip():

@@ -64,7 +64,7 @@ How many words a passphrase starts with.
 
 #### How it works
 
-Each word adds about 12.9 bits of strength, so five words give about 65 before the number is added.
+Each word adds about 12.9 bits of strength, so four words give about 52 before the number is added. Four is what most people can remember.
 
 See also [Type](/guide/settings/generator/#setting-gen-mode), [Show strength in bits](/guide/settings/generator/#setting-gen-show-bits).
 

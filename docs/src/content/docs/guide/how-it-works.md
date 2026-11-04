@@ -174,6 +174,8 @@ Items in the trash and on the hidden shelf stay out of results. "trashed" brings
 
 Best matches come first, with pinned items at the top. Before you type, the search page offers words to start from under **Look for**, such as **Weak**, **Has code** and **Changed recently**, with the items you opened last below them.
 
+A search that led you to an item is offered again next time, under **Recent searches**, and while you type one that begins the same way. Tap the cross beside one to forget it, or **Clear** to forget them all. They are kept inside the encrypted vault, never in the phone's plain settings.
+
 See also [Item list](/guide/screens/#screen-list), [Kinds of item](/guide/how-it-works/#concept-item-kinds), [Password health](/guide/how-it-works/#feature-health), [The hidden shelf](/guide/how-it-works/#feature-shelf), [Sort by](/guide/settings/list/#setting-sort).
 
 <a id="feature-locking"></a>
@@ -951,11 +953,11 @@ People are poor at picking random passwords. A generated one is as strong as its
 
 **Words** joins 3 to 12 words from the EFF's list of 7,776, with a separator, and capitals and a number if you want them. Words are easier to read aloud and to type by hand.
 
-**Pronounceable** alternates consonants and vowels, **PIN** is digits only, and **Pattern** follows a template you type.
+**Pronounceable** alternates consonants and vowels, and **PIN** is digits only. **Pattern** follows a template you type: \`a\` is a small letter and \`A\` a capital, \`c\` a consonant and \`v\` a vowel (\`C\` and \`V\` for capitals), \`9\` a digit, \`#\` a symbol and \`?\` anything. Other characters stay as typed, and a \`\\\` before one keeps it even if it is one of those letters. \`Cvcv-9999\` gives something like \`Lixo-4821\`.
 
 The bits figure measures every password the settings could make, not the one on screen, so it is the honest number. Time to crack assumes 10,000 guesses a second against a slow hash.
 
-**Presets** set several choices at once: **Strong**, **No symbols**, **Memorable** and **PIN**.
+**Presets** set several choices at once: **Strong**, **No symbols**, **Memorable** (four words) and **PIN**.
 
 #### When to use it
 
@@ -966,6 +968,8 @@ For every new password. If a site refuses one, try the **No symbols** preset or 
 A generated value is kept nowhere until you copy it or save it as a login. A copy follows the clipboard rules for secrets.
 
 Changes on the Generator screen last until you leave it. The starting choices are under [Generator](/guide/settings/generator/).
+
+On Android, **Lock pattern** makes an unlock pattern for a phone: 4 to 9 of the nine dots, drawn evenly from every pattern a phone accepts. A line may pass over a dot only once that dot is already part of the pattern, as on the phone itself. The grid plays the pattern stroke by stroke with each dot numbered, and the steps below it say where to start, where to slide and where to lift. Six dots give 26,016 possible patterns.
 
 See also [Generator screen](/guide/screens/#screen-generator), [Generator](/guide/settings/generator/), [Type](/guide/settings/generator/#setting-gen-mode), [Length](/guide/settings/generator/#setting-gen-length), [Start logins with a password](/guide/settings/editor/#setting-editor-generate).
 

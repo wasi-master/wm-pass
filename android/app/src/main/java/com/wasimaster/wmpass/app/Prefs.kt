@@ -192,9 +192,9 @@ class Prefs(context: Context) {
 
     // ---- generator ----
 
-    val genMode = word("gen_mode", "password", "password", "passphrase", "pronounceable", "pin", "pattern")
+    val genMode = word("gen_mode", "password", "password", "passphrase", "pronounceable", "pin", "pattern", "lock")
     val genLength = whole("gen_length", 20)
-    val genWords = whole("gen_words", 5)
+    val genWords = whole("gen_words", 4)
     val genSymbols = flag("gen_symbols", true)
     val genNoAmbiguous = flag("gen_no_ambiguous", false)
     val genShowBits = flag("gen_show_bits", true)

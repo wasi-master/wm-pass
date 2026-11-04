@@ -106,7 +106,7 @@ const DEFS = {
   // ---- generator ----
   gen_mode: { value: 'password', allowed: ['password', 'passphrase', 'pronounceable', 'pin', 'pattern'] },
   gen_length: { value: 20 },
-  gen_words: { value: 5 },
+  gen_words: { value: 4 },
   gen_symbols: { value: true },
   gen_no_ambiguous: { value: false },
   gen_show_bits: { value: true },

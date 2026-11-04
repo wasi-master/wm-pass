@@ -1,0 +1,549 @@
+# Popular games played with an account, and the launchers and networks behind them, so an item
+# named after one is tagged Gaming. name<TAB>domains, comma separated, or - when the game has no
+# site of its own. Written for this project.
+Fortnite	fortnite.com
+Minecraft	minecraft.net
+Roblox	roblox.com
+League of Legends	leagueoflegends.com
+Valorant	playvalorant.com
+Teamfight Tactics	teamfighttactics.leagueoflegends.com
+Legends of Runeterra	playruneterra.com
+Wild Rift	wildrift.leagueoflegends.com
+Riot Games	riotgames.com
+Counter-Strike 2	counter-strike.net
+Counter-Strike	counter-strike.net
+CS:GO	counter-strike.net
+Dota 2	dota2.com
+Team Fortress 2	teamfortress.com
+Steam	steampowered.com,steamcommunity.com
+Stake.com	stake.com
+Epic Games	epicgames.com
+Battle.net	battle.net
+Blizzard	blizzard.com
+World of Warcraft	worldofwarcraft.com
+Overwatch	overwatch.blizzard.com
+Overwatch 2	overwatch.blizzard.com
+Diablo IV	diablo4.blizzard.com
+Diablo	diablo4.blizzard.com
+Hearthstone	hearthstone.blizzard.com
+StarCraft II	starcraft2.blizzard.com
+Heroes of the Storm	heroesofthestorm.blizzard.com
+Call of Duty	callofduty.com
+Call of Duty Warzone	callofduty.com
+Warzone	callofduty.com
+Call of Duty Mobile	callofduty.com
+Activision	activision.com
+Candy Crush	king.com
+Candy Crush Saga	king.com
+EA	ea.com
+EA App	ea.com
+Apex Legends	ea.com
+EA Sports FC	ea.com
+FIFA	ea.com
+Madden NFL	ea.com
+The Sims	ea.com
+The Sims 4	ea.com
+Battlefield	ea.com
+Ubisoft	ubisoft.com,ubi.com
+Ubisoft Connect	ubisoftconnect.com
+Rainbow Six Siege	ubisoft.com
+Assassin's Creed	ubisoft.com
+The Division 2	ubisoft.com
+Brawlhalla	brawlhalla.com
+Rockstar Games	rockstargames.com
+Rockstar Social Club	socialclub.rockstargames.com
+GTA Online	rockstargames.com
+Grand Theft Auto V	rockstargames.com
+GTA V	rockstargames.com
+Red Dead Online	rockstargames.com
+Red Dead Redemption 2	rockstargames.com
+PlayStation Network	playstation.com
+PlayStation	playstation.com
+PSN	playstation.com
+Xbox	xbox.com
+Xbox Live	xbox.com
+Xbox Game Pass	xbox.com
+Nintendo	nintendo.com,accounts.nintendo.com
+Nintendo Switch Online	nintendo.com
+Nintendo Account	accounts.nintendo.com
+GOG	gog.com
+GOG Galaxy	gog.com
+itch.io	itch.io
+Humble Bundle	humblebundle.com
+Fanatical	fanatical.com
+Green Man Gaming	greenmangaming.com
+Amazon Games	gaming.amazon.com
+Prime Gaming	gaming.amazon.com
+Genshin Impact	hoyoverse.com,genshin.hoyoverse.com
+Honkai: Star Rail	hoyoverse.com,hsr.hoyoverse.com
+Honkai Star Rail	hoyoverse.com
+Honkai Impact 3rd	hoyoverse.com
+Zenless Zone Zero	zenless.hoyoverse.com
+HoYoverse	hoyoverse.com
+HoYoLAB	hoyolab.com
+miHoYo	mihoyo.com
+Wuthering Waves	wutheringwaves.kurogames.com
+Tower of Fantasy	toweroffantasy-global.com
+PUBG	pubg.com
+PUBG Battlegrounds	pubg.com
+PUBG Mobile	pubgmobile.com
+Battlegrounds Mobile India	battlegroundsmobileindia.com
+BGMI	battlegroundsmobileindia.com
+Free Fire	ff.garena.com
+Garena Free Fire	ff.garena.com
+Garena	garena.com
+Mobile Legends	mobilelegends.com
+Mobile Legends: Bang Bang	mobilelegends.com
+MLBB	mobilelegends.com
+Arena of Valor	arenaofvalor.com
+Honor of Kings	honorofkings.com
+Clash of Clans	supercell.com
+Clash Royale	supercell.com
+Brawl Stars	supercell.com
+Hay Day	supercell.com
+Boom Beach	supercell.com
+Squad Busters	supercell.com
+Supercell ID	supercell.com
+Supercell	supercell.com
+Pokémon GO	pokemongolive.com
+Pokemon GO	pokemongolive.com
+Pokémon Trainer Club	pokemon.com
+Pokémon TCG Live	pokemon.com
+Pokémon Unite	pokemonunite.com
+Niantic	nianticlabs.com
+Monopoly GO	scopely.com
+Scopely	scopely.com
+Coin Master	moonactive.com
+Royal Match	dreamgames.com
+Subway Surfers	sybogames.com
+8 Ball Pool	miniclip.com
+Miniclip	miniclip.com
+Among Us	innersloth.com
+Fall Guys	fallguys.com
+Rocket League	rocketleague.com
+Destiny 2	bungie.net
+Bungie	bungie.net
+Halo Infinite	halowaypoint.com
+Halo	halowaypoint.com
+Warframe	warframe.com
+Path of Exile	pathofexile.com
+Path of Exile 2	pathofexile.com
+Lost Ark	playlostark.com
+New World	newworld.com
+Final Fantasy XIV	finalfantasyxiv.com
+FFXIV	finalfantasyxiv.com
+Square Enix	square-enix.com,square-enix-games.com
+Square Enix Account	secure.square-enix.com
+Dragon Quest X	dqx.jp
+The Elder Scrolls Online	elderscrollsonline.com
+ESO	elderscrollsonline.com
+Bethesda	bethesda.net
+Fallout 76	fallout.bethesda.net
+Guild Wars 2	guildwars2.com
+ArenaNet	arena.net
+RuneScape	runescape.com
+Old School RuneScape	oldschool.runescape.com
+OSRS	oldschool.runescape.com
+Jagex	jagex.com
+EVE Online	eveonline.com
+Star Wars: The Old Republic	swtor.com
+SWTOR	swtor.com
+Black Desert	playblackdesert.com
+Black Desert Online	playblackdesert.com
+Pearl Abyss	pearlabyss.com
+MapleStory	maplestory.nexon.net
+Nexon	nexon.com,nexon.net
+The Finals	reachthefinals.com
+Blue Archive	bluearchive.nexon.com
+Mabinogi	mabinogi.nexon.net
+Dungeon Fighter Online	dfoneople.com
+Elsword	elsword.koggames.com
+Albion Online	albiononline.com
+Tibia	tibia.com
+Star Citizen	robertsspaceindustries.com
+Roberts Space Industries	robertsspaceindustries.com
+World of Tanks	worldoftanks.com
+World of Warships	worldofwarships.com
+World of Tanks Blitz	wotblitz.com
+Wargaming	wargaming.net
+War Thunder	warthunder.com
+Gaijin	gaijin.net
+Crossout	crossout.net
+Enlisted	enlisted.net
+Escape from Tarkov	escapefromtarkov.com
+Battlestate Games	battlestategames.com
+DayZ	dayz.com
+Bohemia Interactive	bohemia.net
+Arma 3	arma3.com
+Ark: Survival Evolved	survivetheark.com
+ARK Survival Ascended	survivetheark.com
+Palworld	-
+Sea of Thieves	seaofthieves.com
+Hytale	hytale.com
+Hypixel	hypixel.net
+Terraria	terraria.org
+Stardew Valley	stardewvalley.net
+Smite	smitegame.com
+Smite 2	smitegame.com
+Paladins	paladins.com
+Hi-Rez Studios	hirezstudios.com
+Dead by Daylight	deadbydaylight.com
+Behaviour Interactive	bhvr.com
+Marvel Rivals	marvelrivals.com
+Marvel Snap	marvelsnap.com
+NetEase Games	neteasegames.com
+Naraka: Bladepoint	narakathegame.com
+Identity V	identityv.com
+Once Human	-
+Splitgate	splitgate.com
+Deadlock	-
+Helldivers 2	helldivers2.com
+Monster Hunter Now	monsterhunternow.com
+Monster Hunter Wilds	monsterhunter.com
+Capcom	capcom.com
+Capcom ID	cid.capcom.com
+Street Fighter 6	streetfighter.com
+Tekken 8	tekken.com
+Bandai Namco	bandainamcoent.com
+Dragon Ball Legends	-
+Elden Ring	bandainamcoent.com
+Konami	konami.com
+eFootball	efootball.konami.net
+Yu-Gi-Oh! Master Duel	yugioh-card.com
+Yu-Gi-Oh! Duel Links	yugioh-card.com
+Magic: The Gathering Arena	magic.wizards.com
+MTG Arena	magic.wizards.com
+Wizards of the Coast	wizards.com
+D&D Beyond	dndbeyond.com
+Gwent	playgwent.com
+CD Projekt	cdprojekt.com
+Cyberpunk 2077	cyberpunk.net
+The Witcher	thewitcher.com
+Shadowverse	shadowverse.com
+Cygames	cygames.co.jp
+Umamusume	umamusume.com
+Granblue Fantasy	granbluefantasy.jp
+Fate/Grand Order	fate-go.us
+Arknights	arknights.global
+Azur Lane	azurlane.yo-star.com
+Yostar	yostar.com
+Nikke	nikke-en.com
+Goddess of Victory: Nikke	nikke-en.com
+Level Infinite	levelinfinite.com
+Tencent Games	tencentgames.com
+Delta Force	playdeltaforce.com
+Clash of Kings	-
+Rise of Kingdoms	rok.lilith.com
+Lilith Games	lilithgames.com
+AFK Arena	-
+AFK Journey	-
+Raid: Shadow Legends	raidshadowlegends.com
+Plarium	plarium.com
+Summoners War	summonerswar.com
+Com2uS	com2us.com
+Lords Mobile	lordsmobile.igg.com
+IGG	igg.com
+State of Survival	stateofsurvival.com
+Whiteout Survival	-
+Last War	-
+Evony	evony.com
+Forge of Empires	forgeofempires.com
+InnoGames	innogames.com
+Grepolis	grepolis.com
+Tribal Wars	tribalwars.net
+Travian	travian.com
+Ikariam	ikariam.gameforge.com
+OGame	ogame.gameforge.com
+Gameforge	gameforge.com
+Metin2	metin2.gameforge.com
+Neopets	neopets.com
+Habbo	habbo.com
+Club Penguin	-
+Animal Jam	animaljam.com
+Wizard101	wizard101.com
+Pirate101	pirate101.com
+Toontown Rewritten	toontownrewritten.com
+Second Life	secondlife.com
+IMVU	imvu.com
+VRChat	vrchat.com
+Rec Room	recroom.com
+Beat Saber	beatsaber.com
+osu!	osu.ppy.sh
+osu	osu.ppy.sh
+Chess.com	chess.com
+Lichess	lichess.org
+Geoguessr	geoguessr.com
+Words With Friends	zynga.com
+Zynga	zynga.com
+Zynga Poker	zynga.com
+FarmVille	zynga.com
+Farm Heroes Saga	king.com
+Gardenscapes	playrix.com
+Homescapes	playrix.com
+Fishdom	playrix.com
+Township	playrix.com
+Playrix	playrix.com
+Hearts of Iron IV	paradoxinteractive.com
+Paradox Interactive	paradoxinteractive.com
+Europa Universalis	paradoxinteractive.com
+Crusader Kings III	paradoxinteractive.com
+Stellaris	paradoxinteractive.com
+Cities: Skylines	paradoxinteractive.com
+Total War	totalwar.com
+Age of Empires	ageofempires.com
+Civilization	civilization.com
+Firaxis	firaxis.com
+2K	2k.com
+2K Account	accounts.2k.com
+NBA 2K	nba.2k.com
+Borderlands	borderlands.com
+XCOM	xcom.com
+Take-Two	take2games.com
+Warner Bros. Games	wbgames.com
+WB Games	wbgames.com
+Hogwarts Legacy	hogwartslegacy.com
+MultiVersus	multiversus.com
+Mortal Kombat 1	mortalkombat.com
+Mortal Kombat	mortalkombat.com
+Larian	larian.com
+Baldur's Gate 3	baldursgate3.game
+Divinity: Original Sin 2	larian.com
+SEGA	sega.com
+Phantasy Star Online 2	pso2.com
+PSO2 New Genesis	pso2.com
+Football Manager	footballmanager.com
+Sports Interactive	sigames.com
+iRacing	iracing.com
+Gran Turismo 7	gran-turismo.com
+Forza Horizon 5	forzamotorsport.net
+Forza	forza.net
+Asphalt 9	gameloft.com
+Asphalt Legends	gameloft.com
+Gameloft	gameloft.com
+Disney Speedstorm	gameloft.com
+Disney Dreamlight Valley	disneydreamlightvalley.com
+Hello Kitty Island Adventure	-
+Vampire Survivors	poncle.games
+Standoff 2	-
+Critical Ops	criticalopsgame.com
+Modern Combat 5	gameloft.com
+Shadow Fight 4	nekki.com
+Shadow Fight 3	nekki.com
+Nekki	nekki.com
+Diablo Immortal	diabloimmortal.blizzard.com
+Warcraft Rumble	warcraftrumble.blizzard.com
+Overwatch League	overwatchleague.com
+2XKO	2xko.riotgames.com
+Riot ID	account.riotgames.com
+Epic Games Store	store.epicgames.com
+Unreal Tournament	unrealtournament.com
+Fortnite Crew	fortnite.com
+LEGO Fortnite	fortnite.com
+Guild Wars	guildwars.com
+Lineage 2	lineage2.com
+Lineage W	lineagew.plaync.com
+Blade & Soul	bladeandsoul.com
+Throne and Liberty	throneandliberty.com
+NCSOFT	ncsoft.com
+PlayNC	plaync.com
+Aion	aiononline.com
+Dofus	dofus.com
+Wakfu	wakfu.com
+Ankama	ankama.com
+Trove	trovegame.com
+Neverwinter	playneverwinter.com
+Star Trek Online	playstartrekonline.com
+Arc Games	arcgames.com
+Perfect World	perfectworld.com
+Ragnarok Online	ragnarokonline.com
+Ragnarok M	-
+Ragnarok Origin	-
+ArcheAge	archeage.com
+Vindictus	vindictus.nexon.net
+Dragon Nest	-
+Ultima Online	uo.com
+EverQuest	everquest.com
+EverQuest II	everquest2.com
+Daybreak Games	daybreakgames.com
+PlanetSide 2	planetside2.com
+DC Universe Online	dcuniverseonline.com
+Lord of the Rings Online	lotro.com
+LOTRO	lotro.com
+Dungeons & Dragons Online	ddo.com
+Standing Stone Games	standingstonegames.com
+Mortal Online 2	mortalonline2.com
+Project Zomboid	projectzomboid.com
+7 Days to Die	7daystodie.com
+Valheim	valheimgame.com
+Satisfactory	satisfactorygame.com
+Factorio	factorio.com
+Space Engineers	spaceengineersgame.com
+No Man's Sky	nomanssky.com
+Elite Dangerous	elitedangerous.com
+Planet Coaster	planetcoaster.com
+Jurassic World Evolution	jurassicworldevolution.com
+Hunt: Showdown	huntshowdown.com
+Crytek	crytek.com
+Warhammer 40,000: Darktide	playdarktide.com
+Vermintide 2	vermintide.com
+Fatshark	fatsharkgames.com
+Deep Rock Galactic	deeprockgalactic.com
+Lethal Company	-
+Phasmophobia	kineticgames.co.uk
+It Takes Two	ea.com
+Everdale	supercell.com
+Mario Kart Tour	nintendo.com
+Fire Emblem Heroes	nintendo.com
+Animal Crossing Pocket Camp	nintendo.com
+Splatoon 3	nintendo.com
+Super Smash Bros. Ultimate	nintendo.com
+Pokémon Masters EX	pokemon.com
+Pokémon Sleep	pokemonsleep.net
+Pokémon Home	-
+Pikmin Bloom	pikminbloom.com
+Monster Strike	monster-strike.com
+Puzzle & Dragons	pad.gungho.jp
+GungHo	gungho.jp
+Teppen	teppen.jp
+Cookie Run: Kingdom	cookierun.com
+Devsisters	devsisters.com
+Seven Knights	-
+Netmarble	netmarble.com
+Marvel Future Fight	netmarble.com
+Marvel Contest of Champions	playcontestofchampions.com
+Kabam	kabam.com
+Marvel Strike Force	marvelstrikeforce.com
+Star Wars: Galaxy of Heroes	ea.com
+Star Wars Battlefront II	ea.com
+Need for Speed	ea.com
+The Sims FreePlay	ea.com
+SimCity BuildIt	ea.com
+Plants vs. Zombies	ea.com
+Real Racing 3	ea.com
+FC Mobile	ea.com
+Madden Mobile	ea.com
+eFootball Mobile	konami.com
+Dream League Soccer	ftgames.com
+Top Eleven	topeleven.com
+Nordeus	nordeus.com
+Hitman	ioi.dk
+Dying Light 2	dyinglightgame.com
+Techland	techland.net
+Rogue Company	roguecompany.com
+Realm Royale	realmroyale.com
+Krunker	krunker.io
+Agar.io	agar.io
+Slither.io	slither.io
+Diep.io	diep.io
+Shell Shockers	shellshock.io
+Poki	poki.com
+CrazyGames	crazygames.com
+Kongregate	kongregate.com
+Armor Games	armorgames.com
+Newgrounds	newgrounds.com
+Y8	y8.com
+Miniclip Games	miniclip.com
+Game Jolt	gamejolt.com
+Speedrun.com	speedrun.com
+Faceit	faceit.com
+ESL Gaming	eslgaming.com
+ESEA	esea.net
+Challengermode	challengermode.com
+Start.gg	start.gg
+Battlefy	battlefy.com
+Tracker Network	tracker.gg
+OP.GG	op.gg
+U.GG	u.gg
+Mobalytics	mobalytics.gg
+Blitz.gg	blitz.gg
+Overwolf	overwolf.com
+CurseForge	curseforge.com
+Nexus Mods	nexusmods.com
+Mod.io	mod.io
+Modrinth	modrinth.com
+Aternos	aternos.org
+Apex Hosting	apexminecrafthosting.com
+Shockbyte	shockbyte.com
+Nitrado	nitrado.net
+G-Portal	g-portal.com
+GeForce Now	nvidia.com
+Xbox Cloud Gaming	xbox.com
+Boosteroid	boosteroid.com
+Shadow PC	shadow.tech
+Parsec	parsec.app
+Razer	razer.com
+Razer Gold	gold.razer.com
+Logitech G	logitechg.com
+SteelSeries	steelseries.com
+Corsair	corsair.com
+HyperX	hyperx.com
+Alienware	alienware.com
+ROG	rog.asus.com
+Codashop	codashop.com
+Midasbuy	midasbuy.com
+SEAGM	seagm.com
+Eneba	eneba.com
+Kinguin	kinguin.net
+G2A	g2a.com
+Instant Gaming	instant-gaming.com
+CDKeys	cdkeys.com
+Humble Choice	humblebundle.com
+IndieGala	indiegala.com
+Skinport	skinport.com
+CS.Money	cs.money
+Buff163	buff.163.com
+DMarket	dmarket.com
+Bitskins	bitskins.com
+Steam Market	steamcommunity.com
+HLTV	hltv.org
+Liquipedia	liquipedia.net
+IGN	ign.com
+GameSpot	gamespot.com
+Backloggd	backloggd.com
+HowLongToBeat	howlongtobeat.com
+Grouvee	grouvee.com
+RAWG	rawg.io
+Exophase	exophase.com
+PSNProfiles	psnprofiles.com
+TrueAchievements	trueachievements.com
+RetroAchievements	retroachievements.org
+SteamDB	steamdb.info
+IsThereAnyDeal	isthereanydeal.com
+ProtonDB	protondb.com
+Lutris	lutris.net
+Playnite	playnite.link
+Heroic Games Launcher	heroicgameslauncher.com
+Game Pass	xbox.com
+EA Play	ea.com
+Ubisoft+	ubisoft.com
+PlayStation Plus	playstation.com
+DraftKings	draftkings.com
+FanDuel	fanduel.com
+PokerStars	pokerstars.com
+GGPoker	ggpoker.com
+WSOP	wsop.com
+888poker	888poker.com
+Bet365	bet365.com
+Betfair	betfair.com
+William Hill	williamhill.com
+Paddy Power	paddypower.com
+Ladbrokes	ladbrokes.com
+Sky Bet	skybet.com
+BetMGM	betmgm.com
+Caesars Sportsbook	caesars.com
+PointsBet	pointsbet.com
+Unibet	unibet.com
+1xBet	1xbet.com
+Betway	betway.com
+Parimatch	parimatch.com
+Roobet	roobet.com
+Rollbit	rollbit.com
+BC.Game	bc.game
+Chumba Casino	chumbacasino.com
+Pulsz	pulsz.com
+McLuck	mcluck.com
+Slotomania	slotomania.com
+House of Fun	houseoffun.com
+DoubleDown Casino	doubledowncasino.com
+Big Fish Games	bigfishgames.com
+Pogo	pogo.com

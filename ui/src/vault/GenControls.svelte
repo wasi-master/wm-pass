@@ -74,7 +74,7 @@
   {:else}
     <div class="form-row">
       <span class="label">Pattern</span>
-      <Field bind:value={gen.pattern} mono placeholder="Cvcv-####" oninput={patternTyped} />
+      <Field bind:value={gen.pattern} mono placeholder="Cvcv-9999" oninput={patternTyped} />
     </div>
     <p class="dim small">C is a consonant, v a vowel, # a digit, ! a symbol. Anything else stays as typed.</p>
   {/if}
