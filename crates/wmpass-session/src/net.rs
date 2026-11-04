@@ -598,6 +598,9 @@ pub async fn call_over(
                 /// The code Bitwarden emailed to confirm this device.
                 device_code: Option<String>,
                 region: Option<String>,
+                /// Where this runs, for a shell the engine cannot tell from its build, such as
+                /// `chrome-extension`. Bitwarden names the device by it in sign-in emails.
+                platform: String,
             }
             use wmpass_bw::account::Account;
             use wmpass_bw::api::{Device, Endpoints, SecondFactor};
@@ -639,7 +642,8 @@ pub async fn call_over(
                 return Ok(view(json!({})));
             }
             let account = if method == "bitwarden.login" {
-                let device = Device { identifier: a.device.clone(), name: "WM Pass".to_owned(), kind: 0 };
+                let kind = wmpass_bw::api::device_kind(&a.platform);
+                let device = Device { identifier: a.device.clone(), name: "WM Pass".to_owned(), kind };
                 let factor = match (a.code, a.device_code) {
                     (Some(code), _) => Some(SecondFactor::Code { provider: a.provider.unwrap_or(0), code }),
                     (None, Some(code)) => Some(SecondFactor::NewDevice(code)),

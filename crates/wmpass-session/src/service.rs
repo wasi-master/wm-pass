@@ -2443,7 +2443,18 @@ fn base64_encode(bytes: &[u8]) -> String {
     B64.encode(bytes)
 }
 
+/// Shells encode with what their platform has to hand: `btoa` and Android's `Base64` give the
+/// standard alphabet with padding, Rust shells the URL-safe one without. Either is taken.
 pub(crate) fn base64_decode(text: &str) -> Result<Vec<u8>, SessionError> {
+    let text: String = text
+        .trim_end_matches('=')
+        .chars()
+        .map(|c| match c {
+            '+' => '-',
+            '/' => '_',
+            c => c,
+        })
+        .collect();
     B64.decode(text).map_err(|_| invalid("bad data"))
 }
 
@@ -2500,4 +2511,20 @@ fn match_rows(vault: &Vault, target: Target<'_>) -> Reply {
 
 fn format_by_name(name: &str) -> Option<io::Format> {
     io::Format::ALL.into_iter().find(|f| f.name() == name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The desktop shell's `btoa` and Android's `Base64.NO_WRAP` pad and use `+` and `/`.
+    #[test]
+    fn base64_from_any_shell_decodes() {
+        let bytes: Vec<u8> = (0..=255u8).chain([0xff]).collect();
+        let standard = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        assert!(standard.ends_with('=') && standard.contains('+') && standard.contains('/'));
+        assert_eq!(base64_decode(&standard).unwrap(), bytes);
+        assert_eq!(base64_decode(&B64.encode(&bytes)).unwrap(), bytes);
+        assert!(base64_decode("not base64!").is_err());
+    }
 }
