@@ -113,7 +113,7 @@
   {@const code = themeToCode(theme)}
   <Dialog title="Share {theme.name}" onclose={() => (sharing = null)}>
     <div class="stack">
-      <p class="dim">A theme holds colours and a few settings. Nothing from your vault is in it.</p>
+      <p class="dim">A theme holds colors and a few settings. Nothing from your vault is in it.</p>
       <Qr text={code} />
     </div>
     {#snippet foot()}

@@ -31,6 +31,18 @@ class Accounts {
   /** How the last trip to a server went: null for fine, or words to show. */
   syncProblem = $state<string | null>(null);
   private device = '';
+  /** The account just added, for the door to have ready the next time it shows. */
+  private signInNextId: string | null = null;
+
+  signInNext(id: string) {
+    this.signInNextId = id;
+  }
+
+  takeSignInNext(): AccountRef | null {
+    const id = this.signInNextId;
+    this.signInNextId = null;
+    return this.list.find((a) => a.id === id) ?? null;
+  }
 
   async load() {
     const raw = await host().loadSettings(SETTINGS);

@@ -154,6 +154,17 @@ class Ui {
     }
   }
 
+  /**
+   * What a copy button or a click on a row does for this item: the action chosen, or for a copy
+   * the item cannot do, the next that it can. A code with no password copies the code, and a
+   * login with neither its username.
+   */
+  effective(action: string, entry: Summary): string | null {
+    if (this.canDo(action, entry)) return action;
+    if (action !== 'password' && action !== 'code' && action !== 'username') return null;
+    return ['password', 'code', 'username'].find((a) => this.canDo(a, entry)) ?? null;
+  }
+
   perform(action: string, entry: Summary) {
     switch (action) {
       case 'password':

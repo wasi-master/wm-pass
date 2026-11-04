@@ -8,6 +8,7 @@
   import { prefs } from '../engine/prefs.svelte';
   import { host } from '../engine/host';
   import { chordOf } from '../engine/text';
+  import BulkPanel from './BulkPanel.svelte';
   import CodesPage from './CodesPage.svelte';
   import Detail from './Detail.svelte';
   import Editor from './Editor.svelte';
@@ -38,7 +39,6 @@
 
   const isList = $derived(ui.isListSection(ui.section));
   const entry = $derived(pass.entries.find((e) => e.id === ui.selected));
-  const chosen = $derived(pass.entries.filter((e) => ui.multi.includes(e.id)));
 
   function current() {
     return pass.entries.find((e) => e.id === ui.selected);
@@ -72,7 +72,9 @@
       }
       case 'copy_password': {
         const e = current();
-        if (e?.has_password) void ui.copyPassword(e.id);
+        // With no password, the code and then the username, as the row's copy button does.
+        const action = e && ui.effective('password', e);
+        if (e && action) void ui.perform(action, e);
         break;
       }
       case 'copy_username': {
@@ -224,18 +226,7 @@
               <Editor bind:this={editor} editing={ui.editing} />
             {/key}
           {:else if ui.multi.length > 1}
-            <div class="detail-body" style="padding-top:40px">
-              <div class="detail-inner stack">
-                <h2 class="page-title">{ui.multi.length} selected</h2>
-                <div class="gap wrap">
-                  <Btn label="Add to favorites" icon="star" onclick={() => ui.bulk('favourite', { flag: true })} />
-                  <Btn label="Pin to the top" icon="keep" onclick={() => ui.bulk('pin', { flag: !chosen.every((e) => e.pinned) })} />
-                  <Btn label="Put on the hidden shelf" icon="visibility_lock" onclick={() => ui.bulk('hide', { flag: true })} />
-                  <Btn label="Move to trash" icon="delete" variant="danger" onclick={async () => { await ui.bulk(ui.section === 'trash' ? 'restore' : 'trash'); ui.multi = []; }} />
-                </div>
-                <p class="dim small">Hold the modifier key and click rows to add or remove them. Shift-click chooses a range.</p>
-              </div>
-            </div>
+            <BulkPanel />
           {:else if ui.selected && (entry || ui.section === 'trash' || ui.section === 'shelf')}
             {#key ui.selected}
               <Detail id={ui.selected} />

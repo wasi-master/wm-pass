@@ -22,6 +22,8 @@
 :root[data-font='serif'] { --sans: 'Iowan Old Style', Georgia, 'Noto Serif', serif; }
 :root[data-font='mono'] { --sans: var(--mono); }
 :root[data-font='inter'] { --sans: Inter, -apple-system, 'Segoe UI', system-ui, sans-serif; }
+/* A font file the theme names; until it loads, or on a device without it, the system font. */
+:root[data-font^='file:'] { --sans: var(--theme-font, -apple-system), BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', Cantarell, 'Noto Sans', Ubuntu, system-ui, sans-serif; }
 :root[data-density='compact'] { --row: 36px; --ctl: 26px; }
 :root[data-density='spacious'] { --row: 52px; --ctl: 32px; }
 :root[data-motion='off'] { --t-fast: 0ms; --t-med: 0ms; }
@@ -360,6 +362,11 @@ dialog.sheet::backdrop { background: rgb(0 0 0 / 0.32); }
 .row .hover-only { visibility: hidden; }
 .row:hover .hover-only, .row:focus-within .hover-only { visibility: visible; }
 .row.compact { min-height: 28px; gap: 8px; padding-top: 2px; padding-bottom: 2px; }
+/* The copy button may overhang a compact row, so rows with and without one are the same height. */
+.row.compact .hover-only { margin-block: -2px; }
+/* A site's accounts, set in under its stack. */
+.row.inside { padding-left: 32px; }
+.row.compact.inside { padding-left: 26px; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 4px; padding: 2px; }
 .grid .card { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 6px 10px; border: 0; border-radius: var(--r-m); background: transparent; }
 .grid .card:hover { background: var(--hover); }

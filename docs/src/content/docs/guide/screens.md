@@ -161,7 +161,7 @@ Clicking a row opens the item, and [Click](/guide/settings/list/#setting-tap-act
 
 Right-click a row for **Copy password**, **Copy username**, **Copy code**, **Open site**, **Edit**, **Duplicate**, favorites, **Pin to the top**, **Move to hidden shelf** and **Move to trash**.
 
-Arrow keys move up and down the list. Hold Ctrl, or Cmd on a Mac, and click to choose several rows, or Shift-click to choose a run of them. The right pane then offers to add them to favorites, pin them, put them on the hidden shelf, or move them to the trash.
+Arrow keys move up and down the list. Hold Ctrl, or Cmd on a Mac, and click to choose several rows, or Shift-click to choose a run of them. The right pane then offers to move them to a folder, give them a color or tags, link them together so each lists the others under Linked, add them to favorites, pin them, put them on the hidden shelf, or move them to the trash.
 
 #### When to use it
 
@@ -272,6 +272,8 @@ The name field comes first. Leave it empty and the website's name is used.
 The fields that kind of item needs come next. For some kinds, the less used ones wait under **More details**, unless [Fold less used fields](/guide/settings/editor/#setting-editor-fold-details) is off.
 
 Further sections open when you need them: **Websites** for a login, **One-time code** for a login or code, **Notes**, **More fields** for fields of your own, hidden or not, **Security questions** for a login, and **Organize** for the folder, tags, icon, color and favorite. A section that already holds something starts open; [Editor](/guide/settings/editor/) sets which empty ones do.
+
+In **One-time code**, paste the site's setup key or `otpauth://` link, or choose **Scan its QR code**. On a computer, that reads the code with the webcam, or from a screenshot through **Choose a picture**. The picture is read on your device and sent nowhere.
 
 A secret that is already saved shows as **Saved. Tap to change** and stays in the vault until you tap it, so fixing a name never brings the password onto the screen.
 

@@ -15397,7 +15397,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "The row shows the site and how many accounts it holds. Open it to see them, and again to fold them away."
+       "s": "The row shows the site and how many accounts it holds. Open it to see them, set in under it, and again to fold them away."
       }
      ]
     }
@@ -15604,7 +15604,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "The compact layout leaves it out to save room."
+       "s": "The compact layout puts it beside the name, on the same line."
       }
      ]
     }
@@ -15695,7 +15695,7 @@
        "runs": [
         {
          "t": "text",
-         "s": "Copies the item's password. Items without one have no button."
+         "s": "Copies the item's password. An item with none copies its one-time code, or else its username."
         }
        ]
       }
