@@ -114,6 +114,11 @@ const DEFS = {
   // ---- health ----
   health_hidden: { value: '' },
   health_score: { value: true },
+  // Items left out of one check, as `check:id` pairs.
+  health_ignored: { value: '' },
+  health_skip_local: { value: true },
+  // When the last password breach check ran, as `ms|source|found|checked`. Never which passwords.
+  breach_last: { value: '', portable: false },
 
   // ---- widgets on a Mac: what they show stays on this computer ----
   widget_buttons: { value: 'search,add,codes,lock' },

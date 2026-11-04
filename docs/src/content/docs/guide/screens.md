@@ -205,6 +205,8 @@ A one-time code counts down with a ring and shows the next code in its last ten 
 
 Further down are the websites, passkeys, fields of your own, security questions, notes, an email alias, attachments, linked items, the reminder and the tags. With no tags yet, WM Pass may suggest one, guessed on your device.
 
+A login for a website also has **Change the password on the site**, which opens the page the site keeps for that: one from a list of known pages, or the address the site lists at /.well-known/change-password. Logins for apps and for devices on your own network have none.
+
 The history link at the bottom, such as **History, 2 earlier**, lists earlier values of secret fields, each hidden until you show it.
 
 Click any field to copy it, unless you turned that off under [Click a field to copy it](/guide/settings/entry/#setting-tap-copies). Each field also has its own copy button.
@@ -234,6 +236,8 @@ Below come its fields. A secret shows as dots until you tap **Show**, and it hid
 A one-time code counts down with a ring and shows the next code in its last ten seconds. A counter-based code shows **New code** in place of the code.
 
 Further down are the websites, passkeys, fields of your own, security questions, notes, attachments and linked items, then **History** with earlier values of secret fields.
+
+A login for a website also has **Change the password on the site**, which opens the page the site keeps for that: one from a list of known pages, or the address the site lists at /.well-known/change-password.
 
 **More**, at the bottom, adds a tag, attaches a file, links another item, sets a reminder, a folder, a color or a self-destruct date, pins it, puts it on the hidden shelf, duplicates it, sends it to another device, or moves it to the trash.
 
@@ -380,6 +384,12 @@ Below it, each kind of problem has its own group with a count. Open a group to s
 Problems are listed from the most serious down, so start at the top. [Health checks](/guide/settings/health/) chooses which groups are listed and whether the score shows.
 
 For duplicate items, the button that merges each set asks **Which one stays?** The others fold into it: their passwords move to its history and their extra fields come along, so nothing is lost.
+
+Under **Used more than once**, the logins are grouped by the password they share, so each group is one password to change. Under **In a known breach**, each item says how many times it was seen, and the most seen come first.
+
+Clicking an item offers what fixes it: **Change the password on the site** opens the site's own page for that, from a list of known pages or the address a site lists at /.well-known/change-password, and a missing second factor offers the site's settings. **Ignore for this check** takes the item off that list only, for sites with a second factor of their own and the like. **Ignored** lists them again, to put any back.
+
+**Fix the most urgent** opens the first item of the most serious group in the editor.
 
 **Check for breaches** opens Settings, Breaches, and **Compare two passwords** opens a side-by-side comparison.
 

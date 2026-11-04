@@ -492,8 +492,7 @@ private fun IssueCard(
 private fun HealthItemSheet(issue: Issue, entry: Summary, onDismiss: () -> Unit) {
     val colors = palette
     val shell = LocalShell.current
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val change = remember(entry.site) { com.wasimaster.wmpass.system.ChangePassword.url(context, entry.site) }
+    val change = androidx.compose.runtime.produceState<String?>(null, entry.site) { value = com.wasimaster.wmpass.system.ChangePassword.url(entry.site) }.value
     PassSheet(onDismiss, entry.title.ifEmpty { "Untitled" }) {
         Text(issue.why, color = colors.textMid, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 8.dp))
         if (change != null && issue.key in setOf("breached", "reused", "weak", "old", "twofactor")) {

@@ -760,6 +760,15 @@ impl Service {
                 let secret = (found > 0).then(|| Zeroizing::new(serde_json::to_vec(&*codes).unwrap_or_default()));
                 Ok(Reply { json: json!({"found": found}).to_string(), secret, blobs: Vec::new() })
             }
+            "site.change_password" => {
+                // Where a saved address lets you change the password, for any app's own button.
+                #[derive(Deserialize)]
+                struct A {
+                    site: String,
+                }
+                let a: A = parse(call.args)?;
+                Ok(Reply::view(json!({"url": wmpass_core::change_password::url(&a.site)})))
+            }
             "strength.assess" => {
                 #[derive(Deserialize, Default)]
                 #[serde(default)]

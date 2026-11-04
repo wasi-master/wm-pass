@@ -6,7 +6,7 @@ import { hueOf, oklch } from '../engine/face';
 import { host, type WidgetFeed } from '../engine/host';
 import { pass } from '../engine/pass.svelte';
 import { prefs } from '../engine/prefs.svelte';
-import { breachCounts } from './net.svelte';
+import { healthNow } from '../vault/health.svelte';
 import { places } from './places.svelte';
 
 const MAX_CODES = 8;
@@ -107,7 +107,7 @@ async function loadHealth() {
 async function refreshHealth() {
   if (pass.state.kind !== 'unlocked') return;
   try {
-    const report = await pass.health({ ...breachCounts.counts });
+    const report = await healthNow();
     health = {
       score: report.score,
       weak: report.weak.length,
@@ -141,6 +141,8 @@ export function startWidgetFeed() {
     $effect(() => {
       if (pass.state.kind !== 'unlocked' || !prefs.v.desktop_widgets) return;
       void pass.entries;
+      void prefs.v.health_ignored;
+      void prefs.v.health_skip_local;
       const timer = setTimeout(() => void refreshHealth(), 5_000);
       return () => clearTimeout(timer);
     });

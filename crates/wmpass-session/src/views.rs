@@ -262,6 +262,8 @@ pub struct Detail {
     pub alias: Option<String>,
     /// Security questions, by label. Answers are secret.
     pub questions: Vec<String>,
+    /// Where the login's site lets you change the password, for a login saved for a website.
+    pub change_password: Option<String>,
 }
 
 /// Builds the detail view.
@@ -324,7 +326,12 @@ pub fn detail(entry: &Entry) -> Detail {
         ),
         _ => (Vec::new(), None, Vec::new(), None, Vec::new()),
     };
+    let change_password = match &entry.kind {
+        Kind::Login(_) => wmpass_core::change_password::for_matchers(&sites),
+        _ => None,
+    };
     Detail {
+        change_password,
         summary: summary(entry),
         created_ms: entry.created_ms,
         fields: field_views,

@@ -44,8 +44,6 @@ See also [Problems to list](/guide/settings/health/#group-health-problems), [Hea
 
 ## Leave out local addresses
 
-*Only in Android.*
-
 Leaves logins for devices on your own network out of the Health checks: a router, a NAS, a printer.
 
 #### Why it is there

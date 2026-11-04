@@ -522,3 +522,41 @@ fn qr_codes_are_read_from_a_picture() {
     let args = json!({"width": 65, "height": 64}).to_string();
     assert!(s.call("qr.read", Call { args: &args, blobs: &[&blank], ..Call::default() }).is_err());
 }
+
+#[test]
+fn a_login_says_where_to_change_its_password() {
+    let mut s = Service::new(1);
+    let h = new_vault(&mut s);
+    let id = login(&mut s, h);
+    let detail = json_of(&call(&mut s, "entry.get", h, json!({"id": id})));
+    assert_eq!(detail["change_password"], "https://example.com/.well-known/change-password");
+    let reply = json_of(&call(&mut s, "site.change_password", 0, json!({"site": "https://www.23andme.com/login"})));
+    assert_eq!(reply["url"], "https://you.23andme.com/user/edit/password/");
+    let reply = json_of(&call(&mut s, "site.change_password", 0, json!({"site": "http://192.168.1.1"})));
+    assert!(reply["url"].is_null());
+}
+
+#[test]
+fn health_leaves_out_what_was_ignored_and_local_logins() {
+    let mut s = Service::new(1);
+    let h = new_vault(&mut s);
+    let weak = |s: &mut Service, title: &str, site: &str| {
+        let reply = call(s, "entry.create", h, json!({"kind": "login", "title": title, "sites": [{"Url": site}]}));
+        let id = json_of(&reply)["id"].as_str().unwrap().to_owned();
+        secret_call(s, "entry.set_secret", h, json!({"id": id, "field": "password"}), b"password1");
+        id
+    };
+    let mail = weak(&mut s, "Mail", "https://mail.example.com");
+    let router = weak(&mut s, "Router", "http://192.168.1.1");
+    let all = json_of(&call(&mut s, "health.report", h, json!({})));
+    assert_eq!(all["weak"].as_array().unwrap().len(), 2);
+    // Reused passwords come as one group per password.
+    let groups = all["reused"].as_array().unwrap();
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].as_array().unwrap().len(), 2);
+    assert!(groups[0].as_array().unwrap().contains(&json!(router)));
+    let skipped = json_of(&call(&mut s, "health.report", h, json!({"skip_local": true})));
+    assert_eq!(skipped["weak"], json!([mail.clone()]));
+    let ignored = json_of(&call(&mut s, "health.report", h, json!({"skip_local": true, "ignored": {"weak": [mail]}})));
+    assert_eq!(ignored["weak"], json!([]));
+}

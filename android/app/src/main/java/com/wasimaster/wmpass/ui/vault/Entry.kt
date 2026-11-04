@@ -553,8 +553,8 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
     val sites = entry.sites.mapNotNull(::siteLine)
     val webs = sites.filter { it.app == null }
     val apps = sites.mapNotNull { it.app }
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val change = remember(webs.firstOrNull()?.label) { com.wasimaster.wmpass.system.ChangePassword.url(context, webs.firstOrNull { it.openable != null }?.openable) }
+    val changeSite = webs.firstOrNull { it.openable != null }?.openable
+    val change = androidx.compose.runtime.produceState<String?>(null, changeSite) { value = com.wasimaster.wmpass.system.ChangePassword.url(changeSite) }.value
     val heading = when {
         webs.isNotEmpty() && apps.isNotEmpty() -> "Websites and apps"
         apps.isNotEmpty() -> if (apps.size == 1) "App" else "Apps"

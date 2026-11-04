@@ -103,6 +103,7 @@ pub enum Command {
     Theme,
     Icons,
     SyncSettings,
+    SkipLocal,
     AddDevice,
     IntoApp,
     LockAfter,
@@ -116,11 +117,12 @@ pub enum Command {
 }
 
 /// The terminal's settings that follow the vault, by the key they travel under. Its themes are
-/// not the apps' themes, so they travel under names of their own; the reveal time is shared.
-const SYNCED: [&str; 3] = ["tui_theme", "tui_icons", "reveal_seconds"];
+/// not the apps' themes, so they travel under names of their own; the reveal time and the
+/// Health choices are shared with every app.
+const SYNCED: [&str; 5] = ["tui_theme", "tui_icons", "reveal_seconds", "health_ignored", "health_skip_local"];
 
 /// Every palette command, with its words and key.
-pub const COMMANDS: [(Command, &str, &str); 30] = [
+pub const COMMANDS: [(Command, &str, &str); 31] = [
     (Command::New, "New item", "n"),
     (Command::Edit, "Edit item", "e"),
     (Command::CopyPassword, "Copy password", "c"),
@@ -141,6 +143,7 @@ pub const COMMANDS: [(Command, &str, &str); 30] = [
     (Command::Theme, "Next theme", "ctrl+t"),
     (Command::Icons, "Nerd Font icons on or off", ""),
     (Command::SyncSettings, "Sync settings with the vault on or off", ""),
+    (Command::SkipLocal, "Leave local addresses out of Health or not", ""),
     (Command::AddDevice, "Add a new device: send this vault to it", ""),
     (Command::IntoApp, "Keep this vault in the WM Pass app on this computer", ""),
     (Command::LockAfter, "Lock after…", ""),
@@ -417,6 +420,8 @@ impl App {
         match key {
             "tui_theme" => json!(self.prefs.theme),
             "tui_icons" => json!(self.prefs.icons),
+            "health_ignored" => json!(self.prefs.ignored_text()),
+            "health_skip_local" => json!(self.prefs.health_skip_local),
             _ => json!(self.prefs.reveal_seconds),
         }
     }
@@ -430,6 +435,7 @@ impl App {
         let Screen::Vault(ui) = &mut self.screen else { return };
         let Ok(held) = ui.engine.synced_settings() else { return };
         let defaults = Prefs::default();
+        let mut health_changed = false;
         let mut missing = serde_json::Map::new();
         for key in SYNCED {
             if !self.syncs(key) {
@@ -439,6 +445,8 @@ impl App {
                 let fresh = match key {
                     "tui_theme" => self.prefs.theme == defaults.theme,
                     "tui_icons" => self.prefs.icons == defaults.icons,
+                    "health_ignored" => self.prefs.health_ignored == defaults.health_ignored,
+                    "health_skip_local" => self.prefs.health_skip_local == defaults.health_skip_local,
                     _ => self.prefs.reveal_seconds == defaults.reveal_seconds,
                 };
                 if !fresh {
@@ -459,6 +467,18 @@ impl App {
                         self.theme.g = crate::glyphs::Glyphs::pick(name);
                     }
                 }
+                "health_ignored" => {
+                    if let Some(text) = value.as_str().filter(|text| *text != self.prefs.ignored_text()) {
+                        self.prefs.set_ignored_text(text);
+                        health_changed = true;
+                    }
+                }
+                "health_skip_local" => {
+                    if let Some(on) = value.as_bool().filter(|on| *on != self.prefs.health_skip_local) {
+                        self.prefs.health_skip_local = on;
+                        health_changed = true;
+                    }
+                }
                 _ => {
                     if let Some(seconds) = value.as_u64().filter(|s| *s <= 3600).and_then(|s| u32::try_from(s).ok()) {
                         self.prefs.reveal_seconds = seconds;
@@ -467,9 +487,23 @@ impl App {
             }
         }
         self.prefs.save();
+        if health_changed {
+            self.refresh_health();
+        }
         if let Screen::Vault(ui) = &mut self.screen {
             let _ = ui.engine.sync_settings(missing);
         }
+    }
+
+    /// Works the health report out again, with what was ignored and whether local addresses
+    /// count.
+    fn refresh_health(&mut self) {
+        let Screen::Vault(ui) = &mut self.screen else { return };
+        ui.health = ui.engine.health(&self.prefs.ignored_checks(), self.prefs.health_skip_local).ok();
+        ui.health_ignored.clone_from(&self.prefs.health_ignored);
+        ui.health_group = ui.health_group.min(ui.health_groups() - 1);
+        let len = ui.health_ids(ui.health_group).len();
+        ui.health_at = ui.health_at.min(len.saturating_sub(1));
     }
 
     /// Leaves one setting in the vault for the other devices, if this terminal lets it go.
@@ -687,9 +721,7 @@ impl App {
         match tab {
             Tab::Codes => ui.refresh_codes(),
             Tab::Generator if ui.generator.value.is_empty() => self.regenerate(),
-            Tab::Health if ui.health.is_none() => {
-                ui.health = ui.engine.health().ok();
-            }
+            Tab::Health if ui.health.is_none() => self.refresh_health(),
             _ => {}
         }
     }
@@ -949,10 +981,22 @@ impl App {
                 self.prefs.save();
                 if self.prefs.sync_settings {
                     self.pull_settings();
-                    self.say(Level::Info, "Theme, icons and reveal time now follow the vault");
+                    self.say(Level::Info, "Theme, icons, reveal time and Health choices now follow the vault");
                 } else {
                     self.say(Level::Info, "Settings stay on this computer");
                 }
+            }
+            Command::SkipLocal => {
+                self.prefs.health_skip_local = !self.prefs.health_skip_local;
+                self.prefs.save();
+                self.push_setting("health_skip_local");
+                self.refresh_health();
+                let text = if self.prefs.health_skip_local {
+                    "Health leaves out logins only for your router, NAS or other devices at home"
+                } else {
+                    "Health checks logins for devices at home too"
+                };
+                self.say(Level::Info, text);
             }
             Command::LockAfter => {
                 let mut input = Input::with(&self.prefs.lock_minutes.to_string());
@@ -1245,21 +1289,45 @@ impl App {
 
     fn health_key(&mut self, key: KeyEvent) {
         let Screen::Vault(ui) = &mut self.screen else { return };
-        let ids = ui.health_ids(ui.health_group);
+        let items = ui.health_items(ui.health_group);
+        let ids: Vec<String> = items.iter().map(|(id, _)| id.clone()).collect();
         match key.code {
             KeyCode::Left | KeyCode::Char('h') => {
                 ui.health_group = ui.health_group.saturating_sub(1);
                 ui.health_at = 0;
             }
             KeyCode::Right | KeyCode::Char('l') => {
-                ui.health_group = (ui.health_group + 1).min(HEALTH_GROUPS.len() - 1);
+                ui.health_group = (ui.health_group + 1).min(ui.health_groups() - 1);
                 ui.health_at = 0;
             }
             KeyCode::Down | KeyCode::Char('j') => ui.health_at = (ui.health_at + 1).min(ids.len().saturating_sub(1)),
             KeyCode::Up | KeyCode::Char('k') => ui.health_at = ui.health_at.saturating_sub(1),
             KeyCode::Char('r') => {
-                ui.health = ui.engine.health().ok();
+                self.refresh_health();
                 self.say(Level::Info, "Checked again");
+            }
+            KeyCode::Char('i') => {
+                let group = ui.health_group;
+                let Some((id, ignored_for)) = items.get(ui.health_at).cloned() else { return };
+                let title = ui.titles.get(&id).map_or_else(|| "A deleted item".to_owned(), |(title, _)| title.clone());
+                let (check, ignore) = match ignored_for {
+                    Some(check) => (check, false),
+                    None => (HEALTH_GROUPS[group].2.to_owned(), true),
+                };
+                if check.is_empty() {
+                    return;
+                }
+                self.prefs.ignore_health(&check, &id, ignore);
+                self.prefs.save();
+                self.push_setting("health_ignored");
+                self.refresh_health();
+                let label = crate::vault::check_label(&check);
+                let text = if ignore {
+                    format!("{title} no longer counts under {label}. It is listed under Ignored")
+                } else {
+                    format!("{title} counts under {label} again")
+                };
+                self.say(Level::Info, text);
             }
             KeyCode::Enter => {
                 if let Some(id) = ids.get(ui.health_at) {
@@ -1947,7 +2015,7 @@ impl App {
             }
             Tab::Health => {
                 if let Some(Hit::HealthGroup(_)) = over {
-                    ui.health_group = step(ui.health_group, by, HEALTH_GROUPS.len());
+                    ui.health_group = step(ui.health_group, by, ui.health_groups());
                     ui.health_at = 0;
                 } else {
                     let len = ui.health_ids(ui.health_group).len();

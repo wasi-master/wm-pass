@@ -35,7 +35,7 @@ Leaked passwords go into the lists attackers try first. A password that has been
 
 #### How it works
 
-**Your passwords** checks every password against Have I Been Pwned without sending the passwords themselves. **Your email addresses** asks a service you choose about one address at a time.
+**Your passwords** checks every password against Have I Been Pwned or XposedOrNot without sending the passwords themselves. **Your email addresses** asks a service you choose about one address at a time.
 
 Each part says exactly what it sends: see [Check every password](/guide/settings/breaches/#action-check-every-password) and [Your email addresses](/guide/settings/breaches/#group-breaches-emails).
 
@@ -57,23 +57,29 @@ See also [Breach checks](/guide/how-it-works/#feature-breaches), [Allow network 
 
 *Only in the desktop app and Android.*
 
-Looks up each password in this vault in Have I Been Pwned's list of leaked passwords, and lists the items whose password has been seen, with how many times.
+Looks up each password in this vault in Have I Been Pwned's or XposedOrNot's list of leaked passwords, and lists the items whose password has been seen, with how many times.
 
 #### How it works
 
-For each password, WM Pass works out its SHA-1 hash on this device and sends only the first five characters of that hash to api.pwnedpasswords.com.
+Choose the service first. For Have I Been Pwned, WM Pass works out each password's SHA-1 hash on this device and sends only the first five characters of that hash to api.pwnedpasswords.com. For XposedOrNot it sends the first ten characters of a Keccak-512 hash instead.
 
-The service answers with every leaked hash that starts with those five characters, padded with dummy entries so the answer does not show how many real ones there are. WM Pass looks for the rest of the hash in that answer here.
+The service answers with every leaked hash that starts with those characters, and WM Pass looks for the rest of the hash in that answer here. Have I Been Pwned pads its answer with dummy entries so it does not show how many real ones there are.
 
-Neither your passwords nor their full hashes leave the device, so the service cannot tell which password you asked about.
+Neither your passwords nor their full hashes leave the device, so neither service can tell which password you asked about. The two collections differ, so a password one has not seen may be in the other.
 
-Each password is one request, so a large vault takes a while. The items found also lead the Health page, under [In a known breach](/guide/settings/health/#action-health-check-breached), until the vault locks.
+Each password is one request, so a large vault takes a while. The check carries on if you leave the page, and the page shows how far it has got when you come back. **Stop** ends it early; what it found so far still counts.
+
+The items found are listed with how many times each was seen, the most seen first, or by name. They also lead the Health page, under [In a known breach](/guide/settings/health/#action-health-check-breached), until the vault locks.
+
+Afterwards the page says when the last check ran, with which service, and how many it found. Which passwords it found is never written down.
 
 #### Limits
 
 Items in the trash and on the hidden shelf are not checked.
 
 The results are never saved. After the vault locks, run the check again to see them on the Health page.
+
+A vault with no passwords has nothing to check, and the page says so.
 
 #### On Android
 

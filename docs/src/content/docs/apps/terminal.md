@@ -82,6 +82,14 @@ Press `?` for every key, or `:` for a list of commands you can search by name. T
 
 Arrows and `h` `j` `k` `l` both move. The mouse works everywhere too. Click a tab, a row, a field or a command in the `:` list. Double-click a row to open it, or a line in an item to copy it. The key hints along the bottom are buttons. The wheel scrolls whatever is under the pointer, and over a generator setting it changes the value.
 
+## Health
+
+The Health tab scores the vault and lists what to fix, one group per kind of problem. Reused passwords come one group per password, each under a line such as "2 items share one password", so each group is one password to change. `Enter` opens an item, and in it the **Change password** line holds the page the site keeps for that, from a list of known pages or the site's `/.well-known/change-password` address, ready to copy into a browser.
+
+Press `i` on a finding to leave that item out of that check only, for a site with a second factor of its own and the like. It stops counting against the score, and the **Ignored** group, shown once something is in it, lists it again; `i` there counts it again. Logins only for a router, a NAS or other devices at home are left out to begin with; `:` then **Leave local addresses out of Health or not** changes that. Both choices are the same ones the phone and desktop apps make, and travel with the vault the same way.
+
+The terminal app makes no network calls, so it has no breach check. Run one in the phone or desktop app.
+
 ## Editing
 
 The editor has the same fields as the phone and desktop apps for every kind. In a password field, `Ctrl+G` fills in a strong one. A secret field opens empty and stays as it was unless you type something, so fixing a title never brings the password onto the screen. `Ctrl+R` shows what you typed, or loads the saved value if you want to change part of it. `Ctrl+S` saves.
@@ -104,7 +112,7 @@ If your terminal uses a [Nerd Font](https://www.nerdfonts.com), WM Pass can draw
 
 ## Settings that follow the vault
 
-The theme, the icons and how long a shown secret stays on screen travel inside the vault, so another computer opening the same vault in the terminal picks them up. The time to hide a shown secret is shared with the phone and desktop apps; the theme and icons are the terminal's own. Turn this off with `:` then **Sync settings with the vault on or off**. To keep one of them on this computer only, list its key (`tui_theme`, `tui_icons` or `reveal_seconds`) under `sync_skip` in `tui.json`, in the state folder (`$XDG_STATE_HOME/wmpass`, or `WMPASS_STATE_DIR` when set). The lock and clipboard timers never leave this computer.
+The theme, the icons, how long a shown secret stays on screen and the Health choices travel inside the vault, so another computer opening the same vault in the terminal picks them up. The time to hide a shown secret and the Health choices (what you ignored, and whether local addresses count) are shared with the phone and desktop apps; the theme and icons are the terminal's own. Turn this off with `:` then **Sync settings with the vault on or off**. To keep one of them on this computer only, list its key (`tui_theme`, `tui_icons`, `reveal_seconds`, `health_ignored` or `health_skip_local`) under `sync_skip` in `tui.json`, in the state folder (`$XDG_STATE_HOME/wmpass`, or `WMPASS_STATE_DIR` when set). The lock and clipboard timers never leave this computer.
 
 ## In scripts
 
