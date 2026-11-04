@@ -2367,7 +2367,15 @@
       },
       {
        "t": "text",
-       "s": " at the door; one locked by its key file alone needs no password. Field references such as a password shared from another entry are followed, and deleting an item moves it to the database's recycle bin, as KeePass does. A file in the older KDBX 3 format is rewritten as KDBX 4 on its first save, which KeePass 2.35 or later, KeePassXC 2.3 or later, KeePassDX and Strongbox open. A KeePass 1 file (.kdb) can be imported but not opened in place."
+       "s": " at the door; one locked by its key file alone needs no password. If KeePassXC also locks it with a YubiKey (its YubiKey challenge-response option), choose "
+      },
+      {
+       "t": "strong",
+       "s": "Use security key"
+      },
+      {
+       "t": "text",
+       "s": " and the key's slot, which is slot 2 unless you set it up otherwise, then plug the key in or hold it to the phone. The key is asked once, when the database opens. Saves keep the challenge it answered, so they need no second touch and KeePassXC still opens the file with the same key. Field references such as a password shared from another entry are followed, and deleting an item moves it to the database's recycle bin, as KeePass does. A file in the older KDBX 3 format is rewritten as KDBX 4 on its first save, which KeePass 2.35 or later, KeePassXC 2.3 or later, KeePassDX and Strongbox open. A KeePass 1 file (.kdb) can be imported but not opened in place."
       }
      ]
     }
@@ -2663,7 +2671,15 @@
      "runs": [
       {
        "t": "text",
-       "s": "A file with a password, such as a KeePass or SafeInCloud database, asks for it first. A KeePass database can also take its key file, with or without a password, and KeePass 1 files (.kdb) import as well. Items already in the vault are skipped, and the result says how many."
+       "s": "A file with a password, such as a KeePass or SafeInCloud database, asks for it first. A KeePass database can also take its key file and a YubiKey set up for challenge-response ("
+      },
+      {
+       "t": "strong",
+       "s": "Use security key"
+      },
+      {
+       "t": "text",
+       "s": "), with or without a password, and KeePass 1 files (.kdb) import as well. Items already in the vault are skipped, and the result says how many."
       }
      ]
     },
@@ -8778,7 +8794,15 @@
      "runs": [
       {
        "t": "text",
-       "s": "Folders in the file become folders here, matched by name. Attachments come along from KeePass, SafeInCloud and 1Password files. A KeePass or SafeInCloud database, or a password-protected Proton Authenticator export, asks for its password."
+       "s": "Folders in the file become folders here, matched by name. Attachments come along from KeePass, SafeInCloud and 1Password files. A KeePass or SafeInCloud database, or a password-protected Proton Authenticator export, asks for its password. A KeePass database can also take its key file, and "
+      },
+      {
+       "t": "strong",
+       "s": "Use security key"
+      },
+      {
+       "t": "text",
+       "s": " adds a YubiKey that KeePassXC set up for challenge-response, in slot 2 unless you chose slot 1."
       }
      ]
     },
@@ -8848,7 +8872,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Encrypted exports from Bitwarden, Proton Pass, Aegis, 2FAS and Authenticator Pro cannot be read. Export them again without encryption. A KeePass database that also needs a key file cannot be opened here."
+       "s": "Encrypted exports from Bitwarden, Proton Pass, Aegis, 2FAS and Authenticator Pro cannot be read. Export them again without encryption. A KeePass database locked with a YubiKey needs the key by NFC or USB."
       }
      ]
     },

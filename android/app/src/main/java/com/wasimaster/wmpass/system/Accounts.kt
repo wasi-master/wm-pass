@@ -127,16 +127,33 @@ object Accounts {
 
     private fun online(context: Context) = NetAccess.allowed(context)
 
-    /** Opens a KeePass file in place. It stays where it is and is written back on each save. */
-    suspend fun openKdbx(context: Context, ref: AccountRef, password: ByteArray, keyFile: ByteArray? = null) {
+    /**
+     * Opens a KeePass file in place. It stays where it is and is written back on each save.
+     * [answer] has a YubiKey answer the file's challenge, for a database locked with one.
+     */
+    suspend fun openKdbx(
+        context: Context,
+        ref: AccountRef,
+        password: ByteArray,
+        keyFile: ByteArray? = null,
+        answer: (suspend (ByteArray) -> ByteArray)? = null,
+    ) {
         val uri = Uri.parse(ref.uri)
         val data = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: throw NativeFailure("file\nThat file could not be read.")
-        val reply = Engine.call(
-            "kdbx.open",
-            args = { put("name", ref.label) },
-            secret = password,
-            blobs = listOfNotNull(data, keyFile),
-        )
+        val response = answer?.invoke(data)
+        val reply = try {
+            Engine.call(
+                "kdbx.open",
+                args = {
+                    put("name", ref.label)
+                    put("response", response != null)
+                },
+                secret = password,
+                blobs = listOfNotNull(data, keyFile, response),
+            )
+        } finally {
+            response?.fill(0)
+        }
         Pass.adoptAccount(ref.id, reply) { bytes ->
             // The last good copy stays here, encrypted as the file itself is, in case the
             // write below is cut off halfway.

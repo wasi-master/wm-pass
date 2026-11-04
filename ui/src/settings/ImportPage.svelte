@@ -9,6 +9,8 @@
   import { host } from '../engine/host';
   import type { ImportPreview, LinkedView } from '../engine/types';
   import GuideSheet from './GuideSheet.svelte';
+  import SecurityKeySlot from '../parts/SecurityKeySlot.svelte';
+  import { keepassAnswer, yubikeyAvailable } from './hardware';
 
   const FORMATS = '1Password, Apple Passwords, Avast, Avira, Bitwarden, Buttercup, Chrome and other Chromium browsers, Dashlane, Enpass, Firefox, Kaspersky, KeePass and KeePassXC, Keeper, LastPass, mSecure, NordPass, Password Safe, Proton Pass, Psono, RoboForm, SafeInCloud, Sticky Password and Zoho Vault. Authenticators: Aegis, 2FAS, andOTP, Authenticator Pro, Bitwarden Authenticator, Ente Auth, FreeOTP+, LastPass Authenticator, Proton Authenticator, Raivo, and Google’s export QR code.';
 
@@ -19,6 +21,8 @@
   let password = $state('');
   // A KeePass database may also need its key file, or only that.
   let keyFile = $state<{ name: string; bytes: Uint8Array } | null>(null);
+  // Or a YubiKey's challenge-response slot, as KeePassXC sets one up. Zero is none.
+  let keySlot = $state<0 | 1 | 2>(0);
   const isKeePass = $derived(!!bytes && bytes.length > 4 && bytes[0] === 0x03 && bytes[1] === 0xd9 && bytes[2] === 0xa2 && bytes[3] === 0x9a);
   let error = $state<string | null>(null);
   let result = $state<string | null>(null);
@@ -90,16 +94,25 @@
   async function read() {
     if (!bytes) return;
     const secret = bytesOf(password);
+    let answer: Uint8Array | null = null;
     try {
-      const blobs = keyFile && isKeePass ? [bytes, keyFile.bytes] : [bytes];
-      preview = (await pass.engine<ImportPreview>('import.read', {}, { handle: pass.handle, secret, blobs })).json;
+      // A YubiKey answers this file's challenge, and the answer goes in last.
+      if (keySlot && isKeePass) answer = await keepassAnswer(bytes, keySlot);
+      const blobs = [bytes, ...(keyFile && isKeePass ? [keyFile.bytes] : []), ...(answer ? [answer] : [])];
+      preview = (await pass.engine<ImportPreview>('import.read', { response: !!answer }, { handle: pass.handle, secret, blobs })).json;
       needsPassword = false;
       error = null;
     } catch (failure: any) {
+      // A key that did not answer leaves the form as it is, with the reason.
+      if (!answer && keySlot && isKeePass) {
+        error = failure.message;
+        return;
+      }
       needsPassword = failure.code === 'needs_password' || failure.code === 'wrong_password' || /password/i.test(failure.message ?? '');
-      error = needsPassword && !password && !keyFile ? null : failure.message;
+      error = needsPassword && !password && !keyFile && !keySlot ? null : failure.message;
     } finally {
       secret.fill(0);
+      answer?.fill(0);
     }
   }
 
@@ -129,6 +142,7 @@
     password = '';
     keyFile?.bytes.fill(0);
     keyFile = null;
+    keySlot = 0;
     await read();
   }
 
@@ -148,6 +162,7 @@
     bytes = null;
     keyFile?.bytes.fill(0);
     keyFile = null;
+    keySlot = 0;
     codes = [];
     preview = null;
   }
@@ -192,13 +207,14 @@
     </div>
   {:else if needsPassword}
     <p style="font-size:var(--fs-l);font-weight:600">{isKeePass ? 'This database is locked' : 'This file has a password'}</p>
-    {#if isKeePass}<p class="dim">Enter its password. If it also uses a key file, add that too. A database locked by a key file alone needs no password.</p>{/if}
-    <PasswordField bind:value={password} placeholder={keyFile ? 'The password, if it has one' : 'The file’s password'} autofocus onenter={read} />
+    {#if isKeePass}<p class="dim">Enter its password. If it also uses a key file or a security key, add those too. A database locked by a key file or security key alone needs no password.</p>{/if}
+    <PasswordField bind:value={password} placeholder={keyFile || keySlot ? 'The password, if it has one' : 'The file’s password'} autofocus onenter={read} />
     {#if error}<p class="danger-text">{error}</p>{/if}
     <div class="gap" style="flex-wrap:wrap">
-      <Btn label="Open" variant="primary" disabled={!password && !keyFile} onclick={read} />
+      <Btn label="Open" variant="primary" disabled={!password && !keyFile && !keySlot} onclick={read} />
       {#if isKeePass}<Btn label={keyFile ? `Key file: ${keyFile.name}` : 'Add key file'} icon="key" onclick={chooseKeyFile} />{/if}
     </div>
+    {#if isKeePass && yubikeyAvailable()}<SecurityKeySlot bind:slot={keySlot} wide={false} />{/if}
   {:else}
     <p style="font-size:var(--fs-l);font-weight:600">Bring everything over</p>
     <p class="dim">{FORMATS}</p>

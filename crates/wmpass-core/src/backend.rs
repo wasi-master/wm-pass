@@ -2,7 +2,7 @@
 //! databases opened in place, and (in `wmpass-bw`) Bitwarden-compatible servers.
 
 use crate::clock::Hlc;
-use crate::io::kdbx::InPlace;
+use crate::io::kdbx::{Credentials, InPlace};
 use crate::model::{Entry, Id};
 use crate::vault::Vault;
 use crate::{Result, Secret};
@@ -70,16 +70,35 @@ pub struct KdbxBackend {
     database: InPlace,
     password: Secret,
     key_file: Option<Vec<u8>>,
+    /// A YubiKey's answer, kept like the password: saves keep the challenge it answers.
+    response: Option<zeroize::Zeroizing<Vec<u8>>>,
 }
 
 impl KdbxBackend {
     /// Opens a database.
     pub fn open(data: &[u8], password: Secret, key_file: Option<Vec<u8>>) -> Result<Self> {
-        let database = InPlace::open(data, password.expose(), key_file.as_deref())?;
+        Self::open_with_response(data, password, key_file, None)
+    }
+
+    /// Opens a database that a YubiKey is part of the key to, with its answer to
+    /// [`crate::io::kdbx::challenge`].
+    pub fn open_with_response(
+        data: &[u8],
+        password: Secret,
+        key_file: Option<Vec<u8>>,
+        response: Option<zeroize::Zeroizing<Vec<u8>>>,
+    ) -> Result<Self> {
+        let credentials = Credentials {
+            password: password.expose(),
+            key_file: key_file.as_deref(),
+            response: response.as_deref().map(Vec::as_slice),
+        };
+        let database = InPlace::open_with(data, &credentials)?;
         Ok(Self {
             database,
             password,
             key_file,
+            response,
         })
     }
 
@@ -115,8 +134,11 @@ impl Backend for KdbxBackend {
     }
 
     fn save(&mut self) -> Result<Vec<u8>> {
-        self.database
-            .save(self.password.expose(), self.key_file.as_deref())
+        self.database.save_with(&Credentials {
+            password: self.password.expose(),
+            key_file: self.key_file.as_deref(),
+            response: self.response.as_deref().map(Vec::as_slice),
+        })
     }
 }
 

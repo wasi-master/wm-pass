@@ -351,6 +351,8 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
     // Bitwarden's check on a phone it has not seen before, rather than a two-step code.
     var emailedCode by remember { mutableStateOf(false) }
     var keyFile by remember { mutableStateOf<ByteArray?>(null) }
+    // A YubiKey's challenge-response slot, for a KeePass database locked with one. Zero is none.
+    var keySlot by remember { mutableStateOf(0) }
     val pickAccountKey = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) keyFile = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
     }
@@ -372,8 +374,8 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
         snapshotFlow { field.text.length }.collectLatest { typed++ }
     }
 
-    // A KeePass database may be locked by its key file alone, with no password.
-    fun keyFileOnly() = source?.kind == "kdbx" && keyFile != null
+    // A KeePass database may be locked by its key file or security key alone, with no password.
+    fun keyFileOnly() = source?.kind == "kdbx" && (keyFile != null || keySlot != 0)
 
     fun submitAccount(ref: AccountRef) {
         if (shield == ShieldState.WORKING || (field.text.isEmpty() && !keyFileOnly()) || remaining > 0) return
@@ -384,7 +386,11 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
         scope.launch {
             try {
                 if (ref.kind == "kdbx") {
-                    Accounts.openKdbx(context, ref, password, keyFile)
+                    val slot = keySlot
+                    val answer: (suspend (ByteArray) -> ByteArray)? = activity?.takeIf { slot != 0 }?.let { host ->
+                        { data -> HardwareKeys.keepassAnswer(host, data, slot) }
+                    }
+                    Accounts.openKdbx(context, ref, password, keyFile, answer)
                 } else {
                     Accounts.openBitwarden(context, ref, password, codeField.text.toString().trim().ifEmpty { null }, deviceCode = emailedCode)
                 }
@@ -587,6 +593,7 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
                             needed = null
                             asksCode = false
                             keyFile = null
+                            keySlot = 0
                         }
                     }
                 }
@@ -635,6 +642,10 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
                 Spacer(Modifier.height(8.dp))
                 androidx.compose.material3.TextButton(onClick = { pickAccountKey.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) {
                     Text(if (keyFile == null) "Add key file" else "Key file added")
+                }
+                if (activity != null) {
+                    Spacer(Modifier.height(8.dp))
+                    com.wasimaster.wmpass.ui.parts.SecurityKeySlot(keySlot) { keySlot = it }
                 }
             }
             if (biometricsReady && source == null) {
@@ -696,6 +707,7 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
                             needed = null
                             asksCode = false
                             keyFile = null
+                            keySlot = 0
                         }
                     }
                 }
@@ -732,6 +744,10 @@ private fun Unlock(hasLocal: Boolean, accounts: List<AccountRef>, onStartLocal: 
                     colors.primary,
                     height = 52.dp,
                 ) { pickAccountKey.launch(arrayOf("*/*")) }
+                if (activity != null) {
+                    Spacer(Modifier.height(12.dp))
+                    com.wasimaster.wmpass.ui.parts.SecurityKeySlot(keySlot) { keySlot = it }
+                }
             }
             if (biometricsReady && source == null) {
                 Spacer(Modifier.height(12.dp))

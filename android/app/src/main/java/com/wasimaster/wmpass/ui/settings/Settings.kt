@@ -1238,20 +1238,35 @@ private fun ImportScreen() {
     val password = rememberTextFieldState()
     // A KeePass database may also need its key file, or only that.
     var keyFile by remember { mutableStateOf<ByteArray?>(null) }
+    // Or a YubiKey's challenge-response slot, as KeePassXC sets one up. Zero is none.
+    var keySlot by remember { mutableStateOf(0) }
+    val activity = context as? androidx.fragment.app.FragmentActivity
     val isKeePass = bytes?.let { it.size > 4 && it[0] == 0x03.toByte() && it[1] == 0xd9.toByte() && it[2] == 0xa2.toByte() && it[3] == 0x9a.toByte() } == true
     suspend fun read() {
         val data = bytes ?: return
         val secret = password.text.toString().toByteArray()
+        var answer: ByteArray? = null
         try {
-            val reply = Pass.plainCall("import.read", secret = secret, blobs = listOfNotNull(data, keyFile?.takeIf { isKeePass }))
+            // A YubiKey answers this file's challenge, and the answer goes in last.
+            val host = activity
+            if (keySlot != 0 && isKeePass && host != null) answer = com.wasimaster.wmpass.system.HardwareKeys.keepassAnswer(host, data, keySlot)
+            val reply = Pass.plainCall("import.read", secret = secret, blobs = listOfNotNull(data, keyFile?.takeIf { isKeePass }, answer)) {
+                put("response", answer != null)
+            }
             preview = com.wasimaster.wmpass.core.Engine.json.decodeFromJsonElement(ImportPreview.serializer(), reply.json)
             needsPassword = false
             error = null
         } catch (failure: NativeFailure) {
+            // A key that did not answer leaves the form as it is, with the reason.
+            if (answer == null && keySlot != 0 && isKeePass) {
+                error = failure.message
+                return
+            }
             needsPassword = failure.code == "needs_password" || failure.code == "wrong_password" || failure.message.orEmpty().contains("password", ignoreCase = true)
-            error = if (needsPassword && password.text.isEmpty() && keyFile == null) null else failure.message
+            error = if (needsPassword && password.text.isEmpty() && keyFile == null && keySlot == 0) null else failure.message
         } finally {
             secret.fill(0)
+            answer?.fill(0)
         }
     }
     // Google Authenticator's export links, scanned or read from pictures. A long list comes as
@@ -1290,6 +1305,7 @@ private fun ImportScreen() {
                 password.clearText()
                 keyFile?.fill(0)
                 keyFile = null
+                keySlot = 0
                 read()
             }
         }
@@ -1434,13 +1450,14 @@ private fun ImportScreen() {
                 needsPassword -> {
                     Text(if (isKeePass) "This database is locked" else "This file has a password", color = colors.text, style = MaterialTheme.typography.titleLarge)
                     if (isKeePass) {
-                        Text("Enter its password. If it also uses a key file, add that too. A database locked by a key file alone needs no password.", color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
+                        Text("Enter its password. If it also uses a key file or a security key, add those too. A database locked by a key file or security key alone needs no password.", color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
                     }
-                    PasswordPill(password, if (keyFile != null) "The password, if it has one" else "The file's password")
+                    PasswordPill(password, if (keyFile != null || keySlot != 0) "The password, if it has one" else "The file's password")
                     error?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
-                    PrimaryButton("Open", Modifier.fillMaxWidth(), enabled = password.text.isNotEmpty() || keyFile != null) { shell.launch { read() } }
+                    PrimaryButton("Open", Modifier.fillMaxWidth(), enabled = password.text.isNotEmpty() || keyFile != null || keySlot != 0) { shell.launch { read() } }
                     if (isKeePass) {
                         QuietButton(if (keyFile == null) "Add key file" else "Key file added", Modifier.fillMaxWidth(), PassIcons.Key, colors.primary) { pickKeyFile.launch(arrayOf("*/*")) }
+                        if (activity != null) com.wasimaster.wmpass.ui.parts.SecurityKeySlot(keySlot) { keySlot = it }
                     }
                 }
                 else -> {

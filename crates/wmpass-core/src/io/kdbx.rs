@@ -4,7 +4,14 @@
 //!
 //! Reading covers every format KeePass apps have written since 2006: KeePass 1's KDB,
 //! KDBX 3.0 and 3.1, and KDBX 4.0 and 4.1, with any of their ciphers and key derivations,
-//! and a password, a key file, or both. Writing is always KDBX 4.
+//! and any mix of a password, a key file and a YubiKey (KeePassXC's "YubiKey
+//! challenge-response"). Writing is always KDBX 4.
+//!
+//! A YubiKey takes part through its answer rather than the device: [`challenge`] reads
+//! what the file asks of it, the app's own hardware layer gets the answer (over USB or
+//! NFC, wherever the key is), and the answer comes back in [`Credentials`]. A database
+//! opened in place keeps that same challenge when it is saved, so the answer stays good
+//! and saving needs no second touch.
 
 use std::collections::HashMap;
 
@@ -73,7 +80,100 @@ fn windows_1252(text: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
-fn key(password: &str, key_file: Option<&[u8]>, typed: Typed) -> Result<DatabaseKey> {
+/// Everything a KeePass database can be locked with, in any mix.
+#[derive(Clone, Copy, Default)]
+pub struct Credentials<'a> {
+    /// The password, empty for none.
+    pub password: &'a str,
+    /// The key file's bytes, as they are on disk.
+    pub key_file: Option<&'a [u8]>,
+    /// A YubiKey's HMAC-SHA1 answer to this file's [`challenge`].
+    pub response: Option<&'a [u8]>,
+}
+
+impl std::fmt::Debug for Credentials<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Credentials")
+            .field("password", &!self.password.is_empty())
+            .field("key_file", &self.key_file.is_some())
+            .field("response", &self.response.is_some())
+            .finish()
+    }
+}
+
+/// One field of a KDBX outer header.
+fn header_field(data: &[u8], wanted: u8) -> Option<&[u8]> {
+    let major = u16::from_le_bytes(data.get(10..12)?.try_into().ok()?);
+    let mut at = 12;
+    loop {
+        let id = *data.get(at)?;
+        let (size, start) = if major >= 4 {
+            let size = u32::from_le_bytes(data.get(at + 1..at + 5)?.try_into().ok()?);
+            (usize::try_from(size).ok()?, at + 5)
+        } else {
+            let size = u16::from_le_bytes(data.get(at + 1..at + 3)?.try_into().ok()?);
+            (usize::from(size), at + 3)
+        };
+        let value = data.get(start..start.checked_add(size)?)?;
+        if id == wanted {
+            return Some(value);
+        }
+        if id == 0 {
+            return None;
+        }
+        at = start + size;
+    }
+}
+
+/// The seed in a KDBX 4 header's key derivation settings, a variant dictionary.
+fn kdf_seed(parameters: &[u8]) -> Option<&[u8]> {
+    let mut at = 2;
+    loop {
+        let kind = *parameters.get(at)?;
+        if kind == 0 {
+            return None;
+        }
+        let length = |from: usize| -> Option<usize> {
+            usize::try_from(u32::from_le_bytes(
+                parameters.get(from..from + 4)?.try_into().ok()?,
+            ))
+            .ok()
+        };
+        let name_length = length(at + 1)?;
+        let name = parameters.get(at + 5..at + 5 + name_length)?;
+        let value_at = at + 5 + name_length;
+        let value_length = length(value_at)?;
+        let value = parameters.get(value_at + 4..value_at + 4 + value_length)?;
+        if name == b"S" {
+            return Some(value);
+        }
+        at = value_at + 4 + value_length;
+    }
+}
+
+/// What a YubiKey is asked for this file, as KeePassXC asks it: the key derivation's
+/// seed in KDBX 4, the master seed in KDBX 3. Hand it to the key's HMAC-SHA1 slot and
+/// pass the answer as [`Credentials::response`]. Every save writes a new seed, so ask
+/// again for each version of the file.
+pub fn challenge(data: &[u8]) -> Result<[u8; 32]> {
+    let unsupported = || Error::Import("this database cannot be opened with a security key".into());
+    let found = match DatabaseVersion::parse(data) {
+        Ok(DatabaseVersion::KDB3(_)) => header_field(data, 4),
+        Ok(DatabaseVersion::KDB4(_)) => header_field(data, 11).and_then(kdf_seed),
+        Ok(_) => return Err(unsupported()),
+        Err(_) => return Err(Error::Import("this is not a KeePass database".into())),
+    };
+    found
+        .and_then(|seed| seed.try_into().ok())
+        .ok_or_else(unsupported)
+}
+
+fn key(credentials: &Credentials<'_>, typed: Typed) -> Result<DatabaseKey> {
+    let Credentials {
+        password,
+        key_file,
+        response,
+    } = *credentials;
     let mut built = DatabaseKey::new();
     match typed {
         Typed::Utf8 => built = built.with_password(password),
@@ -94,14 +194,20 @@ fn key(password: &str, key_file: Option<&[u8]>, typed: Typed) -> Result<Database
             .with_keyfile(&mut bytes)
             .map_err(|_| Error::Import("the key file could not be read".into()))?;
     }
+    if let Some(response) = response {
+        built = built.with_challenge_response_answer(response);
+    }
     Ok(built)
 }
 
 /// The keys to try, most likely first. Each try runs the database's key derivation, so
 /// a second one is only made where apps genuinely disagree.
-fn attempts(password: &str, key_file: Option<&[u8]>, kdb: bool) -> Vec<Typed> {
+fn attempts(credentials: &Credentials<'_>, kdb: bool) -> Vec<Typed> {
+    let Credentials {
+        password, key_file, ..
+    } = *credentials;
     if password.is_empty() {
-        if key_file.is_some() {
+        if key_file.is_some() || credentials.response.is_some() {
             vec![Typed::Absent, Typed::Utf8]
         } else {
             vec![Typed::Utf8]
@@ -120,7 +226,7 @@ fn is_kdb(data: &[u8]) -> bool {
 }
 
 /// Opens a database with whichever form of the key it was made with.
-fn open(data: &[u8], password: &str, key_file: Option<&[u8]>) -> Result<(Database, Typed)> {
+fn open(data: &[u8], credentials: &Credentials<'_>) -> Result<(Database, Typed)> {
     let version = DatabaseVersion::parse(data)
         .map_err(|_| Error::Import("this is not a KeePass database".into()))?;
     if matches!(version, DatabaseVersion::KDB2(_)) {
@@ -131,8 +237,13 @@ fn open(data: &[u8], password: &str, key_file: Option<&[u8]>) -> Result<(Databas
         ));
     }
     let kdb = matches!(version, DatabaseVersion::KDB(_));
-    for typed in attempts(password, key_file, kdb) {
-        match Database::parse(data, key(password, key_file, typed)?) {
+    if kdb && credentials.response.is_some() {
+        return Err(Error::Import(
+            "KeePass 1 databases cannot be locked with a security key. Open it without one".into(),
+        ));
+    }
+    for typed in attempts(credentials, kdb) {
+        match Database::parse(data, key(credentials, typed)?) {
             Ok(database) => return Ok((database, typed)),
             // KDBX 3 decrypts before it can check the key, so a wrong one usually shows
             // as bad padding.
@@ -154,11 +265,24 @@ fn open(data: &[u8], password: &str, key_file: Option<&[u8]>) -> Result<(Databas
             }
         }
     }
-    Err(Error::Import(if key_file.is_some() {
-        "wrong password or key file".into()
-    } else {
-        "wrong password, or this database also needs its key file".into()
-    }))
+    Err(Error::Import(
+        match (
+            credentials.key_file.is_some(),
+            credentials.response.is_some(),
+        ) {
+            (false, false) => "wrong password, or this database also needs its key file",
+            (true, false) => "wrong password or key file",
+            (false, true) => {
+                "wrong password or security key, or this database also needs its key file. \
+                 Check that the key's slot is the one the database was set up with"
+            }
+            (true, true) => {
+                "wrong password, key file or security key. Check that the key's slot is the \
+                 one the database was set up with"
+            }
+        }
+        .into(),
+    ))
 }
 
 fn hex(text: &str) -> Option<Vec<u8>> {
@@ -594,7 +718,17 @@ fn not_live(database: &Database, out: &mut Imported) -> Vec<GroupId> {
 
 /// Reads a database.
 pub fn import(data: &[u8], password: &str, key_file: Option<&[u8]>, at: Hlc) -> Result<Imported> {
-    let (database, _) = open(data, password, key_file)?;
+    let credentials = Credentials {
+        password,
+        key_file,
+        response: None,
+    };
+    import_with(data, &credentials, at)
+}
+
+/// Reads a database locked with any mix of a password, a key file and a YubiKey.
+pub fn import_with(data: &[u8], credentials: &Credentials<'_>, at: Hlc) -> Result<Imported> {
+    let (database, _) = open(data, credentials)?;
     let mut out = Imported::default();
     let skip = not_live(&database, &mut out);
     walk(&database, database.root(), "", at, &skip, &mut out);
@@ -691,10 +825,17 @@ pub fn export_in_folders(entries: &[(&Entry, String)], password: &str) -> Result
     }
     let mut out = Vec::new();
     database
-        .save(&mut out, key(password, None, Typed::Utf8)?)
+        .save(&mut out, key(&by_password(password), Typed::Utf8)?)
         .map_err(|_| Error::Encoding)?;
     verify(&out, password, entries)?;
     Ok(out)
+}
+
+fn by_password(password: &str) -> Credentials<'_> {
+    Credentials {
+        password,
+        ..Credentials::default()
+    }
 }
 
 fn strong_config() -> DatabaseConfig {
@@ -709,8 +850,8 @@ fn strong_config() -> DatabaseConfig {
 }
 
 fn verify(bytes: &[u8], password: &str, entries: &[(&Entry, String)]) -> Result<()> {
-    let back =
-        Database::parse(bytes, key(password, None, Typed::Utf8)?).map_err(|_| Error::Integrity)?;
+    let back = Database::parse(bytes, key(&by_password(password), Typed::Utf8)?)
+        .map_err(|_| Error::Integrity)?;
     let mut found: Vec<(String, String, String)> = back
         .iter_all_entries()
         .map(|e| {
@@ -810,6 +951,9 @@ pub struct InPlace {
     database: Database,
     typed: Typed,
     upgraded: bool,
+    /// What the YubiKey answered, when one is part of the key. Saves keep it as the KDF
+    /// seed, so the answer the app holds stays the right one.
+    challenge: Option<[u8; 32]>,
 }
 
 impl std::fmt::Debug for InPlace {
@@ -846,6 +990,16 @@ struct Shown {
 impl InPlace {
     /// Opens a database.
     pub fn open(data: &[u8], password: &str, key_file: Option<&[u8]>) -> Result<Self> {
+        let credentials = Credentials {
+            password,
+            key_file,
+            response: None,
+        };
+        Self::open_with(data, &credentials)
+    }
+
+    /// Opens a database locked with any mix of a password, a key file and a YubiKey.
+    pub fn open_with(data: &[u8], credentials: &Credentials<'_>) -> Result<Self> {
         if is_kdb(data) {
             // Saving would put KDBX 4 into a file KeePass 1 then cannot open.
             return Err(Error::Import(
@@ -854,7 +1008,8 @@ impl InPlace {
                     .into(),
             ));
         }
-        let (mut database, typed) = open(data, password, key_file)?;
+        let (mut database, typed) = open(data, credentials)?;
+        let challenge = credentials.response.map(|_| challenge(data)).transpose()?;
         // KDBX 3 can be read but not written. The next save moves the file to KDBX 4
         // with Argon2id, which is the stronger format, and the app says so first.
         let upgraded = !matches!(database.config.version, DatabaseVersion::KDB4(_));
@@ -869,6 +1024,7 @@ impl InPlace {
             database,
             typed,
             upgraded,
+            challenge,
         })
     }
 
@@ -1123,12 +1279,33 @@ impl InPlace {
     /// Writes the database back, reads it back and compares it. Save the result
     /// atomically and keep the previous file as a `.bak`.
     pub fn save(&self, password: &str, key_file: Option<&[u8]>) -> Result<Vec<u8>> {
+        let credentials = Credentials {
+            password,
+            key_file,
+            response: None,
+        };
+        self.save_with(&credentials)
+    }
+
+    /// Like [`InPlace::save`], with the credentials it was opened with. With a YubiKey,
+    /// the file keeps the challenge it was opened with (a KDBX 3 file's master seed
+    /// becomes its KDBX 4 KDF seed), so the same answer opens it in KeePassXC and here.
+    /// Each save still gets a new master seed, so its encryption keys are new.
+    pub fn save_with(&self, credentials: &Credentials<'_>) -> Result<Vec<u8>> {
         let mut out = Vec::new();
-        self.database
-            .save(&mut out, key(password, key_file, self.typed)?)
-            .map_err(|_| Error::Encoding)?;
-        let back = Database::parse(&out, key(password, key_file, self.typed)?)
-            .map_err(|_| Error::Integrity)?;
+        let built = key(credentials, self.typed)?;
+        match (self.challenge, credentials.response) {
+            (Some(seed), Some(_)) => self.database.save_with_kdf_seed(&mut out, built, &seed),
+            (None, None) => self.database.save(&mut out, built),
+            _ => {
+                return Err(Error::Invalid(
+                    "save with the security key's answer the database was opened with".into(),
+                ));
+            }
+        }
+        .map_err(|_| Error::Encoding)?;
+        let back =
+            Database::parse(&out, key(credentials, self.typed)?).map_err(|_| Error::Integrity)?;
         if back != self.database && !same_database(&back, &self.database) {
             return Err(Error::Integrity);
         }

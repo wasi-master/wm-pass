@@ -385,6 +385,19 @@ fn blob<'a>(call: &Call<'a>, at: usize) -> Result<&'a [u8], SessionError> {
         .ok_or_else(|| invalid("a file is missing"))
 }
 
+/// A KeePass database's key file and YubiKey answer, after the database itself: the key
+/// file next when there is one, the answer last when `response` says there is one.
+fn kdbx_keys<'a>(call: &Call<'a>, response: bool) -> Result<(Option<&'a [u8]>, Option<&'a [u8]>), SessionError> {
+    let rest = call.blobs.get(1..).unwrap_or_default();
+    match (rest, response) {
+        ([], false) => Ok((None, None)),
+        ([key_file], false) => Ok((Some(*key_file), None)),
+        ([answer], true) => Ok((None, Some(*answer))),
+        ([key_file, answer], true) => Ok((Some(*key_file), Some(*answer))),
+        _ => Err(invalid("unexpected files with the database")),
+    }
+}
+
 fn text(bytes: &[u8]) -> Result<&str, SessionError> {
     std::str::from_utf8(bytes).map_err(|_| invalid("that value is not valid text"))
 }
@@ -691,16 +704,29 @@ impl Service {
                     ..Reply::default()
                 })
             }
+            // What a YubiKey is asked for a KeePass database, for the shell's hardware
+            // layer to put to the key. Its answer then goes with `kdbx.open` or `import.read`.
+            "kdbx.challenge" => {
+                let challenge = wmpass_core::io::kdbx::challenge(blob(&call, 0)?)?;
+                Ok(Reply::view(json!({"challenge": hex(&challenge)})))
+            }
             "kdbx.open" => {
                 #[derive(Deserialize, Default)]
                 #[serde(default)]
                 struct A {
                     name: String,
+                    /// The last blob is a YubiKey's answer to `kdbx.challenge`.
+                    response: bool,
                 }
                 let a: A = parse(call.args)?;
                 let password = Secret::new(text(call.secret)?);
-                let key_file = blob(&call, 1).ok().map(<[u8]>::to_vec);
-                let backend = wmpass_core::backend::KdbxBackend::open(blob(&call, 0)?, password, key_file)?;
+                let (key_file, response) = kdbx_keys(&call, a.response)?;
+                let backend = wmpass_core::backend::KdbxBackend::open_with_response(
+                    blob(&call, 0)?,
+                    password,
+                    key_file.map(<[u8]>::to_vec),
+                    response.map(|r| Zeroizing::new(r.to_vec())),
+                )?;
                 // KDBX 3 is read but written as KDBX 4, which apps from before 2017 cannot open.
                 let upgrade = backend.will_upgrade();
                 let remote = crate::remote::Remote::new(crate::remote::Account::Kdbx(Box::new(backend)));
@@ -2365,6 +2391,8 @@ impl Service {
                 #[serde(default)]
                 struct A {
                     format: Option<String>,
+                    /// The last blob is a YubiKey's answer to `kdbx.challenge`.
+                    response: bool,
                 }
                 let a: A = parse(call.args)?;
                 let data = blob(&call, 0)?;
@@ -2376,10 +2404,10 @@ impl Service {
                 let password = (!call.secret.is_empty())
                     .then(|| text(call.secret))
                     .transpose()?;
-                // A KeePass key file, when the database has one.
-                let key_file = blob(&call, 1).ok();
+                // A KeePass key file and a YubiKey's answer, when the database has them.
+                let (key_file, response) = kdbx_keys(&call, a.response)?;
                 let at = session.vault.tick(now);
-                let imported = io::import_with_key_file(format, data, password, key_file, at)?;
+                let imported = io::import_with_keys(format, data, password, key_file, response, at)?;
                 let titles: Vec<&str> = imported
                     .entries
                     .iter()
