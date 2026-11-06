@@ -21131,7 +21131,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Lets the WM Pass tool in WM Keyboard browse your vault, type from it, add logins to it and change passwords in it, while the vault is open."
+       "s": "Lets the WM Pass tool in WM Keyboard browse your vault, type from it, add logins to it and change passwords in it, and unlock it without leaving the app you are in."
       }
      ]
     }
@@ -21142,7 +21142,66 @@
      "runs": [
       {
        "t": "text",
-       "s": "The keyboard can only ask. It cannot open the vault, and gets an answer only while the vault is open here."
+       "s": "The keyboard gets an answer only while the vault is open here. While it is locked, the tool offers two ways in, and neither works without you."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "strong",
+       "s": "Fingerprint"
+      },
+      {
+       "t": "text",
+       "s": " asks for your fingerprint over the app you are in, the way autofill does. WM Pass shows the prompt; the keyboard only starts it. Without fingerprint unlock set up, or after "
+      },
+      {
+       "t": "strong",
+       "s": "Use password"
+      },
+      {
+       "t": "text",
+       "s": ", the door opens there instead."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "strong",
+       "s": "Password"
+      },
+      {
+       "t": "text",
+       "s": " takes your master password in the keyboard's own box, which sends it to WM Pass and keeps nothing. It counts toward the same wrong tries and waits as the door, and a duress password does what it does there. A vault that also needs a key file or a hardware key opens at the door."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Opened from the keyboard, the vault locks after the time set under "
+      },
+      {
+       "t": "link",
+       "id": "setting.lock_after"
+      },
+      {
+       "t": "text",
+       "s": ", counted from then, and never sooner than a minute, since you are still typing in the other app. The tool also has a "
+      },
+      {
+       "t": "strong",
+       "s": "Lock"
+      },
+      {
+       "t": "text",
+       "s": " button."
       }
      ]
     },
@@ -21271,7 +21330,7 @@
    ],
    "docs": "/apps/keyboard/",
    "words": "wm keyboard ime type fill",
-   "plain": "Lets the WM Pass tool in WM Keyboard browse your vault, type from it, add logins to it and change passwords in it, while the vault is open."
+   "plain": "Lets the WM Pass tool in WM Keyboard browse your vault, type from it, add logins to it and change passwords in it, and unlock it without leaving the app you are in."
   },
   {
    "id": "feature.keyboard_chips",

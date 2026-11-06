@@ -25,8 +25,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * How WM Keyboard reaches an open vault. It can only ever ask, never unlock, and it asks only after
- * the person has turned this on here. A password that goes this way passes through the keyboard's
+ * How WM Keyboard reaches the vault. It asks only after the person has turned this on here, and
+ * it opens a locked vault only with the person: their fingerprint, asked for by this app over the
+ * app they are in, or their master password, typed into the keyboard's own box ([KeyboardUnlock]). A password that goes this way passes through the keyboard's
  * process, so every call first proves who is calling by its signing certificate. A package name
  * alone proves nothing, and a manifest permission would lock out Android 11 and below, where
  * `knownSigner` does not exist.
@@ -53,13 +54,15 @@ class KeyboardProvider : ContentProvider() {
         val prefs = Prefs(context)
         prefs.switchOnFirstTime(prefs.keyboardAccess)
         if (!prefs.keyboardAccess.value) return status("off")
+        // Opening the vault from the keyboard, and locking it: the calls that work while it is locked.
+        runBlocking { KeyboardUnlock.call(context, method, extras) }?.let { return it }
         if (Pass.state.value == LockState.NoVault) return status("none")
-        if (Pass.state.value !is LockState.Unlocked) return status("locked")
+        if (Pass.state.value !is LockState.Unlocked) return status("locked").also { KeyboardUnlock.describeLocked(context, it) }
         return runBlocking {
             when (method) {
-                VaultWire.STATUS -> status("open")
+                VaultWire.STATUS -> status("open").also(KeyboardUnlock::describeOpen)
                 "logins" -> status("open").apply { putString("rows", logins(arg.orEmpty())) }
-                VaultWire.ITEMS -> status("open").apply { putString(VaultWire.ROWS, items(arg.orEmpty(), extras?.getString(VaultWire.QUERY).orEmpty())) }
+                VaultWire.ITEMS -> status("open").also(KeyboardUnlock::describeOpen).apply { putString(VaultWire.ROWS, items(arg.orEmpty(), extras?.getString(VaultWire.QUERY).orEmpty())) }
                 VaultWire.ITEM -> status("open").apply { page(arg.orEmpty())?.let { putString(VaultWire.PAGE, it) } }
                 VaultWire.VALUE -> status("open").apply {
                     value(arg.orEmpty(), extras?.getString(VaultWire.FIELD).orEmpty())?.let { putString(VaultWire.VALUE, it.text()) }

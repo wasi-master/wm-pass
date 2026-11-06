@@ -489,7 +489,7 @@ private fun SecurityScreen() {
             item {
                 ToggleSetting(
                     "Let WM Keyboard fill",
-                    "Its WM Pass tool can list your logins and type them while the vault is open, and its settings can fill API keys from here or save new ones. A password it types passes through the keyboard. On by default when WM Keyboard is installed.",
+                    "Its WM Pass tool can list your logins and type them, and unlock the vault with your fingerprint or master password without leaving the app you are in. Its settings can fill API keys from here or save new ones. A password it types passes through the keyboard. On by default when WM Keyboard is installed.",
                     prefs.keyboardAccess.value,
                     info = infoFor("keyboard_access"),
                     icon = PassIcons.Keyboard,

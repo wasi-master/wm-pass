@@ -52,7 +52,7 @@ For the web vault itself, the defences are in what the page may do. Its Content-
 
 **Security keys and passkeys in a browser** go through WebAuthn's PRF extension. The credentials belong to `wmpass.pages.dev`, which the extension may claim because it may reach every site, and which a copy of the page served from anywhere else cannot. A security key is asked without its PIN, as the desktop app asks it, so the answer is the same in every app.
 
-**WM Keyboard** checks WM Pass's signing certificate, and WM Pass checks WM Keyboard's on every call, and it is off until you allow it.
+**WM Keyboard** checks WM Pass's signing certificate, and WM Pass checks WM Keyboard's on every call, and it is off until you allow it. It can open a locked vault only with you: the fingerprint prompt is WM Pass's own, and a master password typed into the keyboard's box is one the keyboard sees anyway when you type it at the door. That password meets the door's limit on wrong tries.
 
 **The username checker** loads TikTok and Instagram in a hidden browser view, because their pages only answer once their own scripts run. Those scripts run inside the desktop and phone apps, so the view gets nothing from the app: it keeps no cookies or storage afterwards, may only load https pages on that site's domain, and has no route to the app's commands. On desktop, Tauri refuses commands from any page it did not ship. On Android, the view has no JavaScript bridge. The app reads only the text the page shows.
 

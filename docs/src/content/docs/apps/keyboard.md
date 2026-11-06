@@ -5,7 +5,7 @@ description: Browse, type and add to your vault from WM Keyboard's WM Pass tool,
 
 If you use [WM Keyboard](https://wmkeyboard.pages.dev), its WM Pass tool works as a password book on top of this app: it lists your vault, types from it, adds logins to it and changes passwords in it. Its code chip can offer the current code when you reach a code box.
 
-**Let WM Keyboard fill**, under Settings, Security, starts on when WM Keyboard is installed and its signing certificate is WM Keyboard's own. Turn it off there and it stays off. The keyboard can only ask while your vault is open, and it can never unlock it. Each app checks the other's signing certificate first.
+**Let WM Keyboard fill**, under Settings, Security, starts on when WM Keyboard is installed and its signing certificate is WM Keyboard's own. Turn it off there and it stays off. The keyboard gets answers only while your vault is open, and it can open a locked vault only with you: your fingerprint, which WM Pass asks for, or your master password. Each app checks the other's signing certificate first.
 
 A password typed this way passes through the keyboard's process, as anything you type does. If you would rather keep it out of there, use the autofill service instead.
 
@@ -21,7 +21,16 @@ The tool lists every item in your vault that is not in the trash or on the hidde
 - **Change password** puts a new password on an item that has one. The old password stays in the item's history.
 - **New password**, in either form, makes a password with the generator as you set it up here.
 
-The keyboard types and copies nothing into a field that asks it not to learn, such as a private browser tab, and shows **Open WM Pass** while the vault is locked.
+The keyboard types and copies nothing into a field that asks it not to learn, such as a private browser tab.
+
+## Unlocking from the keyboard
+
+While the vault is locked, the tool says so and offers two ways in. Neither takes you out of the app you are typing in.
+
+- **Fingerprint** shows WM Pass's fingerprint prompt over that app, the same one autofill uses. The keyboard only starts it, and WM Pass checks the fingerprint. Close the prompt and you are back where you were; tap **Use password** and the door opens there instead. Without fingerprint unlock set up, the door opens straight away.
+- **Password** takes your master password in the keyboard's own box. The keyboard sends it to WM Pass and keeps nothing, and it never reaches the app's field. Wrong tries count toward the same waits as at the door, and a duress password does what it does there. A vault that also needs a key file or a hardware key opens at the door.
+
+Once the vault is open, it locks after the time set under [Lock after leaving the app](/guide/settings/security/#setting-lock-after), counted from then and never sooner than a minute, since you are still typing in the other app. **Lock** in the tool's header locks it at once.
 
 ## Buttons on the keyboard's strip
 

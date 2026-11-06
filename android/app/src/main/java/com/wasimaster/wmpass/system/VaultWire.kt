@@ -47,6 +47,17 @@ import kotlinx.serialization.json.putJsonArray
  *   history. [SAVED] says whether it was kept.
  * - [GENERATE]: a new password from the generator as set up here, as [VALUE].
  *
+ * A `locked` reply to [STATUS] or [ITEMS] also carries [FINGERPRINT], whether the fingerprint can
+ * open the vault now, and [RETRY_AT], when a password may next be tried (0 for now). An `open`
+ * one carries [VAULT], the open vault's name. Three calls work on a locked vault:
+ *
+ * - [UNLOCK_PROMPT]: [INTENT], a pending intent that asks for the fingerprint over the app in
+ *   front, or the door when the fingerprint is not set up. The keyboard only starts it.
+ * - [UNLOCK], extra [SECRET], the master password as UTF-8 bytes, wiped once read: [OUTCOME] is
+ *   `opened`, `wrong`, `waiting` (with [RETRY_AT]), `factor` (a key file or hardware key is
+ *   needed, so the door it is) or `failed`.
+ * - [LOCK]: locks the vault.
+ *
  * Opening an item in WM Pass is not a call: the keyboard starts WM Pass with the extra
  * [ROUTE_EXTRA] set to [openRoute], and the item opens once the vault is.
  */
@@ -62,6 +73,9 @@ object VaultWire {
     const val ADD_LOGIN = "add_login"
     const val SET_PASSWORD = "set_password"
     const val GENERATE = "generate"
+    const val UNLOCK_PROMPT = "unlock_prompt"
+    const val UNLOCK = "unlock"
+    const val LOCK = "lock"
 
     const val QUERY = "query"
     const val FIELD = "field"
@@ -76,6 +90,12 @@ object VaultWire {
     const val COPIED = "copied"
     const val ID = "id"
     const val SAVED = "saved"
+    const val FINGERPRINT = "fingerprint"
+    const val RETRY_AT = "retry_at"
+    const val VAULT = "vault"
+    const val INTENT = "intent"
+    const val SECRET = "secret"
+    const val OUTCOME = "outcome"
 
     const val CODE = "code"
     const val NOTES = "notes"

@@ -670,11 +670,17 @@ See also [Autofill service](/guide/settings/security/#action-autofill-service), 
 
 *Only in Android.*
 
-Lets the WM Pass tool in WM Keyboard browse your vault, type from it, add logins to it and change passwords in it, while the vault is open.
+Lets the WM Pass tool in WM Keyboard browse your vault, type from it, add logins to it and change passwords in it, and unlock it without leaving the app you are in.
 
 #### How it works
 
-The keyboard can only ask. It cannot open the vault, and gets an answer only while the vault is open here.
+The keyboard gets an answer only while the vault is open here. While it is locked, the tool offers two ways in, and neither works without you.
+
+**Fingerprint** asks for your fingerprint over the app you are in, the way autofill does. WM Pass shows the prompt; the keyboard only starts it. Without fingerprint unlock set up, or after **Use password**, the door opens there instead.
+
+**Password** takes your master password in the keyboard's own box, which sends it to WM Pass and keeps nothing. It counts toward the same wrong tries and waits as the door, and a duress password does what it does there. A vault that also needs a key file or a hardware key opens at the door.
+
+Opened from the keyboard, the vault locks after the time set under [Lock after no activity](/guide/settings/security/#setting-lock-after), counted from then, and never sooner than a minute, since you are still typing in the other app. The tool also has a **Lock** button.
 
 It is shown every item that is not in the trash or on the hidden shelf, those saved for the app in front first: each one's name, the line under it, and whether it has a password or a code. Its search goes through the vault's own search.
 
