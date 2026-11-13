@@ -8,6 +8,7 @@
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
@@ -22,6 +23,8 @@ use wmpass_sinks::places::{self, App};
 const PORT: u16 = 53683;
 const REDIRECT: &str = "http://127.0.0.1:53683/oauth";
 const WAIT: Duration = Duration::from_secs(300);
+/// Counts browser sign-ins, so a new one takes the port from one still waiting.
+static ATTEMPT: AtomicU64 = AtomicU64::new(0);
 
 fn service(kind: &str, place: &Value) -> Option<(Service, App)> {
     let apps = crate::places::apps();
@@ -57,7 +60,8 @@ pub fn step(place: &Value, step: &Value, online: bool) -> Result<Value, String> 
 /// Opens the service's page and waits for it to come back with a code. Answers the
 /// `extra` to keep: the refresh token.
 fn browser(service: Service, app: App, kind: &str) -> Result<Value, String> {
-    let listener = TcpListener::bind(("127.0.0.1", PORT)).map_err(|_| "another program is using the sign-in port 53683; close it and try again")?;
+    let attempt = ATTEMPT.fetch_add(1, Ordering::SeqCst) + 1;
+    let listener = bind_port()?;
     let pkce = oauth::pkce().map_err(|fault| fault.to_string())?;
     let mut url = oauth::authorize_url(service, app.id, REDIRECT, &pkce);
     if kind == "box" {
@@ -65,17 +69,33 @@ fn browser(service: Service, app: App, kind: &str) -> Result<Value, String> {
         url = url.replace("&scope=&", "&");
     }
     crate::open_in_browser(&url);
-    let code = wait_for_code(&listener, &pkce)?;
+    let code = wait_for_code(&listener, &pkce, attempt)?;
     let http = NativeHttp::default();
     let client = Client::new(Blocking(&http), NetPolicy::Any);
     let refresh = block_on(places::exchange(&client, service, app, REDIRECT, code.expose(), pkce.verifier.expose())).map_err(|fault| fault.to_string())?;
     Ok(json!({ "extra": { "refresh_token": refresh.expose() } }))
 }
 
-fn wait_for_code(listener: &TcpListener, pkce: &Pkce) -> Result<Secret, String> {
+/// The sign-in port. A sign-in begun again, after the browser tab of the first was closed, would
+/// otherwise find its own earlier wait holding the port for the rest of five minutes: that wait
+/// sees it was replaced and lets go within a moment.
+fn bind_port() -> Result<TcpListener, String> {
+    for _ in 0..10 {
+        if let Ok(listener) = TcpListener::bind(("127.0.0.1", PORT)) {
+            return Ok(listener);
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    Err("another program is using the sign-in port 53683; close it and try again".to_owned())
+}
+
+fn wait_for_code(listener: &TcpListener, pkce: &Pkce, attempt: u64) -> Result<Secret, String> {
     listener.set_nonblocking(true).map_err(|e| e.to_string())?;
     let deadline = Instant::now() + WAIT;
     while Instant::now() < deadline {
+        if ATTEMPT.load(Ordering::SeqCst) != attempt {
+            return Err("a newer sign-in took the place of this one".to_owned());
+        }
         match listener.accept() {
             Ok((stream, _)) => {
                 if let Some(answer) = answer(stream, pkce) {
@@ -105,12 +125,17 @@ fn answer(mut stream: TcpStream, pkce: &Pkce) -> Option<Result<Secret, String>> 
     let field = |name: &str| {
         query.split('&').find_map(|pair| pair.strip_prefix(name).and_then(|v| v.strip_prefix('='))).map(wmpass_core::otp::percent_decode)
     };
-    let outcome = match (field("code"), field("state")) {
-        // The state ties the redirect to this request: a page that sends the browser here with a
-        // code of its own choosing is refused.
-        (Some(code), Some(state)) if state == pkce.state => Ok(Secret::from(code)),
-        (Some(_), _) => Err("the sign-in came back with the wrong state, so it was refused".to_owned()),
-        (None, _) => Err("the sign-in was cancelled".to_owned()),
+    // The state ties the redirect to this request. A request without it, such as one a web page
+    // sent the browser here with, with a code or a cancel of its own choosing, is turned away
+    // and the wait for the real one goes on: it could otherwise end a sign-in under way.
+    if field("state").as_deref() != Some(pkce.state.as_str()) {
+        let page = "<!doctype html><meta charset=utf-8><title>WM Pass</title><body style=\"font:16px system-ui;text-align:center;padding:48px\">This is not the sign-in WM Pass is waiting for.</body>";
+        let _ = write!(stream, "HTTP/1.1 400 Bad Request\r\ncontent-type: text/html; charset=utf-8\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{page}", page.len());
+        return None;
+    }
+    let outcome = match field("code") {
+        Some(code) => Ok(Secret::from(code)),
+        None => Err("the sign-in was cancelled".to_owned()),
     };
     let words = if outcome.is_ok() { "Signed in. You can close this tab and go back to WM Pass." } else { "The sign-in did not finish. Go back to WM Pass and try again." };
     let page = format!("<!doctype html><meta charset=utf-8><title>WM Pass</title><body style=\"font:16px system-ui;text-align:center;padding:48px\">{words}</body>");

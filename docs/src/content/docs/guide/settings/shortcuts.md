@@ -16,7 +16,7 @@ Keys that work while the WM Pass window is in front. Choose one to change it.
 
 #### How it works
 
-- <kbd>Ctrl+F</kbd> (<kbd>⌘F</kbd> on a Mac) **Search**: puts the cursor in the search box, going back to the list first.
+- <kbd>Ctrl+F</kbd> (<kbd>⌘F</kbd> on a Mac) **Search** and <kbd>Ctrl+K</kbd> (<kbd>⌘K</kbd> on a Mac) **Quick search**: put the cursor in the search box of the list you are on, or of All items from any other page.
 - <kbd>Ctrl+N</kbd> (<kbd>⌘N</kbd> on a Mac) **New item**: starts an item of the first type in the [add menu](/guide/settings/add/#setting-add-kinds).
 - <kbd>Ctrl+E</kbd> (<kbd>⌘E</kbd> on a Mac) **Edit item**: opens the item you are looking at in the editor.
 - <kbd>Ctrl+L</kbd> (<kbd>⌘L</kbd> on a Mac) **Lock**: locks the vault.
@@ -24,10 +24,9 @@ Keys that work while the WM Pass window is in front. Choose one to change it.
 - <kbd>Ctrl+Shift+P</kbd> (<kbd>⌘⇧P</kbd> on a Mac) **Copy password**, <kbd>Ctrl+Shift+U</kbd> (<kbd>⌘⇧U</kbd> on a Mac) **Copy username** and <kbd>Ctrl+Shift+O</kbd> (<kbd>⌘⇧O</kbd> on a Mac) **Copy code** copy from the item you are looking at.
 - <kbd>Ctrl+Shift+L</kbd> (<kbd>⌘⇧L</kbd> on a Mac) **Open site**: opens that item's website.
 - <kbd>Ctrl+Backslash</kbd> (<kbd>⌘\</kbd> on a Mac) **Show or hide the sidebar**.
-- <kbd>Ctrl+K</kbd> (<kbd>⌘K</kbd> on a Mac) **Quick search**: puts the cursor in the search box of the list you are on.
 - <kbd>F1</kbd> **What is this page?**: opens the guide at the topic for what is on screen.
 
-Some keys are fixed: the arrow keys move through the list, Enter in the search box opens the chosen item, Escape clears the search, and Ctrl+S or Cmd+S saves in the editor.
+Some keys are fixed: the arrow keys move through the list, Enter in the search box opens the chosen item, Escape clears the search or closes the editor, asking first if there are changes, and Ctrl+S or Cmd+S saves in the editor.
 
 #### Limits
 
@@ -63,7 +62,9 @@ One set of keys does one thing. Giving keys to an action takes them from whateve
 
 #### Limits
 
-Shortcuts work even while you type in a field, so a key without Ctrl, Cmd or Alt, such as a plain letter, would fire each time you type it.
+In a text box only keys with Ctrl, Cmd or Alt, and the F keys, work as shortcuts, so a shortcut on a plain key, such as a letter, does nothing while you type.
+
+While a dialog or a menu is open over the window, only **Lock** and **What is this page?** work.
 
 They are saved with your other customizations, so a settings file carries them to another computer.
 
@@ -79,7 +80,7 @@ Your own keys for the actions on this page, for a keyboard plugged in or paired 
 
 #### How it works
 
-Tap a shortcut, then press the keys you want. **No shortcut** leaves that action without one.
+Tap a shortcut, then press the keys you want. **No shortcut** leaves that action without one, and Back or Escape keeps it as it was.
 
 One set of keys does one thing. Giving keys to an action takes them from whatever had them.
 

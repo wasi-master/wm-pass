@@ -7,9 +7,38 @@
 use std::collections::HashSet;
 
 use crate::health::entry_domains;
-use crate::model::{Entry, Id, Kind};
+use crate::matching::{app_of_address, host_of};
+use crate::model::{Entry, Id, Kind, SiteMatcher};
 
 const DAY_MS: u64 = 86_400_000;
+
+/// Text as search compares it: lower case, with accents taken off Latin letters, so `cafe`
+/// finds Café and `strasse` finds Straße. Marks that make another letter elsewhere, as in
+/// Japanese kana, are kept. Lists sorted by name use it too, so Écran sorts among the e's.
+pub fn fold(text: &str) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    let lower = text.to_lowercase();
+    if lower.is_ascii() {
+        return lower;
+    }
+    let mut out = String::with_capacity(lower.len());
+    for ch in lower.nfd() {
+        match ch {
+            '\u{300}'..='\u{36f}' => {}
+            'ß' => out.push_str("ss"),
+            'æ' => out.push_str("ae"),
+            'œ' => out.push_str("oe"),
+            'ø' => out.push('o'),
+            'ł' => out.push('l'),
+            'đ' | 'ð' => out.push('d'),
+            'ħ' => out.push('h'),
+            'ı' => out.push('i'),
+            'þ' => out.push_str("th"),
+            ch => out.push(ch),
+        }
+    }
+    out.nfc().collect()
+}
 
 /// One parsed filter.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -27,6 +56,8 @@ enum Term {
     CreatedWithin(u64),
     CreatedBefore(u64),
     InNotes,
+    /// A filter turned around by a leading minus.
+    Exclude(Box<Term>),
 }
 
 /// A parsed query.
@@ -36,16 +67,20 @@ pub struct Query {
 }
 
 fn days(text: &str) -> Option<u64> {
-    let (number, unit) = text.split_at(text.len().checked_sub(1)?);
+    // The unit is one ASCII letter; anything else, a multi-byte letter included, is no span.
+    if !text.is_char_boundary(text.len().checked_sub(1)?) {
+        return None;
+    }
+    let (number, unit) = text.split_at(text.len() - 1);
     let number: u64 = number.parse().ok()?;
     let days = match unit {
-        "d" => number,
-        "w" => number * 7,
-        "m" => number * 30,
-        "y" => number * 365,
+        "d" => Some(number),
+        "w" => number.checked_mul(7),
+        "m" => number.checked_mul(30),
+        "y" => number.checked_mul(365),
         _ => return None,
-    };
-    Some(days * DAY_MS)
+    }?;
+    days.checked_mul(DAY_MS)
 }
 
 fn tokens(text: &str) -> Vec<String> {
@@ -74,39 +109,78 @@ impl Query {
         let mut terms = Vec::new();
         for token in tokens(text) {
             let lower = token.to_lowercase();
-            let term = if let Some(rest) = lower.strip_prefix("modified>") {
-                days(rest).map(Term::ModifiedBefore)
-            } else if let Some(rest) = lower.strip_prefix("modified<") {
-                days(rest).map(Term::ModifiedWithin)
-            } else if let Some(rest) = lower.strip_prefix("created>") {
-                days(rest).map(Term::CreatedBefore)
-            } else if let Some(rest) = lower.strip_prefix("created<") {
-                days(rest).map(Term::CreatedWithin)
-            } else if let Some((key, value)) = lower.split_once(':') {
-                match key {
-                    "tag" => Some(Term::Tag(value.to_owned())),
-                    "kind" => Some(Term::Kind(value.to_owned())),
-                    "site" => Some(Term::Site(value.to_owned())),
-                    "folder" => Some(Term::Folder(value.to_owned())),
-                    "has" => Some(Term::Has(value.to_owned())),
-                    "in" if value == "notes" => Some(Term::InNotes),
-                    _ => None,
-                }
-            } else {
-                match lower.as_str() {
-                    "weak" | "reused" | "breached" | "old" | "duplicate" | "pinned"
-                    | "favourite" | "favorite" | "hidden" | "trashed" => {
-                        Some(Term::Flag(lower.replace("favorite", "favourite")))
-                    }
-                    _ => lower
-                        .strip_prefix('-')
-                        .filter(|rest| !rest.is_empty())
-                        .map(|rest| Term::Not(rest.to_owned())),
-                }
+            // `tag:` with nothing after it yet is a filter still being typed, and keeps everything
+            // rather than emptying the list for a moment.
+            if let Some((key, "")) = lower.trim_start_matches('-').split_once(':')
+                && matches!(key, "tag" | "kind" | "site" | "folder" | "has" | "in")
+            {
+                continue;
+            }
+            // A minus leaves out what the rest would keep: `-old`, `-tag:work`, `-modified<7d`.
+            let term = match lower.strip_prefix('-').filter(|rest| !rest.is_empty()) {
+                Some(rest) => Some(match Self::filter(rest) {
+                    Some(filter) => Term::Exclude(Box::new(filter)),
+                    None => Term::Not(fold(rest)),
+                }),
+                None => Self::filter(&lower),
             };
-            terms.push(term.unwrap_or(Term::Text(lower)));
+            terms.push(term.unwrap_or_else(|| Term::Text(fold(&lower))));
         }
         Self { terms }
+    }
+
+    fn filter(lower: &str) -> Option<Term> {
+        // An address pasted into the box, as from a browser's address bar, finds the logins for
+        // its site: `https://www.github.com/login` is no text any field holds.
+        if lower.starts_with("http://") || lower.starts_with("https://") {
+            return host_of(lower).map(|host| Term::Site(crate::matching::registrable_domain(&host)));
+        }
+        if let Some(rest) = lower.strip_prefix("modified>") {
+            days(rest).map(Term::ModifiedBefore)
+        } else if let Some(rest) = lower.strip_prefix("modified<") {
+            days(rest).map(Term::ModifiedWithin)
+        } else if let Some(rest) = lower.strip_prefix("created>") {
+            days(rest).map(Term::CreatedBefore)
+        } else if let Some(rest) = lower.strip_prefix("created<") {
+            days(rest).map(Term::CreatedWithin)
+        } else if let Some((key, value)) = lower.split_once(':') {
+            match key {
+                "tag" => Some(Term::Tag(fold(value))),
+                // The help spells it the American way, as many people do.
+                "kind" => Some(Term::Kind(if value == "license" { "licence".to_owned() } else { value.to_owned() })),
+                // `site:https://github.com/login` means the site, not that text.
+                // `site:https://github.com/login` means the site, not that text, and `www.` is
+                // no part of a site's name: a login saved for github.com is found by either.
+                "site" => {
+                    let host = if value.contains('/') { host_of(value)? } else { value.to_owned() };
+                    Some(Term::Site(host.strip_prefix("www.").map_or_else(|| host.clone(), str::to_owned)))
+                }
+                "folder" => Some(Term::Folder(fold(value))),
+                "has" => Some(Term::Has(value.to_owned())),
+                "in" if value == "notes" => Some(Term::InNotes),
+                _ => None,
+            }
+        } else {
+            match lower {
+                "weak" | "reused" | "breached" | "old" | "duplicate" | "pinned" | "favourite" | "favorite"
+                | "hidden" | "trashed" => Some(Term::Flag(lower.replace("favorite", "favourite"))),
+                _ => None,
+            }
+        }
+    }
+
+    /// Whether the query filters on a health check, either way round (`weak`, `-reused`), so
+    /// the caller knows to work out [`Flags`] first: without them such a filter keeps nothing,
+    /// or turned around, leaves nothing out.
+    pub fn wants_health(&self) -> bool {
+        fn health(term: &Term) -> bool {
+            match term {
+                Term::Flag(flag) => matches!(flag.as_str(), "weak" | "reused" | "breached" | "old" | "duplicate"),
+                Term::Exclude(inner) => health(inner),
+                _ => false,
+            }
+        }
+        self.terms.iter().any(health)
     }
 
     /// Whether the query asks for trashed or shelved entries, which are otherwise left out.
@@ -177,44 +251,64 @@ fn subsequence_score(needle: &str, haystack: &str) -> Option<u32> {
     (gaps <= 4 + needle.len() as u32 / 2).then_some(5)
 }
 
+/// The full hosts a login is saved for, so `mail.example` finds a login for mail.example.com
+/// and not only its registrable domain does.
+fn entry_hosts(entry: &Entry) -> Vec<String> {
+    entry.login().map_or_else(Vec::new, |login| {
+        login
+            .site_matchers
+            .v
+            .iter()
+            .filter_map(|matcher| match matcher {
+                SiteMatcher::Url(text) if app_of_address(text).is_some() => None,
+                SiteMatcher::Domain(text) | SiteMatcher::Host(text) | SiteMatcher::Url(text) => host_of(text),
+                _ => None,
+            })
+            .collect()
+    })
+}
+
 fn searchable(entry: &Entry) -> Vec<(String, u32)> {
-    let mut out = vec![(entry.common.title.v.to_lowercase(), 4)];
+    let mut out = vec![(fold(&entry.common.title.v), 4)];
     for domain in entry_domains(entry) {
         out.push((domain, 3));
     }
+    for host in entry_hosts(entry) {
+        out.push((host, 3));
+    }
     for tag in &entry.common.tags.v {
-        out.push((tag.to_lowercase(), 2));
+        out.push((fold(tag), 2));
     }
     match &entry.kind {
-        Kind::Login(login) => out.push((login.username.v.to_lowercase(), 3)),
+        Kind::Login(login) => out.push((fold(&login.username.v), 3)),
         Kind::Card(card) => {
-            out.push((card.holder.v.to_lowercase(), 2));
-            out.push((card.issuer.v.to_lowercase(), 3));
+            out.push((fold(&card.holder.v), 2));
+            out.push((fold(&card.issuer.v), 3));
         }
         Kind::Identity(identity) => {
-            out.push((identity.full_name.v.to_lowercase(), 3));
-            out.push((identity.email.v.to_lowercase(), 2));
+            out.push((fold(&identity.full_name.v), 3));
+            out.push((fold(&identity.email.v), 2));
         }
-        Kind::ApiKey(api) => out.push((api.provider.v.to_lowercase(), 3)),
+        Kind::ApiKey(api) => out.push((fold(&api.provider.v), 3)),
         Kind::Database(db) => {
-            out.push((db.host.v.to_lowercase(), 3));
-            out.push((db.name.v.to_lowercase(), 3));
-            out.push((db.user.v.to_lowercase(), 2));
+            out.push((fold(&db.host.v), 3));
+            out.push((fold(&db.name.v), 3));
+            out.push((fold(&db.user.v), 2));
         }
-        Kind::Licence(licence) => out.push((licence.product.v.to_lowercase(), 3)),
-        Kind::Wifi(wifi) => out.push((wifi.ssid.v.to_lowercase(), 3)),
+        Kind::Licence(licence) => out.push((fold(&licence.product.v), 3)),
+        Kind::Wifi(wifi) => out.push((fold(&wifi.ssid.v), 3)),
         Kind::Otp(otp) => {
             if let Some(config) = &otp.config.v {
-                out.push((config.issuer.to_lowercase(), 3));
-                out.push((config.account.to_lowercase(), 2));
+                out.push((fold(&config.issuer), 3));
+                out.push((fold(&config.account), 2));
             }
         }
-        Kind::SshKey(ssh) => out.push((ssh.fingerprint.v.to_lowercase(), 1)),
-        Kind::Document(document) => out.push((document.label.v.to_lowercase(), 3)),
+        Kind::SshKey(ssh) => out.push((fold(&ssh.fingerprint.v), 1)),
+        Kind::Document(document) => out.push((fold(&document.label.v), 3)),
         Kind::Note(_) | Kind::Recovery(_) => {}
     }
     for field in &entry.common.custom_fields.v {
-        out.push((field.name.to_lowercase(), 1));
+        out.push((fold(&field.name), 1));
     }
     out
 }
@@ -233,7 +327,7 @@ fn has(entry: &Entry, what: &str) -> bool {
         "history" => !entry.history.is_empty(),
         "reminder" => {
             let reminders = &entry.common.reminders.v;
-            reminders.change_every_days.is_some() || reminders.expires_ms.is_some()
+            reminders.change_every_days.is_some_and(|days| days > 0) || reminders.expires_ms.is_some()
         }
         _ => false,
     }
@@ -256,101 +350,27 @@ fn flagged(entry: &Entry, flag: &str, context: &Context<'_>) -> bool {
     }
 }
 
+/// What one entry offers a query: the fields it may be found by, and its notes when asked.
+struct Seen<'e> {
+    entry: &'e Entry,
+    fields: Vec<(String, u32)>,
+    notes: Option<String>,
+}
+
 fn score(entry: &Entry, query: &Query, context: &Context<'_>) -> Option<u32> {
-    let fields = searchable(entry);
     let in_notes = query.terms.contains(&Term::InNotes);
     let notes = in_notes.then(|| {
-        let mut text = entry.common.notes.v.expose().to_lowercase();
+        let mut text = fold(entry.common.notes.v.expose());
         if let Kind::Note(note) = &entry.kind {
             text.push(' ');
-            text.push_str(&note.body.v.expose().to_lowercase());
+            text.push_str(&fold(note.body.v.expose()));
         }
         text
     });
-    let modified = entry.latest().ms;
+    let seen = Seen { entry, fields: searchable(entry), notes };
     let mut total = 0u32;
     for term in &query.terms {
-        match term {
-            Term::Text(text) => {
-                let found = fields
-                    .iter()
-                    .filter_map(|(field, weight)| {
-                        subsequence_score(text, field).map(|s| s * weight)
-                    })
-                    .max()
-                    .or_else(|| {
-                        notes
-                            .as_ref()
-                            .filter(|body| body.contains(text.as_str()))
-                            .map(|_| 1)
-                    })?;
-                total += found;
-            }
-            Term::Not(text) => {
-                if fields
-                    .iter()
-                    .any(|(field, _)| field.contains(text.as_str()))
-                {
-                    return None;
-                }
-            }
-            Term::Tag(tag) => {
-                if !entry.common.tags.v.iter().any(|t| t.to_lowercase() == *tag) {
-                    return None;
-                }
-            }
-            Term::Kind(kind) => {
-                if entry.kind.name() != kind {
-                    return None;
-                }
-            }
-            Term::Site(site) => {
-                if !entry_domains(entry)
-                    .iter()
-                    .any(|domain| domain.contains(site.as_str()))
-                {
-                    return None;
-                }
-            }
-            Term::Folder(name) => {
-                let folder = entry.common.folder.v.as_deref()?;
-                let found = context.folder_name?.folder_name(folder)?;
-                if !found.to_lowercase().contains(name.as_str()) {
-                    return None;
-                }
-            }
-            Term::Has(what) => {
-                if !has(entry, what) {
-                    return None;
-                }
-            }
-            Term::Flag(flag) => {
-                if !flagged(entry, flag, context) {
-                    return None;
-                }
-            }
-            Term::ModifiedWithin(span) => {
-                if context.now_ms.saturating_sub(modified) > *span {
-                    return None;
-                }
-            }
-            Term::ModifiedBefore(span) => {
-                if context.now_ms.saturating_sub(modified) < *span {
-                    return None;
-                }
-            }
-            Term::CreatedWithin(span) => {
-                if context.now_ms.saturating_sub(entry.created_ms) > *span {
-                    return None;
-                }
-            }
-            Term::CreatedBefore(span) => {
-                if context.now_ms.saturating_sub(entry.created_ms) < *span {
-                    return None;
-                }
-            }
-            Term::InNotes => {}
-        }
+        total += term_score(&seen, term, context)?;
     }
     if entry.common.pinned.v {
         total += 2;
@@ -359,6 +379,48 @@ fn score(entry: &Entry, query: &Query, context: &Context<'_>) -> Option<u32> {
         total += 1;
     }
     Some(total)
+}
+
+/// How well one term finds an entry, or `None` when it rules the entry out.
+fn term_score(seen: &Seen<'_>, term: &Term, context: &Context<'_>) -> Option<u32> {
+    let entry = seen.entry;
+    let modified = entry.latest().ms;
+    let keep = |kept: bool| kept.then_some(0);
+    match term {
+        Term::Text(text) => seen
+            .fields
+            .iter()
+            .filter_map(|(field, weight)| subsequence_score(text, field).map(|s| s * weight))
+            .max()
+            .or_else(|| {
+                seen.notes
+                    .as_ref()
+                    .filter(|body| body.contains(text.as_str()))
+                    .map(|_| 1)
+            }),
+        Term::Not(text) => keep(!seen.fields.iter().any(|(field, _)| field.contains(text.as_str()))),
+        Term::Exclude(inner) => keep(term_score(seen, inner, context).is_none()),
+        Term::Tag(tag) => keep(entry.common.tags.v.iter().any(|t| fold(t) == *tag)),
+        Term::Kind(kind) => keep(entry.kind.name() == kind),
+        Term::Site(site) => keep(
+            entry_domains(entry)
+                .iter()
+                .chain(&entry_hosts(entry))
+                .any(|domain| domain.contains(site.as_str())),
+        ),
+        Term::Folder(name) => {
+            let folder = entry.common.folder.v.as_deref()?;
+            let found = context.folder_name?.folder_name(folder)?;
+            keep(fold(&found).contains(name.as_str()))
+        }
+        Term::Has(what) => keep(has(entry, what)),
+        Term::Flag(flag) => keep(flagged(entry, flag, context)),
+        Term::ModifiedWithin(span) => keep(context.now_ms.saturating_sub(modified) <= *span),
+        Term::ModifiedBefore(span) => keep(context.now_ms.saturating_sub(modified) >= *span),
+        Term::CreatedWithin(span) => keep(context.now_ms.saturating_sub(entry.created_ms) <= *span),
+        Term::CreatedBefore(span) => keep(context.now_ms.saturating_sub(entry.created_ms) >= *span),
+        Term::InNotes => Some(0),
+    }
 }
 
 /// Runs a query, best match first. Trashed and shelved entries stay out unless asked for.
@@ -374,10 +436,8 @@ pub fn search<'a>(
         .filter(|entry| want_hidden || !entry.common.hidden.v)
         .filter_map(|entry| score(entry, query, context).map(|s| (entry, s)))
         .collect();
-    found.sort_by(|a, b| {
-        b.1.cmp(&a.1)
-            .then_with(|| a.0.common.title.v.cmp(&b.0.common.title.v))
-    });
+    // Equal scores read in title order as a person reads it: "apple" before "Zebra".
+    found.sort_by_cached_key(|(entry, score)| (std::cmp::Reverse(*score), fold(&entry.common.title.v)));
     found.into_iter().map(|(entry, _)| entry).collect()
 }
 
@@ -385,7 +445,7 @@ pub fn search<'a>(
 mod tests {
     use super::*;
     use crate::clock::Hlc;
-    use crate::model::{Field, Lww, Note, SiteMatcher};
+    use crate::model::{Field, Lww, Note};
     use crate::otp::OtpConfig;
     use crate::vault::login_entry;
 
@@ -538,5 +598,97 @@ mod tests {
             vec![Term::Text("modified>soon".into())]
         );
         assert_eq!(Query::parse("-").terms, vec![Term::Text("-".into())]);
+    }
+
+    #[test]
+    fn a_span_ending_in_a_wide_letter_or_too_large_is_plain_text() {
+        for query in ["modified>5é", "created<日", "modified>99999999999999999y"] {
+            assert_eq!(Query::parse(query).terms, vec![Term::Text(fold(query))], "{query}");
+        }
+    }
+
+    #[test]
+    fn a_minus_turns_any_filter_around() {
+        let flags = Flags { old: HashSet::from(["lab".to_owned()]), ..Flags::default() };
+        // `-old` leaves out what the health check calls old, not titles with "old" in them.
+        assert_eq!(ids_with("git -old", Some(&flags)), vec!["hub"]);
+        assert_eq!(ids("git -tag:work"), vec!["lab"]);
+        assert_eq!(ids("-kind:login"), vec!["note"]);
+        assert_eq!(ids("kind:login -modified<7d"), vec!["bank", "lab"]);
+        assert_eq!(Query::parse("-zz").terms, vec![Term::Not("zz".into())]);
+    }
+
+    #[test]
+    fn a_full_host_finds_its_login() {
+        let mut entries = fixture();
+        entries.push(entry("mail", "Work mail", "me", "https://mail.corp.example/"));
+        let context = Context { now_ms: NOW, ..Context::default() };
+        let found = |query: &str| search(&entries, &Query::parse(query), &context).iter().map(|e| e.id.clone()).collect::<Vec<_>>();
+        assert_eq!(found("mail.corp"), vec!["mail"]);
+        assert_eq!(found("site:mail.corp"), vec!["mail"]);
+        assert_eq!(found("site:https://mail.corp.example/inbox"), vec!["mail"]);
+        assert_eq!(found("site:www.corp.example"), vec!["mail"]);
+    }
+
+    #[test]
+    fn a_filter_still_being_typed_keeps_everything() {
+        assert_eq!(ids("tag:"), ids(""));
+        assert_eq!(ids("git has:"), ids("git"));
+        assert_eq!(ids("-kind:"), ids(""));
+    }
+
+    #[test]
+    fn accents_fold_on_both_sides() {
+        let mut entries = fixture();
+        entries.push(entry("cafe", "Café Crème", "zoë", "https://cafe.example"));
+        entries.push(entry("strasse", "Hauptstraße", "x", "https://strasse.example"));
+        entries.push(entry("kana", "がっこう", "x", "https://kana.example"));
+        let context = Context { now_ms: NOW, ..Context::default() };
+        let found = |query: &str| search(&entries, &Query::parse(query), &context).iter().map(|e| e.id.clone()).collect::<Vec<_>>();
+        assert_eq!(found("cafe"), vec!["cafe"]);
+        assert_eq!(found("CAFÉ creme"), vec!["cafe"]);
+        assert_eq!(found("zoe"), vec!["cafe"]);
+        assert_eq!(found("strasse"), vec!["strasse"]);
+        assert_eq!(found("café -creme"), Vec::<String>::new());
+        // A decomposed é typed in the box is the same letter.
+        assert_eq!(found("cafe\u{301}"), vec!["cafe"]);
+        // Kana keep their voicing marks: が is not か.
+        assert_eq!(found("がっこう"), vec!["kana"]);
+        assert!(found("かっこう").is_empty());
+        assert_eq!(fold("Ångström"), "angstrom");
+        assert_eq!(fold("ŁÓDŹ"), "lodz");
+    }
+
+    #[test]
+    fn a_pasted_address_finds_its_site() {
+        assert_eq!(ids("https://www.github.com/login?next=%2F"), vec!["hub"]);
+        assert_eq!(ids("HTTPS://GITLAB.COM"), vec!["lab"]);
+        assert!(ids("https://unknown.example/").is_empty());
+    }
+
+    #[test]
+    fn health_filters_are_seen_either_way_round() {
+        for query in ["weak", "git -reused", "\"old\"", "-Breached", "duplicate"] {
+            assert!(Query::parse(query).wants_health(), "{query}");
+        }
+        for query in ["git", "tag:weak", "pinned", "-hidden", "weakling"] {
+            assert!(!Query::parse(query).wants_health(), "{query}");
+        }
+    }
+
+    #[test]
+    fn equal_scores_sort_by_title_whatever_its_case() {
+        let mut entries = fixture();
+        entries.push(entry("zed", "Zed", "x", "https://shared.example"));
+        entries.push(entry("ant", "ant", "x", "https://shared.example"));
+        let context = Context { now_ms: NOW, ..Context::default() };
+        let found: Vec<String> =
+            search(&entries, &Query::parse("site:shared"), &context).iter().map(|e| e.id.clone()).collect();
+        assert_eq!(found, vec!["ant", "zed"]);
+    }
+
+    #[test]
+    fn kind_takes_either_spelling_of_licence() {
+        assert_eq!(Query::parse("kind:license").terms, vec![Term::Kind("licence".into())]);
     }
 }

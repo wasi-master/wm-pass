@@ -13,9 +13,14 @@ class SettingsSync {
 
   /** Hooks into the vault's reloads and the settings' writes. Call once, after both have loaded. */
   start() {
-    prefs.onSet = (key) => {
-      if (key === 'sync_settings' && prefs.v.sync_settings) void this.pull();
-      else if (prefs.syncs(key)) void this.push({ [key]: prefs.v[key] });
+    prefs.onSet = (keys) => {
+      if (keys.includes('sync_settings') && prefs.v.sync_settings) {
+        void this.pull();
+        return;
+      }
+      const values: Partial<Record<PrefKey, unknown>> = {};
+      for (const key of keys) if (prefs.syncs(key)) values[key] = prefs.v[key];
+      if (Object.keys(values).length) void this.push(values);
     };
     pass.afterRefresh = () => void this.pull();
   }

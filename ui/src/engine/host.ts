@@ -30,6 +30,13 @@ export interface Host {
   clearClipboard(): Promise<void>;
   /** Forgets every key at once. */
   lockAll(): Promise<void>;
+  /**
+   * Told when a call met an internal error (stopped.svelte.ts): a browser wipes the memory of
+   * the module that panicked. The session is already gone by then.
+   */
+  internalError?(): void;
+  /** Where the session has to be loaded again before the door can open a vault: a reload. */
+  restart?(): Promise<void>;
   /** Files in the app's folder, by path relative to it. Everything here is ciphertext. */
   listFiles(folder: string): Promise<{ name: string; size: number }[]>;
   /** Subfolders are listed too, with a size of zero. */
@@ -39,6 +46,11 @@ export interface Host {
   removeFolder(path: string): Promise<void>;
   /** Gives files one time, so the folder does not say which one changed. */
   coverFile(path: string): Promise<void>;
+  /**
+   * Calls `run` with the path of a file another page of this shell just wrote, such as a second
+   * browser tab on the same vault. Returns a way to stop listening.
+   */
+  onFileChanged?(run: (path: string) => void): () => void;
   /** Small settings that are not secret. */
   loadSettings(name: string): Promise<string | null>;
   saveSettings(name: string, text: string): Promise<void>;
@@ -53,8 +65,11 @@ export interface Host {
   menu?(items: MenuItem[]): Promise<string | null>;
   /** Listens for app menu commands, tray items and shortcuts. */
   onCommand?(run: (command: string) => void): void;
-  /** Tells the shell what is happening, for its menus and tray. */
-  stateChanged?(state: { unlocked: boolean; name: string; handle?: number; file?: string; read_only?: boolean }): void;
+  /**
+   * Tells the shell what is happening, for its menus and tray. `writes` when this window keeps
+   * the open vault itself, as an account or a nested vault has no file anyone else could write.
+   */
+  stateChanged?(state: { unlocked: boolean; name: string; handle?: number; file?: string; read_only?: boolean; writes?: boolean }): void;
   /** Keeps other programs from capturing the window. */
   setScreenProtection?(on: boolean): Promise<void>;
   /** Small things kept sealed by the system's keychain: logins for places, the network identity. */
@@ -221,7 +236,8 @@ export interface DesktopHost {
   bridgeState(): Promise<{ running: boolean; paired: { id: string; name: string }[]; pending: string | null }>;
   bridgeSetEnabled(on: boolean, askSites: boolean): Promise<void>;
   bridgeForget(id: string): Promise<void>;
-  sshState(): Promise<{ running: boolean; socket: string | null; last: string | null }>;
+  /** `stopped` says why the agent stopped by itself, such as after an internal error. */
+  sshState(): Promise<{ running: boolean; socket: string | null; last: string | null; stopped?: string | null }>;
   sshSetEnabled(on: boolean, confirm: boolean): Promise<void>;
   autoType(id: string): Promise<void>;
   autostart(): Promise<boolean>;

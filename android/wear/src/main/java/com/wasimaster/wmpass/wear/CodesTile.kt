@@ -16,6 +16,7 @@ import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.guava.future
 
 /**
@@ -35,7 +36,7 @@ class CodesTile : TileService() {
             timeline.addTimelineEntry(
                 TimelineBuilders.TimelineEntry.Builder()
                     .setValidity(TimelineBuilders.TimeInterval.Builder().setEndMillis(end).build())
-                    .setLayout(layout(this@CodesTile, first.title, first.code))
+                    .setLayout(layout(this@CodesTile, first.title, first.code, "${first.title}, code ${first.code.filter { !it.isWhitespace() }.toList().joinToString(" ")}"))
                     .build(),
             )
             timeline.addTimelineEntry(
@@ -60,6 +61,11 @@ class CodesTile : TileService() {
             .build()
     }
 
+    override fun onDestroy() {
+        scope.cancel()
+        super.onDestroy()
+    }
+
     override fun onTileResourcesRequest(requestParams: RequestBuilders.ResourcesRequest): ListenableFuture<ResourceBuilders.Resources> =
         scope.future { ResourceBuilders.Resources.Builder().setVersion(RESOURCES).build() }
 
@@ -78,7 +84,8 @@ class CodesTile : TileService() {
             )
             .build()
 
-        fun layout(context: Context, title: String, body: String): LayoutElementBuilders.Layout {
+        /** [spoken] is what a screen reader says for the tile, when the words on it do not read well aloud. */
+        fun layout(context: Context, title: String, body: String, spoken: String = "$title, $body"): LayoutElementBuilders.Layout {
             val open = ModifiersBuilders.Clickable.Builder()
                 .setId("open")
                 .setOnClick(
@@ -93,7 +100,18 @@ class CodesTile : TileService() {
                 )
                 .build()
             val column = LayoutElementBuilders.Column.Builder()
-                .setModifiers(ModifiersBuilders.Modifiers.Builder().setClickable(open).build())
+                .setModifiers(
+                    ModifiersBuilders.Modifiers.Builder()
+                        .setClickable(open)
+                        // One button to a screen reader, saying what it shows: a code is read digit by digit.
+                        .setSemantics(
+                            ModifiersBuilders.Semantics.Builder()
+                                .setContentDescription(TypeBuilders.StringProp.Builder(spoken).build())
+                                .setRole(ModifiersBuilders.SEMANTICS_ROLE_BUTTON)
+                                .build(),
+                        )
+                        .build(),
+                )
                 .addContent(text(title, 14f, 0xFFB0BEC5.toInt()))
                 .addContent(text(body, 24f, 0xFFFFFFFF.toInt()))
                 .build()

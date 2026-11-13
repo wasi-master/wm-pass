@@ -128,6 +128,8 @@ export interface HealthView {
   missing_two_factor: string[];
   insecure_url: string[];
   duplicates: string[][];
+  /** Logins that share a password and look like one account saved twice. */
+  similar?: string[][];
   expiring: string[];
   score: number;
 }
@@ -155,6 +157,34 @@ export interface MatchRow {
 export interface SlotView {
   index: number;
   label: string;
+  /** False for a duress password, absent from older engines. */
+  opens?: boolean | null;
+  /** One of two passwords changed from one on two devices at once. */
+  conflict?: boolean;
+  /** When it was last written, and on which device, if that device gave its name. */
+  changed_ms?: number;
+  changed_on?: string | null;
+}
+
+/** A clock that looks wrong, as the vault judges it. */
+export interface ClockWarningView {
+  this_device: boolean;
+  ahead_device: string | null;
+  by_ms: number;
+  hours: number;
+  message: string;
+}
+
+/** A password changed on two devices at once. `both_open` is false when only the later one stayed. */
+export interface PasswordConflictView {
+  slots: number[];
+  both_open: boolean;
+  message: string;
+}
+
+export interface VaultNotices {
+  clock_warning: ClockWarningView | null;
+  password_conflict: PasswordConflictView | null;
 }
 
 export interface VaultInfo {
@@ -166,6 +196,8 @@ export interface VaultInfo {
   entries: number;
   trash_days: number;
   history_limit: number;
+  clock_warning?: ClockWarningView | null;
+  password_conflict?: PasswordConflictView | null;
   kdf: { m_kib: number; t: number; p: number };
 }
 

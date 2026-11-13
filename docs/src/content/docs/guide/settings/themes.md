@@ -60,7 +60,7 @@ Themes you made or imported. The built-in ones are listed below them.
 
 #### How it works
 
-They are kept in this device's settings, outside the vault. A [settings file](/guide/settings/file/) carries them to another device, and each theme in it goes through the same checks as an import.
+They are kept with this device's settings. With [Sync settings with the vault](/guide/settings/sync/#setting-sync-settings) on, they also travel inside the vault to your other devices that open it. A [settings file](/guide/settings/file/) carries them too, and each theme in it goes through the same checks as an import.
 
 **Reset all customization** keeps your own themes.
 
@@ -68,7 +68,7 @@ They are kept in this device's settings, outside the vault. A [settings file](/g
 
 A theme in a settings file you import replaces one of yours with the same name.
 
-See also [Settings file](/guide/settings/file/), [Share…](/guide/settings/themes/#action-theme-share).
+See also [Settings file](/guide/settings/file/), [Share…](/guide/settings/themes/#action-theme-share), [Sync settings with the vault](/guide/settings/sync/#setting-sync-settings).
 
 <a id="action-theme-new"></a>
 
@@ -92,9 +92,9 @@ Changing the accent resets the colors worked out from it, such as the tint behin
 
 Text that falls under a readable contrast with its background is darkened or lightened when the theme is drawn, so a faint color may come out stronger than you picked.
 
-Words on the accent, as on the main button, use white or black, whichever reads better, unless the theme names a color for them that reads at 4.5:1.
+Words on the accent, as on the main button, use the color the theme names for them when it reads at 4.5:1. A theme that names none uses its background color where that reads, and otherwise white or black, whichever reads better.
 
-A font file stays on the device it was added on. A theme shared or synced to another device uses the system font there unless that device has the same file.
+A font file stays on the device it was added on. A theme synced to another device uses the system font there unless that device has the same file, and a theme shared as a code or a file arrives with the system font.
 
 #### On Android
 
@@ -191,12 +191,20 @@ See also [Import](/guide/settings/themes/#action-theme-import), [Yours](/guide/s
 
 <a id="action-theme-delete"></a>
 
-## Delete
+## Delete…
 
-Removes one of your themes from this device. If it was in use, WM Pass goes back to its default theme.
+Removes one of your themes. If it was in use, WM Pass goes back to its default theme.
+
+#### How it works
+
+With [Sync settings with the vault](/guide/settings/sync/#setting-sync-settings) on, it goes from your other devices that sync settings with this vault too.
 
 #### Limits
 
 Built-in themes cannot be deleted. Share a theme first if you might want it again.
+
+#### On Android
+
+On the phone it is called Delete.
 
 See also [Yours](/guide/settings/themes/#group-themes-yours), [Share…](/guide/settings/themes/#action-theme-share).

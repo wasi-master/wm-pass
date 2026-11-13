@@ -12,6 +12,7 @@
   import type { LinkedView } from '../engine/types';
   import { ui } from '../vault/ui.svelte';
   import { copyPlainLine } from './clipboard';
+  import { passwordsDiffer } from '../engine/text';
   import PlaceDialog from './PlaceDialog.svelte';
   import { places, placeProblem, type Place } from './places.svelte';
 
@@ -26,6 +27,7 @@
   let name = $state('');
   let myName = $state('');
   let password = $state('');
+  let again = $state('');
   let place = $state<Place | null>(null);
   let addingPlace = $state(false);
   let busy = $state(false);
@@ -50,6 +52,8 @@
     name = '';
     myName = '';
     password = '';
+    again = '';
+    againTried = false;
     place = null;
     busy = false;
     sheetProblem = null;
@@ -62,7 +66,16 @@
     invite = null;
   }
 
+  /** A nested vault's password does not wait in the page once its sheet is gone. */
+  function closeSheet() {
+    sheet = null;
+    password = '';
+    again = '';
+  }
+
   async function open(link: LinkedView) {
+    // A second click while one opens would step into it twice.
+    if (opening) return;
     opening = link.file;
     problem = null;
     try {
@@ -86,17 +99,23 @@
     opening = null;
   }
 
+  let againTried = $state(false);
+  const mismatch = $derived(passwordsDiffer(again, password, againTried));
+
   async function makeNested() {
+    againTried = true;
+    if (busy || !name.trim() || !password || password !== again) return;
     const secret = bytesOf(password);
     busy = true;
+    sheetProblem = null;
     try {
       const reply = await pass.change('linked.create', { name: name.trim(), kdf: { m_kib: 64 * 1024 } }, { secret });
       await pass.writeLinked(reply.json.file, reply.blobs[0]);
       await pass.flush();
       tick++;
-      sheet = null;
+      closeSheet();
     } catch (failure: any) {
-      sheetProblem = failure.message;
+      sheetProblem = failure?.message || 'That did not work.';
     } finally {
       secret.fill(0);
       busy = false;
@@ -104,11 +123,13 @@
   }
 
   async function makeShared() {
+    if (busy) return;
     busy = true;
+    sheetProblem = null;
     try {
       await places.createShared(place!, name.trim(), myName.trim());
       tick++;
-      sheet = null;
+      closeSheet();
     } catch (failure) {
       sheetProblem = placeProblem(failure);
     }
@@ -116,21 +137,35 @@
   }
 
   async function makeJoinCode() {
-    const reply = await pass.change<{ code: string; fingerprint: string }>('shared.join_code', { my_name: myName.trim() });
-    joinCode = reply.json.code;
-    fingerprint = reply.json.fingerprint;
-    tick++;
+    if (busy) return;
+    busy = true;
+    sheetProblem = null;
+    try {
+      const reply = await pass.change<{ code: string; fingerprint: string }>('shared.join_code', { my_name: myName.trim() });
+      joinCode = reply.json.code;
+      fingerprint = reply.json.fingerprint;
+      tick++;
+    } catch (failure: any) {
+      sheetProblem = failure?.message || 'That did not work.';
+    } finally {
+      busy = false;
+    }
   }
 
   async function accept() {
+    if (busy) return;
+    busy = true;
+    sheetProblem = null;
     try {
       const reply = await pass.change<{ file: string }>('shared.accept', { file: chosen!.file, code: inviteText.trim() });
       places.setPlace(reply.json.file, place!);
       await pass.flush();
       tick++;
-      sheet = null;
+      closeSheet();
     } catch (failure: any) {
-      sheetProblem = failure.message;
+      sheetProblem = failure?.message || 'That did not work.';
+    } finally {
+      busy = false;
     }
   }
 
@@ -147,29 +182,42 @@
       sheetProblem = 'This computer does not know where the vault lives yet. Open it once first.';
       return;
     }
+    // An answer for a vault whose sheet has since closed, or for an older list, is not shown.
+    let current = true;
     places
       .manifest(where, file)
       .then((manifest) => pass.engine('shared.members', { file }, { handle: pass.handle, blobs: [manifest] }))
-      .then((reply) => (members = reply.json))
-      .catch((failure) => (sheetProblem = placeProblem(failure)));
+      .then((reply) => current && (members = reply.json))
+      .catch((failure) => current && (sheetProblem = placeProblem(failure)));
+    return () => (current = false);
   });
 
   async function readCode() {
+    if (busy) return;
+    busy = true;
+    sheetProblem = null;
     try {
       const reply = await pass.engine<{ name: string; fingerprint: string }>('shared.read_code', { code: code.trim() }, { handle: pass.handle });
       reading = { code: code.trim(), ...reply.json };
     } catch (failure: any) {
-      sheetProblem = failure.message;
+      sheetProblem = failure?.message || 'That did not work.';
+    } finally {
+      busy = false;
     }
   }
 
   async function addMember() {
+    if (busy) return;
+    busy = true;
+    sheetProblem = null;
     try {
       invite = await places.addMember(peoplePlace!, chosen!.file, reading!.code);
       reading = null;
       peopleTick++;
     } catch (failure) {
       sheetProblem = placeProblem(failure);
+    } finally {
+      busy = false;
     }
   }
 
@@ -180,12 +228,25 @@
       action: 'Remove them',
       danger: true,
     });
-    if (!yes) return;
+    if (!yes || busy) return;
+    busy = true;
+    sheetProblem = null;
     try {
       await places.removeMember(peoplePlace!, chosen!.file, member.key);
       peopleTick++;
     } catch (failure) {
       sheetProblem = placeProblem(failure);
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function leave() {
+    problem = null;
+    try {
+      await pass.leaveChild();
+    } catch (failure) {
+      problem = placeProblem(failure);
     }
   }
 </script>
@@ -208,7 +269,7 @@
 
 {#if pass.child}
   <Group title="You are inside">
-    <Row title={pass.child} sub="Back to the vault it lives in" icon="arrow_back" chevron onclick={() => pass.leaveChild()} />
+    <Row title={pass.child} sub="Back to the vault it lives in" icon="arrow_back" chevron onclick={leave} />
   </Group>
 {/if}
 
@@ -231,7 +292,7 @@
     {/each}
   </Group>
 {/if}
-{#if problem}<p class="danger-text" style="padding-bottom:12px">{problem}</p>{/if}
+{#if problem}<p class="danger-text" role="alert" style="padding-bottom:12px">{problem}</p>{/if}
 
 <Group title="Add">
   <Row title="A nested vault" help="action.nested_vault" sub="Its own encrypted file, kept apart from this one" icon="layers" chevron onclick={() => openSheet('nested')} />
@@ -242,54 +303,57 @@
 </Group>
 
 {#if sheet === 'nested'}
-  <Dialog title="A nested vault" onclose={() => (sheet = null)}>
+  <Dialog title="A nested vault" onclose={closeSheet}>
     <div class="stack">
       <p class="dim">It opens from here without asking again, so anyone inside this vault can reach it. Its own password opens it only through a recovery, or if you later keep the file elsewhere.</p>
       <Field bind:value={name} placeholder="Its name, such as Work" autofocus />
       <PasswordField bind:value={password} placeholder="Its own password" />
-      {#if sheetProblem}<p class="danger-text">{sheetProblem}</p>{/if}
+      <PasswordField bind:value={again} placeholder="Its own password again" error={mismatch} describedby={mismatch ? "mismatch-note" : undefined} onenter={makeNested} />
+      {#if mismatch}<p class="danger-text small" role="alert" id="mismatch-note">Passwords do not match.</p>{/if}
+      {#if sheetProblem}<p class="danger-text" role="alert">{sheetProblem}</p>{/if}
     </div>
     {#snippet foot()}
-      <Btn label="Cancel" onclick={() => (sheet = null)} />
-      <Btn label="Make it" variant="primary" disabled={busy || !name.trim() || !password} onclick={makeNested} />
+      <Btn label="Cancel" onclick={closeSheet} />
+      <Btn label={busy ? 'Making it…' : 'Make it'} variant="primary" disabled={busy || !name.trim() || !password || password !== again} onclick={makeNested} />
     {/snippet}
   </Dialog>
 {:else if sheet === 'shared'}
-  <Dialog title="A shared vault" onclose={() => (sheet = null)}>
+  <Dialog title="A shared vault" onclose={closeSheet}>
     <div class="stack">
       <Field bind:value={name} placeholder="Its name, such as Family" autofocus />
       <Field bind:value={myName} placeholder="Your name, as the others will see it" />
       {@render placePicker()}
-      {#if sheetProblem}<p class="danger-text">{sheetProblem}</p>{/if}
+      {#if sheetProblem}<p class="danger-text" role="alert">{sheetProblem}</p>{/if}
       <p class="dimmer small">Everyone with the key can read and change what is in it. Removing someone moves it to a new key, but they keep any copy they already have.</p>
     </div>
     {#snippet foot()}
-      <Btn label="Cancel" onclick={() => (sheet = null)} />
+      <Btn label="Cancel" onclick={closeSheet} />
       <Btn label={busy ? 'Making it…' : 'Make it'} variant="primary" disabled={busy || !name.trim() || !myName.trim() || !place} onclick={makeShared} />
     {/snippet}
   </Dialog>
 {:else if sheet === 'join'}
-  <Dialog title="Join a shared vault" onclose={() => (sheet = null)}>
+  <Dialog title="Join a shared vault" onclose={closeSheet}>
     <div class="stack">
       {#if joinCode}
         {@render codeCard(joinCode, 'Show or send this to the vault’s owner. It holds no secret.')}
-        <p class="dim">Read this out to them, to check nobody swapped the code</p>
+        <p class="dim">Read this out to them, so they can check nobody swapped the code:</p>
         <p class="mono">{fingerprint}</p>
-        <p class="dimmer small">Their invitation comes back to this same list, under Waiting.</p>
+        <p class="dimmer small">When their invitation comes, choose this vault on this page, where it says Waiting for the owner’s invitation, and paste it there.</p>
       {:else}
         <Field bind:value={myName} placeholder="Your name, as the others will see it" autofocus />
       {/if}
+      {#if sheetProblem}<p class="danger-text" role="alert">{sheetProblem}</p>{/if}
     </div>
     {#snippet foot()}
-      <Btn label="Close" onclick={() => (sheet = null)} />
-      {#if !joinCode}<Btn label="Make my code" variant="primary" disabled={!myName.trim()} onclick={makeJoinCode} />{/if}
+      <Btn label="Close" onclick={closeSheet} />
+      {#if !joinCode}<Btn label="Make my code" variant="primary" disabled={busy || !myName.trim()} onclick={makeJoinCode} />{/if}
     {/snippet}
   </Dialog>
 {:else if sheet === 'place' && chosen}
-  <Dialog title="Where is {chosen.name}?" onclose={() => (sheet = null)}>
+  <Dialog title="Where is {chosen.name}?" onclose={closeSheet}>
     <div class="stack">{@render placePicker()}</div>
     {#snippet foot()}
-      <Btn label="Cancel" onclick={() => (sheet = null)} />
+      <Btn label="Cancel" onclick={closeSheet} />
       <Btn
         label="Use this place"
         variant="primary"
@@ -297,34 +361,34 @@
         onclick={() => {
           const link = chosen!;
           places.setPlace(link.file, place!);
-          sheet = null;
+          closeSheet();
           void open(link);
         }}
       />
     {/snippet}
   </Dialog>
 {:else if sheet === 'accept' && chosen}
-  <Dialog title="Your invitation" onclose={() => (sheet = null)}>
+  <Dialog title="Your invitation" onclose={closeSheet}>
     <div class="stack">
       {@render placePicker()}
       <Field bind:value={inviteText} multiline rows={4} mono placeholder="Paste the invitation" />
-      {#if sheetProblem}<p class="danger-text">{sheetProblem}</p>{/if}
+      {#if sheetProblem}<p class="danger-text" role="alert">{sheetProblem}</p>{/if}
     </div>
     {#snippet foot()}
-      <Btn label="Cancel" onclick={() => (sheet = null)} />
-      <Btn label="Accept" variant="primary" disabled={!place || !inviteText.trim()} onclick={accept} />
+      <Btn label="Cancel" onclick={closeSheet} />
+      <Btn label={busy ? 'Accepting…' : 'Accept'} variant="primary" disabled={busy || !place || !inviteText.trim()} onclick={accept} />
     {/snippet}
   </Dialog>
 {:else if sheet === 'people' && chosen}
-  <Dialog title={chosen.name} onclose={() => (sheet = null)}>
+  <Dialog title={chosen.name} onclose={closeSheet}>
     <div class="stack">
       {#each members as member (member.key)}
         <div class="gap">
           <span class="grow"><span style="display:block">{member.name}</span><span class="mono dim small" style="display:block">{member.fingerprint}</span></span>
-          {#if chosen.owner && !member.owner}<IconBtn icon="delete" label="Remove {member.name}" onclick={() => removeMember(member)} />{/if}
+          {#if chosen.owner && !member.owner}<IconBtn icon="delete" label="Remove {member.name}" disabled={busy} onclick={() => removeMember(member)} />{/if}
         </div>
       {/each}
-      {#if sheetProblem}<p class="danger-text">{sheetProblem}</p>{/if}
+      {#if sheetProblem}<p class="danger-text" role="alert">{sheetProblem}</p>{/if}
       {#if invite}
         {@render codeCard(invite, 'They scan or paste this. Anyone can see it, but only the person you added can use it.')}
       {:else if chosen.owner && reading}
@@ -333,15 +397,15 @@
         <p class="mono">{reading.fingerprint}</p>
         <div class="gap">
           <Btn label="Not them" variant="danger" onclick={() => (reading = null)} />
-          <Btn label="It matches" variant="primary" onclick={addMember} />
+          <Btn label={busy ? 'Adding…' : 'It matches'} variant="primary" disabled={busy} onclick={addMember} />
         </div>
       {:else if chosen.owner && peoplePlace}
         <p class="section-title">Add someone</p>
         <Field bind:value={code} multiline rows={3} mono placeholder="Paste their code" />
-        <div><Btn label="Check it" disabled={!code.trim()} onclick={readCode} /></div>
+        <div><Btn label="Check it" disabled={busy || !code.trim()} onclick={readCode} /></div>
       {/if}
     </div>
-    {#snippet foot()}<Btn label="Close" onclick={() => (sheet = null)} />{/snippet}
+    {#snippet foot()}<Btn label="Close" onclick={closeSheet} />{/snippet}
   </Dialog>
 {/if}
 

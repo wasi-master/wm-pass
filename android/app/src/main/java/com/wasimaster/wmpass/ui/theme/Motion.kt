@@ -44,6 +44,35 @@ val LocalReduceMotion = staticCompositionLocalOf { false }
 fun Context.systemAnimationsOff(): Boolean =
     Settings.Global.getFloat(contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
 
+/**
+ * [systemAnimationsOff], kept current: "Remove animations" turned on or off while the app is open
+ * takes effect at once, not at the next start. Watched while composed, and read again on every
+ * return to the app in case a change was missed while it was away.
+ */
+@Composable
+fun rememberSystemAnimationsOff(): Boolean {
+    val context = LocalContext.current
+    val off = remember { androidx.compose.runtime.mutableStateOf(context.systemAnimationsOff()) }
+    androidx.compose.runtime.DisposableEffect(context) {
+        val observer = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) {
+                off.value = context.systemAnimationsOff()
+            }
+        }
+        context.contentResolver.registerContentObserver(Settings.Global.getUriFor(Settings.Global.ANIMATOR_DURATION_SCALE), false, observer)
+        onDispose { context.contentResolver.unregisterContentObserver(observer) }
+    }
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    androidx.compose.runtime.DisposableEffect(lifecycle) {
+        val watcher = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) off.value = context.systemAnimationsOff()
+        }
+        lifecycle.addObserver(watcher)
+        onDispose { lifecycle.removeObserver(watcher) }
+    }
+    return off.value
+}
+
 /** Shrinks a little under the finger, and springs back. */
 @Composable
 fun Modifier.pressScale(source: MutableInteractionSource, pressed: Float = 0.97f): Modifier {

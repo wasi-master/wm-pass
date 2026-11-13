@@ -270,17 +270,24 @@ pub fn parse_mlsd(lines: &[&str]) -> Vec<ListEntry> {
             continue;
         }
         let mut entry = ListEntry { name: name.to_owned(), size: None, modified_ms: 0, is_dir: false };
+        let mut this_or_parent = false;
         for fact in facts.split(';') {
             let Some((key, value)) = fact.split_once('=') else { continue };
             match key.to_ascii_lowercase().as_str() {
                 "size" => entry.size = value.parse().ok(),
                 "modify" => entry.modified_ms = parse_mlsd_time(value),
-                // A server may say "cdir" or "pdir" for . and .., already dropped.
-                "type" => entry.is_dir = value.eq_ignore_ascii_case("dir"),
+                "type" => {
+                    entry.is_dir = value.eq_ignore_ascii_case("dir");
+                    // The folder itself and its parent, which RFC 3659 lets a server name
+                    // by path (`type=cdir; /backups`) rather than as `.` and `..`.
+                    this_or_parent = value.eq_ignore_ascii_case("cdir") || value.eq_ignore_ascii_case("pdir");
+                }
                 _ => {}
             }
         }
-        out.push(entry);
+        if !this_or_parent {
+            out.push(entry);
+        }
     }
     out
 }
@@ -521,7 +528,14 @@ impl<'a> Session<'a> {
         let mut session = Self { config, control: Lines::new(conn), tls: encrypted };
         session.expect_reply(220)?;
         if config.security == FtpSecurity::Explicit {
-            session.expect("AUTH TLS", 234)?;
+            let reply = session.command("AUTH TLS")?;
+            match code_of(&reply) {
+                234 => {}
+                // Reachable, but it will not encrypt: the password would cross as text.
+                // That is the person's choice to make in the settings, not a bad network.
+                500..=599 => return Err(Fault::Unsafe),
+                code => return Err(reply_fault(code)),
+            }
             let Some(Conn::Plain(socket)) = session.control.into_inner() else {
                 return Err(Fault::Io);
             };
@@ -547,15 +561,18 @@ impl<'a> Session<'a> {
     }
 
     fn login(&mut self) -> Result<()> {
+        // A 4xx is the server saying "not now" (421 too many connections, 450 busy),
+        // not that the name or password is wrong.
+        let refused = |code: u16| if (400..500).contains(&code) { Fault::Io } else { Fault::PermissionLost };
         let user = self.command(&format!("USER {}", self.config.user))?;
         match code_of(&user) {
             331 | 332 => {
                 let password = Secret::from(format!("PASS {}", self.config.password.expose()));
                 let reply = self.command(password.expose())?;
-                if (200..300).contains(&code_of(&reply)) { Ok(()) } else { Err(Fault::PermissionLost) }
+                if (200..300).contains(&code_of(&reply)) { Ok(()) } else { Err(refused(code_of(&reply))) }
             }
             200..=299 => Ok(()),
-            _ => Err(Fault::PermissionLost),
+            code => Err(refused(code)),
         }
     }
 
@@ -770,11 +787,26 @@ impl Sink for Ftp {
     async fn write(&self, name: &str, bytes: &[u8]) -> Result<Stored> {
         self.session(|session| {
             let staged = format!("{name}{UPLOADING}");
-            session.store(&staged, bytes)?;
-            // FTP has a real rename. A stale target would make RNTO fail on some
-            // servers, so it goes first; this is the same name being replaced.
-            let _ = session.command(&format!("DELE {name}"))?;
-            session.rename(&staged, name)
+            let done = session.store(&staged, bytes).and_then(|()| {
+                // FTP has a real rename, and most servers rename over an existing name.
+                // Some (IIS) refuse to; only then does the old copy go first, so a failure
+                // in between can only lose it where there was no other way.
+                session.rename(&staged, name).or_else(|fault| {
+                    if fault == Fault::Io {
+                        return Err(fault);
+                    }
+                    let _ = session.command(&format!("DELE {name}"))?;
+                    session.rename(&staged, name)
+                })
+            });
+            // A refused upload leaves its part file taking space; a broken connection
+            // cannot be asked to remove it.
+            if let Err(fault) = done
+                && fault != Fault::Io
+            {
+                let _ = session.command(&format!("DELE {staged}"));
+            }
+            done
         })?;
         Ok(Stored { id: name.to_owned(), name: name.to_owned(), size: bytes.len() as u64 })
     }
@@ -793,8 +825,15 @@ impl Sink for Ftp {
     }
 
     async fn delete(&self, file: &Stored) -> Result<()> {
-        // Already gone answers 550, which counts as done.
-        self.session(|session| session.command(&format!("DELE {}", file.name)).map(|_| ()))
+        // Already gone answers 550, which counts as done. Anything else that is not a
+        // success (busy, signed out, refused) leaves the file where it was.
+        self.session(|session| {
+            let reply = session.command(&format!("DELE {}", file.name))?;
+            match code_of(&reply) {
+                200..=299 | 550 => Ok(()),
+                code => Err(reply_fault(code)),
+            }
+        })
     }
 }
 
@@ -948,6 +987,8 @@ mod tests {
         epsv: bool,
         mlsd: bool,
         refuse_prot: bool,
+        /// RNTO refuses a name that exists, as IIS does.
+        rnto_keeps_existing: bool,
     }
 
     enum Stream {
@@ -1045,6 +1086,7 @@ mod tests {
                 }
                 "USER" => reply(&mut control, "331 password please"),
                 "PASS" if argument == "pw" => reply(&mut control, "230 in"),
+                "PASS" if argument == "busy" => reply(&mut control, "421 Too many connections"),
                 "PASS" => reply(&mut control, "530 no"),
                 "TYPE" => reply(&mut control, "200 binary"),
                 "CWD" if argument == "backups/wm" => reply(&mut control, "250 ok"),
@@ -1086,8 +1128,9 @@ mod tests {
                     let mut input = data(&mut passive, protected);
                     let mut bytes = Vec::new();
                     let _ = input.read_to_end(&mut bytes);
+                    let full = argument.starts_with("full");
                     files.lock().unwrap().insert(argument, bytes);
-                    reply(&mut control, "226 stored");
+                    reply(&mut control, if full { "552 Quota exceeded" } else { "226 stored" });
                 }
                 "RETR" => match files.lock().unwrap().get(&argument).cloned() {
                     Some(bytes) => {
@@ -1099,6 +1142,7 @@ mod tests {
                     }
                     None => reply(&mut control, "550 no such file"),
                 },
+                "DELE" if argument == "locked" => reply(&mut control, "450 File busy"),
                 "DELE" => match files.lock().unwrap().remove(&argument) {
                     Some(_) => reply(&mut control, "250 deleted"),
                     None => reply(&mut control, "550 no such file"),
@@ -1106,6 +1150,9 @@ mod tests {
                 "RNFR" => {
                     renaming = argument;
                     reply(&mut control, "350 ready");
+                }
+                "RNTO" if script.rnto_keeps_existing && files.lock().unwrap().contains_key(&argument) => {
+                    reply(&mut control, "550 Cannot create a file when that file already exists");
                 }
                 "RNTO" => {
                     let moved = files.lock().unwrap().remove(&renaming).unwrap();
@@ -1150,7 +1197,7 @@ mod tests {
 
     #[test]
     fn explicit_ftps_protects_the_data_channel_before_signing_in() {
-        let log = round_trip(Script { tls: Some(FtpSecurity::Explicit), epsv: true, mlsd: true, refuse_prot: false }, FtpSecurity::Explicit);
+        let log = round_trip(Script { tls: Some(FtpSecurity::Explicit), epsv: true, mlsd: true, refuse_prot: false, rnto_keeps_existing: false }, FtpSecurity::Explicit);
         assert_eq!(&log[..6], ["AUTH TLS", "PBSZ 0", "PROT P", "USER me", "PASS pw", "TYPE I"]);
         assert!(log.contains(&"STOR a file.bin.part".to_owned()));
         assert!(log.contains(&"RNTO a file.bin".to_owned()));
@@ -1159,13 +1206,13 @@ mod tests {
 
     #[test]
     fn implicit_ftps_starts_encrypted_and_still_protects_the_data_channel() {
-        let log = round_trip(Script { tls: Some(FtpSecurity::Implicit), epsv: true, mlsd: true, refuse_prot: false }, FtpSecurity::Implicit);
+        let log = round_trip(Script { tls: Some(FtpSecurity::Implicit), epsv: true, mlsd: true, refuse_prot: false, rnto_keeps_existing: false }, FtpSecurity::Implicit);
         assert_eq!(&log[..3], ["PBSZ 0", "PROT P", "USER me"]);
     }
 
     #[test]
     fn plain_ftp_falls_back_to_pasv_and_list_and_ignores_the_pasv_address() {
-        let log = round_trip(Script { tls: None, epsv: false, mlsd: false, refuse_prot: false }, FtpSecurity::None);
+        let log = round_trip(Script { tls: None, epsv: false, mlsd: false, refuse_prot: false, rnto_keeps_existing: false }, FtpSecurity::None);
         assert_eq!(&log[..3], ["USER me", "PASS pw", "TYPE I"]);
         assert!(log.contains(&"PASV".to_owned()) && log.contains(&"LIST".to_owned()));
     }
@@ -1174,7 +1221,7 @@ mod tests {
     fn refusals_are_named_and_offline_connects_to_nothing() {
         let files = Arc::new(Mutex::new(BTreeMap::new()));
         let log = Arc::new(Mutex::new(Vec::new()));
-        let port = serve(Script { tls: None, epsv: true, mlsd: true, refuse_prot: false }, files, log.clone());
+        let port = serve(Script { tls: None, epsv: true, mlsd: true, refuse_prot: false, rnto_keeps_existing: false }, files, log.clone());
         let config = FtpConfig { host: "127.0.0.1".into(), port, user: "me".into(), password: "bad".into(), security: FtpSecurity::None, ..FtpConfig::default() };
         assert_eq!(block_on(Ftp::new(NetPolicy::Any, config.clone()).readiness()), Err(Fault::PermissionLost));
         let elsewhere = FtpConfig { password: "pw".into(), path: "nope".into(), ..config.clone() };
@@ -1187,9 +1234,48 @@ mod tests {
     }
 
     #[test]
+    fn a_rename_that_will_not_replace_falls_back_and_a_refused_upload_is_cleared() {
+        let files = Arc::new(Mutex::new(BTreeMap::new()));
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let script = Script { tls: None, epsv: true, mlsd: true, refuse_prot: false, rnto_keeps_existing: true };
+        let port = serve(script, files.clone(), log.clone());
+        let config = FtpConfig { host: "127.0.0.1".into(), port, user: "me".into(), password: "pw".into(), security: FtpSecurity::None, ..FtpConfig::default() };
+        let sink = Ftp::new(NetPolicy::Any, config);
+        block_on(sink.write("v.bin", b"one")).unwrap();
+        block_on(sink.write("v.bin", b"two")).unwrap();
+        assert_eq!(files.lock().unwrap().get("v.bin").map(Vec::as_slice), Some(&b"two"[..]));
+        let log = log.lock().unwrap().clone();
+        let first_rnto = log.iter().position(|l| l == "RNTO v.bin").unwrap();
+        assert!(!log[..first_rnto].contains(&"DELE v.bin".to_owned()), "the old copy is not removed before it has to be: {log:?}");
+        assert!(log.contains(&"DELE v.bin".to_owned()), "{log:?}");
+
+        assert_eq!(block_on(sink.write("full.bin", b"too much")), Err(Fault::OutOfSpace));
+        assert!(!files.lock().unwrap().contains_key("full.bin.part"), "the part file does not stay behind");
+
+        let locked = Stored { id: "locked".into(), name: "locked".into(), size: 0 };
+        assert_eq!(block_on(sink.delete(&locked)), Err(Fault::Io), "a busy file is not reported deleted");
+    }
+
+    #[test]
+    fn a_busy_server_is_not_a_wrong_password_and_one_without_tls_is_unsafe() {
+        let port = serve(Script { tls: None, epsv: true, mlsd: true, refuse_prot: false, rnto_keeps_existing: false }, Arc::default(), Arc::default());
+        let config = FtpConfig { host: "127.0.0.1".into(), port, user: "me".into(), password: "busy".into(), security: FtpSecurity::None, ..FtpConfig::default() };
+        assert_eq!(block_on(Ftp::new(NetPolicy::Any, config.clone()).readiness()), Err(Fault::Io));
+        // This server answers AUTH TLS with 502.
+        let explicit = FtpConfig { password: "pw".into(), security: FtpSecurity::Explicit, ..config };
+        assert_eq!(block_on(Ftp::new(NetPolicy::Any, explicit).readiness()), Err(Fault::Unsafe));
+    }
+
+    #[test]
+    fn mlsd_drops_the_folder_itself_when_named_by_path() {
+        let entries = parse_mlsd(&["type=cdir;modify=20250807140233; /backups/wm", "type=pdir; /backups", "type=file;size=1; x.bin"]);
+        assert_eq!(entries.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(), ["x.bin"]);
+    }
+
+    #[test]
     fn a_server_that_will_not_protect_the_data_is_unsafe() {
         let log = Arc::new(Mutex::new(Vec::new()));
-        let script = Script { tls: Some(FtpSecurity::Implicit), epsv: true, mlsd: true, refuse_prot: true };
+        let script = Script { tls: Some(FtpSecurity::Implicit), epsv: true, mlsd: true, refuse_prot: true, rnto_keeps_existing: false };
         let port = serve(script, Arc::default(), log.clone());
         let config = FtpConfig { host: "localhost".into(), port, user: "me".into(), password: "pw".into(), security: FtpSecurity::Implicit, ..FtpConfig::default() };
         assert_eq!(block_on(Ftp::new(NetPolicy::Any, config).trusting(test_tls::client()).readiness()), Err(Fault::Unsafe));
@@ -1198,7 +1284,7 @@ mod tests {
 
     #[test]
     fn a_certificate_no_authority_vouches_for_is_unsafe() {
-        let port = serve(Script { tls: Some(FtpSecurity::Explicit), epsv: true, mlsd: true, refuse_prot: false }, Arc::default(), Arc::default());
+        let port = serve(Script { tls: Some(FtpSecurity::Explicit), epsv: true, mlsd: true, refuse_prot: false, rnto_keeps_existing: false }, Arc::default(), Arc::default());
         let config = FtpConfig { host: "localhost".into(), port, user: "me".into(), password: "pw".into(), ..FtpConfig::default() };
         assert_eq!(block_on(Ftp::new(NetPolicy::Any, config).readiness()), Err(Fault::Unsafe));
     }

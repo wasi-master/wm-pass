@@ -1,6 +1,7 @@
 <script lang="ts">
   import Btn from '../parts/Btn.svelte';
   import { overlays } from '../parts/floating.svelte';
+  import { host } from '../engine/host';
   import { pass } from '../engine/pass.svelte';
   import Pickers from './Pickers.svelte';
   import { ui } from './ui.svelte';
@@ -28,57 +29,123 @@
     picker = null;
   }
 
-  async function trash() {
+  /** Runs a change to all of them, and says so if the vault refuses it. */
+  async function attempt(work: () => Promise<unknown>) {
+    try {
+      await work();
+      return true;
+    } catch (failure: any) {
+      overlays.toast(failure?.message ?? 'That could not be done.');
+      return false;
+    }
+  }
+
+  // A second click while the first change is still running would apply it twice.
+  let busy = false;
+  function once(work: () => Promise<void>) {
+    return async () => {
+      if (busy) return;
+      busy = true;
+      try {
+        await work();
+      } finally {
+        busy = false;
+      }
+    };
+  }
+
+  const trash = once(async () => {
     const ids = [...ui.multi];
     const inTrash = ui.section === 'trash';
-    await ui.bulk(inTrash ? 'restore' : 'trash', {}, ids);
+    if (!(await attempt(() => ui.bulk(inTrash ? 'restore' : 'trash', {}, ids)))) return;
     done();
-    if (inTrash) return;
+    if (ui.selected && ids.includes(ui.selected)) ui.deselect(ui.selected);
+    if (inTrash) {
+      overlays.toast(ids.length === 1 ? '1 item restored.' : `${ids.length} items restored.`);
+      return;
+    }
     overlays.toast(ids.length === 1 ? '1 item moved to the trash.' : `${ids.length} items moved to the trash.`, {
       action: 'Undo',
-      run: () => void ui.bulk('restore', {}, ids),
+      run: () => void attempt(() => ui.bulk('restore', {}, ids)),
     });
-  }
+  });
+
+  // In the trash, as one item's page offers it: gone for good, after asking.
+  const purge = once(async () => {
+    const ids = [...ui.multi];
+    const yes = await overlays.ask({
+      title: ids.length === 1 ? 'Delete 1 item for good?' : `Delete ${ids.length} items for good?`,
+      body: 'Their passwords, history and attachments go with them. A backup made before now would still hold them.',
+      action: 'Delete for good',
+      danger: true,
+    });
+    if (!yes) return;
+    if (!(await attempt(() => ui.bulk('purge', {}, ids)))) return;
+    done();
+    if (ui.selected && ids.includes(ui.selected)) ui.deselect(ui.selected);
+    overlays.toast(ids.length === 1 ? '1 item deleted for good.' : `${ids.length} items deleted for good.`);
+  });
 
   // The shelf's own items are not among the vault's entries, so there they are all hidden.
   const allHidden = $derived(ui.section === 'shelf' || (chosen.length > 0 && chosen.every((e) => e.hidden)));
 
-  async function hide() {
-    await ui.bulk('hide', { flag: !allHidden });
+  const hide = once(async () => {
+    const wasHidden = allHidden;
+    if (!(await attempt(() => ui.bulk('hide', { flag: !wasHidden })))) return;
     done();
-    overlays.toast(allHidden ? 'Taken off the hidden shelf.' : 'Moved to the hidden shelf.');
-  }
+    overlays.toast(wasHidden ? 'Taken off the hidden shelf.' : 'Moved to the hidden shelf.');
+  });
 
-  async function retag(next: string[]) {
+  // What the tag clicks so far come to, until the vault has caught up with them: a second quick
+  // click builds on the first rather than on tags that have not changed yet, and runs after it.
+  let pendingTags = $state<string[] | null>(null);
+  let tagging = Promise.resolve();
+  let queued = 0;
+
+  function retag(next: string[]) {
     const ids = [...ui.multi];
-    for (const tag of next.filter((t) => !sharedTags.includes(t))) await ui.bulk('tag_add', { tag }, ids);
-    for (const tag of sharedTags.filter((t) => !next.includes(t))) await ui.bulk('tag_remove', { tag }, ids);
+    const from = pendingTags ?? sharedTags;
+    pendingTags = next;
+    queued += 1;
+    tagging = tagging.then(async () => {
+      await attempt(() =>
+        pass.batch(async () => {
+          for (const tag of next.filter((t) => !from.includes(t))) await ui.bulk('tag_add', { tag }, ids);
+          for (const tag of from.filter((t) => !next.includes(t))) await ui.bulk('tag_remove', { tag }, ids);
+        }),
+      );
+      queued -= 1;
+      if (queued === 0) pendingTags = null;
+    });
   }
 
   /** Each one lists the others under Linked, keeping the links it had. */
-  async function linkTogether() {
+  const linkTogether = once(async () => {
     const ids = [...ui.multi];
     const before = new Map<string, string[]>();
     try {
       for (const id of ids) before.set(id, (await pass.detail(id)).links);
-      for (const [id, have] of before) {
-        const next = [...new Set([...have, ...ids.filter((other) => other !== id)])];
-        if (next.length !== have.length) await pass.change('entry.common', { id, links: next });
-      }
+      await pass.batch(async () => {
+        for (const [id, have] of before) {
+          const next = [...new Set([...have, ...ids.filter((other) => other !== id)])];
+          if (next.length !== have.length) await pass.change('entry.common', { id, links: next });
+        }
+      });
     } catch (failure: any) {
-      overlays.toast(failure.message ?? 'They could not be linked.');
+      overlays.toast(failure?.message ?? 'They could not be linked.');
       return;
     }
     done();
     overlays.toast(ids.length === 2 ? 'Linked the two.' : `Linked all ${ids.length}.`, {
       action: 'Undo',
-      run: () => {
-        void (async () => {
-          for (const [id, have] of before) await pass.change('entry.common', { id, links: have });
-        })();
-      },
+      run: () =>
+        void attempt(() =>
+          pass.batch(async () => {
+            for (const [id, have] of before) await pass.change('entry.common', { id, links: have });
+          }),
+        ),
     });
-  }
+  });
 </script>
 
 <div class="detail-body" style="padding-top:40px">
@@ -87,6 +154,7 @@
     {#if ui.section === 'trash'}
       <div class="gap wrap">
         <Btn label="Restore" icon="restore_from_trash" onclick={trash} />
+        <Btn label="Delete for good" icon="delete" variant="danger" onclick={purge} />
       </div>
     {:else}
       <div class="gap wrap">
@@ -96,8 +164,8 @@
         <Btn label="Link together" icon="link" title="Each one lists the others under Linked" onclick={linkTogether} />
       </div>
       <div class="gap wrap">
-        <Btn label={allFav ? 'Remove from favorites' : 'Add to favorites'} icon="star" onclick={() => ui.bulk('favourite', { flag: !allFav })} />
-        <Btn label={allPin ? 'Unpin' : 'Pin to the top'} icon="keep" onclick={() => ui.bulk('pin', { flag: !allPin })} />
+        <Btn label={allFav ? 'Remove from favorites' : 'Add to favorites'} icon="star" onclick={() => attempt(() => ui.bulk('favourite', { flag: !allFav }))} />
+        <Btn label={allPin ? 'Unpin' : 'Pin to the top'} icon="keep" onclick={() => attempt(() => ui.bulk('pin', { flag: !allPin }))} />
         {#if allHidden}
           <Btn label="Remove from hidden shelf" icon="visibility_lock" onclick={hide} />
         {:else}
@@ -106,14 +174,14 @@
         <Btn label="Move to trash" icon="delete" variant="danger" onclick={trash} />
       </div>
     {/if}
-    <p class="dim small">Hold the modifier key and click rows to add or remove them. Shift-click chooses a range.</p>
+    <p class="dim small">{host().os === 'mac' ? '⌘' : 'Ctrl'}-click rows to add or remove them. Shift-click, or Shift and the arrow keys, chooses a range.</p>
   </div>
 </div>
 
 {#if picker === 'folder'}
-  <Pickers kind="folder" current={sharedFolder} onclose={() => (picker = null)} onpick={(folder) => void ui.bulk('folder', { folder }).then(done)} />
+  <Pickers kind="folder" current={sharedFolder} onclose={() => (picker = null)} onpick={(folder) => void attempt(() => ui.bulk('folder', { folder })).then((ok) => ok && done())} />
 {:else if picker === 'colour'}
-  <Pickers kind="colour" current={sharedColour} onclose={() => (picker = null)} onpick={(color) => void ui.bulk('color', { color }).then(done)} />
+  <Pickers kind="colour" current={sharedColour} onclose={() => (picker = null)} onpick={(color) => void attempt(() => ui.bulk('color', { color })).then((ok) => ok && done())} />
 {:else if picker === 'tags'}
-  <Pickers kind="tags" current={sharedTags} onclose={() => (picker = null)} onpick={(next) => void retag(next)} />
+  <Pickers kind="tags" current={pendingTags ?? sharedTags} onclose={() => (picker = null)} onpick={retag} />
 {/if}

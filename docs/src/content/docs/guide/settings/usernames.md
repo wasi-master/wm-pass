@@ -78,7 +78,7 @@ See also [Username checker](/guide/settings/usernames/), [Look for yourself](/gu
 
 ## Look for yourself
 
-Sites whose answer WM Pass cannot read, each with a link to the profile the name would have. Click one to open it in your browser.
+Sites whose answer WM Pass cannot read, each with a link to the profile the name would have. After a check, click one to open it in your browser.
 
 #### How it works
 

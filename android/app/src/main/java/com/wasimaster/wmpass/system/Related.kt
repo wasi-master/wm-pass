@@ -44,15 +44,20 @@ object Related {
         }.also { families = it }
     }
 
-    /** The apps a launcher shows, read once. */
+    /**
+     * The apps a launcher shows, read once. Never throws: a package manager that fails the query
+     * (too many apps for one answer, the system restarting) gives an empty list, not kept, so the
+     * next ask tries again; an app whose label will not load is listed by its package name.
+     */
     suspend fun installed(context: Context): List<App> = launchable ?: withContext(Dispatchers.IO) {
         val pm = context.packageManager
         val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        pm.queryIntentActivities(launcher, 0)
-            .map { it.activityInfo.applicationInfo }
+        val found = runCatching { pm.queryIntentActivities(launcher, 0) }.getOrNull() ?: return@withContext emptyList()
+        found
+            .mapNotNull { it.activityInfo?.applicationInfo }
             .distinctBy { it.packageName }
             .filter { it.packageName != context.packageName }
-            .map { App(it.packageName, it.loadLabel(pm).toString()) }
+            .map { info -> App(info.packageName, runCatching { info.loadLabel(pm).toString() }.getOrDefault(info.packageName)) }
             .sortedBy { it.label.lowercase() }
             .also { launchable = it }
     }

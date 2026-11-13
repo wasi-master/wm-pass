@@ -65,7 +65,17 @@ pub struct Request {
     pub body: Option<(&'static str, Vec<u8>)>,
     /// Time limit.
     pub timeout_ms: u64,
+    /// The largest answer body read, in bytes. [`MAX_BODY`] unless raised.
+    pub max_body: u64,
 }
+
+/// The largest answer body read by default: plenty for any API answer or icon, and a
+/// stranger's server cannot fill memory with more.
+pub const MAX_BODY: u64 = 16 * 1024 * 1024;
+
+/// The largest answer body read from a place the owner set up for backups and sync, which
+/// holds whole vaults and attachments, and nothing limits what was uploaded there.
+pub const MAX_PLACE_BODY: u64 = 1024 * 1024 * 1024;
 
 impl std::fmt::Debug for Request {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -85,6 +95,7 @@ impl Request {
             headers: Vec::new(),
             body: None,
             timeout_ms: 15_000,
+            max_body: MAX_BODY,
         }
     }
 
@@ -96,6 +107,7 @@ impl Request {
             headers: Vec::new(),
             body: Some(("application/json", body.to_string().into_bytes())),
             timeout_ms: 15_000,
+            max_body: MAX_BODY,
         }
     }
 
@@ -107,6 +119,7 @@ impl Request {
             headers: Vec::new(),
             body: None,
             timeout_ms: 15_000,
+            max_body: MAX_BODY,
         }
     }
 
@@ -272,6 +285,15 @@ pub trait Http: Send + Sync {
 pub trait AsyncHttp {
     /// Sends one request.
     fn send(&self, request: &Request) -> impl Future<Output = Result<Response, NetError>>;
+
+    /// Waits about `ms` milliseconds before a retry, in whatever way the executor driving
+    /// this client's futures can wait. The client knows that executor; the code retrying
+    /// does not, so the wait lives here. The default does not wait, which is right for a
+    /// client nothing can wait on and harmless for a test.
+    fn pause(&self, ms: u64) -> impl Future<Output = ()> {
+        let _ = ms;
+        std::future::ready(())
+    }
 }
 
 /// Adapts a blocking client. Its futures are ready at once.
@@ -281,6 +303,15 @@ pub struct Blocking<'a>(pub &'a dyn Http);
 impl AsyncHttp for Blocking<'_> {
     async fn send(&self, request: &Request) -> Result<Response, NetError> {
         self.0.send(request)
+    }
+
+    /// Blocks the thread, as `send` does: [`block_on`] runs these futures on a thread of
+    /// their own, which a request already holds for seconds at a time.
+    async fn pause(&self, ms: u64) {
+        #[cfg(not(target_arch = "wasm32"))]
+        std::thread::sleep(std::time::Duration::from_millis(ms));
+        #[cfg(target_arch = "wasm32")]
+        let _ = ms;
     }
 }
 
@@ -301,6 +332,8 @@ pub fn block_on<F: Future>(future: F) -> F::Output {
 #[derive(Debug)]
 pub struct NativeHttp {
     agent: ureq::Agent,
+    /// Answers up to this size are read whatever the request says.
+    max_body: u64,
 }
 
 #[cfg(feature = "native")]
@@ -308,6 +341,20 @@ impl Default for NativeHttp {
     fn default() -> Self {
         Self {
             agent: agent_config().into(),
+            max_body: 0,
+        }
+    }
+}
+
+#[cfg(feature = "native")]
+impl NativeHttp {
+    /// A client for the owner's own backup and sync places, whose answers can be whole
+    /// vaults and attachments: it reads up to [`MAX_PLACE_BODY`] for every request. Use the
+    /// default one for anything else.
+    pub fn for_places() -> Self {
+        Self {
+            max_body: MAX_PLACE_BODY,
+            ..Self::default()
         }
     }
 }
@@ -315,7 +362,7 @@ impl Default for NativeHttp {
 #[cfg(feature = "native")]
 impl Http for NativeHttp {
     fn send(&self, request: &Request) -> Result<Response, NetError> {
-        send_with(&self.agent, request)
+        send_with(&self.agent, request, request.max_body.max(self.max_body))
     }
 }
 
@@ -346,8 +393,7 @@ fn is_certificate_refusal(error: &ureq::Error) -> bool {
 }
 
 #[cfg(feature = "native")]
-fn send_with(agent: &ureq::Agent, request: &Request) -> Result<Response, NetError> {
-    const MAX_BODY: u64 = 16 * 1024 * 1024;
+fn send_with(agent: &ureq::Agent, request: &Request, max_body: u64) -> Result<Response, NetError> {
     let mut builder = ureq::http::Request::builder()
         .method(request.method)
         .uri(&request.url);
@@ -390,7 +436,7 @@ fn send_with(agent: &ureq::Agent, request: &Request) -> Result<Response, NetErro
     let body = answer
         .body_mut()
         .with_config()
-        .limit(MAX_BODY)
+        .limit(max_body)
         .read_to_vec()
         .map_err(|_| NetError::Unreachable)?;
     Ok(Response {
@@ -579,8 +625,9 @@ mod pinned {
     }
 
     /// A blocking client that trusts one certificate, recorded the first time one is seen
-    /// when there is no pin yet. Otherwise the same as [`super::NativeHttp`]: no redirects,
-    /// and the same policy check by whoever holds it.
+    /// when there is no pin yet. Otherwise the same as [`super::NativeHttp::for_places`]: no
+    /// redirects, the same policy check by whoever holds it, and answers up to
+    /// [`super::MAX_PLACE_BODY`], since only a NAS the owner set up as a place is pinned.
     pub struct PinnedHttp {
         agent: ureq::Agent,
     }
@@ -622,7 +669,7 @@ mod pinned {
 
     impl Http for PinnedHttp {
         fn send(&self, request: &Request) -> Result<Response, NetError> {
-            super::send_with(&self.agent, request)
+            super::send_with(&self.agent, request, request.max_body.max(super::MAX_PLACE_BODY))
         }
     }
 }
@@ -899,6 +946,41 @@ mod pinned_tests {
         let url = serve(CERT_B, KEY_B);
         let pinned = PinnedHttp::new(Some(certificate_pin(CERT_A)), Box::new(|_| panic!("already pinned"))).unwrap();
         assert_eq!(pinned.send(&Request::get(&url)).err(), Some(NetError::Untrusted));
+    }
+
+    /// A plain server on this device that answers every request with `size` bytes.
+    fn serve_plain(size: usize) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let body = vec![b'x'; size];
+            for mut socket in listener.incoming().flatten() {
+                let mut seen = Vec::new();
+                let mut buffer = [0u8; 1024];
+                while !seen.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match socket.read(&mut buffer) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => seen.extend_from_slice(&buffer[..n]),
+                    }
+                }
+                let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {size}\r\nConnection: close\r\n\r\n");
+                let _ = socket.write_all(head.as_bytes());
+                let _ = socket.write_all(&body);
+            }
+        });
+        format!("http://127.0.0.1:{port}/")
+    }
+
+    #[test]
+    fn only_a_place_client_or_a_raised_request_reads_past_the_usual_limit() {
+        let size = usize::try_from(MAX_BODY).unwrap() + 1;
+        let url = serve_plain(size);
+        assert_eq!(NativeHttp::default().send(&Request::get(&url)).err(), Some(NetError::Unreachable));
+        assert_eq!(NativeHttp::for_places().send(&Request::get(&url)).unwrap().body.len(), size);
+        let raised = Request { max_body: MAX_PLACE_BODY, ..Request::get(&url) };
+        assert_eq!(NativeHttp::default().send(&raised).unwrap().body.len(), size);
+        let pinned = PinnedHttp::new(None, Box::new(|_| {})).unwrap();
+        assert_eq!(pinned.send(&Request::get(&url)).unwrap().body.len(), size, "a pinned client is only for a place");
     }
 
     #[test]

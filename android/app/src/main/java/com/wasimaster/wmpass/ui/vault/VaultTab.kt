@@ -1,5 +1,7 @@
 package com.wasimaster.wmpass.ui.vault
 
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -8,6 +10,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -54,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.wasimaster.wmkeyboard.core.ui.RailBucket
 import com.wasimaster.wmkeyboard.core.ui.ScrollRailBox
 import com.wasimaster.wmkeyboard.core.ui.rememberScrollRailState
@@ -94,8 +98,13 @@ private sealed interface Item {
         override val key = "h:$text"
     }
 
-    data object Gap : Item {
-        override val key = "gap"
+    /**
+     * Space before the run of rows named [before]. A list can hold more than one, as after the
+     * pinned items and again before the folders, so each is keyed by what it comes before: two
+     * rows with one key would close the app.
+     */
+    data class Gap(val before: String) : Item {
+        override val key = "gap:$before"
     }
 
     /**
@@ -197,7 +206,7 @@ private fun arrange(
             types += FolderRun(kindOpenKey(kind), kindPlural(kind), inside, kind)
             if (kindOpenKey(kind) in open) inside.mapTo(types) { Inside(it, kindOpenKey(kind)) }
         }
-        if (headings) out += Item.Heading("Types") else if (out.isNotEmpty()) out += Item.Gap
+        if (headings) out += Item.Heading("Types") else if (out.isNotEmpty()) out += Item.Gap("types")
         card(types, out)
         val folders = Pass.folders.value.sortedBy { it.name.lowercase() }
         if (folders.isNotEmpty()) {
@@ -212,7 +221,7 @@ private fun arrange(
                 if (folderOpenKey(id) in open) inside.mapTo(run) { Inside(it, folderOpenKey(id)) }
             }
             if (run.isNotEmpty()) {
-                out += if (headings) Item.Heading("Folders") else Item.Gap
+                out += if (headings) Item.Heading("Folders") else Item.Gap("folders")
                 card(run, out)
             }
         }
@@ -231,11 +240,11 @@ private fun arrange(
         val known = folders.mapTo(HashSet()) { it.id }
         val loose = rest.filter { it.folder == null || it.folder !in known }
         if (run.isNotEmpty()) {
-            if (pinned.isNotEmpty()) out += if (flat && headings) Item.Heading("Folders") else Item.Gap
+            if (pinned.isNotEmpty()) out += if (flat && headings) Item.Heading("Folders") else Item.Gap("folders")
             card(run, out)
         }
         if (loose.isNotEmpty()) {
-            if (out.isNotEmpty()) out += if (flat && headings) Item.Heading("No folder") else Item.Gap
+            if (out.isNotEmpty()) out += if (flat && headings) Item.Heading("No folder") else Item.Gap("loose")
             card(loose, out)
         }
         return out
@@ -256,7 +265,7 @@ private fun arrange(
             row += entry
         }
     }
-    if (pinned.isNotEmpty()) out += if (flat && headings) Item.Heading("All items") else Item.Gap
+    if (pinned.isNotEmpty()) out += if (flat && headings) Item.Heading("All items") else Item.Gap("rest")
     card(row, out)
     return out
 }
@@ -272,6 +281,22 @@ private object VaultMemory {
     var offset = 0
     var filter = "all"
     var arrived = false
+
+    /**
+     * The unlock these belong to. Each unlock brings a new shell, and the list starts afresh with
+     * it: the sites opened and the place scrolled to in one vault say nothing in the next, such as
+     * a decoy opened under pressure.
+     */
+    private var owner = java.lang.ref.WeakReference<Shell>(null)
+
+    fun belongTo(shell: Shell) {
+        if (owner.get() === shell) return
+        owner = java.lang.ref.WeakReference(shell)
+        open.clear()
+        index = 0
+        offset = 0
+        filter = "all"
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -282,6 +307,7 @@ fun VaultTab() {
     val prefs = shell.prefs
     val entries by Pass.entries.collectAsStateWithLifecycle()
     val state by Pass.state.collectAsStateWithLifecycle()
+    remember(shell) { VaultMemory.belongTo(shell) }
     var filter by remember { mutableStateOf(VaultMemory.filter) }
     val openSites = VaultMemory.open
     val shown = remember(entries, filter) { filtered(entries, filter) }
@@ -289,7 +315,10 @@ fun VaultTab() {
     fun groupingFor(chip: String) = if (prefs.grouping == "types" && chip != "all") "smart" else prefs.grouping
     fun arranged(list: List<Summary>, chip: String = filter) =
         arrange(list, groupingFor(chip), openSites.toSet(), colors.flat, prefs.sort.value, prefs.pinnedOnTop.value, prefs.listHeadings.value, prefs.groupSites.value)
-    val items = remember(shown, filter, prefs.grouping, openSites.toList(), colors.flat, prefs.sort.value, prefs.pinnedOnTop.value, prefs.listHeadings.value, prefs.groupSites.value) {
+    // The folders are read inside arrange(), so they are a key too: renaming one leaves every
+    // entry as it was, and the list would go on showing the old name.
+    val folders by Pass.folders.collectAsStateWithLifecycle()
+    val items = remember(shown, filter, prefs.grouping, openSites.toList(), colors.flat, prefs.sort.value, prefs.pinnedOnTop.value, prefs.listHeadings.value, prefs.groupSites.value, folders) {
         arranged(shown)
     }
     val listState = rememberLazyListState(VaultMemory.index, VaultMemory.offset)
@@ -331,6 +360,14 @@ fun VaultTab() {
         hold += gone
         filter = next
         VaultMemory.filter = next
+    }
+    // Un-starring the last favorite, or trashing the only card, takes away the chip that was
+    // chosen: the list goes back to everything rather than sitting empty with nothing chosen.
+    LaunchedEffect(shown.isEmpty(), filter) {
+        if (filter != "all" && entries.isNotEmpty() && shown.isEmpty()) {
+            filter = "all"
+            VaultMemory.filter = "all"
+        }
     }
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val scrolled by remember {
@@ -460,7 +497,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.itemsIndexedStable(
             val modifier = if (index == firstRow) placed.helpAnchor("list.rows") else placed
             when (item) {
                 is Item.Heading -> Eyebrow(item.text, if (palette.flat) modifier.padding(horizontal = 16.dp) else modifier)
-                Item.Gap -> Spacer(modifier.height(12.dp))
+                is Item.Gap -> Spacer(modifier.height(12.dp))
                 is Item.One -> {
                     val selected = item.entry.id in shell.selection
                     val indent = if (item.inside) FolderIndent else 0.dp
@@ -542,7 +579,7 @@ private fun Header(name: String, count: Int) {
     val shell = LocalShell.current
     Row(Modifier.fillMaxWidth().padding(start = 6.dp, top = 12.dp, bottom = 20.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(name, color = colors.text, style = MaterialTheme.typography.headlineLarge.copy(fontSize = 32.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(name, color = colors.text, style = MaterialTheme.typography.headlineLarge.copy(fontSize = 32.sp), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.semantics { heading() })
             Text(
                 if (count == 1) "1 item, encrypted" else "$count items, encrypted",
                 color = colors.textMid,
@@ -652,7 +689,8 @@ private fun WidgetCard(modifier: Modifier, onClick: () -> Unit, content: @Compos
     Box(
         modifier
             .pressScale(source)
-            .height(100.dp)
+            // A floor: at a large font size the card grows to hold its number rather than clipping it.
+            .heightIn(min = 100.dp)
             .clip(Shapes.card)
             .background(colors.surface1)
             .rim(Shapes.card, colors)
@@ -674,7 +712,7 @@ private fun HealthWidget(modifier: Modifier, entries: List<Summary>) {
         health = runCatching { healthNow(shell.prefs) }.getOrNull()
     }
     WidgetCard(modifier, { shell.tab = "health" }) {
-        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
+        Column(Modifier.fillMaxWidth().heightIn(min = 72.dp), verticalArrangement = Arrangement.SpaceBetween) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(PassIcons.EcgHeart, null, tint = colors.primary, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
@@ -706,16 +744,21 @@ private fun CodesWidget(modifier: Modifier, entries: List<Summary>) {
     val shell = LocalShell.current
     var row by remember { mutableStateOf<OtpRow?>(null) }
     val count = entries.count { it.hasOtp }
-    LaunchedEffect(entries.size, count) {
-        while (true) {
-            row = runCatching { Pass.codes().firstOrNull() }.getOrNull()
-            val period = (row?.otp?.period ?: 30) * 1000L
-            delay(period - System.currentTimeMillis() % period + 30)
+    // Read only while the app is in view, as on the codes tab: in the background there is no one
+    // to read a code, and each read asks the vault.
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(entries.size, count, lifecycle) {
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            while (true) {
+                row = runCatching { Pass.codes().firstOrNull() }.getOrNull()
+                val period = (row?.otp?.period ?: 30) * 1000L
+                delay(period - System.currentTimeMillis() % period + 30)
+            }
         }
     }
     WidgetCard(modifier, { shell.tab = "codes" }) {
         val current = row
-        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
+        Column(Modifier.fillMaxWidth().heightIn(min = 72.dp), verticalArrangement = Arrangement.SpaceBetween) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(PassIcons.Pin, null, tint = colors.primary, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
@@ -732,7 +775,7 @@ private fun CodesWidget(modifier: Modifier, entries: List<Summary>) {
             if (current?.code != null) {
                 RollingCode(current.code!!, style = com.wasimaster.wmpass.ui.theme.PassType.code.copy(fontSize = 25.sp))
             } else {
-                Text(if (count == 0) "None yet" else "$count codes", color = colors.text, style = MaterialTheme.typography.titleLarge)
+                Text(if (count == 0) "None yet" else if (count == 1) "1 code" else "$count codes", color = colors.text, style = MaterialTheme.typography.titleLarge)
             }
         }
     }
@@ -804,7 +847,7 @@ private fun Filters(entries: List<Summary>, selected: String, onSelect: (String)
                 Modifier
                     .size(32.dp)
                     .clip(CircleShape)
-                    .clickable(onClickLabel = "Change layout") {
+                    .clickable(onClickLabel = "Change layout", role = androidx.compose.ui.semantics.Role.Button) {
                         shell.haptics.tick()
                         prefs.updateLayout(next)
                     },
@@ -816,7 +859,8 @@ private fun Filters(entries: List<Summary>, selected: String, onSelect: (String)
                         "compact" -> PassIcons.ViewList
                         else -> PassIcons.ViewAgenda
                     },
-                    "Change layout",
+                    // Says which layout is on now; the tap's label says what it does.
+                    "Layout: ${prefs.layout}",
                     tint = palette.textMid,
                     modifier = Modifier.size(20.dp),
                 )
@@ -856,7 +900,7 @@ private fun EmptyVault() {
         return
     }
     Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Nothing here yet", color = colors.text, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 6.dp, top = 12.dp))
+        Text("Nothing here yet", color = colors.text, style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() }.padding(start = 6.dp, top = 12.dp))
         Text(
             "Bring your passwords over from another app, or start with your first login.",
             color = colors.textMid,
@@ -893,7 +937,10 @@ private fun AutofillNudge() {
     androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
         chosen = manager == null || !manager.isAutofillSupported || manager.hasEnabledAutofillServices()
         if (chosen && shell.prefs.browserNudge.value) {
-            scope.launch { lagging = com.wasimaster.wmpass.system.BrowserAutofill.browsers(context).firstOrNull { !it.usesAutofill } }
+            // A package query that fails leaves the card unasked rather than closing the app.
+            scope.launch {
+                lagging = runCatching { com.wasimaster.wmpass.system.BrowserAutofill.browsers(context).firstOrNull { !it.usesAutofill } }.getOrNull()
+            }
         }
         onPauseOrDispose { }
     }
@@ -903,7 +950,11 @@ private fun AutofillNudge() {
     androidx.compose.animation.AnimatedVisibility(askService || askBrowser) {
         val turnOn = {
             if (askBrowser && browser != null) {
-                com.wasimaster.wmpass.system.BrowserAutofill.openSetting(context, browser.pkg)
+                // A browser that does not open the page for the setting itself: the browser at
+                // least, where it is under Settings, rather than a tap that does nothing.
+                if (!com.wasimaster.wmpass.system.BrowserAutofill.openSetting(context, browser.pkg)) {
+                    runCatching { context.packageManager.getLaunchIntentForPackage(browser.pkg)?.let(context::startActivity) }
+                }
             } else {
                 runCatching {
                     context.startActivity(

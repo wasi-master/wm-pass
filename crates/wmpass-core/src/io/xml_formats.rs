@@ -210,11 +210,13 @@ fn keepass_group(
         };
         let title = get("Title").unwrap_or_default();
         let (otp, used) = kdbx::otp_from_fields(&get, &title, &mut out.skipped);
+        let pairs: Vec<(String, String)> = strings.iter().map(|(k, v, _)| (k.clone(), v.clone())).collect();
+        let (more_urls, passkey, read_too) = kdbx::keepassxc_extras(&pairs, &get("UserName").unwrap_or_default());
         let mut draft = Draft {
             title,
             username: get("UserName").unwrap_or_default(),
             password: get("Password").unwrap_or_default(),
-            urls: vec![get("URL").unwrap_or_default()],
+            urls: std::iter::once(get("URL").unwrap_or_default()).chain(more_urls).collect(),
             notes: get("Notes").unwrap_or_default(),
             folder: path.to_owned(),
             tags: entry
@@ -226,17 +228,23 @@ fn keepass_group(
                 .collect(),
             ..Draft::default()
         };
+        draft.history = keepass_history(entry, &draft.password);
         for (key, value, hidden) in &strings {
             let standard = ["Title", "UserName", "Password", "URL", "Notes"];
-            if !standard.contains(&key.as_str()) && !used.contains(&key.as_str()) {
+            if !standard.contains(&key.as_str()) && !used.contains(&key.as_str()) && !read_too.contains(key) {
                 draft.fields.push((key.clone(), value.clone(), *hidden));
             }
         }
         let mut item = draft.into_login(at, &mut out.skipped);
-        if let Some(config) = otp
-            && let Some(login) = item.entry.login_mut()
-        {
-            login.otp = Lww::new(Some(config), at);
+        // KeePass 2 writes times as ISO 8601 in its XML export.
+        item.entry.created_ms = entry
+            .child("Times")
+            .map_or(0, |times| super::json_formats::bitwarden_time(&times.text_of("CreationTime")));
+        if let Some(login) = item.entry.login_mut() {
+            if let Some(config) = otp {
+                login.otp = Lww::new(Some(config), at);
+            }
+            login.passkeys = Lww::new(passkey.into_iter().collect(), at);
         }
         for binary in entry.all("Binary") {
             let name = binary.text_of("Key");
@@ -261,6 +269,34 @@ fn keepass_group(
         keepass_group(child, &child_path, recycle, binaries, at, out)?;
     }
     Ok(())
+}
+
+/// An entry's earlier passwords from its `<History>`, oldest first, each when it was written.
+/// KeePass keeps a whole copy on every edit, so only a change of password counts, and a copy
+/// holding the current password is none.
+fn keepass_history(entry: &Node, current: &str) -> Vec<(String, u64)> {
+    let mut out: Vec<(String, u64)> = Vec::new();
+    for version in entry.child("History").into_iter().flat_map(|h| h.all("Entry")) {
+        let password = version
+            .all("String")
+            .find(|s| s.text_of("Key") == "Password")
+            .and_then(|s| s.child("Value"))
+            .map(|v| v.text.clone())
+            .unwrap_or_default();
+        if password.is_empty() {
+            continue;
+        }
+        let ms = version
+            .child("Times")
+            .map_or(0, |times| super::json_formats::bitwarden_time(&times.text_of("LastModificationTime")));
+        out.push((password, ms));
+    }
+    out.sort_by_key(|(_, ms)| *ms);
+    out.dedup_by(|later, earlier| later.0 == earlier.0);
+    if out.last().is_some_and(|(password, _)| password == current) {
+        out.pop();
+    }
+    out
 }
 
 /// Sticky Password: logins hold the username and password, accounts hold the title,

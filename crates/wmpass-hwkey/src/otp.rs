@@ -163,8 +163,13 @@ fn read_response(device: &mut dyn OtpHid, polls: usize) -> Result<FactorOutput> 
                 out.truncate(RESPONSE_SIZE);
                 return Ok(out);
             }
+        } else if flags == 0 && out.is_empty() {
+            // Neither busy, nor waiting for a touch, nor answering: the key turned the request
+            // down, as it does for a slot not set up for challenge-response. Waiting on would
+            // end, much later, in "not touched in time".
+            return Err(HwError::SlotNotConfigured);
         } else {
-            // Waiting for a touch, or not ready yet: the same answer either way.
+            // Waiting for a touch, or still working on the request.
             device.pause();
         }
     }
@@ -197,7 +202,8 @@ mod tests {
 
     /// Follows the published YubiKey frame format.
     struct Key {
-        secret: [u8; 20],
+        /// None for a slot that is not set up for challenge-response.
+        secret: Option<[u8; 20]>,
         received: [u8; FRAME_SIZE],
         answer: Vec<u8>,
         cursor: usize,
@@ -236,7 +242,8 @@ mod tests {
             if sequence == FRAME_SIZE / REPORT_DATA - 1 {
                 let crc = u16::from_le_bytes([self.received[65], self.received[66]]);
                 assert_eq!(crc, !crc16(&self.received[..64]), "bad checksum in the frame");
-                let response = hmac(&self.secret, unpadded(&self.received[..64]));
+                let Some(secret) = self.secret else { return Ok(()) };
+                let response = hmac(&secret, unpadded(&self.received[..64]));
                 let mut answer = response.to_vec();
                 let crc = !crc16(&response);
                 answer.extend_from_slice(&crc.to_le_bytes());
@@ -249,7 +256,7 @@ mod tests {
     }
 
     fn key() -> Key {
-        Key { secret: [0x0b; 20], received: [0; FRAME_SIZE], answer: Vec::new(), cursor: 0, touch_polls: 3 }
+        Key { secret: Some([0x0b; 20]), received: [0; FRAME_SIZE], answer: Vec::new(), cursor: 0, touch_polls: 3 }
     }
 
     #[test]
@@ -275,6 +282,14 @@ mod tests {
         let mut device = key();
         device.touch_polls = 1000;
         assert_eq!(derive_usb(&mut device, &factor, 10).err(), Some(HwError::NotConfirmed));
+    }
+
+    #[test]
+    fn a_slot_not_set_up_says_so_at_once() {
+        let factor = FactorKind::YubiKey { challenge: [0x11; 32], slot: 2 };
+        let mut device = key();
+        device.secret = None;
+        assert_eq!(derive_usb(&mut device, &factor, 100).err(), Some(HwError::SlotNotConfigured));
     }
 
     struct Tag {

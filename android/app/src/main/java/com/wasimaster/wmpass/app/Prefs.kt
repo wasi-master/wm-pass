@@ -288,6 +288,17 @@ class Prefs(context: Context) {
     private val panicAppOpt = local("panic_app", "")
     val panicApps: Set<String> get() = panicAppOpt.value.split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
 
+    // Each chosen app's signing certificates, pinned as it is chosen: a package name alone is no
+    // proof, as another app could take it once the chosen one is gone. Kept on this phone only.
+    private val panicPinOpt = local("panic_app_certs", "")
+    val panicPins: Map<String, Set<String>> get() = com.wasimaster.wmpass.system.PanicPins.decode(panicPinOpt.value)
+
+    /** Adds [pins] to those kept, for chosen apps only. */
+    fun pinPanicApps(pins: Map<String, Set<String>>) {
+        val apps = panicApps
+        panicPinOpt.set(com.wasimaster.wmpass.system.PanicPins.encode((panicPins + pins).filterKeys { it in apps }))
+    }
+
     // ---- the guide: what it has shown on this phone stays on this phone ----
 
     /**
@@ -375,7 +386,10 @@ class Prefs(context: Context) {
     /** What a panic signal does, "none", "lock" or "wipe", and which apps are listened to. */
     fun updatePanic(action: String, apps: Set<String> = panicApps) {
         panicActionOpt.set(action)
+        val kept = panicPins.filterKeys { it in apps }
         panicAppOpt.set(apps.sorted().joinToString(","))
+        // An app taken off the list loses its pin: chosen again later, it is pinned afresh.
+        panicPinOpt.set(com.wasimaster.wmpass.system.PanicPins.encode(kept))
     }
 
     fun updateLook(value: Look) = lookOpt.set(value.name)

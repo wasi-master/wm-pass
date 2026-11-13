@@ -363,7 +363,14 @@ impl Widgets {
     /// Runs for as long as the app does.
     pub fn start(self: &Arc<Self>, engine: Engine) {
         let widgets = Arc::clone(self);
-        std::thread::spawn(move || widgets.run(&engine));
+        // A bug that panics in here starts it again after a pause, rather than leave the widgets
+        // showing a vault as it was. What it keeps is plain and still whole, so a poisoned lock
+        // on it is looked past (`inner`).
+        std::thread::spawn(move || {
+            while std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| widgets.run(&engine))).is_err() {
+                std::thread::sleep(Duration::from_secs(5));
+            }
+        });
     }
 
     fn run(&self, engine: &Engine) {

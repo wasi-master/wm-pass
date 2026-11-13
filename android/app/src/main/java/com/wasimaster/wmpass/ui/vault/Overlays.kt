@@ -15,9 +15,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -28,7 +30,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,7 +38,13 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.wasimaster.wmpass.core.SecureClipboard
@@ -46,7 +53,6 @@ import com.wasimaster.wmpass.ui.icons.PassIcons
 import com.wasimaster.wmpass.ui.theme.PassType
 import com.wasimaster.wmpass.ui.theme.palette
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 private data class CapsuleContent(val label: String, val startMs: Long, val endMs: Long?)
 
@@ -79,11 +85,12 @@ fun CopyCapsule(modifier: Modifier = Modifier) {
             exit = fadeOut(tween(120)),
         ) {
             val shown = remembered ?: return@AnimatedVisibility
-            var seconds by remember { mutableStateOf(0L) }
+            // Counted from the first frame, so it never opens on "Clears in 0s".
+            var seconds by remember(shown.endMs) { mutableStateOf(secondsUntil(shown.endMs ?: 0L)) }
             LaunchedEffect(shown.endMs) {
                 val end = shown.endMs ?: return@LaunchedEffect
                 while (true) {
-                    seconds = ((end - System.currentTimeMillis() + 999) / 1000).coerceAtLeast(0)
+                    seconds = secondsUntil(end)
                     delay(250)
                 }
             }
@@ -94,7 +101,14 @@ fun CopyCapsule(modifier: Modifier = Modifier) {
                     null
                 },
             ) {
-                Text(if (shown.endMs != null) "${shown.label} copied. Clears in ${seconds}s." else "${shown.label} copied.")
+                // Said once when it appears; the seconds counting down are left out so TalkBack does not chatter.
+                Text(
+                    if (shown.endMs != null) "${shown.label} copied. Clears in ${seconds}s." else "${shown.label} copied.",
+                    Modifier.clearAndSetSemantics {
+                        contentDescription = "${shown.label} copied"
+                        liveRegion = LiveRegionMode.Polite
+                    },
+                )
             }
         }
         return
@@ -109,9 +123,11 @@ fun CopyCapsule(modifier: Modifier = Modifier) {
         val shown = remembered ?: return@AnimatedVisibility
         Row(
             Modifier
-                .height(44.dp)
+                // A floor, not a height: at large text the label grows the capsule rather than being clipped.
+                .heightIn(min = 44.dp)
                 .glass(CircleShape, tint = colors.surface3.copy(alpha = 0.82f))
-                .clickable(enabled = shown.endMs != null) { SecureClipboard.wipe(context) }
+                // A screen reader says what the tap does: the capsule shows no button for it.
+                .clickable(enabled = shown.endMs != null, onClickLabel = "Clear the clipboard now") { SecureClipboard.wipe(context) }
                 .padding(start = 14.dp, end = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -121,7 +137,13 @@ fun CopyCapsule(modifier: Modifier = Modifier) {
                 Icon(PassIcons.CheckCircleFilled, null, tint = colors.primary, modifier = Modifier.size(20.dp))
             }
             Spacer(Modifier.width(9.dp))
-            Text("${shown.label} copied", color = colors.text, style = MaterialTheme.typography.labelLarge)
+            // Announced once as it appears; the countdown beside it is not live, so it does not chatter.
+            Text(
+                "${shown.label} copied",
+                Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                color = colors.text,
+                style = MaterialTheme.typography.labelLarge,
+            )
             if (shown.endMs != null) {
                 Spacer(Modifier.width(10.dp))
                 Countdown(shown.endMs)
@@ -152,28 +174,40 @@ private fun WipeRing(startMs: Long, endMs: Long) {
 @Composable
 private fun Countdown(endMs: Long) {
     val colors = palette
-    var seconds by remember { mutableStateOf(0L) }
+    var seconds by remember(endMs) { mutableStateOf(secondsUntil(endMs)) }
     LaunchedEffect(endMs) {
         while (true) {
-            seconds = ((endMs - System.currentTimeMillis() + 999) / 1000).coerceAtLeast(0)
+            seconds = secondsUntil(endMs)
             delay(200)
         }
     }
-    Text("${seconds}s", color = colors.textMid, style = MaterialTheme.typography.labelMedium.merge(PassType.numeric))
+    // Kept out of the capsule's spoken text: the capsule is announced as it appears, and a number
+    // in it that changes every second would be announced every second.
+    Text(
+        "${seconds}s",
+        Modifier.clearAndSetSemantics { },
+        color = colors.textMid,
+        style = MaterialTheme.typography.labelMedium.merge(PassType.numeric),
+    )
 }
+
+/** Whole seconds left until [endMs], rounded up. */
+private fun secondsUntil(endMs: Long): Long = ((endMs - System.currentTimeMillis() + 999) / 1000).coerceAtLeast(0)
 
 /** The last change, still reversible for a few seconds. Its bottom edge shows how long. */
 @Composable
 fun UndoBar(modifier: Modifier = Modifier) {
     val colors = palette
     val shell = LocalShell.current
-    val scope = rememberCoroutineScope()
     val offer = shell.undo
     var remembered by remember { mutableStateOf(offer) }
     if (offer != null) remembered = offer
+    // A screen reader user needs longer to find and reach Undo: the system's recommended timeout
+    // (Settings, Accessibility, Time to take action) stretches the six seconds.
+    val a11y = androidx.compose.ui.platform.LocalAccessibilityManager.current
     LaunchedEffect(offer) {
         if (offer != null) {
-            delay(6000)
+            delay(a11y?.calculateRecommendedTimeoutMillis(6000, containsIcons = false, containsText = true, containsControls = offer.action != null) ?: 6000L)
             if (shell.undo === offer) shell.undo = null
         }
     }
@@ -186,12 +220,13 @@ fun UndoBar(modifier: Modifier = Modifier) {
                     {
                         androidx.compose.material3.TextButton(onClick = {
                             shell.undo = null
-                            scope.launch { action() }
+                            shell.launch { action() }
                         }) { Text("Undo") }
                     }
                 } else {
                     null
                 },
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
             ) { Text(shown.message, maxLines = 2) }
         }
         return
@@ -206,27 +241,31 @@ fun UndoBar(modifier: Modifier = Modifier) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .height(52.dp)
+                .heightIn(min = 52.dp)
                 .glass(CircleShape, tint = colors.surface3.copy(alpha = 0.86f))
+                // Said as it appears, so a screen reader hears what changed and that Undo is offered.
+                .semantics { liveRegion = LiveRegionMode.Polite }
                 .padding(start = 20.dp, end = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // Two lines, as the standard look's bar allows: a long title or a save problem is not cut off mid-word.
             Text(
                 shown.message,
                 color = colors.text,
                 style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
             val action = shown.action
             if (action != null) {
                 Box(
                     Modifier
-                        .height(40.dp)
-                        .clickable {
+                        .heightIn(min = 48.dp)
+                        .clickable(role = androidx.compose.ui.semantics.Role.Button) {
                             shell.haptics.click()
                             shell.undo = null
-                            scope.launch { action() }
+                            shell.launch { action() }
                         }
                         .padding(horizontal = 16.dp),
                     contentAlignment = Alignment.Center,
@@ -256,9 +295,10 @@ fun ChildPill(modifier: Modifier = Modifier) {
     ) {
         Row(
             Modifier
-                .height(42.dp)
+                // A 48dp floor: a full touch target, and room for the name at large text sizes.
+                .heightIn(min = 48.dp)
                 .glass(CircleShape, tint = colors.surface3.copy(alpha = 0.86f))
-                .clickable {
+                .clickable(role = androidx.compose.ui.semantics.Role.Button) {
                     shell.haptics.click()
                     shell.launch { com.wasimaster.wmpass.core.Pass.leaveChild() }
                 }
@@ -267,7 +307,15 @@ fun ChildPill(modifier: Modifier = Modifier) {
         ) {
             Icon(PassIcons.ArrowBack, null, tint = colors.primary, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
-            Text("Close ${remembered.orEmpty()}", color = colors.text, style = MaterialTheme.typography.labelLarge)
+            // One line: a long vault name wrapped in a pill one line high would be cut through.
+            Text(
+                "Close ${remembered.orEmpty()}",
+                color = colors.text,
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 280.dp),
+            )
         }
     }
 }

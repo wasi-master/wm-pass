@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use super::{ColumnMap, Draft, Format, Imported, ImportedEntry, base_entry, non_empty, note_item};
 use crate::clock::Hlc;
-use crate::model::{Card, Field, Identity, Kind, Lww, Note};
+use crate::model::{Card, Field, FieldKind, Identity, Kind, Lww, Note, SiteMatcher};
 use crate::{Error, Result, Secret};
 
 struct Row<'a> {
@@ -40,14 +40,49 @@ impl Row<'_> {
 }
 
 fn reader(text: &str, has_header: bool) -> csv::Reader<&[u8]> {
+    reader_with(text, has_header, b',')
+}
+
+fn reader_with(text: &str, has_header: bool, delimiter: u8) -> csv::Reader<&[u8]> {
     csv::ReaderBuilder::new()
         .flexible(true)
         .has_headers(has_header)
+        .delimiter(delimiter)
         .from_reader(text.as_bytes())
 }
 
+/// The separator of a CSV of unknown origin, by its first line: a spreadsheet in much of Europe
+/// saves with semicolons, and some apps write tabs.
+fn sniffed_delimiter(text: &str) -> u8 {
+    let first = text.lines().next().unwrap_or_default();
+    b",;\t"
+        .iter()
+        .copied()
+        .max_by_key(|d| (first.bytes().filter(|b| b == d).count(), *d == b','))
+        .unwrap_or(b',')
+}
+
+/// A row with nothing in it, as spreadsheets leave at the end of a sheet.
+fn blank(record: &csv::StringRecord) -> bool {
+    record.iter().all(|cell| cell.trim().is_empty())
+}
+
+fn unreadable(error: &csv::Error) -> Error {
+    match error.position() {
+        Some(at) => Error::Import(format!("line {} of the file could not be read", at.line())),
+        None => Error::Import("a row could not be read".into()),
+    }
+}
+
+/// A reader for an export read by its header. A file opened in a spreadsheet and saved again
+/// comes back with semicolons in much of Europe, or tabs as Excel's "Unicode Text", and its
+/// columns are still the app's own.
+fn headed_reader(text: &str) -> csv::Reader<&[u8]> {
+    reader_with(text, true, sniffed_delimiter(text))
+}
+
 fn written_header(text: &str) -> Option<Vec<String>> {
-    let mut reader = reader(text, true);
+    let mut reader = headed_reader(text);
     let headers = reader.headers().ok()?;
     Some(headers.iter().map(|h| h.trim().to_owned()).collect())
 }
@@ -80,9 +115,12 @@ pub(super) fn detect(text: &str) -> Option<Format> {
         &["group", "title", "username", "password", "url", "notes"],
     ) {
         Some(Format::KeePassXcCsv)
+    } else if has_all(&headers, &["otpauth", "title", "url", "favorite", "archived"]) {
+        // 1Password 8 writes Apple's columns and a few more.
+        Some(Format::OnePasswordCsv)
     } else if has_all(&headers, &["otpauth", "title", "url"]) {
         Some(Format::AppleCsv)
-    } else if has_all(&headers, &["username2", "password", "title"]) {
+    } else if has_all(&headers, &["username2", "password", "title"]) || dashlane_part(&headers).is_some() {
         Some(Format::DashlaneCsv)
     } else if has_all(&headers, &["cardholdername", "password", "name"]) {
         Some(Format::NordPassCsv)
@@ -121,11 +159,34 @@ pub(super) fn import(format: Format, text: &str, at: Hlc) -> Result<Imported> {
         .enumerate()
         .map(|(i, h)| (h.to_lowercase(), i))
         .collect();
+    let records: Vec<csv::StringRecord> = headed_reader(text)
+        .records()
+        .map(|record| record.map_err(|e| unreadable(&e)))
+        .collect::<Result<_>>()?;
+    let records: Vec<csv::StringRecord> = records.into_iter().filter(|r| !blank(r)).collect();
+    // Buttercup writes a row for each group too, naming its parent: the rows of entries name
+    // only their own group, so the paths come from these.
+    let mut buttercup_groups: HashMap<String, (String, String)> = HashMap::new();
+    if format == Format::ButtercupCsv {
+        for row in records.iter().map(|record| Row { record, columns: &columns, names: &names }) {
+            let id = row.get("!group_id");
+            if id.is_empty() {
+                continue;
+            }
+            // A group's own row says where it sits; an entry's row only names it.
+            let group = (row.get("!group_name"), row.get("!group_parent"));
+            if row.get("!type") == "group" {
+                buttercup_groups.insert(id, group);
+            } else {
+                buttercup_groups.entry(id).or_insert(group);
+            }
+        }
+    }
+    let dashlane = if format == Format::DashlaneCsv { dashlane_part(&columns_of(&names)) } else { None };
     let mut out = Imported::default();
-    for record in reader(text, true).records() {
-        let record = record.map_err(|_| Error::Import("a row could not be read".into()))?;
+    for record in &records {
         let row = Row {
-            record: &record,
+            record,
             columns: &columns,
             names: &names,
         };
@@ -135,9 +196,32 @@ pub(super) fn import(format: Format, text: &str, at: Hlc) -> Result<Imported> {
             Format::WmPassCsv => wmpass_row(&row, at, &mut out),
             Format::NordPassCsv => nordpass_row(&row, at, &mut out),
             Format::ZohoVaultCsv => zoho_row(&row, at, &mut out),
+            Format::DashlaneCsv if let Some(part) = dashlane => dashlane_row(part, &row, at, &mut out),
+            Format::ButtercupCsv => {
+                if row.get("!type") == "group" {
+                    continue;
+                }
+                let mut draft = simple_row(format, &row);
+                draft.folder = buttercup_path(&buttercup_groups, &row.get("!group_id"));
+                out.entries.push(draft.into_login(at, &mut out.skipped));
+            }
+            // Proton Pass writes its notes into the same CSV, told apart by `type`.
+            Format::ChromeCsv if row.get("type") == "note" => {
+                out.entries.push(note_item(&row.get("name"), &row.get("note"), Vec::new(), non_empty(row.get("vault")), at));
+            }
+            // Firefox's own sync account is kept among its logins; it signs in nowhere.
+            Format::FirefoxCsv if row.get("url").starts_with("chrome://") => {
+                out.skipped.push(format!("{}: Firefox's own account entry is left out", row.get("url")));
+            }
             _ => {
                 let draft = simple_row(format, &row);
-                let entry = draft.into_login(at, &mut out.skipped);
+                let mut entry = draft.into_login(at, &mut out.skipped);
+                if format == Format::FirefoxCsv {
+                    entry.entry.created_ms = row.get("timecreated").trim().parse().unwrap_or(0);
+                }
+                if format == Format::KeePassXcCsv {
+                    entry.entry.created_ms = super::json_formats::bitwarden_time(&row.get("created"));
+                }
                 out.entries.push(entry);
             }
         }
@@ -145,14 +229,127 @@ pub(super) fn import(format: Format, text: &str, at: Hlc) -> Result<Imported> {
     Ok(out)
 }
 
+fn columns_of(names: &[String]) -> Vec<String> {
+    names.iter().map(|n| n.to_lowercase()).collect()
+}
+
+/// Dashlane exports a zip of CSVs, one per kind: besides `credentials.csv`, these.
+#[derive(Clone, Copy)]
+enum DashlanePart {
+    /// `securenotes.csv`.
+    Notes,
+    /// `payments.csv`: cards and bank accounts.
+    Payments,
+    /// `ids.csv`: passports, licences and other papers.
+    Ids,
+    /// `personalInfo.csv`: names, addresses, phone numbers.
+    Personal,
+}
+
+fn dashlane_part(headers: &[String]) -> Option<DashlanePart> {
+    if has_all(headers, &["cc_number", "account_holder", "expiration_month"]) {
+        Some(DashlanePart::Payments)
+    } else if has_all(headers, &["number", "issue_date", "place_of_issue"]) {
+        Some(DashlanePart::Ids)
+    } else if has_all(headers, &["first_name", "item_name", "address_recipient"]) {
+        Some(DashlanePart::Personal)
+    } else if has_all(headers, &["title", "note"])
+        && headers.iter().all(|h| ["title", "note", "category"].contains(&h.as_str()))
+    {
+        Some(DashlanePart::Notes)
+    } else {
+        None
+    }
+}
+
+/// One row of a Dashlane CSV other than its logins.
+fn dashlane_row(part: DashlanePart, row: &Row<'_>, at: Hlc, out: &mut Imported) {
+    let folder = non_empty(row.get("category"));
+    let item = match part {
+        DashlanePart::Notes => note_item(&row.get("title"), &row.get("note"), Vec::new(), folder, at),
+        DashlanePart::Payments if row.get("type") == "payment_card" || !row.get("cc_number").is_empty() => {
+            let (month, year) = (row.get("expiration_month"), row.get("expiration_year"));
+            let mut entry = base_entry(&row.get("account_name"), "", at);
+            entry.kind = Kind::Card(Card {
+                holder: Lww::new(row.get("account_holder"), at),
+                number: Lww::new(Secret::from(row.get("cc_number")), at),
+                cvv: Lww::new(Secret::from(row.get("code")), at),
+                expiry: Lww::new(
+                    if month.is_empty() && year.is_empty() { String::new() } else { format!("{month}/{year}") },
+                    at,
+                ),
+                issuer: Lww::new(row.get("issuing_bank"), at),
+                ..Card::default()
+            });
+            ImportedEntry { entry, folder: None, files: Vec::new() }
+        }
+        // A bank account, and anything else: every column is kept, as a note's fields.
+        DashlanePart::Payments | DashlanePart::Personal => {
+            let title = [row.get("account_name"), row.get("item_name"), row.get("title"), row.get("type")]
+                .into_iter()
+                .find(|t| !t.trim().is_empty())
+                .unwrap_or_default();
+            let extra = row
+                .others(&["account_name", "item_name"])
+                .into_iter()
+                .map(|(name, value, _)| {
+                    let secret = ["account_number", "routing_number", "cc_number", "code"].contains(&name.as_str());
+                    (name, value, secret)
+                })
+                .collect();
+            note_item(&title, "", extra, None, at)
+        }
+        DashlanePart::Ids => {
+            let kind = row.get("type");
+            let title = match row.get("name") {
+                name if name.trim().is_empty() => kind.clone(),
+                name => format!("{kind}: {name}"),
+            };
+            let mut entry = base_entry(&title, "", at);
+            entry.kind = Kind::Document(crate::model::Document {
+                label: Lww::new(kind, at),
+                number: Lww::new(Secret::from(row.get("number")), at),
+            });
+            let extra = row.others(&["type", "number"]);
+            entry.common.custom_fields = Lww::new(super::fields(extra), at);
+            ImportedEntry { entry, folder: None, files: Vec::new() }
+        }
+    };
+    out.entries.push(item);
+}
+
+/// A Buttercup group's path, from its id up through its parents. A file with no group rows
+/// still names each entry's own group.
+fn buttercup_path(groups: &HashMap<String, (String, String)>, start: &str) -> String {
+    let mut parts = Vec::new();
+    let mut id = start;
+    while let Some((name, parent)) = groups.get(id) {
+        // A loop in the parents would otherwise never end.
+        if parts.len() > 64 {
+            break;
+        }
+        parts.push(name.as_str());
+        id = parent;
+    }
+    parts.reverse();
+    parts.join("/")
+}
+
 fn simple_row(format: Format, row: &Row<'_>) -> Draft {
     match format {
+        // Chrome's columns, which other apps write too: Proton Pass adds an email used when
+        // the username is empty, a code, and the vault each login is in.
         Format::ChromeCsv => Draft {
             title: row.get("name"),
             urls: vec![row.get("url")],
-            username: row.get("username"),
+            username: match row.get("username") {
+                name if name.trim().is_empty() => row.get("email"),
+                name => name,
+            },
             password: row.get("password"),
             notes: row.get("note"),
+            otp: row.get("totp"),
+            folder: row.get("vault"),
             ..Draft::default()
         },
         Format::FirefoxCsv => {
@@ -173,7 +370,11 @@ fn simple_row(format: Format, row: &Row<'_>) -> Draft {
             urls: vec![row.get("url")],
             notes: row.get("notes"),
             otp: row.get("totp"),
-            folder: row.get("group").trim_start_matches("Root/").to_owned(),
+            // KeePassXC names the root group too: its own entries say just `Root`.
+            folder: match row.get("group") {
+                group if group == "Root" => String::new(),
+                group => group.strip_prefix("Root/").unwrap_or(&group).to_owned(),
+            },
             ..Draft::default()
         },
         Format::DashlaneCsv => {
@@ -206,6 +407,32 @@ fn simple_row(format: Format, row: &Row<'_>) -> Draft {
             otp: row.get("otpauth"),
             ..Draft::default()
         },
+        Format::OnePasswordCsv => {
+            let yes = |column: &str| matches!(row.get(column).trim().to_ascii_lowercase().as_str(), "true" | "1" | "yes");
+            let mut tags: Vec<String> = row
+                .get("tags")
+                .split([',', ';'])
+                .map(str::trim)
+                .filter(|tag| !tag.is_empty())
+                .map(str::to_owned)
+                .collect();
+            // There is no archive here: an archived item comes in tagged so, to be found and
+            // cleared out, rather than left behind.
+            if yes("archived") && !tags.iter().any(|tag| tag.eq_ignore_ascii_case("archived")) {
+                tags.push("Archived".to_owned());
+            }
+            Draft {
+                title: row.get("title"),
+                urls: vec![row.get("url")],
+                username: row.get("username"),
+                password: row.get("password"),
+                notes: row.get("notes"),
+                otp: row.get("otpauth"),
+                favourite: yes("favorite"),
+                tags,
+                ..Draft::default()
+            }
+        }
         Format::RoboFormCsv => Draft {
             title: row.get("name"),
             urls: vec![row.get("url"), row.get("matchurl")],
@@ -228,6 +455,7 @@ fn simple_row(format: Format, row: &Row<'_>) -> Draft {
             fields: row.others(&[
                 "!group_id",
                 "!group_name",
+                "!group_parent",
                 "!type",
                 "title",
                 "username",
@@ -269,25 +497,24 @@ fn simple_row(format: Format, row: &Row<'_>) -> Draft {
 
 fn bitwarden_row(row: &Row<'_>, at: Hlc, out: &mut Imported) {
     let kind = row.get("type");
-    if kind == "note" {
-        let mut entry = base_entry(&row.get("name"), "", at);
-        entry.kind = Kind::Note(Note {
-            body: Lww::new(Secret::from(row.get("notes")), at),
-        });
-        entry.common.favourite = Lww::new(row.get("favorite") == "1", at);
-        let folder = super::non_empty(row.get("folder"));
-        out.entries.push(super::ImportedEntry {
-            entry,
-            folder,
-            files: Vec::new(),
-        });
-        return;
-    }
     let mut fields = Vec::new();
     for line in row.get("fields").lines() {
         if let Some((name, value)) = line.split_once(": ") {
             fields.push((name.to_owned(), value.to_owned(), false));
         }
+    }
+    // An organisation's export names its collections where a person's names a folder.
+    let folder = match row.get("folder") {
+        folder if folder.trim().is_empty() => {
+            row.get("collections").split(',').map(str::trim).find(|c| !c.is_empty()).unwrap_or_default().to_owned()
+        }
+        folder => folder,
+    };
+    if kind == "note" {
+        let mut item = note_item(&row.get("name"), &row.get("notes"), fields, non_empty(folder), at);
+        item.entry.common.favourite = Lww::new(row.get("favorite") == "1", at);
+        out.entries.push(item);
+        return;
     }
     let draft = Draft {
         title: row.get("name"),
@@ -296,7 +523,7 @@ fn bitwarden_row(row: &Row<'_>, at: Hlc, out: &mut Imported) {
         urls: row.get("login_uri").split(',').map(str::to_owned).collect(),
         notes: row.get("notes"),
         otp: row.get("login_totp"),
-        folder: row.get("folder"),
+        folder,
         favourite: row.get("favorite") == "1",
         fields,
         ..Draft::default()
@@ -305,20 +532,25 @@ fn bitwarden_row(row: &Row<'_>, at: Hlc, out: &mut Imported) {
     out.entries.push(entry);
 }
 
+/// LastPass's `grouping`: nested folders joined with backslashes, and `(none)` for none.
+fn lastpass_folder(grouping: &str) -> String {
+    match grouping.trim() {
+        "(none)" => String::new(),
+        _ => grouping.replace('\\', "/"),
+    }
+}
+
 fn lastpass_row(row: &Row<'_>, at: Hlc, out: &mut Imported) {
     let url = row.get("url");
+    let folder = lastpass_folder(&row.get("grouping"));
+    let favourite = row.get("fav") == "1";
     // LastPass marks secure notes with this placeholder address.
     if url == "http://sn" {
-        let mut entry = base_entry(&row.get("name"), "", at);
-        entry.kind = Kind::Note(Note {
-            body: Lww::new(Secret::from(row.get("extra")), at),
-        });
-        let folder = super::non_empty(row.get("grouping"));
-        out.entries.push(super::ImportedEntry {
-            entry,
-            folder,
-            files: Vec::new(),
-        });
+        let mut item = lastpass_note(&row.get("name"), &row.get("extra"), at)
+            .unwrap_or_else(|| note_item(&row.get("name"), &row.get("extra"), Vec::new(), None, at));
+        item.folder = non_empty(folder);
+        item.entry.common.favourite = Lww::new(favourite, at);
+        out.entries.push(item);
         return;
     }
     let draft = Draft {
@@ -328,17 +560,86 @@ fn lastpass_row(row: &Row<'_>, at: Hlc, out: &mut Imported) {
         password: row.get("password"),
         notes: row.get("extra"),
         otp: row.get("totp"),
-        folder: row.get("grouping"),
-        favourite: row.get("fav") == "1",
+        folder,
+        favourite,
         ..Draft::default()
     };
     let entry = draft.into_login(at, &mut out.skipped);
     out.entries.push(entry);
 }
 
+/// A LastPass secure note of the credit card type, whose `extra` is `NoteType:Credit Card`
+/// then one `Key:value` line each, with `Notes:` running to the end. `None` for any other
+/// note, which stays a note as written.
+fn lastpass_note(title: &str, extra: &str, at: Hlc) -> Option<ImportedEntry> {
+    let mut lines = extra.lines();
+    if lines.next()?.trim() != "NoteType:Credit Card" {
+        return None;
+    }
+    let mut card = Card::default();
+    let mut notes = String::new();
+    let mut rest = Vec::new();
+    while let Some(line) = lines.next() {
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+        match key {
+            "Notes" => {
+                notes = std::iter::once(value).chain(lines.by_ref()).collect::<Vec<_>>().join("\n");
+                break;
+            }
+            "Name on Card" => card.holder = Lww::new(value.to_owned(), at),
+            "Number" => card.number = Lww::new(Secret::from(value.to_owned()), at),
+            "Security Code" => card.cvv = Lww::new(Secret::from(value.to_owned()), at),
+            "Type" => card.issuer = Lww::new(value.to_owned(), at),
+            "Expiration Date" => card.expiry = Lww::new(lastpass_month_year(value), at),
+            "Language" => {}
+            _ if value.trim().is_empty() || value.trim() == "," => {}
+            _ => rest.push((key.to_owned(), value.to_owned(), false)),
+        }
+    }
+    let mut entry = base_entry(title, &notes, at);
+    entry.kind = Kind::Card(card);
+    entry.common.custom_fields = Lww::new(super::fields(rest), at);
+    Some(ImportedEntry { entry, folder: None, files: Vec::new() })
+}
+
+/// LastPass writes a card's dates as `June,2027`: as `06/2027` here. Anything else is kept.
+fn lastpass_month_year(value: &str) -> String {
+    const MONTHS: [&str; 12] = [
+        "january", "february", "march", "april", "may", "june", "july", "august", "september", "october",
+        "november", "december",
+    ];
+    let Some((month, year)) = value.split_once(',') else {
+        return value.trim().to_owned();
+    };
+    let (month, year) = (month.trim(), year.trim());
+    match MONTHS.iter().position(|m| m.eq_ignore_ascii_case(month)) {
+        Some(index) if !year.is_empty() => format!("{:02}/{year}", index + 1),
+        _ if month.is_empty() && year.is_empty() => String::new(),
+        _ => value.trim().to_owned(),
+    }
+}
+
 fn wmpass_row(row: &Row<'_>, at: Hlc, out: &mut Imported) {
     let extra: Vec<Field> = serde_json::from_str(&row.get("fields")).unwrap_or_default();
     let kind = row.get("wmpass_kind");
+    if kind == "note" {
+        // The export writes a note's body last among its fields, as `Body`: it comes back as the
+        // note it was, not as a note holding its own body in a field.
+        let mut fields = extra;
+        let body = match fields.last() {
+            Some(last) if last.name == "Body" && last.kind == FieldKind::Hidden => fields.pop().map(|f| f.value),
+            _ => None,
+        };
+        let mut entry = base_entry(&row.get("title"), &row.get("notes"), at);
+        entry.kind = Kind::Note(Note { body: Lww::new(body.unwrap_or_default(), at) });
+        entry.common.custom_fields = Lww::new(fields, at);
+        entry.common.tags = Lww::new(split_tags(&row.get("tags")), at);
+        entry.common.favourite = Lww::new(row.get("favourite") == "1", at);
+        out.entries.push(super::ImportedEntry { entry, folder: super::non_empty(row.get("folder")), files: Vec::new() });
+        return;
+    }
     if kind != "login" {
         let mut entry = base_entry(&row.get("title"), &row.get("notes"), at);
         let mut fields = extra;
@@ -351,6 +652,8 @@ fn wmpass_row(row: &Row<'_>, at: Hlc, out: &mut Imported) {
             },
         );
         entry.common.custom_fields = Lww::new(fields, at);
+        entry.common.tags = Lww::new(split_tags(&row.get("tags")), at);
+        entry.common.favourite = Lww::new(row.get("favourite") == "1", at);
         entry.kind = Kind::Note(Note::default());
         out.skipped.push(format!(
             "{}: {kind} entries come back from CSV as notes; a vault file keeps their type",
@@ -364,25 +667,64 @@ fn wmpass_row(row: &Row<'_>, at: Hlc, out: &mut Imported) {
         });
         return;
     }
+    let mut matchers: Vec<SiteMatcher> = Vec::new();
+    let mut plain = Vec::new();
+    for token in row.get("urls").split(' ').filter(|t| !t.trim().is_empty()) {
+        let matcher = match wmpass_rule(token) {
+            Some(matcher) => matcher,
+            None => {
+                plain.push(token.to_owned());
+                crate::matching::matcher_from_address(token.trim())
+            }
+        };
+        if !matchers.contains(&matcher) {
+            matchers.push(matcher);
+        }
+    }
     let draft = Draft {
         title: row.get("title"),
         username: row.get("username"),
         password: row.get("password"),
-        urls: row.get("urls").split(' ').map(str::to_owned).collect(),
+        urls: plain,
         notes: row.get("notes"),
         otp: row.get("otp"),
         folder: row.get("folder"),
-        tags: row
-            .get("tags")
-            .split(',')
-            .filter(|t| !t.is_empty())
-            .map(str::to_owned)
-            .collect(),
+        tags: split_tags(&row.get("tags")),
+        favourite: row.get("favourite") == "1",
         ..Draft::default()
     };
     let mut item = draft.into_login(at, &mut out.skipped);
     item.entry.common.custom_fields = Lww::new(extra, at);
+    if let Some(login) = item.entry.login_mut() {
+        login.site_matchers = Lww::new(matchers, at);
+    }
     out.entries.push(item);
+}
+
+/// The `tags` column of WM Pass CSV, comma-separated.
+fn split_tags(text: &str) -> Vec<String> {
+    text.split(',').filter(|t| !t.is_empty()).map(str::to_owned).collect()
+}
+
+/// A rule WM Pass CSV writes as `wmpass:<kind>:<escaped value>`; `None` for a plain address.
+/// A kind this version does not know stays a plain address, which fills nowhere.
+fn wmpass_rule(token: &str) -> Option<SiteMatcher> {
+    let rest = token.trim().strip_prefix("wmpass:")?;
+    if rest == "never" {
+        return Some(SiteMatcher::Never);
+    }
+    let (kind, payload) = rest.split_once(':')?;
+    let payload = payload.replace("%20", " ").replace("%25", "%");
+    if payload.is_empty() {
+        return None;
+    }
+    Some(match kind {
+        "url" => crate::matching::matcher_from_address(&payload),
+        "domain" => SiteMatcher::Domain(payload),
+        "host" => SiteMatcher::Host(payload),
+        "regex" => SiteMatcher::Regex(payload),
+        _ => return None,
+    })
 }
 
 /// NordPass writes every kind of item into one CSV, told apart by `type`, with extra
@@ -574,7 +916,7 @@ fn looks_like_msecure(text: &str) -> bool {
 fn msecure(text: &str, at: Hlc) -> Result<Imported> {
     let mut out = Imported::default();
     for record in reader(text, false).records() {
-        let record = record.map_err(|_| Error::Import("a row could not be read".into()))?;
+        let record = record.map_err(|e| unreadable(&e))?;
         if record.len() < 3 {
             continue;
         }
@@ -674,8 +1016,11 @@ fn msecure(text: &str, at: Hlc) -> Result<Imported> {
 
 pub(super) fn mapped(text: &str, map: &ColumnMap, has_header: bool, at: Hlc) -> Result<Imported> {
     let mut out = Imported::default();
-    for record in reader(text, has_header).records() {
-        let record = record.map_err(|_| Error::Import("a row could not be read".into()))?;
+    for record in reader_with(text, has_header, sniffed_delimiter(text)).records() {
+        let record = record.map_err(|e| unreadable(&e))?;
+        if blank(&record) {
+            continue;
+        }
         let cell = |column: Option<usize>| {
             column
                 .and_then(|at| record.get(at))
@@ -700,8 +1045,8 @@ pub(super) fn mapped(text: &str, map: &ColumnMap, has_header: bool, at: Hlc) -> 
 
 pub(super) fn preview(text: &str, rows: usize) -> Result<Vec<Vec<String>>> {
     let mut out = Vec::new();
-    for record in reader(text, false).records().take(rows) {
-        let record = record.map_err(|_| Error::Import("a row could not be read".into()))?;
+    for record in reader_with(text, false, sniffed_delimiter(text)).records().take(rows) {
+        let record = record.map_err(|e| unreadable(&e))?;
         out.push(record.iter().map(str::to_owned).collect());
     }
     Ok(out)

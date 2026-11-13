@@ -1,5 +1,12 @@
 package com.wasimaster.wmpass.ui.vault
 
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import com.wasimaster.wmpass.ui.theme.readableWidth
 import androidx.compose.foundation.layout.widthIn
 import androidx.activity.compose.BackHandler
@@ -49,6 +56,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -96,6 +104,7 @@ import com.wasimaster.wmpass.ui.theme.palette
 import com.wasimaster.wmpass.ui.theme.pressScale
 import kotlin.math.hypot
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collectLatest
 
 /** A circle growing from a corner: the button becoming the page behind it. */
@@ -151,14 +160,21 @@ fun SearchLayer() {
     val focus = remember { FocusRequester() }
     var results by remember { mutableStateOf<List<Summary>>(emptyList()) }
     var query by remember { mutableStateOf(shell.searchField.text.toString()) }
-    LaunchedEffect(Unit) {
+    // What the results are for: "nothing found" waits until the search for this text is back.
+    var resultsFor by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    // Again when the vault changes under it, as by a sync: a result trashed or renamed meanwhile
+    // must not stay on show as it was.
+    LaunchedEffect(all) {
         snapshotFlow { shell.searchField.text.toString() }.collectLatest { text ->
             query = text
             if (text.isBlank()) {
                 results = emptyList()
+                resultsFor = text
             } else {
                 delay(40)
-                results = runCatching { Pass.search(text.trim(), "relevance") }.getOrDefault(emptyList())
+                results = searchFor(text)
+                resultsFor = text
             }
         }
     }
@@ -188,10 +204,23 @@ fun SearchLayer() {
             AnimatedContent(
                 targetState = when {
                     lead.isEmpty() -> "start"
-                    results.isEmpty() -> "none"
+                    results.isEmpty() && resultsFor == query -> "none"
                     else -> "hits"
                 },
-                modifier = Modifier.weight(1f).graphicsLayer { alpha = ((reach - 0.5f) * 2f).coerceIn(0f, 1f) },
+                modifier = Modifier
+                    .weight(1f)
+                    .graphicsLayer { alpha = ((reach - 0.5f) * 2f).coerceIn(0f, 1f) }
+                    // How many matched, said as it changes, since typing gives no other sign of it.
+                    .semantics {
+                        if (lead.isNotEmpty() && resultsFor == query) {
+                            contentDescription = when (results.size) {
+                                0 -> "No results"
+                                1 -> "1 result"
+                                else -> "${results.size} results"
+                            }
+                            liveRegion = LiveRegionMode.Polite
+                        }
+                    },
                 transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(90)) },
                 label = "search",
             ) { mode ->
@@ -235,12 +264,12 @@ fun SearchLayer() {
                     Icon(PassIcons.Search, null, tint = colors.primary, modifier = Modifier.size(22.dp))
                     Spacer(Modifier.width(12.dp))
                     Box(Modifier.weight(1f)) {
-                        if (query.isEmpty()) {
-                            Text("Search everything", color = colors.textLow, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
-                        }
                         BasicTextField(
                             state = shell.searchField,
                             modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                            decorator = com.wasimaster.wmpass.ui.parts.placeholderDecorator(shell.searchField) {
+                                Text("Search everything", color = colors.textLow, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
+                            },
                             textStyle = TextStyle(color = colors.text, fontSize = 17.sp),
                             cursorBrush = SolidColor(colors.primary),
                             lineLimits = TextFieldLineLimits.SingleLine,
@@ -250,10 +279,17 @@ fun SearchLayer() {
                                 imeAction = ImeAction.Go,
                             ),
                             onKeyboardAction = KeyboardActionHandler {
-                                results.firstOrNull()?.let { shell.open(it.id) }
-                                    ?: lead.takeIf { it.isNotEmpty() }?.let { title ->
-                                        shell.nav.navigate("new/login?title=${android.net.Uri.encode(title)}")
-                                    }
+                                // Go right after typing acts on what was typed, not on results
+                                // still showing for the text before it.
+                                val text = shell.searchField.text.toString()
+                                scope.launch {
+                                    val now = currentResults(text, resultsFor, results)
+                                    now.firstOrNull()?.let { shell.open(it.id) }
+                                        // A filter such as kind:card is not a name, as the offer to add one also knows.
+                                        ?: text.trim().takeIf { it.isNotEmpty() && ':' !in it && '>' !in it && '<' !in it }?.let { title ->
+                                            shell.nav.navigate("new/login?title=${android.net.Uri.encode(title)}")
+                                        }
+                                }
                             },
                         )
                     }
@@ -270,7 +306,7 @@ fun SearchLayer() {
                         .clip(CircleShape)
                         .background(colors.surface2)
                         .rim(CircleShape, colors)
-                        .clickable(source, androidx.compose.material3.ripple(), onClickLabel = "Close search") {
+                        .clickable(source, androidx.compose.material3.ripple(), role = androidx.compose.ui.semantics.Role.Button) {
                             shell.haptics.tick()
                             shell.searching = false
                         },
@@ -348,6 +384,25 @@ internal fun SearchRow(entry: Summary, query: String, modifier: Modifier = Modif
     }
 }
 
+/** The results for [text]: those on screen when they are for it, else a search now. */
+private suspend fun currentResults(text: String, shownFor: String?, shown: List<Summary>): List<Summary> = when {
+    shownFor == text -> shown
+    text.isBlank() -> emptyList()
+    else -> searchFor(text)
+}
+
+/**
+ * A search for [text], or nothing when it fails. One cut short by the next letter typed stays
+ * cut short, rather than emptying the list for a frame before the next one lands.
+ */
+private suspend fun searchFor(text: String): List<Summary> = try {
+    Pass.search(text.trim(), "relevance")
+} catch (cancelled: kotlinx.coroutines.CancellationException) {
+    throw cancelled
+} catch (_: Exception) {
+    emptyList()
+}
+
 /** Marks where the words typed appear in a line. Query words like `kind:` mark nothing. */
 private fun highlighted(text: String, query: String, color: androidx.compose.ui.graphics.Color) = buildAnnotatedString {
     append(text)
@@ -379,7 +434,8 @@ internal val QueryChips = listOf(
 private fun SearchStart(all: List<Summary>, top: androidx.compose.ui.unit.Dp) {
     val shell = LocalShell.current
     val recent = shell.recents.mapNotNull { id -> all.firstOrNull { it.id == id } }.take(5)
-    val favourites = all.filter { it.favourite && it.id !in shell.recents }
+    // Only the recent ones on show are left out, so a favorite further back in the recents still shows.
+    val favourites = all.filter { it.favourite && recent.none { shown -> shown.id == it.id } }
     LazyColumn(
         Modifier.fillMaxSize(),
         reverseLayout = true,
@@ -495,7 +551,9 @@ fun AddLayer() {
         Modifier
             .fillMaxSize()
             .background(colors.ground.copy(alpha = 0.72f * reach))
-            .clickable(remember { MutableInteractionSource() }, null) { shell.adding = false },
+            // Named, so the screen reader's stop on it says what a tap does.
+            .clickable(remember { MutableInteractionSource() }, null, onClickLabel = "Close") { shell.adding = false }
+            .semantics { contentDescription = "Close the add menu" },
     )
     val leftHanded = shell.prefs.leftHanded
     Box(Modifier.fillMaxSize().navigationBarsPadding().padding(start = 14.dp, end = 14.dp, bottom = 10.dp), contentAlignment = Alignment.BottomCenter) {
@@ -513,7 +571,7 @@ fun AddLayer() {
                 .glass(Shapes.sheet, tint = colors.surface2.copy(alpha = 0.92f))
                 .padding(14.dp),
         ) {
-            Text("Add to the vault", color = colors.text, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 8.dp, top = 4.dp, bottom = 12.dp))
+            Text("Add to the vault", color = colors.text, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() }.padding(start = 8.dp, top = 4.dp, bottom = 12.dp))
             (shell.prefs.addKinds.filter { it in KindOrder }.ifEmpty { KindOrder }).chunked(4).forEachIndexed { rowIndex, row ->
                 Row(Modifier.fillMaxWidth()) {
                     row.forEachIndexed { index, kind ->
@@ -560,10 +618,16 @@ internal fun StandardSearch() {
     val focus = remember { FocusRequester() }
     var results by remember { mutableStateOf<List<Summary>>(emptyList()) }
     var query by remember { mutableStateOf(shell.searchField.text.toString()) }
-    LaunchedEffect(Unit) {
+    // What the results are for: "no results" waits until the search for this text is back.
+    var resultsFor by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    // Again when the vault changes under it, as by a sync: a result trashed or renamed meanwhile
+    // must not stay on show as it was.
+    LaunchedEffect(all) {
         snapshotFlow { shell.searchField.text.toString() }.collectLatest { text ->
             query = text
-            results = if (text.isBlank()) emptyList() else runCatching { Pass.search(text.trim(), "relevance") }.getOrDefault(emptyList())
+            results = if (text.isBlank()) emptyList() else searchFor(text)
+            resultsFor = text
         }
     }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
@@ -571,7 +635,9 @@ internal fun StandardSearch() {
         Modifier
             .fillMaxSize()
             .background(colors.ground)
-            .clickable(remember { MutableInteractionSource() }, null) {}
+            // Takes the taps that would reach the list behind, without being a button: a clickable
+            // here made the whole page one merged node to a screen reader, its text read as a blob.
+            .pointerInput(Unit) { detectTapGestures { } }
             .readableWidth()
             .statusBarsPadding()
             .imePadding()
@@ -583,22 +649,39 @@ internal fun StandardSearch() {
                 shell.searchField.clearText()
             }
             Box(Modifier.weight(1f).padding(horizontal = 4.dp)) {
-                if (query.isEmpty()) Text("Search vault", color = colors.textMid, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
                 BasicTextField(
                     state = shell.searchField,
                     modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                    decorator = com.wasimaster.wmpass.ui.parts.placeholderDecorator(shell.searchField) { Text("Search vault", color = colors.textMid, style = MaterialTheme.typography.bodyLarge, maxLines = 1) },
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.text),
                     cursorBrush = SolidColor(colors.primary),
                     lineLimits = TextFieldLineLimits.SingleLine,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, autoCorrectEnabled = false, imeAction = ImeAction.Search),
-                    onKeyboardAction = KeyboardActionHandler { results.firstOrNull()?.let { shell.open(it.id) } },
+                    onKeyboardAction = KeyboardActionHandler {
+                        val text = shell.searchField.text.toString()
+                        scope.launch { currentResults(text, resultsFor, results).firstOrNull()?.let { shell.open(it.id) } }
+                    },
                 )
             }
             if (query.isNotEmpty()) BarIcon(PassIcons.Close, "Clear", colors.textMid) { shell.searchField.clearText() }
         }
         androidx.compose.material3.HorizontalDivider(color = colors.hairline)
         val lead = query.trim()
-        LazyColumn(Modifier.fillMaxSize()) {
+        // How many matched, said as it changes, since typing gives a screen reader no other sign of it.
+        val count = when {
+            lead.isEmpty() || resultsFor != query -> null
+            results.isEmpty() -> "No results"
+            results.size == 1 -> "1 result"
+            else -> "${results.size} results"
+        }
+        LazyColumn(
+            Modifier.fillMaxSize().semantics {
+                if (count != null) {
+                    contentDescription = count
+                    liveRegion = LiveRegionMode.Polite
+                }
+            },
+        ) {
             when {
                 lead.isEmpty() -> {
                     item("chips") {
@@ -629,6 +712,7 @@ internal fun StandardSearch() {
                         items(recent, key = { "r" + it.id }) { SearchRow(it, "") }
                     }
                 }
+                results.isEmpty() && resultsFor != query -> {}
                 results.isEmpty() -> item("none") {
                     Column(Modifier.fillMaxWidth().padding(16.dp)) {
                         Text("No results for “$lead”", color = colors.textMid, style = MaterialTheme.typography.bodyMedium)

@@ -43,9 +43,17 @@ body {
 }
 h1, h2, h3, p { margin: 0; font-weight: inherit; font-size: inherit; }
 button, input, select, textarea { font: inherit; color: inherit; }
-a { color: var(--primary); }
+a { color: var(--link, var(--primary)); }
 :focus { outline: none; }
 :focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+/* On a button filled with the accent, a ring of the same colour one pixel off would read as the
+   button grown a little: it stands further out, past a band of the ground. */
+.btn.primary:focus-visible, .btn.danger-fill:focus-visible, .mock-btn.primary:focus-visible { outline-offset: 3px; }
+.btn.danger-fill:focus-visible { outline-color: var(--danger); }
+/* Words for a screen reader alone: what an icon, a colour or a place on the screen says to the eye. */
+/* A title or a pane the focus is put on after what had it went away: the place is said, not ringed. */
+h1[tabindex='-1']:focus-visible, main[tabindex='-1']:focus-visible { outline: none; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 ::selection { background: var(--primary-c); }
 /* The gutter is kept even when nothing overflows, so where a scrollbar takes room (macOS set to
    always show them, Windows, most Linux desktops) content does not move sideways as it comes and
@@ -57,9 +65,9 @@ a { color: var(--primary); }
 .dim { color: var(--text2); }
 .dimmer { color: var(--text3); }
 .small { font-size: var(--fs-s); }
-.danger-text { color: var(--danger); }
-.warn-text { color: var(--warn); }
-.ok-text { color: var(--primary); }
+.danger-text { color: var(--danger-text, var(--danger)); }
+.warn-text { color: var(--warn-text, var(--warn)); }
+.ok-text { color: var(--link, var(--primary)); }
 .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .grow { flex: 1; min-width: 0; }
 .selectable { user-select: text; -webkit-user-select: text; cursor: text; }
@@ -77,7 +85,7 @@ a { color: var(--primary); }
   gap: 6px;
   height: var(--ctl);
   padding: 0 12px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--control-border, var(--line));
   border-radius: var(--r-m);
   background: var(--s1);
   white-space: nowrap;
@@ -89,12 +97,17 @@ a { color: var(--primary); }
 .btn.primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); font-weight: 500; }
 .btn.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--primary) 88%, var(--text)); }
 .btn.primary:active:not(:disabled) { background: color-mix(in srgb, var(--primary) 78%, var(--text)); }
-.btn.danger { color: var(--danger); }
+.btn.danger { color: var(--danger-text, var(--danger)); }
 .btn.danger-fill { background: var(--danger); border-color: var(--danger); color: var(--on-danger); font-weight: 500; }
 .btn.quiet { border-color: transparent; background: transparent; }
 .btn.quiet:hover:not(:disabled) { background: var(--hover); }
 .btn.quiet:active:not(:disabled) { background: var(--press); }
 .btn.wide { width: 100%; }
+/* In a window a phone's width, or one zoomed that far, words on a button wrap rather than run out
+   past the edge. */
+@media (max-width: 480px) {
+  .btn { max-width: 100%; height: auto; min-height: var(--ctl); padding-block: 3px; white-space: normal; text-align: center; }
+}
 
 .icon-btn {
   display: inline-flex;
@@ -114,13 +127,15 @@ a { color: var(--primary); }
 .icon-btn:active:not(:disabled) { background: var(--press); }
 .icon-btn:disabled { opacity: 0.4; }
 .icon-btn.on { color: var(--primary); }
+/* A choice among symbols says which is chosen by more than its colour. */
+.icon-btn[aria-pressed='true'] { box-shadow: inset 0 0 0 2px var(--primary); }
 
 .input {
   display: flex;
   align-items: center;
   min-height: var(--ctl);
   width: 100%;
-  border: 1px solid var(--line);
+  border: 1px solid var(--control-border, var(--line));
   border-radius: var(--r-m);
   background: var(--bg);
   transition: border-color var(--t-fast);
@@ -142,7 +157,7 @@ a { color: var(--primary); }
   cursor: text;
 }
 .input textarea { height: auto; padding: 6px 8px; resize: vertical; line-height: 1.45; }
-.input input::placeholder, .input textarea::placeholder { color: var(--text3); }
+.input input::placeholder, .input textarea::placeholder { color: var(--text2); }
 .input .lead { display: flex; padding-left: 7px; color: var(--text3); }
 .input .trail { display: flex; align-items: center; padding-right: 2px; }
 .input .trail .icon-btn { width: calc(var(--ctl) - 4px); height: calc(var(--ctl) - 4px); }
@@ -155,7 +170,7 @@ a { color: var(--primary); }
   width: 100%;
   height: var(--ctl);
   padding: 0 24px 0 9px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--control-border, var(--line));
   border-radius: var(--r-m);
   background: var(--s1);
 }
@@ -171,7 +186,7 @@ a { color: var(--primary); }
   border: 0;
   border-radius: 10px;
   background: var(--s3);
-  box-shadow: inset 0 0 0 1px var(--line);
+  box-shadow: inset 0 0 0 1px var(--control-border, var(--line));
   transition: background var(--t-fast);
 }
 .switch::after {
@@ -189,7 +204,7 @@ a { color: var(--primary); }
 .switch[aria-checked='true']::after { transform: translateX(14px); background: var(--on-primary); }
 .switch:disabled { opacity: 0.5; }
 
-.segmented { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--s1); padding: 1px; flex-wrap: wrap; }
+.segmented { display: inline-flex; border: 1px solid var(--control-border, var(--line)); border-radius: var(--r-m); background: var(--s1); padding: 1px; flex-wrap: wrap; }
 .segmented button { height: calc(var(--ctl) - 4px); padding: 0 10px; border: 0; border-radius: calc(var(--r-m) - 1px); background: transparent; color: var(--text2); white-space: nowrap; }
 .segmented button:hover { color: var(--text); }
 .segmented button[aria-pressed='true'] { background: var(--second-c); color: var(--text); font-weight: 500; }
@@ -203,12 +218,14 @@ input[type='checkbox'] { accent-color: var(--primary); }
   gap: 5px;
   height: 24px;
   padding: 0 9px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--control-border, var(--line));
   border-radius: 12px;
   background: transparent;
   color: var(--text2);
   white-space: nowrap;
+  max-width: 100%;
 }
+.chip > svg { flex: none; }
 .chip:hover { background: var(--hover); color: var(--text); }
 .chip[aria-pressed='true'] { background: var(--second-c); border-color: transparent; color: var(--text); }
 
@@ -232,7 +249,7 @@ input[type='checkbox'] { accent-color: var(--primary); }
 .set-row + .set-row, .set-row + .set-body, .set-body + .set-row { border-top: 1px solid var(--hair); }
 button.set-row:hover { background: var(--hover); }
 button.set-row:active { background: var(--press); }
-.set-row .text { flex: 1; min-width: 0; }
+.set-row .text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .set-row .sub { font-size: var(--fs-s); color: var(--text2); }
 .set-row.flash { animation: flash 1.2s ease-out; }
 .set-body { padding: 10px 12px; }
@@ -263,7 +280,7 @@ dialog.sheet[open]::backdrop { animation: backdrop-in var(--t-med) ease-out; }
 @keyframes sheet-in { from { opacity: 0; transform: translateY(8px) scale(0.985); } }
 @keyframes backdrop-in { from { opacity: 0; } }
 .sheet-inner { display: flex; flex-direction: column; max-height: calc(100vh - 50px); }
-.sheet-head { padding: 14px 16px 0; font-size: var(--fs-l); font-weight: 600; }
+.sheet-head { padding: 14px 16px 0; font-size: var(--fs-l); font-weight: 600; overflow-wrap: anywhere; }
 .sheet-body { padding: 10px 16px 14px; overflow-y: auto; scrollbar-width: thin; scrollbar-gutter: stable; }
 .sheet-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--hair); }
 
@@ -283,8 +300,9 @@ dialog.sheet[open]::backdrop { animation: backdrop-in var(--t-med) ease-out; }
 .menu button { display: flex; align-items: center; gap: 8px; width: 100%; height: 26px; padding: 0 8px; border: 0; border-radius: var(--r-s); background: transparent; text-align: left; }
 .menu button:hover:not(:disabled) { background: var(--primary); color: var(--on-primary); }
 .menu button:disabled { opacity: 0.5; }
-.menu button.danger { color: var(--danger); }
+.menu button.danger { color: var(--danger-text, var(--danger)); }
 .menu button.danger:hover { background: var(--danger); color: var(--on-danger); }
+.menu-head { display: flex; align-items: center; height: 24px; padding: 0 8px; font-size: var(--fs-s); font-weight: 600; color: var(--text2); }
 .menu hr { border: 0; height: 1px; background: var(--hair); margin: 4px 0; }
 
 .toasts { position: fixed; left: 0; right: 0; bottom: 14px; z-index: 60; display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; }
@@ -299,6 +317,7 @@ dialog.sheet[open]::backdrop { animation: backdrop-in var(--t-med) ease-out; }
   border-radius: var(--r-m);
   background: var(--text);
   color: var(--bg);
+  overflow-wrap: anywhere;
   animation: rise var(--t-med) ease-out;
 }
 .toast button { height: 26px; padding: 0 8px; border: 0; border-radius: var(--r-s); background: transparent; color: inherit; font-weight: 600; }
@@ -336,12 +355,15 @@ dialog.sheet[open]::backdrop { animation: backdrop-in var(--t-med) ease-out; }
 .side-item:hover { background: var(--hover); }
 .side-item[aria-current='true'] { background: var(--second-c); font-weight: 500; }
 .side-item .count { color: var(--text3); font-size: var(--fs-s); font-variant-numeric: tabular-nums; font-weight: 400; }
+.side-item[aria-current='true'] .count { color: var(--text2); }
 .side-item .ico { color: var(--text2); display: flex; }
 .side-foot { display: flex; align-items: center; gap: 2px; padding: 6px 8px; border-top: 1px solid var(--hair); }
 .side-foot .name { flex: 1; min-width: 0; padding-left: 4px; font-weight: 500; }
 
 .drag-handle { flex: none; width: 5px; margin: 0 -3px; position: relative; z-index: 3; cursor: col-resize; }
-.drag-handle:hover, .drag-handle.dragging { background: var(--primary); opacity: 0.4; }
+.drag-handle:hover, .drag-handle.dragging, .drag-handle:focus-visible { background: var(--primary); opacity: 0.4; outline: none; }
+/* From the keyboard it is the only mark of where the focus is, so it shows in full. */
+.drag-handle:focus-visible { opacity: 1; }
 
 .list-pane { display: flex; flex-direction: column; flex: none; min-height: 0; min-width: 0; background: var(--bg); border-right: 1px solid var(--hair); }
 .list-head { display: flex; align-items: center; gap: 4px; padding: 8px 8px 6px; flex: none; }
@@ -368,8 +390,20 @@ dialog.sheet[open]::backdrop { animation: backdrop-in var(--t-med) ease-out; }
 .row .title { font-weight: 500; }
 .row .sub { font-size: var(--fs-s); color: var(--text2); }
 .row .badges { display: flex; align-items: center; gap: 3px; flex: none; color: var(--text3); }
+.row .badges .star { color: var(--warn); }
+.row .badges .timer { color: var(--danger); }
+/* On the tint of a chosen row the faint and accent colours fade, so its marks take the middle text. */
+.row[aria-selected='true'] .badges { color: var(--text2); }
+.row[aria-selected='true'] .badges .star { color: var(--warn-on-tint, var(--text2)); }
+.row[aria-selected='true'] .badges .timer { color: var(--danger-on-tint, var(--text2)); }
+.row[aria-selected='true'] :is(.link, a), .grid .card[aria-selected='true'] :is(.link, a) { color: var(--link-on-tint, var(--text)); }
 .row .hover-only { visibility: hidden; }
 .row:hover .hover-only, .row:focus-within .hover-only { visibility: visible; }
+/* The keyboard stays on the list while the arrows move, so the chosen row's copy button shows then
+   too, and Tab reaches it. */
+.list-body:focus-within .row[aria-selected='true'] .hover-only { visibility: visible; }
+/* A site's stack the arrow keys are on: it is not chosen, so it is ringed rather than filled. */
+.list-body:focus-within .row.cursor { box-shadow: inset 0 0 0 2px var(--primary); }
 .row.compact { min-height: 28px; gap: 8px; padding-top: 2px; padding-bottom: 2px; }
 /* The copy button may overhang a compact row, so rows with and without one are the same height. */
 .row.compact .hover-only { margin-block: -2px; }
@@ -401,13 +435,18 @@ dialog.sheet[open]::backdrop { animation: backdrop-in var(--t-med) ease-out; }
   padding: 6px 4px 6px 0;
   border-bottom: 1px solid var(--hair);
 }
-.field .label { color: var(--text2); text-align: right; font-size: var(--fs-s); line-height: 1.3; }
+.field .label { color: var(--text2); text-align: right; font-size: var(--fs-s); line-height: 1.3; overflow-wrap: anywhere; }
 .field .value { min-width: 0; overflow-wrap: anywhere; line-height: 1.45; }
 .field .value.click { cursor: pointer; border-radius: var(--r-s); }
 .field:hover { background: linear-gradient(var(--hover), var(--hover)); }
 .field .tools { display: flex; align-items: center; opacity: 0.0; transition: opacity var(--t-fast); }
 .field:hover .tools, .field:focus-within .tools { opacity: 1; }
 .field .tools.keep { opacity: 1; }
+/* A touch screen has no hover to bring them up, so the copy and show buttons are always there. */
+@media (hover: none) {
+  .row .hover-only { visibility: visible; }
+  .field .tools { opacity: 1; }
+}
 .narrow .field { grid-template-columns: 1fr auto; gap: 2px 8px; }
 .narrow .field .label { grid-column: 1 / 3; text-align: left; }
 .secret-dots { letter-spacing: 0.12em; color: var(--text2); }
@@ -424,7 +463,7 @@ dialog.sheet[open]::backdrop { animation: backdrop-in var(--t-med) ease-out; }
 .fold > .inner { padding: 4px 12px 10px; border-top: 1px solid var(--hair); }
 
 .form-row { display: grid; grid-template-columns: 130px 1fr; align-items: center; gap: 12px; padding: 4px 0; }
-.form-row > .label { color: var(--text2); font-size: var(--fs-s); text-align: right; line-height: 1.3; }
+.form-row > .label { color: var(--text2); font-size: var(--fs-s); text-align: right; line-height: 1.3; overflow-wrap: anywhere; }
 .form-row.top { align-items: start; }
 .form-row.top > .label { padding-top: 6px; }
 .narrow .form-row { grid-template-columns: 1fr; gap: 2px; }
@@ -435,6 +474,8 @@ dialog.sheet[open]::backdrop { animation: backdrop-in var(--t-med) ease-out; }
 
 .code-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--hair); background: transparent; text-align: left; }
 .code-row:hover { background: var(--hover); }
+.ring-arc { transition: stroke-dashoffset 1s linear; }
+:root[data-motion='off'] .ring-arc { transition: none; }
 .code-value { font-family: var(--mono); font-feature-settings: 'zero', 'tnum'; font-weight: 500; font-size: 24px; letter-spacing: 0.02em; line-height: 1.2; }
 .code-value.small { font-size: 19px; }
 .code-value.large { font-size: 32px; }
@@ -475,12 +516,12 @@ dialog.sheet[open]::backdrop { animation: backdrop-in var(--t-med) ease-out; }
 .theme-card .swatch i { flex: 1; }
 .theme-card .name { padding: 5px 8px; font-size: var(--fs-s); background: var(--s1); }
 .color-field { display: flex; align-items: center; gap: 8px; }
-.color-field input[type='color'] { width: 28px; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: var(--r-s); background: none; }
+.color-field input[type='color'] { width: 28px; height: 24px; padding: 0; border: 1px solid var(--control-border, var(--line)); border-radius: var(--r-s); background: none; }
 .reorder { display: flex; flex-direction: column; }
 .reorder .item { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 3px 8px 3px 12px; }
 .reorder .item + .item { border-top: 1px solid var(--hair); }
 .kbd { font-family: var(--sans); font-size: var(--fs-s); padding: 1px 6px; border: 1px solid var(--line); border-radius: var(--r-s); background: var(--s1); color: var(--text2); white-space: nowrap; }
-.link { border: 0; padding: 0; background: none; color: var(--primary); cursor: pointer; }
+.link { border: 0; padding: 0; background: none; color: var(--link, var(--primary)); cursor: pointer; }
 .link:hover { text-decoration: underline; }
 .banner { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: var(--r-m); background: var(--danger-c); margin-bottom: 12px; }
 .banner.warn { background: color-mix(in srgb, var(--warn) 18%, var(--bg)); }
@@ -490,11 +531,15 @@ dialog.sheet[open]::backdrop { animation: backdrop-in var(--t-med) ease-out; }
 .narrow .sidebar { display: none; }
 .narrow-tabs { display: flex; flex: none; border-top: 1px solid var(--hair); background: var(--s1); }
 .narrow-tabs button { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 5px 0 4px; border: 0; background: transparent; color: var(--text2); font-size: var(--fs-xs); }
-.narrow-tabs button[aria-current='true'] { color: var(--primary); font-weight: 500; }
+.narrow-tabs button[aria-current='true'] { color: var(--link, var(--primary)); font-weight: 500; }
 .narrow .detail-body { padding: 4px 14px 20px; }
 .narrow .settings-pane { padding: 12px 14px 20px; }
 .icon-btn.star-on { color: var(--warn); }
 .icon-btn.tiny { width: 20px; height: 20px; }
+/* A small button keeps its small drawing, but takes a press over at least 24 by 24, as the
+   smallest a finger or an unsteady hand can be asked to hit. */
+.icon-btn.tiny, .input .trail .icon-btn { position: relative; }
+.icon-btn.tiny::after, .input .trail .icon-btn::after { content: ''; position: absolute; left: 50%; top: 50%; width: max(100%, 24px); height: max(100%, 24px); transform: translate(-50%, -50%); }
 
 /* ---- the guide ---- */
 
@@ -509,6 +554,7 @@ dialog.sheet[open]::backdrop { animation: backdrop-in var(--t-med) ease-out; }
 .page-title-row { display: flex; align-items: center; gap: 4px; }
 
 dialog.sheet.help-sheet { width: min(620px, calc(100vw - 32px)); }
+dialog.sheet.image-sheet { width: min(900px, calc(100vw - 32px)); }
 .help-where { font-weight: 400; padding-bottom: 1px; }
 .help-body { display: flex; flex-direction: column; gap: 16px; padding-bottom: 4px; user-select: text; -webkit-user-select: text; cursor: auto; }
 .help-body h3 { font-size: var(--fs-s); font-weight: 600; color: var(--text2); padding-bottom: 5px; }
@@ -537,7 +583,7 @@ button.help-choice:hover { background: var(--hover); }
 .figure-sub { font-size: var(--fs-xs); color: var(--text2); line-height: 1.3; }
 .figure-icon { display: flex; color: var(--text2); }
 .figure-box.danger { border-color: var(--danger); }
-.figure-box.danger .figure-label { color: var(--danger); }
+.figure-box.danger .figure-label { color: var(--danger-text, var(--danger)); }
 .figure-box.warn { border-color: var(--warn); }
 .figure-box.good { border-color: var(--primary); }
 .figure-box.muted { border-style: dashed; background: transparent; }
@@ -574,3 +620,40 @@ button.help-choice:hover { background: var(--hover); }
 .mock-field { display: grid; grid-template-columns: 60px 1fr; gap: 6px; padding-top: 3px; border-top: 1px solid var(--hair); }
 .mock-sidebar { width: 220px; max-width: 100%; padding: 4px; border-radius: var(--r-m); background: var(--s1); }
 .mock-sidebar .side-item { cursor: default; }
+
+/* ---- reduced motion ---- */
+
+/* Asked for by the system as much as by the app's own Animations switch: the shakes, spins, flashes
+   and slides that do not run on the two timing tokens stop too. */
+@media (prefers-reduced-motion: reduce) {
+  .shake, .spin, .tick-in, .set-row.flash, .toast { animation: none; }
+  .progress i, .strength i, .ring-arc { transition: none; }
+}
+:root[data-motion='off'] .spin, :root[data-motion='off'] .set-row.flash { animation: none; }
+
+/* ---- forced colours (Windows High Contrast and the like) ---- */
+
+/* The system paints every background one colour there, so what a fill alone said, such as the row
+   chosen, the page open or a switch that is on, is said with the system's own highlight or a line. */
+@media (forced-colors: active) {
+  .row[aria-selected='true'], .grid .card[aria-selected='true'], .side-item[aria-current='true'], .narrow-tabs button[aria-current='true'],
+  .segmented button[aria-pressed='true'], .chip[aria-pressed='true'], .tag-chip.on, .help-choice[aria-checked='true'],
+  .menu button:hover:not(:disabled) {
+    background: Highlight;
+    color: HighlightText;
+    forced-color-adjust: none;
+  }
+  .theme-card[aria-pressed='true'], .list-body:focus-within .row.cursor, .icon-btn[aria-pressed='true'] { outline: 3px solid Highlight; outline-offset: -3px; }
+  .switch { border: 1px solid CanvasText; }
+  .switch::after { background: CanvasText; forced-color-adjust: none; }
+  .switch[aria-checked='true'] { background: Highlight; forced-color-adjust: none; }
+  .switch[aria-checked='true']::after { background: HighlightText; }
+  .input:focus-within, .drag-handle:focus-visible { outline: 2px solid Highlight; outline-offset: 1px; }
+  .strength i { border: 1px solid CanvasText; }
+  .strength i[style*='background'] { background: CanvasText !important; forced-color-adjust: none; }
+  .progress { border: 1px solid CanvasText; }
+  .progress i { background: Highlight; forced-color-adjust: none; }
+  .toast { border: 1px solid CanvasText; }
+  .coach-ring { border-color: Highlight; }
+  .secret .d, .secret .s { color: inherit; }
+}

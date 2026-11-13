@@ -64,6 +64,9 @@ with concurrent.futures.ThreadPoolExecutor(16) as pool:
 
 wanted = ["Shield", "Key", "Search", "ContentCopy", "Settings", "Delete", "Star"]
 sample = ", ".join(str(next(i for i, g in enumerate(glyphs) if g[0] == name)) for name in wanted)
+# Glyphs that point along the line of text; they turn round in a right-to-left language.
+MIRRORED = ["Label", "ArrowBack", "ChevronRight", "ViewList", "Sort", "Help", "Logout", "Undo", "ReceiptLong", "FormatListBulleted", "MenuBook"]
+mirrored = ", ".join(str(next(i for i, g in enumerate(glyphs) if g[0] == name)) for name in MIRRORED)
 getters = "\n".join(f"    val {prop}: ImageVector get() = glyph({i})" for i, (prop, _, _) in enumerate(glyphs))
 # The other packs' tables come from gen_packs.py; this file only has to know their names.
 pack_branches = "\n".join(f'        "{style}" -> IconPaths{code}.path(index)' for style, (code, *_) in PACK_STYLES.items())
@@ -107,6 +110,12 @@ object PassIcons {{
         else -> IconPathsOutlined.path(index)
     }}
 
+    /**
+     * Glyphs that point along the line of text, by index: back, the row chevron, undo, sign out,
+     * lists and labels. They turn round in a right-to-left language, as the layout around them does.
+     */
+    private val mirrored = setOf({mirrored})
+
     /** A few glyphs in a given style, to show what choosing it would look like. */
     fun sample(style: String): List<ImageVector> = listOf({sample}).map {{ glyph(it, style) }}
 
@@ -123,6 +132,7 @@ object PassIcons {{
             defaultHeight = 24.dp,
             viewportWidth = 960f,
             viewportHeight = 960f,
+            autoMirror = index in mirrored,
         )
             .addGroup(translationY = 960f)
             .addPath(

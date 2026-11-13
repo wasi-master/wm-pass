@@ -104,7 +104,7 @@ internal fun AppIconPreview(prefs: Prefs, showing: Showing) {
 internal fun DarkPreview(prefs: Prefs, showing: Showing) {
     val chosen = showing.string("look", prefs.lookOpt.value)
     val look = runCatching { Look.valueOf(chosen) }.getOrDefault(Look.SYSTEM)
-    PassTheme(look, prefs.accent, prefs.themeId, prefs.uiStyle, prefs.customThemes) {
+    PassTheme(look, prefs.accent, prefs.themeId, prefs.uiStyle, prefs.customThemes, applyToWindow = false) {
         val colors = palette
         Column(
             Modifier

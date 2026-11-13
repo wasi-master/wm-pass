@@ -109,21 +109,34 @@ class CodesWidget : PassWidget() {
                             .fillMaxWidth()
                             .padding(top = if (index == 0) 0.dp else 6.dp)
                             .clickable(copyCodeAction(row.id))
-                            .semantics { contentDescription = "Copy the code for ${row.title}" },
+                            // Says the code, digit by digit, not only what a tap does: the description
+                            // stands in for everything in the row, so without it the code is never heard.
+                            .semantics {
+                                contentDescription = when {
+                                    copied -> "${row.title}, copied"
+                                    code == null -> "${row.title}, no code"
+                                    prefs.codeHidden.value -> "${row.title}, code hidden. Tap to copy it"
+                                    else -> "${row.title}, code ${code.toList().joinToString(" ")}. Tap to copy it"
+                                }
+                            },
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Column(GlanceModifier.defaultWeight()) {
-                            Text(row.title, style = WidgetText.style(colors.textMid, 12.sp), maxLines = 1)
-                            Text(
-                                if (copied) "Copied" else shown,
-                                style = WidgetText.style(if (copied) colors.primary else colors.text, 22.sp, FontWeight.Medium, mono = !copied),
-                                maxLines = 1,
-                            )
+                        Halo(colors, GlanceModifier.defaultWeight()) {
+                            Column {
+                                Text(row.title, style = WidgetText.style(colors.textMid, 12.sp), maxLines = 1)
+                                Text(
+                                    if (copied) "Copied" else shown,
+                                    style = WidgetText.style(if (copied) colors.primary else colors.text, 22.sp, FontWeight.Medium, mono = !copied),
+                                    maxLines = 1,
+                                )
+                            }
                         }
-                        Column(horizontalAlignment = Alignment.End) {
-                            Countdown(context, row.endsAtMs, colors.textMid)
-                            if (showNext) {
-                                Text("Next ${spacedCode(row.next.orEmpty())}", style = WidgetText.style(colors.textMid, 11.sp, mono = true), maxLines = 1)
+                        Halo(colors) {
+                            Column(horizontalAlignment = Alignment.End) {
+                                Countdown(context, row.endsAtMs, colors.textMid)
+                                if (showNext) {
+                                    Text("Next ${spacedCode(row.next.orEmpty())}", style = WidgetText.style(colors.textMid, 11.sp, mono = true), maxLines = 1)
+                                }
                             }
                         }
                     }
@@ -189,7 +202,8 @@ class FavoritesWidget : PassWidget() {
 
 @Composable
 private fun Favorite(context: Context, item: FavoriteRow, colors: WidgetColors) {
-    val (from, _) = tileColors(item.title, item.color)
+    // The deeper end of the item's colours: white on the lighter end reads at about 2.5 to 1.
+    val (_, deep) = tileColors(item.title, item.color)
     val letter = item.title.firstOrNull { it.isLetterOrDigit() }?.uppercase() ?: "•"
     Column(
         GlanceModifier
@@ -199,10 +213,10 @@ private fun Favorite(context: Context, item: FavoriteRow, colors: WidgetColors) 
             .semantics { contentDescription = "Open ${item.title}" },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(GlanceModifier.size(44.dp).background(ColorProvider(from)).cornerRadius(22.dp), contentAlignment = Alignment.Center) {
+        Box(GlanceModifier.size(44.dp).background(ColorProvider(deep)).cornerRadius(22.dp), contentAlignment = Alignment.Center) {
             Text(letter, style = WidgetText.style(ColorProvider(Color.White), 18.sp, FontWeight.Medium).copy(textAlign = TextAlign.Center), maxLines = 1)
         }
-        Text(item.title, GlanceModifier.padding(top = 4.dp), style = WidgetText.style(colors.textMid, 11.sp).copy(textAlign = TextAlign.Center), maxLines = 1)
+        WidgetLabel(item.title, colors, WidgetText.style(colors.textMid, 11.sp).copy(textAlign = TextAlign.Center), GlanceModifier.padding(top = 4.dp))
     }
 }
 

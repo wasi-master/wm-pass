@@ -32,6 +32,8 @@ pub struct AgentState {
     pub running: bool,
     pub socket: Option<String>,
     pub last: Option<String>,
+    /// Why the agent stopped by itself, until it starts again.
+    pub stopped: Option<String>,
 }
 
 pub struct Agent {
@@ -51,15 +53,23 @@ impl Agent {
 
     /// Starts listening, unless it already is.
     pub fn start(&self, engine: Engine, socket_dir: &std::path::Path) -> Result<(), String> {
-        let already = self.state.lock().map_err(|_| "busy")?.running;
-        if already {
-            return Ok(());
+        {
+            let state = self.state.lock().map_err(|_| "busy")?;
+            if state.running {
+                // A stop that the listening thread has not acted on yet is simply taken back.
+                // Under the state's lock, which that thread holds to decide whether to leave.
+                self.stop.store(false, Ordering::SeqCst);
+                return Ok(());
+            }
         }
         let (name, shown) = socket_name(socket_dir)?;
-        let listener = ListenerOptions::new()
-            .name(name)
-            .nonblocking(ListenerNonblockingMode::Accept)
-            .try_overwrite(true)
+        let options = ListenerOptions::new().name(name).nonblocking(ListenerNonblockingMode::Accept).try_overwrite(true);
+        #[cfg(windows)]
+        let options = {
+            use interprocess::os::windows::local_socket::ListenerOptionsExt as _;
+            options.security_descriptor(owner_only()?)
+        };
+        let listener = options
             .create_sync()
             .map_err(|e| format!("the agent could not start: {e}"))?;
         restrict(&shown);
@@ -68,33 +78,67 @@ impl Agent {
             let mut state = self.state.lock().map_err(|_| "busy")?;
             state.running = true;
             state.socket = Some(shown);
+            state.stopped = None;
         }
         let stop = Arc::clone(&self.stop);
         let state = Arc::clone(&self.state);
         let confirm = Arc::clone(&self.confirm);
         std::thread::spawn(move || {
-            while !stop.load(Ordering::SeqCst) {
-                match listener.accept() {
-                    Ok(stream) => {
-                        // On BSD and macOS it inherits the listener's mode, and a client that
-                        // pauses before its first write would otherwise look like it had gone.
-                        if stream.set_nonblocking(false).is_err() {
+            // A bug that panics in here starts the listening again, a few times, rather than leave
+            // the agent shown as running with nothing answering. Calls into the session are
+            // guarded by the engine itself.
+            let mut restarts = 0;
+            loop {
+                let accepted = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    while !stop.load(Ordering::SeqCst) {
+                        match listener.accept() {
+                            Ok(stream) => {
+                                // On BSD and macOS it inherits the listener's mode, and a client that
+                                // pauses before its first write would otherwise look like it had gone.
+                                if stream.set_nonblocking(false).is_err() {
+                                    continue;
+                                }
+                                let engine = engine.clone();
+                                let state = Arc::clone(&state);
+                                let confirm = Arc::clone(&confirm);
+                                std::thread::spawn(move || {
+                                    // A panic costs this one client its answer. The state it may have
+                                    // held is a few plain fields, still whole.
+                                    let served = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| serve(stream, &engine, &state, &confirm)));
+                                    if served.is_err() {
+                                        state.clear_poison();
+                                    }
+                                });
+                            }
+                            Err(e) if e.kind() == io::ErrorKind::WouldBlock => std::thread::sleep(std::time::Duration::from_millis(100)),
+                            Err(_) => return true,
+                        }
+                    }
+                    false
+                }));
+                let broken = match accepted {
+                    Ok(broken) => broken,
+                    Err(_) => {
+                        state.clear_poison();
+                        restarts += 1;
+                        if restarts <= 3 {
                             continue;
                         }
-                        let engine = engine.clone();
-                        let state = Arc::clone(&state);
-                        let confirm = Arc::clone(&confirm);
-                        std::thread::spawn(move || {
-                            let _ = serve(stream, &engine, &state, &confirm);
-                        });
+                        true
                     }
-                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => std::thread::sleep(std::time::Duration::from_millis(100)),
-                    Err(_) => break,
+                };
+                let mut held = state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                // A start since the stop was seen found this running and took the stop back.
+                if !broken && !stop.load(Ordering::SeqCst) {
+                    continue;
                 }
-            }
-            if let Ok(mut state) = state.lock() {
-                state.running = false;
-                state.socket = None;
+                held.running = false;
+                held.socket = None;
+                if broken {
+                    held.last = None;
+                    held.stopped = Some("The SSH agent stopped after an internal error. Turn it off and on again to restart it.".to_owned());
+                }
+                return;
             }
         });
         Ok(())
@@ -151,6 +195,17 @@ fn restrict(path: &str) {
 
 #[cfg(windows)]
 fn restrict(_path: &str) {}
+
+/// A pipe only this account and the system can open. Windows would otherwise let every account
+/// on the computer read from it. The pipe's first instance is made with
+/// `FILE_FLAG_FIRST_PIPE_INSTANCE` by interprocess, so a pipe of that name made first by another
+/// program is refused rather than shared.
+#[cfg(windows)]
+pub(crate) fn owner_only() -> Result<interprocess::os::windows::security_descriptor::SecurityDescriptor, String> {
+    // Protected, so nothing is inherited: full access for the system and for the pipe's owner.
+    let sddl = widestring::U16CString::from_str("D:P(A;;GA;;;SY)(A;;GA;;;OW)").map_err(|e| e.to_string())?;
+    interprocess::os::windows::security_descriptor::SecurityDescriptor::deserialize(&sddl).map_err(|e| format!("the pipe's access could not be set: {e}"))
+}
 
 fn read_message(stream: &mut Stream) -> io::Result<Vec<u8>> {
     let mut length = [0u8; 4];

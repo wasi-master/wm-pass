@@ -88,15 +88,19 @@ pub struct Section {
     pub count: usize,
     /// A heading, not a filter.
     pub heading: bool,
+    /// For a folder, its id. `folder:` in a query finds every folder whose name holds the
+    /// words, so "Work" would list "Workshop" too and two folders called "Mail" would list as
+    /// one; the rows are kept to this folder by id.
+    pub folder: Option<String>,
 }
 
 impl Section {
     fn new(icon: Glyph, label: impl Into<String>, query: impl Into<String>, count: usize) -> Self {
-        Self { icon, label: label.into(), query: query.into(), count, heading: false }
+        Self { icon, label: label.into(), query: query.into(), count, heading: false, folder: None }
     }
 
     fn heading(label: &str) -> Self {
-        Self { icon: Glyph::All, label: label.to_owned(), query: String::new(), count: 0, heading: true }
+        Self { icon: Glyph::All, label: label.to_owned(), query: String::new(), count: 0, heading: true, folder: None }
     }
 }
 
@@ -133,6 +137,18 @@ pub fn kind_name(kind: &str) -> &'static str {
         "document" => "Document",
         _ => "Item",
     }
+}
+
+/// A kind's name inside a sentence: "New login", but "New SSH key" and "New Wi-Fi", whose
+/// capitals are part of the name.
+pub fn kind_in_text(kind: &str) -> String {
+    let name = kind_name(kind);
+    let first_word = name.split(' ').next().unwrap_or(name);
+    if first_word.chars().skip(1).any(char::is_uppercase) {
+        return name.to_owned();
+    }
+    let mut chars = name.chars();
+    chars.next().map(|first| first.to_lowercase().chain(chars).collect()).unwrap_or_default()
 }
 
 pub fn quoted(value: &str) -> String {
@@ -228,6 +244,8 @@ pub struct VaultUi {
     last_pull: Instant,
     /// Set when changes from elsewhere came in, until the app has taken their settings.
     pub merged: bool,
+    /// What the vault has to tell its owner, kept on the status line until it is resolved.
+    pub notices: Vec<String>,
     last_codes: Instant,
 }
 
@@ -298,9 +316,12 @@ impl VaultUi {
             areas: Areas::default(),
             last_pull: Instant::now(),
             merged: false,
+            notices: Vec::new(),
             last_codes: Instant::now() - Duration::from_secs(5),
         };
+        ui.engine.name_device(&crate::join::device_name());
         ui.reload();
+        ui.notices = ui.engine.notices();
         ui
     }
 
@@ -385,7 +406,7 @@ impl VaultUi {
     }
 
     fn build_sections(&mut self, all: &[Row]) {
-        let label = self.sections.get(self.section).map(|s| s.query.clone());
+        let label = self.sections.get(self.section).map(|s| (s.query.clone(), s.folder.clone()));
         let count = |f: &dyn Fn(&Row) -> bool| all.iter().filter(|r| f(r)).count();
         let mut out = vec![
             Section::new(Glyph::All, "All items", "", all.len()),
@@ -409,7 +430,9 @@ impl VaultUi {
             folders.sort_by_key(|f| f.name.to_lowercase());
             for folder in &folders {
                 let n = count(&|r| r.folder.as_deref() == Some(folder.id.as_str()));
-                out.push(Section::new(Glyph::Folder, folder.name.clone(), format!("folder:{}", quoted(&folder.name.to_lowercase())), n));
+                let mut section = Section::new(Glyph::Folder, folder.name.clone(), format!("folder:{}", quoted(&folder.name.to_lowercase())), n);
+                section.folder = Some(folder.id.clone());
+                out.push(section);
             }
         }
         let mut tags: BTreeMap<String, usize> = BTreeMap::new();
@@ -429,7 +452,7 @@ impl VaultUi {
         }
         let trashed = self.engine.list("trashed", "").map(|r| r.len()).unwrap_or(0);
         out.push(Section::new(Glyph::Trash, "Trash", "trashed", trashed));
-        self.section = label.and_then(|q| out.iter().position(|s| !s.heading && s.query == q)).unwrap_or(0);
+        self.section = label.and_then(|(q, f)| out.iter().position(|s| !s.heading && s.query == q && s.folder == f)).unwrap_or(0);
         self.sections = out;
     }
 
@@ -440,6 +463,9 @@ impl VaultUi {
         }
         let query = self.query();
         self.rows = self.engine.list(&query, self.sort.arg()).unwrap_or_default();
+        if let Some(folder) = self.sections.get(self.section).and_then(|s| s.folder.as_deref()) {
+            self.rows.retain(|r| r.folder.as_deref() == Some(folder));
+        }
         let at = keep
             .and_then(|id| self.rows.iter().position(|r| r.id == id))
             .or_else(|| self.list.selected().map(|at| at.min(self.rows.len().saturating_sub(1))))
@@ -699,7 +725,17 @@ impl VaultUi {
                     self.merged = true;
                     self.reload();
                     redraw = true;
-                    news = Some("Changes made elsewhere were merged in".to_owned());
+                    let notices = self.engine.notices();
+                    // Something the merge brought that was not said yet is the news; otherwise
+                    // that the merge happened.
+                    news = Some(
+                        notices
+                            .iter()
+                            .find(|notice| !self.notices.contains(notice))
+                            .cloned()
+                            .unwrap_or_else(|| "Changes made elsewhere were merged in".to_owned()),
+                    );
+                    self.notices = notices;
                 }
                 Ok(false) => {}
                 Err(message) => news = Some(message),
@@ -770,12 +806,35 @@ impl VaultUi {
         }
     }
 
-    /// Shows an entry in the Items tab, whatever was filtered before.
-    pub fn show_entry(&mut self, id: &str) {
+    /// Shows an entry in the Items tab, whatever was filtered before. Returns false, changing
+    /// nothing, when it is not in the list, such as an item deleted for good: the first item
+    /// listed must not stand in for it.
+    pub fn show_entry(&mut self, id: &str) -> bool {
+        if self.engine.detail(id).is_err() {
+            return false;
+        }
         self.tab = Tab::Items;
         self.section = 0;
         self.search.clear();
         self.refresh_list(Some(id.to_owned()));
+        if self.current_id().as_deref() != Some(id) {
+            // In the trash, or on the shelf: look there.
+            for query in ["trashed", "hidden"] {
+                if let Some(at) = self.sections.iter().position(|s| s.query == query) {
+                    self.section = at;
+                    self.refresh_list(Some(id.to_owned()));
+                    if self.current_id().as_deref() == Some(id) {
+                        break;
+                    }
+                }
+            }
+        }
+        if self.current_id().as_deref() != Some(id) {
+            self.section = 0;
+            self.refresh_list(None);
+            return false;
+        }
         self.pane = Pane::Detail;
+        true
     }
 }

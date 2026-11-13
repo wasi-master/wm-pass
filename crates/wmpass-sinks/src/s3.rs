@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 use url::Url;
 use wmpass_core::Secret;
 use wmpass_core::vault::hex;
-use wmpass_net::Request;
+use wmpass_net::{Request, Response};
 
 use crate::http::{AsyncHttp, Client};
 use crate::{Fault, Result, Sink, Stored};
@@ -36,7 +36,17 @@ impl S3Config {
     /// The endpoint, with AWS's own derived from the region when none was typed.
     fn endpoint(&self) -> String {
         let typed = self.endpoint.trim();
-        if typed.is_empty() { format!("https://s3.{}.amazonaws.com", self.region.trim()) } else { typed.to_owned() }
+        if typed.is_empty() { format!("https://s3.{}.amazonaws.com", self.region()) } else { typed.to_owned() }
+    }
+
+    /// The region signatures name. Left blank, `us-east-1`, which MinIO, Garage's default
+    /// setup and R2 all accept, as rclone and the AWS tools assume; a blank one would be
+    /// refused as a bad signature, which reads as a wrong key.
+    fn region(&self) -> &str {
+        match self.region.trim() {
+            "" => "us-east-1",
+            region => region,
+        }
     }
 }
 
@@ -138,7 +148,7 @@ pub fn parse_list(xml: &str) -> (Vec<(String, u64)>, Option<String>) {
     let mut reader = Reader::from_str(xml);
     let mut out = Vec::new();
     let mut next = None;
-    let (mut key, mut size) = (String::new(), 0u64);
+    let (mut key, mut size_text) = (String::new(), String::new());
     let mut current = String::new();
     loop {
         match reader.read_event() {
@@ -146,20 +156,23 @@ pub fn parse_list(xml: &str) -> (Vec<(String, u64)>, Option<String>) {
                 current = tag.local_name().as_ref().to_owned();
                 if current == "Contents" {
                     key.clear();
-                    size = 0;
+                    size_text.clear();
                 }
             }
-            Ok(Event::Text(text)) => {
-                let value = quick_xml::escape::unescape(&text).map(|v| v.into_owned()).unwrap_or_default();
+            // quick-xml hands `&amp;` and `&#39;` over as references between text runs, so a
+            // value is every piece appended. MinIO escapes an apostrophe that way.
+            Ok(event @ (Event::Text(_) | Event::GeneralRef(_))) => {
+                let value = crate::xml_text(&event);
                 match current.as_str() {
                     "Key" => key.push_str(&value),
-                    "Size" => size = value.trim().parse().unwrap_or(0),
-                    "NextContinuationToken" => next = Some(value),
+                    "Size" => size_text.push_str(&value),
+                    "NextContinuationToken" => next.get_or_insert_with(String::new).push_str(&value),
                     _ => {}
                 }
             }
             Ok(Event::End(tag)) => {
                 if tag.local_name().as_ref() == "Contents" && !key.is_empty() {
+                    let size = std::mem::take(&mut size_text).trim().parse().unwrap_or(0);
                     out.push((std::mem::take(&mut key), size));
                 }
                 current.clear();
@@ -189,12 +202,13 @@ impl<H: AsyncHttp> S3<H> {
             (Some(host), None) => host.to_owned(),
             _ => return Err(Fault::NotConfigured),
         };
+        let bucket = self.config.bucket.trim();
         let (host, path) = if self.config.virtual_host {
-            (format!("{}.{host}", self.config.bucket), format!("/{}", aws_encode(key, true)))
+            (format!("{bucket}.{host}"), format!("/{}", aws_encode(key, true)))
         } else if key.is_empty() {
-            (host, format!("/{}", aws_encode(&self.config.bucket, false)))
+            (host, format!("/{}", aws_encode(bucket, false)))
         } else {
-            (host, format!("/{}/{}", aws_encode(&self.config.bucket, false), aws_encode(key, true)))
+            (host, format!("/{}/{}", aws_encode(bucket, false), aws_encode(key, true)))
         };
         let payload = body.as_deref().unwrap_or(&[]);
         let payload_hash = sha256_hex(payload);
@@ -211,7 +225,7 @@ impl<H: AsyncHttp> S3<H> {
             headers: &headers,
             payload_hash: &payload_hash,
             amz_date: &date,
-            region: &self.config.region,
+            region: self.config.region(),
             access_key: &self.config.access_key,
             secret_key: self.secret_key.expose(),
         });
@@ -227,16 +241,54 @@ impl<H: AsyncHttp> S3<H> {
     }
 }
 
+/// What a refusal means. S3 answers a request signed too far from its own clock with a 403,
+/// the same status as a wrong key, and says which in the XML error's `<Code>`.
+fn fault_of(status: u16, body: &[u8]) -> Fault {
+    if status == 403 && error_code(body).as_deref() == Some("RequestTimeTooSkewed") {
+        Fault::ClockWrong
+    } else {
+        crate::status_fault(status)
+    }
+}
+
+/// The `<Code>` of an S3 `<Error>` answer.
+fn error_code(body: &[u8]) -> Option<String> {
+    let mut reader = Reader::from_str(std::str::from_utf8(body).ok()?);
+    let mut inside = false;
+    let mut code = String::new();
+    loop {
+        match reader.read_event().ok()? {
+            Event::Start(tag) if tag.local_name().as_ref() == "Code" => inside = true,
+            Event::End(tag) if tag.local_name().as_ref() == "Code" => return Some(code),
+            event @ (Event::Text(_) | Event::GeneralRef(_)) if inside => code.push_str(&crate::xml_text(&event)),
+            Event::Eof => return None,
+            _ => {}
+        }
+    }
+}
+
+impl<H: AsyncHttp> S3<H> {
+    /// Sends and refuses anything but success, naming a skewed clock for what it is.
+    async fn ok(&self, request: Request) -> Result<Response> {
+        let response = self.client.send(request).await?;
+        if (200..300).contains(&response.status) {
+            Ok(response)
+        } else {
+            Err(fault_of(response.status, &response.body))
+        }
+    }
+}
+
 impl<H: AsyncHttp> Sink for S3<H> {
     async fn readiness(&self) -> Result<()> {
         let request = self.signed("GET", "", "list-type=2&max-keys=1", None)?;
-        self.client.ok(request).await.map(|_| ())
+        self.ok(request).await.map(|_| ())
     }
 
     async fn write(&self, name: &str, bytes: &[u8]) -> Result<Stored> {
         let key = self.key_of(name);
         let request = self.signed("PUT", &key, "", Some(bytes.to_vec()))?;
-        self.client.ok(request).await?;
+        self.ok(request).await?;
         Ok(Stored { id: key, name: name.to_owned(), size: bytes.len() as u64 })
     }
 
@@ -255,7 +307,7 @@ impl<H: AsyncHttp> Sink for S3<H> {
                 query.push(format!("prefix={}", aws_encode(&prefix, false)));
             }
             let request = self.signed("GET", "", &query.join("&"), None)?;
-            let response = self.client.ok(request).await?;
+            let response = self.ok(request).await?;
             let xml = std::str::from_utf8(&response.body).map_err(|_| Fault::Io)?;
             let (files, next) = parse_list(xml);
             for (key, size) in files {
@@ -265,6 +317,8 @@ impl<H: AsyncHttp> Sink for S3<H> {
                 }
             }
             match next {
+                // The same token again would ask for the same page for ever.
+                Some(more) if token.as_ref() == Some(&more) => return Err(Fault::Io),
                 Some(more) => token = Some(more),
                 None => return Ok(out),
             }
@@ -273,7 +327,7 @@ impl<H: AsyncHttp> Sink for S3<H> {
 
     async fn read(&self, file: &Stored) -> Result<Vec<u8>> {
         let request = self.signed("GET", &file.id, "", None)?;
-        Ok(self.client.ok(request).await?.body)
+        Ok(self.ok(request).await?.body)
     }
 
     async fn delete(&self, file: &Stored) -> Result<()> {
@@ -281,7 +335,7 @@ impl<H: AsyncHttp> Sink for S3<H> {
         let response = self.client.send(request).await?;
         match response.status {
             200..=299 | 404 => Ok(()),
-            status => Err(crate::status_fault(status)),
+            status => Err(fault_of(status, &response.body)),
         }
     }
 }
@@ -347,6 +401,58 @@ Signature=f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41"
         assert_eq!(amz_date(1_369_353_600_000), "20130524T000000Z");
         assert_eq!(amz_date(0), "19700101T000000Z");
         assert_eq!(amz_date(1_709_210_096_000), "20240229T123456Z");
+    }
+
+    #[test]
+    fn a_blank_region_signs_as_us_east_1_and_stray_spaces_are_ignored() {
+        use crate::http::{Blocking, Client, block_on};
+        use wmpass_net::NetPolicy;
+        use wmpass_net::http::fake::FakeHttp;
+        let http = FakeHttp::new().answer("https://", 200, "");
+        let config = S3Config { endpoint: "https://minio.example".into(), region: " ".into(), bucket: " b ".into(), access_key: "k".into(), ..S3Config::default() };
+        block_on(S3::new(Client::new(Blocking(&http), NetPolicy::Any), config, "s".into(), 0).write("f", b"x")).unwrap();
+        let sent = http.last().unwrap();
+        assert_eq!(sent.url, "https://minio.example/b/f");
+        let auth = &sent.headers.iter().find(|(n, _)| *n == "Authorization").unwrap().1;
+        assert!(auth.contains("/19700101/us-east-1/s3/aws4_request"), "{auth}");
+    }
+
+    #[test]
+    fn a_skewed_clock_is_named_and_is_not_a_wrong_key() {
+        use crate::http::{Blocking, Client, block_on};
+        use wmpass_net::NetPolicy;
+        use wmpass_net::http::fake::FakeHttp;
+        let skewed = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Error><Code>RequestTimeTooSkewed</Code><Message>The difference between the request time and the current time is too large.</Message><MaxAllowedRequestTimeOffset>900000</MaxAllowedRequestTimeOffset></Error>";
+        let denied = "<Error><Code>SignatureDoesNotMatch</Code><Message>no</Message></Error>";
+        let config = S3Config { endpoint: "https://minio.example".into(), region: "r".into(), bucket: "b".into(), access_key: "k".into(), ..S3Config::default() };
+        let file = Stored { id: "f".into(), name: "f".into(), size: 0 };
+        for (body, wanted) in [(skewed, Fault::ClockWrong), (denied, Fault::PermissionLost), ("", Fault::PermissionLost)] {
+            let http = FakeHttp::new().answer("https://", 403, body);
+            let s3 = S3::new(Client::new(Blocking(&http), NetPolicy::Any), config.clone(), "s".into(), 0);
+            assert_eq!(block_on(s3.readiness()), Err(wanted), "{body}");
+            assert_eq!(block_on(s3.write("f", b"x")).err(), Some(wanted), "{body}");
+            assert_eq!(block_on(s3.delete(&file)), Err(wanted), "{body}");
+        }
+        assert_eq!(fault_of(400, skewed.as_bytes()), Fault::Io, "only a 403 says it");
+    }
+
+    #[test]
+    fn a_listing_that_repeats_its_token_stops() {
+        use crate::http::{Blocking, Client, block_on};
+        use wmpass_net::NetPolicy;
+        use wmpass_net::http::fake::FakeHttp;
+        let page = "<ListBucketResult><Contents><Key>a</Key><Size>1</Size></Contents><NextContinuationToken>same</NextContinuationToken></ListBucketResult>";
+        let http = FakeHttp::new().answer("https://", 200, page);
+        let config = S3Config { endpoint: "https://minio.example".into(), region: "r".into(), bucket: "b".into(), access_key: "k".into(), ..S3Config::default() };
+        assert_eq!(block_on(S3::new(Client::new(Blocking(&http), NetPolicy::Any), config, "s".into(), 0).list()), Err(Fault::Io));
+        assert_eq!(http.asked.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn escaped_characters_in_a_listing_stay_in_the_key() {
+        // MinIO escapes an apostrophe as a character reference; AWS escapes `&`.
+        let xml = "<ListBucketResult><Contents><Key>Wasi&#39;s &amp; co/a.bin</Key><Size>5</Size></Contents><NextContinuationToken>t&amp;1</NextContinuationToken></ListBucketResult>";
+        assert_eq!(parse_list(xml), (vec![("Wasi's & co/a.bin".to_owned(), 5)], Some("t&1".to_owned())));
     }
 
     #[test]

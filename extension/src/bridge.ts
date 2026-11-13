@@ -20,6 +20,7 @@ let remote: string | null = null;
 let nextId = 1;
 const waiting = new Map<number, (reply: any) => void>();
 let onChange: () => void = () => {};
+const settled = new Set<() => void>();
 
 export function watchLink(run: () => void) {
   onChange = run;
@@ -28,6 +29,25 @@ export function watchLink(run: () => void) {
 function set(change: Partial<LinkState>) {
   state = { ...state, ...change };
   onChange();
+  if (state.status !== 'connecting') for (const run of settled) run();
+}
+
+/**
+ * Waits, a short while at most, for a connection under way to finish. A worker woken by a page
+ * asking for its logins starts connecting again just then, and answering at once would say the
+ * app is not there.
+ */
+export function linkSettled(ms = 2000): Promise<void> {
+  if (state.status !== 'connecting') return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      settled.delete(done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    settled.add(done);
+  });
 }
 
 export const linkState = () => state;
@@ -48,7 +68,7 @@ function close(status: LinkState['status'], problem: string | null = null) {
   bridge_close();
   for (const finish of waiting.values()) finish({ error: 'The desktop app went away.' });
   waiting.clear();
-  set({ status, code: null, problem });
+  set({ status, code: null, problem, unlocked: false });
 }
 
 function send(frame: Uint8Array) {
@@ -74,7 +94,9 @@ function whyAbsent(said: string | undefined): string {
 
 function received(message: any) {
   if (message.closed) {
-    if (state.status === 'ready') close('off');
+    // The relay says why when it was something else than the app going: an answer too large to pass on.
+    if (typeof message.problem === 'string') close('failed', message.problem);
+    else if (state.status === 'ready') close('off');
     else close('absent', 'The app is closed, or Let the extension connect is off in its Settings, Browser extension.');
     return;
   }
@@ -98,16 +120,31 @@ function received(message: any) {
   }
   if (step.message) {
     const bytes = fromHex(step.message);
-    const reply = JSON.parse(new TextDecoder().decode(bytes));
-    bytes.fill(0);
+    let reply: any;
+    try {
+      reply = JSON.parse(new TextDecoder().decode(bytes));
+    } catch {
+      // A reply that does not parse answers nothing, rather than throwing where nothing catches it.
+      return;
+    } finally {
+      bytes.fill(0);
+    }
     waiting.get(reply.id)?.(reply);
     waiting.delete(reply.id);
   }
 }
 
+let starting: Promise<void> | null = null;
+
 /** Connects, unless it already has. Quietly stays off when the app or relay is not there. */
-export async function connectLink() {
-  if (port) return;
+export function connectLink(): Promise<void> {
+  if (port) return Promise.resolve();
+  // A second call while the first still waits for its key would open a second port, and the
+  // two handshakes fed into the one bridge would fail each other.
+  return (starting ??= startLink().finally(() => (starting = null)));
+}
+
+async function startLink() {
   confirmed = false;
   appAccepted = false;
   remote = null;
@@ -124,7 +161,7 @@ export async function connectLink() {
         for (const finish of waiting.values()) finish({ error: 'The desktop app went away.' });
         waiting.clear();
         // The browser says why: most often that the app has not set this browser up yet.
-        set({ status: 'absent', code: null, problem: whyAbsent(chrome.runtime.lastError?.message) });
+        set({ status: 'absent', code: null, problem: whyAbsent(chrome.runtime.lastError?.message), unlocked: false });
       }
     });
     send(bridge_start(key, known ? fromHex(known) : new Uint8Array(), NAME_OF_THIS));
@@ -160,7 +197,14 @@ export function ask(request: Record<string, unknown>): Promise<any> {
   return new Promise((resolve) => {
     waiting.set(id, resolve);
     const text = new TextEncoder().encode(JSON.stringify({ id, ...request }));
-    send(bridge_seal(text));
-    text.fill(0);
+    try {
+      send(bridge_seal(text));
+    } catch (failure: any) {
+      // Nothing went out, so no reply will come to settle this.
+      waiting.delete(id);
+      resolve({ error: failure?.message ?? String(failure) });
+    } finally {
+      text.fill(0);
+    }
   });
 }

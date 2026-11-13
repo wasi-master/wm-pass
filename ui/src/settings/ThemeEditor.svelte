@@ -11,8 +11,12 @@
   // Starts from any theme. Saving a built-in one makes a copy, so the original stays as it was.
   let { source, onclose }: { source: ThemeFile | null; onclose: () => void } = $props();
 
+  // The editor is made afresh for each theme it opens on, so what it starts from is read once.
+  // svelte-ignore state_referenced_locally
   const base = source ?? BUILT_IN[0];
+  // svelte-ignore state_referenced_locally
   const isMine = !!source && prefs.customThemes.some((t) => t.id === source.id);
+  // svelte-ignore state_referenced_locally
   let name = $state(isMine ? base.name : source ? `${base.name} copy` : 'My theme');
   let light = $state<ThemeColors | null>(base.light ? { ...base.light } : null);
   let dark = $state<ThemeColors | null>(base.dark ? { ...base.dark } : null);
@@ -51,13 +55,13 @@
   });
 
   async function addFont() {
-    const file = await host().pickFile('Choose a font file', ['ttf', 'otf']);
-    if (!file) return;
     try {
+      const file = await host().pickFile('Choose a font file', ['ttf', 'otf']);
+      if (!file) return;
       font = await themeFonts.add(file);
       fontProblem = null;
     } catch (failure: any) {
-      fontProblem = failure.message ?? 'That font could not be added.';
+      fontProblem = failure?.message ?? 'That font could not be added.';
     }
   }
 
@@ -121,9 +125,10 @@
 
 <Dialog title={isMine ? 'Edit theme' : 'New theme'} wide {onclose}>
   <div class="stack">
-    <Field bind:value={name} placeholder="Name" />
+    <Field bind:value={name} placeholder="Name" label="Theme name" />
     <div>
       <Segmented
+        label="Colors for"
         value={editingDark ? 'dark' : 'light'}
         options={[['light', 'Light'], ['dark', 'Dark']]}
         onchange={(side) => {
@@ -142,8 +147,8 @@
       <p class="mono secret" style="padding:10px 0">hT<span class="d">7</span><span class="s">#</span>kQ<span class="d">2</span><span class="s">!</span>mZ</p>
       <div class="gap">
         <span class="btn primary">Copy</span>
-        <span style="color:var(--warn);font-weight:500">Weak</span>
-        <span style="color:var(--danger);font-weight:500">Breached</span>
+        <span class="warn-text" style="font-weight:500">Weak</span>
+        <span class="danger-text" style="font-weight:500">Breached</span>
       </div>
     </div>
     {#if current}
@@ -177,7 +182,7 @@
       {/if}
       <Btn label="Add a font file" icon="add" variant="quiet" onclick={addFont} />
     </div>
-    {#if fontProblem}<p class="danger-text small">{fontProblem}</p>{/if}
+    {#if fontProblem}<p class="danger-text small" role="alert">{fontProblem}</p>{/if}
     <p style="font-family:{sampleFamily};font-size:calc(var(--fs) * 1.15)">The quick brown fox jumps over the lazy dog. 0123456789</p>
   </div>
   {#snippet foot()}

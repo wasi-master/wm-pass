@@ -628,13 +628,12 @@ pub fn subtitle(entry: &Entry) -> String {
         Kind::Document(v) => v.label.v.clone(),
         Kind::SshKey(v) => v.fingerprint.v.clone(),
         Kind::ApiKey(v) => v.provider.v.clone(),
-        Kind::Database(v) => {
-            if v.name.v.is_empty() {
-                v.host.v.clone()
-            } else {
-                format!("{} on {}", v.name.v, v.host.v)
-            }
-        }
+        Kind::Database(v) => match (v.name.v.is_empty(), v.host.v.is_empty()) {
+            (true, _) => v.host.v.clone(),
+            // No host yet: not "shop on ".
+            (false, true) => v.name.v.clone(),
+            (false, false) => format!("{} on {}", v.name.v, v.host.v),
+        },
         Kind::Licence(v) => v.product.v.clone(),
         Kind::Recovery(v) => match v.form.v {
             RecoveryForm::Phrase => "Recovery phrase".to_owned(),
@@ -647,5 +646,24 @@ pub fn subtitle(entry: &Entry) -> String {
             .as_ref()
             .map(|c| c.account.clone())
             .unwrap_or_default(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_database_without_a_host_says_only_its_name() {
+        let at = Hlc::default();
+        let mut entry = Entry {
+            kind: Kind::Database(Database { name: Lww::new("shop".into(), at), ..Database::default() }),
+            ..Entry::default()
+        };
+        assert_eq!(subtitle(&entry), "shop");
+        if let Kind::Database(db) = &mut entry.kind {
+            db.host = Lww::new("db.example".into(), at);
+        }
+        assert_eq!(subtitle(&entry), "shop on db.example");
     }
 }

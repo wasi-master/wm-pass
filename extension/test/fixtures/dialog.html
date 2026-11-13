@@ -1,0 +1,8 @@
+<!doctype html><title>Dialog fixture</title>
+<style>dialog { position: fixed; top: 50%; left: 50%; margin: 0; transform: translate(-50%, -50%); }</style>
+<p>A sign-in in a modal dialog, which puts the rest of the page out of reach, and centred with a transform.</p>
+<dialog id="d"><form onsubmit="event.preventDefault()">
+<input id="user" name="email" type="email" autocomplete="username" style="display:block;width:280px;height:32px;margin:10px">
+<input id="pass" name="password" type="password" style="display:block;width:280px;height:32px;margin:10px">
+<button>Sign in</button></form></dialog>
+<script>document.getElementById('d').showModal();</script>

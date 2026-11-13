@@ -64,17 +64,23 @@ pub struct OtpConfig {
 
 const STEAM_ALPHABET: &[u8] = b"23456789BCDFGHJKMNPQRTVWXY";
 
-/// Decodes RFC 4648 base32, ignoring case, spaces, dashes and padding.
+/// Decodes RFC 4648 base32, ignoring case, spaces, dashes and padding. Any space counts, the
+/// no-break space a web page puts between groups included, as [`normalize_secret`] has it.
 pub fn base32_decode(text: &str) -> Result<Zeroizing<Vec<u8>>> {
     let mut out = Zeroizing::new(Vec::with_capacity(text.len() * 5 / 8));
     let (mut buffer, mut bits) = (0u64, 0u32);
-    for ch in text.bytes() {
+    for ch in text.chars() {
         let value = match ch {
-            b'A'..=b'Z' => ch - b'A',
-            b'a'..=b'z' => ch - b'a',
-            b'2'..=b'7' => ch - b'2' + 26,
-            b' ' | b'-' | b'=' => continue,
-            _ => return Err(Error::Invalid("the secret is not valid base32".into())),
+            'A'..='Z' => ch as u8 - b'A',
+            'a'..='z' => ch as u8 - b'a',
+            '2'..='7' => ch as u8 - b'2' + 26,
+            '-' | '=' => continue,
+            ch if ch.is_whitespace() => continue,
+            _ => {
+                return Err(Error::Invalid(
+                    "the setup key can hold only the letters A to Z and the digits 2 to 7".into(),
+                ));
+            }
         };
         buffer = (buffer << 5) | u64::from(value);
         bits += 5;
@@ -84,6 +90,15 @@ pub fn base32_decode(text: &str) -> Result<Zeroizing<Vec<u8>>> {
         }
     }
     Ok(out)
+}
+
+/// A seed as other apps expect to read it: upper case, with no spaces, dashes or padding.
+/// People type seeds the way sites show them, `jbsw y3dp ehpk 3pxp`.
+pub fn normalize_secret(text: &str) -> String {
+    text.chars()
+        .filter(|c| !c.is_whitespace() && !matches!(c, '-' | '='))
+        .map(|c| c.to_ascii_uppercase())
+        .collect()
 }
 
 /// Encodes RFC 4648 base32 without padding.
@@ -200,7 +215,10 @@ impl OtpConfig {
     /// Parses an `otpauth://` link. A `steam://` seed is also accepted.
     pub fn from_uri(uri: &str) -> Result<Self> {
         let invalid = || Error::Invalid("not a valid one-time code link".to_string());
-        if let Some(seed) = uri.strip_prefix("steam://") {
+        // Pasted links often carry a line break, and QR codes in alphanumeric mode are upper case.
+        let uri = uri.trim();
+        let scheme = |name: &str| uri.get(..name.len()).filter(|head| head.eq_ignore_ascii_case(name)).map(|_| &uri[name.len()..]);
+        if let Some(seed) = scheme("steam://") {
             return Ok(Self {
                 secret: seed.into(),
                 kind: OtpKind::Steam,
@@ -208,10 +226,14 @@ impl OtpConfig {
                 ..Self::default()
             });
         }
-        let rest = uri.strip_prefix("otpauth://").ok_or_else(invalid)?;
-        let (kind, rest) = rest.split_once('/').ok_or_else(invalid)?;
+        let rest = scheme("otpauth://").ok_or_else(invalid)?;
+        // Zoho Vault writes links with no label at all: `otpauth://totp?secret=…`.
+        let kind_end = rest.find(['/', '?']).ok_or_else(invalid)?;
+        let (kind, rest) = rest.split_at(kind_end);
+        let rest = rest.strip_prefix('/').unwrap_or(rest);
         let (label, query) = rest.split_once('?').unwrap_or((rest, ""));
-        let label = percent_decode(label);
+        // A label is a path, where `+` is itself: `me+2fa@example.com` is one address.
+        let label = percent_decode(&label.replace('+', "%2B"));
         let (mut issuer, account) = match label.split_once(':') {
             Some((issuer, account)) => (issuer.trim().to_owned(), account.trim().to_owned()),
             None => (String::new(), label.trim().to_owned()),
@@ -221,18 +243,27 @@ impl OtpConfig {
             digits: 6,
             ..Self::default()
         };
-        let (mut period, mut counter) = (30u32, 0u64);
+        let (mut period, mut counter, mut steam) = (30u32, 0u64, false);
         for pair in query.split('&') {
             let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
             let value = percent_decode(value);
+            // Some apps write `issuer=` or `digits=` with nothing after it: the label's issuer,
+            // or the default, stands.
+            if value.trim().is_empty() {
+                continue;
+            }
             match key.to_ascii_lowercase().as_str() {
                 "secret" => config.secret = Secret::from(value),
                 "issuer" => issuer = value,
-                "digits" => config.digits = value.parse().map_err(|_| invalid())?,
-                "period" => period = value.parse().map_err(|_| invalid())?,
-                "counter" => counter = value.parse().map_err(|_| invalid())?,
+                "digits" => config.digits = value.trim().parse().map_err(|_| invalid())?,
+                "period" => period = value.trim().parse().map_err(|_| invalid())?,
+                "counter" => counter = value.trim().parse().map_err(|_| invalid())?,
+                // KeePassXC marks a Steam code in a TOTP link this way.
+                "encoder" => steam = value.eq_ignore_ascii_case("steam"),
                 "algorithm" => {
-                    config.algorithm = match value.to_ascii_uppercase().as_str() {
+                    // Some apps write `SHA-256`, or `HMAC-SHA256` as KeePass names it.
+                    let name = value.trim().to_ascii_uppercase().replace(['-', '_'], "");
+                    config.algorithm = match name.strip_prefix("HMAC").unwrap_or(&name) {
                         "SHA1" => OtpAlgorithm::Sha1,
                         "SHA256" => OtpAlgorithm::Sha256,
                         "SHA512" => OtpAlgorithm::Sha512,
@@ -244,15 +275,16 @@ impl OtpConfig {
         }
         config.issuer = issuer;
         config.kind = match kind.to_ascii_lowercase().as_str() {
+            "totp" if steam => OtpKind::Steam,
             "totp" => OtpKind::Totp { period },
             "hotp" => OtpKind::Hotp { counter },
             "steam" => OtpKind::Steam,
             _ => return Err(invalid()),
         };
-        if config.secret.is_empty() {
+        // A seed of nothing but padding, or a period of zero, makes no codes worth showing.
+        if base32_decode(config.secret.expose())?.is_empty() || config.kind == (OtpKind::Totp { period: 0 }) {
             return Err(invalid());
         }
-        base32_decode(config.secret.expose())?;
         Ok(config)
     }
 
@@ -279,7 +311,7 @@ impl OtpConfig {
         };
         Secret::from(format!(
             "otpauth://{kind}/{label}?secret={}&issuer={}&algorithm={algorithm}&digits={}{extra}",
-            self.secret.expose(),
+            Zeroizing::new(normalize_secret(self.secret.expose())).as_str(),
             percent_encode(&self.issuer),
             self.digits,
         ))
@@ -294,7 +326,9 @@ pub fn percent_decode(text: &str) -> String {
     while at < bytes.len() {
         match bytes[at] {
             b'%' if at + 2 < bytes.len() => {
-                let hex = std::str::from_utf8(&bytes[at + 1..at + 3]).ok();
+                // Two hex digits exactly: a sign, as in `%+1`, is no escape.
+                let pair = &bytes[at + 1..at + 3];
+                let hex = std::str::from_utf8(pair).ok().filter(|_| pair.iter().all(u8::is_ascii_hexdigit));
                 match hex.and_then(|h| u8::from_str_radix(h, 16).ok()) {
                     Some(value) => {
                         out.push(value);
@@ -428,6 +462,31 @@ mod tests {
     }
 
     #[test]
+    fn links_read_in_upper_case_with_stray_space_and_write_clean_seeds() {
+        let config = OtpConfig::from_uri(" OTPAUTH://TOTP/ACME:ME?SECRET=JBSWY3DPEHPK3PXP&ALGORITHM=SHA-256\n").unwrap();
+        assert_eq!(config.account, "ME");
+        assert_eq!(config.algorithm, OtpAlgorithm::Sha256);
+        assert!(OtpConfig::from_uri("STEAM://JBSWY3DPEHPK3PXP").is_ok_and(|c| c.kind == OtpKind::Steam));
+        let typed = OtpConfig::totp("jbsw y3dp-ehpk 3pxp==");
+        assert!(typed.to_uri().expose().contains("secret=JBSWY3DPEHPK3PXP&"), "{}", typed.to_uri().expose());
+        assert_eq!(OtpConfig::from_uri(typed.to_uri().expose()).unwrap().code(59).unwrap().expose(), typed.code(59).unwrap().expose());
+    }
+
+    #[test]
+    fn keepassxc_steam_links_and_unlabelled_links_read() {
+        let steam = OtpConfig::from_uri(
+            "otpauth://totp/Steam:me?secret=JBSWY3DPEHPK3PXP&period=30&digits=5&issuer=Steam&encoder=steam",
+        )
+        .unwrap();
+        assert_eq!(steam.kind, OtpKind::Steam);
+        assert_eq!(steam.digits, 5);
+        let bare = OtpConfig::from_uri("otpauth://totp?secret=JBSWY3DPEHPK3PXP&issuer=Zoho").unwrap();
+        assert_eq!(bare.kind, OtpKind::Totp { period: 30 });
+        assert_eq!(bare.issuer, "Zoho");
+        assert_eq!(bare.account, "");
+    }
+
+    #[test]
     fn hotp_advances_and_totp_counts_down() {
         let mut hotp = OtpConfig {
             secret: RFC_SECRET.into(),
@@ -452,6 +511,29 @@ mod tests {
             b"foobar"
         );
         assert!(base32_decode("0189").is_err());
+        assert_eq!(base32_decode("MZXW\t6YTB\r\nOI").unwrap().as_slice(), b"foobar");
+    }
+
+    #[test]
+    fn a_seed_copied_from_a_page_with_no_break_spaces_reads() {
+        let copied = "JBSW\u{a0}Y3DP\u{a0}EHPK\u{2009}3PXP";
+        assert_eq!(base32_decode(copied).unwrap().as_slice(), base32_decode("JBSWY3DPEHPK3PXP").unwrap().as_slice());
+        let config = OtpConfig::totp(copied);
+        assert_eq!(config.code(59).unwrap(), OtpConfig::totp("JBSWY3DPEHPK3PXP").code(59).unwrap());
+        let message = base32_decode("JBSW0").unwrap_err().to_string();
+        assert!(message.contains("2 to 7"), "{message}");
+    }
+
+    #[test]
+    fn links_that_make_no_codes_are_refused() {
+        for bad in [
+            "otpauth://totp/x?secret=%3D%3D%3D%3D",
+            "otpauth://totp/x?secret=----",
+            "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&period=0",
+        ] {
+            assert!(OtpConfig::from_uri(bad).is_err(), "{bad}");
+        }
+        assert!(OtpConfig::from_uri("otpauth://hotp/x?secret=JBSWY3DPEHPK3PXP&counter=0").is_ok());
     }
 
     #[test]
@@ -459,5 +541,21 @@ mod tests {
         assert_eq!(percent_decode("a%2"), "a%2");
         assert_eq!(percent_decode("a%20b+c"), "a b c");
         assert_eq!(percent_decode("%"), "%");
+        // A sign is no hex digit: the escape is not taken, and the plus is a space as ever.
+        assert_eq!(percent_decode("%+1x"), "% 1x");
+    }
+
+    #[test]
+    fn a_plus_in_the_label_and_an_empty_issuer_keep_what_the_label_says() {
+        let config = OtpConfig::from_uri("otpauth://totp/ACME:me+2fa@example.com?secret=JBSWY3DPEHPK3PXP&issuer=").unwrap();
+        assert_eq!(config.account, "me+2fa@example.com");
+        assert_eq!(config.issuer, "ACME");
+        let blank = OtpConfig::from_uri("otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&digits=&period=&algorithm=").unwrap();
+        assert_eq!((blank.digits, blank.kind, blank.algorithm), (6, OtpKind::Totp { period: 30 }, OtpAlgorithm::Sha1));
+        let named = OtpConfig::from_uri("otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&algorithm=HMAC-SHA-512").unwrap();
+        assert_eq!(named.algorithm, OtpAlgorithm::Sha512);
+        // The parameter still wins when it says something.
+        let named = OtpConfig::from_uri("otpauth://totp/Old:me?secret=JBSWY3DPEHPK3PXP&issuer=New+Name").unwrap();
+        assert_eq!(named.issuer, "New Name");
     }
 }

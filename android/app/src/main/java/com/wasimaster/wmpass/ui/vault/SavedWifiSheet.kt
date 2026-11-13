@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.wasimaster.wmpass.core.Pass
 import com.wasimaster.wmpass.system.SavedWifi
+import com.wasimaster.wmpass.ui.parts.announced
 import com.wasimaster.wmpass.ui.icons.PassIcons
 import com.wasimaster.wmpass.ui.parts.GlyphTile
 import com.wasimaster.wmpass.ui.parts.PrimaryButton
@@ -86,7 +87,14 @@ fun SavedWifiSheet(
     val outcomes = remember { mutableStateMapOf<String, WifiOutcome>() }
     LaunchedEffect(tries) {
         problem = null
-        val now = SavedWifi.state(context)
+        // Shizuku's binder can die between one call and the next: that reads as stopped, not a crash.
+        val now = try {
+            SavedWifi.state(context)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            SavedWifi.State.STOPPED
+        }
         state = now
         if (now == SavedWifi.State.READY) {
             runCatching { SavedWifi.list(context) }
@@ -135,6 +143,11 @@ fun SavedWifiSheet(
                     scope.launch {
                         try {
                             if (SavedWifi.ask()) tries++ else problem = "Shizuku said no. You can allow WM Pass later in the Shizuku app's list."
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            // Shizuku stopped while asking: the state is read again and says so.
+                            tries++
                         } finally {
                             asking = false
                         }
@@ -149,7 +162,8 @@ fun SavedWifiSheet(
             SavedWifi.State.READY -> {
                 val found = networks
                 when {
-                    problem != null -> Unit
+                    // Said below; the list can be asked for again, as Shizuku may only have been slow.
+                    problem != null -> QuietButton("Try again", Modifier.fillMaxWidth()) { tries++ }
                     found == null -> explain("Reading saved networks…")
                     found.isEmpty() -> explain("This phone has no saved networks.")
                     done != null -> {
@@ -218,6 +232,9 @@ fun SavedWifiSheet(
                                 else -> "Add $adds, update $updates"
                             }
                             PrimaryButton(label, Modifier.fillMaxWidth(), enabled = picked.isNotEmpty()) {
+                                // A second tap before the first run shows would save every network twice.
+                                if (saving != null) return@PrimaryButton
+                                saving = 0 to picked.size
                                 scope.launch {
                                     var added = 0
                                     var updated = 0
@@ -255,7 +272,7 @@ fun SavedWifiSheet(
         }
         problem?.let {
             Spacer(Modifier.height(10.dp))
-            Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 4.dp))
+            Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced().padding(horizontal = 4.dp))
         }
     }
 }
@@ -269,7 +286,7 @@ private fun ResultRow(ssid: String, outcome: WifiOutcome) {
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(ssid, color = colors.text, style = MaterialTheme.typography.bodyLarge)
-            Text(outcome.text, color = if (outcome.failed) colors.danger else colors.textMid, style = MaterialTheme.typography.bodyMedium)
+            Text(outcome.text, color = if (outcome.failed) colors.danger else colors.textMid, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced())
         }
     }
 }

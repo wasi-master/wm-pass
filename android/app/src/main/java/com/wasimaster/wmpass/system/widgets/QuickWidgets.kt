@@ -1,5 +1,8 @@
 package com.wasimaster.wmpass.system.widgets
 
+import androidx.glance.semantics.semantics
+import androidx.glance.semantics.contentDescription
+import androidx.glance.action.clickable
 import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -56,16 +59,22 @@ abstract class PassWidget : GlanceAppWidget() {
 
 private class QuickButton(val icon: Int, val label: String, val spoken: String, val action: Action, val active: Boolean = false)
 
-private fun quickButton(context: Context, id: String, open: Boolean): QuickButton = when (id) {
+private fun quickButton(context: Context, id: String, state: LockState): QuickButton = when (id) {
     "search" -> QuickButton(R.drawable.ic_widget_search, "Search", "Search WM Pass", openApp(context, "search"))
     "add" -> QuickButton(R.drawable.ic_widget_add, "Add", "Add an item", openApp(context, "add"))
     "codes" -> QuickButton(R.drawable.ic_widget_codes, "Codes", "Open codes", openApp(context, "codes"))
     "generator" -> QuickButton(R.drawable.ic_widget_generate, "Generator", "Open the generator", openApp(context, "generator"))
     "health" -> QuickButton(R.drawable.ic_widget_health, "Health", "Open password health", openApp(context, "health"))
-    else -> if (open) {
-        QuickButton(R.drawable.ic_widget_lock_open, "Lock", "Lock WM Pass", lockAction(), active = true)
-    } else {
-        QuickButton(R.drawable.ic_widget_lock, "Locked", "WM Pass is locked. Unlock it", unlockHere(context))
+    else -> when (state) {
+        // Said as what it does: with the widget lock set to panic, a tap also refuses every password for an hour.
+        is LockState.Unlocked -> if (Prefs.of(context).widgetLock.value == "panic") {
+            QuickButton(R.drawable.ic_widget_lock_open, "Panic", "Panic lock WM Pass, refusing passwords for an hour", lockAction(), active = true)
+        } else {
+            QuickButton(R.drawable.ic_widget_lock_open, "Lock", "Lock WM Pass", lockAction(), active = true)
+        }
+        LockState.Locked -> QuickButton(R.drawable.ic_widget_lock, "Locked", "WM Pass is locked. Unlock it", unlockHere(context))
+        // Nothing to unlock yet: the app, to make one, as the status widget does.
+        LockState.NoVault -> QuickButton(R.drawable.ic_widget_lock, "No vault", "Open WM Pass to make a vault", openApp(context, null))
     }
 }
 
@@ -90,16 +99,23 @@ class QuickWidget : PassWidget() {
         val labelled = size.height >= 100.dp
         val step = if (labelled) 68.dp else 56.dp
         val fits = ((size.width - 16.dp) / step).toInt().coerceAtLeast(1)
-        val open = data.state is LockState.Unlocked
         WidgetFrame(colors, padding = 8.dp) {
             Row(GlanceModifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically, horizontalAlignment = Alignment.CenterHorizontally) {
                 ids.take(fits).forEachIndexed { index, id ->
                     if (index > 0) Spacer(GlanceModifier.width(if (labelled) 4.dp else 8.dp))
-                    val button = quickButton(context, id, open)
+                    val button = quickButton(context, id, data.state)
                     if (labelled) {
-                        Column(GlanceModifier.width(64.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            RoundButton(button.icon, button.spoken, colors, button.action, button.active)
-                            Text(button.label, GlanceModifier.padding(top = 4.dp), style = WidgetText.style(colors.textMid, 11.sp), maxLines = 1)
+                        // One stop: the column takes the tap and the name, so the button and the
+                        // label under it are not read one after the other.
+                        Column(
+                            GlanceModifier
+                                .width(64.dp)
+                                .clickable(button.action)
+                                .semantics { contentDescription = button.spoken },
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            RoundButton(button.icon, null, colors, null, button.active)
+                            WidgetLabel(button.label, colors, WidgetText.style(colors.textMid, 11.sp), GlanceModifier.padding(top = 4.dp))
                         }
                     } else {
                         RoundButton(button.icon, button.spoken, colors, button.action, button.active)
@@ -138,19 +154,22 @@ class StatusWidget : PassWidget() {
             state == LockState.Locked -> unlockHere(context)
             else -> openApp(context, null)
         }
-        WidgetFrame(colors, onClick = action, padding = 10.dp) {
+        // The whole widget is the one button, named once; the round button inside is only drawn.
+        WidgetFrame(colors, GlanceModifier.semantics { contentDescription = "WM Pass ${title.lowercase()}. $hint" }, onClick = action, padding = 10.dp) {
             if (LocalSize.current.width < 120.dp) {
                 Column(GlanceModifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically, horizontalAlignment = Alignment.CenterHorizontally) {
-                    Glyph(icon, hint, if (open) colors.primary else colors.textMid, 26.dp)
-                    Text(title, GlanceModifier.padding(top = 4.dp), style = WidgetText.style(colors.text, 12.sp, FontWeight.Medium), maxLines = 1)
+                    Glyph(icon, null, if (open) colors.primary else colors.textMid, 26.dp)
+                    WidgetLabel(title, colors, WidgetText.style(colors.text, 12.sp, FontWeight.Medium), GlanceModifier.padding(top = 4.dp))
                 }
             } else {
                 Row(GlanceModifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-                    RoundButton(icon, hint, colors, action, active = open, size = 40.dp)
+                    RoundButton(icon, null, colors, null, active = open, size = 40.dp)
                     Spacer(GlanceModifier.width(10.dp))
-                    Column {
-                        Text(title, style = WidgetText.style(colors.text, 15.sp, FontWeight.Medium), maxLines = 1)
-                        Text(hint, style = WidgetText.style(colors.textMid, 12.sp), maxLines = 1)
+                    Halo(colors) {
+                        Column {
+                            Text(title, style = WidgetText.style(colors.text, 15.sp, FontWeight.Medium), maxLines = 1)
+                            Text(hint, style = WidgetText.style(colors.textMid, 12.sp), maxLines = 1)
+                        }
                     }
                 }
             }
@@ -178,26 +197,26 @@ class GeneratorWidget : PassWidget() {
             else -> "password"
         }
         val title = if (copied) "Copied" else "New $what"
-        val seconds = prefs.clipboardSeconds
-        val hint = when {
-            !copied -> "Tap to copy one"
-            seconds > 0 -> "Cleared after $seconds s"
-            else -> "Stays on the clipboard"
-        }
+        // A new password is never wiped from the clipboard (SecureClipboard.copyGenerated): it
+        // is saved nowhere yet, so the clear-after setting does not apply to it.
+        val hint = if (copied) "Stays on the clipboard" else "Tap to copy one"
         val icon = if (copied) R.drawable.ic_widget_check else R.drawable.ic_widget_generate
-        WidgetFrame(colors, onClick = generateAction(), padding = 10.dp) {
+        // The whole widget is the one button, named once; the round button inside is only drawn.
+        WidgetFrame(colors, GlanceModifier.semantics { contentDescription = if (copied) "New $what copied. $hint" else "Copy a new $what" }, onClick = generateAction(), padding = 10.dp) {
             if (LocalSize.current.width < 120.dp) {
                 Column(GlanceModifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically, horizontalAlignment = Alignment.CenterHorizontally) {
-                    Glyph(icon, "Copy a new $what", colors.primary, 26.dp)
-                    Text(if (copied) "Copied" else "New", GlanceModifier.padding(top = 4.dp), style = WidgetText.style(colors.text, 12.sp, FontWeight.Medium), maxLines = 1)
+                    Glyph(icon, null, colors.primary, 26.dp)
+                    WidgetLabel(if (copied) "Copied" else "New", colors, WidgetText.style(colors.text, 12.sp, FontWeight.Medium), GlanceModifier.padding(top = 4.dp))
                 }
             } else {
                 Row(GlanceModifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-                    RoundButton(icon, "Copy a new $what", colors, generateAction(), active = copied, size = 40.dp)
+                    RoundButton(icon, null, colors, null, active = copied, size = 40.dp)
                     Spacer(GlanceModifier.width(10.dp))
-                    Column {
-                        Text(title, style = WidgetText.style(colors.text, 15.sp, FontWeight.Medium), maxLines = 1)
-                        Text(hint, style = WidgetText.style(colors.textMid, 12.sp), maxLines = 1)
+                    Halo(colors) {
+                        Column {
+                            Text(title, style = WidgetText.style(colors.text, 15.sp, FontWeight.Medium), maxLines = 1)
+                            Text(hint, style = WidgetText.style(colors.textMid, 12.sp), maxLines = 1)
+                        }
                     }
                 }
             }

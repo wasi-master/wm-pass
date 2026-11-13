@@ -70,8 +70,9 @@ pub fn parse_propfind(xml: &str) -> Vec<(String, u64, bool)> {
                     is_dir = true;
                 }
             }
-            Ok(Event::Text(text)) => {
-                let value = quick_xml::escape::unescape(&text).map(|v| v.into_owned()).unwrap_or_default();
+            // A reference such as `&amp;` arrives as its own event between runs of text.
+            Ok(event @ (Event::Text(_) | Event::GeneralRef(_))) => {
+                let value = crate::xml_text(&event);
                 match current.as_str() {
                     "href" => href.push_str(&value),
                     "getcontentlength" => size = value.trim().parse().unwrap_or(0),
@@ -108,14 +109,24 @@ impl<H: AsyncHttp> Sink for WebDav<H> {
 
     async fn write(&self, name: &str, bytes: &[u8]) -> Result<Stored> {
         let staged = self.url_of(&format!("{name}{UPLOADING}"));
+        let target = self.url_of(name);
         let mut put = self.request("PUT", staged.clone());
         put.body = Some(("application/octet-stream", bytes.to_vec()));
-        self.client.ok(put).await?;
-        let target = self.url_of(name);
-        let mut moved = self.request("MOVE", staged);
+        let mut moved = self.request("MOVE", staged.clone());
         moved.headers.push(("Destination", target.clone()));
         moved.headers.push(("Overwrite", "T".to_owned()));
-        self.client.ok(moved).await?;
+        let done = match self.client.ok(put).await {
+            Ok(_) => self.client.ok(moved).await.map(|_| ()),
+            Err(fault) => Err(fault),
+        };
+        if let Err(fault) = done {
+            // A half-written or unmoved upload is hidden from the listing but still takes
+            // space, which is the very thing a full account is short of.
+            if fault != Fault::Io {
+                let _ = self.client.send(self.request("DELETE", staged)).await;
+            }
+            return Err(fault);
+        }
         Ok(Stored { id: target, name: name.to_owned(), size: bytes.len() as u64 })
     }
 
@@ -187,6 +198,23 @@ mod tests {
         assert_eq!(asked[1].method, "MOVE");
         assert!(asked[1].headers.iter().any(|(n, v)| *n == "Destination" && v.ends_with("/v.bin")));
         assert!(asked[0].headers.iter().any(|(n, v)| *n == "Authorization" && v == "Basic dTpw"));
+    }
+
+    #[test]
+    fn an_upload_that_cannot_be_moved_is_removed_and_the_reason_named() {
+        let staged = "https://x.example/v.bin.upload";
+        let http = FakeHttp::new().answer_once(staged, 201, "").answer_once(staged, 507, "").answer("https://x.example/", 204, "");
+        let sink = WebDav::new(Client::new(Blocking(&http), NetPolicy::Any), "https://x.example", "u", &"p".into());
+        assert_eq!(block_on(sink.write("v.bin", b"data")), Err(Fault::OutOfSpace));
+        let asked = http.asked.lock().unwrap();
+        assert_eq!(asked.iter().map(|r| r.method).collect::<Vec<_>>(), ["PUT", "MOVE", "DELETE"]);
+        assert_eq!(asked[2].url, staged);
+    }
+
+    #[test]
+    fn a_name_with_an_escaped_character_is_listed_whole() {
+        let xml = r#"<d:multistatus xmlns:d="DAV:"><d:response><d:href>/dav/Tom&amp;Jerry&#39;s.bin</d:href><d:propstat><d:prop><d:getcontentlength>3</d:getcontentlength></d:prop></d:propstat></d:response></d:multistatus>"#;
+        assert_eq!(parse_propfind(xml), vec![("/dav/Tom&Jerry's.bin".to_owned(), 3, false)]);
     }
 
     #[test]

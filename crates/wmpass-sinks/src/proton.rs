@@ -289,11 +289,15 @@ impl<H: AsyncHttp> Proton<H> {
             let page = api.get(&path).await?;
             ids.extend(page.get("LinkIDs").and_then(Value::as_array).into_iter().flatten().filter_map(|v| v.as_str().map(str::to_owned)));
             let more = page.get("More").is_some_and(|m| m.as_bool() == Some(true) || m.as_i64() == Some(1));
-            anchor = text(&page, "AnchorID").unwrap_or_default();
-            if !more || anchor.is_empty() {
+            let next = text(&page, "AnchorID").unwrap_or_default();
+            // The same anchor again would ask for the same page for ever.
+            if !more || next.is_empty() || next == anchor {
                 break;
             }
+            anchor = next;
         }
+        let mut seen = std::collections::HashSet::new();
+        ids.retain(|id| seen.insert(id.clone()));
         let mut out = Vec::new();
         for batch in ids.chunks(LINKS_PER_CALL) {
             let answer = api.post(&format!("drive/v2/volumes/{}/links", d.volume), &json!({ "LinkIDs": batch })).await?;
@@ -588,7 +592,13 @@ impl<H: AsyncHttp> Sink for Proton<H> {
             if blocks.len() < BLOCK_PAGE {
                 break;
             }
-            from = blocks.last().and_then(|b| int(b, "Index")).unwrap_or(from + blocks.len() as i64 - 1) + 1;
+            let next = blocks.last().and_then(|b| int(b, "Index")).unwrap_or(from + blocks.len() as i64 - 1) + 1;
+            // A page that does not move past where it started would be read again for
+            // ever, and its blocks appended again each time.
+            if next <= from {
+                return Err(Fault::Io);
+            }
+            from = next;
         }
         Ok(out)
     }

@@ -217,7 +217,6 @@ export const tools = [
     kind: 'page',
     title: 'Disposable inbox',
     page: 'inbox',
-    shells: ['desktop', 'android'],
     what: 'Makes throwaway addresses on a mail service and keeps each one, with its mail, until you close it. For sign-ups that only need a confirmation mail.',
     why: 'Some sites want an address before they show you anything. A throwaway one keeps your own address, and your aliases, out of their lists.',
     how: [
@@ -255,7 +254,6 @@ export const tools = [
     kind: 'concept',
     title: 'mail.tm',
     page: 'inbox',
-    shells: ['desktop', 'android'],
     what: 'A free mailbox service. WM Pass makes a new account there for each address.',
     how: [
       'WM Pass asks api.mail.tm which domains it offers, then creates a mailbox with a random name and a random password, and signs in to it. Nothing about you is in either.',
@@ -269,7 +267,6 @@ export const tools = [
     kind: 'concept',
     title: 'Guerrilla Mail',
     page: 'inbox',
-    shells: ['desktop', 'android'],
     what: 'A free throwaway mail service that hands out an address with no account.',
     how: [
       'WM Pass asks api.guerrillamail.com for an address and gets a session key with it, which it sends with each check for new mail.',
@@ -284,7 +281,6 @@ export const tools = [
     kind: 'concept',
     title: 'Arrived',
     page: 'inbox',
-    shells: ['desktop', 'android'],
     what: 'The mail sent to this address, newest first. A dot marks what came in since you opened the page. Click one to read it.',
     how: [
       'The page asks the service for new mail every 8 seconds while it is open, and the refresh button asks now.',
@@ -368,7 +364,7 @@ export const tools = [
           '- *Taken* means somebody has it.',
           '- *No clear answer* means the site said something WM Pass could not read.',
           'A site that refused or took too long says why on its own row, with a button to ask it again. Click any site to open that name\'s page there.',
-          'The desktop app answers one question from the extension at a time, so the rows fill in one after another.',
+          'TikTok and Instagram are asked through the desktop app, one at a time, so their rows can be the last to fill in. Without the desktop app connected, their rows say why they could not be checked.',
         ],
       },
     },
@@ -378,7 +374,7 @@ export const tools = [
     kind: 'concept',
     title: 'Look for yourself',
     page: 'usernames',
-    what: 'Sites whose answer WM Pass cannot read, each with a link to the profile the name would have. Click one to open it in your browser.',
+    what: 'Sites whose answer WM Pass cannot read, each with a link to the profile the name would have. After a check, click one to open it in your browser.',
     how: 'They need a sign-in, or show the same page for a free name as for a suspended one, so a guess would mislead. The links are made on this device; nothing reaches those sites until you open one.',
     related: ['page.usernames'],
   },

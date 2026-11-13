@@ -55,3 +55,7 @@ security-framework = "3.7"
 # The WLAN service, opened at run time so a Windows without it still starts (src/wifi.rs).
 [target.'cfg(windows)'.dependencies]
 libloading = "0.8"
+# Already in the build through interprocess: the pipes' access list is written as an SDDL string.
+widestring = "1"
+# Already in the build: keeping the heap out of crash reports (main.rs, no_core_dumps).
+windows-sys = { version = "0.61", features = ["Win32_System_ErrorReporting"] }

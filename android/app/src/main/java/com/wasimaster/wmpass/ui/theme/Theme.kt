@@ -68,7 +68,9 @@ data class Palette(
 
 /** The accent a person can choose. Emerald matches the logo. */
 enum class Accent(val label: String, val from: Color, val to: Color, val bright: Color, val deep: Color) {
-    EMERALD("Emerald", Color(0xFF10B981), Color(0xFF0D9488), Color(0xFF34D399), Color(0xFF059669)),
+    // The deep shade is the light look's text and button colour: 059669 gave 3.5:1 on its ground,
+    // short of the 4.5:1 small text needs.
+    EMERALD("Emerald", Color(0xFF10B981), Color(0xFF0D9488), Color(0xFF34D399), Color(0xFF047857)),
     OCEAN("Ocean", Color(0xFF0EA5E9), Color(0xFF2563EB), Color(0xFF38BDF8), Color(0xFF0369A1)),
     IRIS("Iris", Color(0xFF8B5CF6), Color(0xFF6366F1), Color(0xFFA78BFA), Color(0xFF6D28D9)),
     ROSE("Rose", Color(0xFFF43F5E), Color(0xFFDB2777), Color(0xFFFB7185), Color(0xFFBE123C)),
@@ -101,7 +103,9 @@ private fun darkPalette(accent: Accent, obsidian: Boolean): Palette {
         hairline = Color.White.copy(alpha = 0.07f),
         text = Color(0xFFEAFBF4),
         textMid = Color(0xFFA3BDB5),
-        textLow = Color(0xFF6C8A81),
+        // 4.5:1 on the highest surface under every accent, for hints and captions on cards and
+        // fields; 6C8A81 fell to 3.6:1 there.
+        textLow = Color(0xFF7E9C93),
         primary = accent.bright,
         onPrimary = Color(0xFF04201A),
         brandFrom = accent.from,
@@ -131,7 +135,9 @@ private fun lightPalette(accent: Accent): Palette {
         hairline = Color(0xFF0A1F1A).copy(alpha = 0.07f),
         text = Color(0xFF0A1F1A),
         textMid = Color(0xFF46605A),
-        textLow = Color(0xFF75908A),
+        // 4.5:1 or better on the ground and every surface, for hints and captions; 75908A gave
+        // 3.2:1, and 5A736D fell just short on the highest surface under some accents.
+        textLow = Color(0xFF57706A),
         primary = accent.deep,
         onPrimary = Color.White,
         brandFrom = accent.from,
@@ -371,7 +377,7 @@ object ThemeFonts {
     fun dir(context: android.content.Context): java.io.File = java.io.File(context.filesDir, "fonts").apply { mkdirs() }
 
     fun saved(context: android.content.Context): List<String> =
-        dir(context).listFiles()?.filter { it.isFile }?.sortedBy { it.name.lowercase() }?.map { "file:${it.name}" }.orEmpty()
+        dir(context).listFiles()?.filter { it.isFile && !it.name.startsWith(".") }?.sortedBy { it.name.lowercase() }?.map { "file:${it.name}" }.orEmpty()
 
     fun label(key: String): String = key.removePrefix("file:").substringBeforeLast('.')
 
@@ -388,17 +394,30 @@ object ThemeFonts {
             ?.use { if (it.moveToFirst()) it.getString(0) else null } ?: "font.ttf"
         val name = shown.filter { it.isLetterOrDigit() || it in " ._-" }.trim().ifEmpty { "font.ttf" }
         require(name.substringAfterLast('.').lowercase() in setOf("ttf", "otf")) { "Choose a .ttf or .otf font file." }
+        // Copied beside the fonts first, so a file that is refused takes no font of the same name
+        // with it, and leaves nothing half-written behind in the list.
         val target = java.io.File(dir(context), name)
-        resolver.openInputStream(uri)?.use { input ->
-            target.outputStream().use { out ->
-                val copied = input.copyTo(out)
-                require(copied in 1..LIMIT) { "That font file is too large." }
-            }
-        } ?: error("That file could not be read.")
-        val ok = runCatching { android.graphics.Typeface.createFromFile(target) != android.graphics.Typeface.DEFAULT }.getOrDefault(false)
-        if (!ok) {
-            target.delete()
-            throw IllegalArgumentException("Android could not read that font.")
+        val temp = java.io.File(dir(context), ".$name.part")
+        try {
+            resolver.openInputStream(uri)?.use { input ->
+                temp.outputStream().use { out ->
+                    val buffer = ByteArray(64 * 1024)
+                    var copied = 0L
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        copied += read
+                        require(copied <= LIMIT) { "That font file is too large." }
+                        out.write(buffer, 0, read)
+                    }
+                    require(copied > 0) { "That font file is empty." }
+                }
+            } ?: error("That file could not be read.")
+            val ok = runCatching { android.graphics.Typeface.createFromFile(temp) != android.graphics.Typeface.DEFAULT }.getOrDefault(false)
+            require(ok) { "Android could not read that font." }
+            check(temp.renameTo(target)) { "That font could not be saved." }
+        } finally {
+            temp.delete()
         }
         "file:$name"
     }
@@ -478,6 +497,8 @@ fun PassTheme(
     themeId: String = BuiltInThemes.DEFAULT,
     style: String = "standard",
     custom: List<ThemeFile> = emptyList(),
+    /** Off for a sample drawn inside the app, which must not restyle the real window's bars. */
+    applyToWindow: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     val systemDark = isSystemInDarkTheme()
@@ -494,6 +515,18 @@ fun PassTheme(
     val type = remember(flat, theme) { if (flat) typeFor(theme?.font ?: "system", context) else WmTypography }
     val shapes = remember(flat, theme) { if (flat) shapesFor(theme?.corners ?: 12) else WmShapes }
     val prefs = com.wasimaster.wmpass.app.Prefs.of(context)
+    // The status bar's icons follow the app's own light or dark, not the phone's: edge to edge
+    // picks them by the phone's setting, which left dark icons on a dark vault chosen in a light
+    // phone, and the other way round. A theme with one side decides by the side it has.
+    val view = androidx.compose.ui.platform.LocalView.current
+    val lightBars = !resolved.first.dark
+    if (applyToWindow && !view.isInEditMode) {
+        androidx.compose.runtime.SideEffect {
+            val window = generateSequence(view.context) { (it as? android.content.ContextWrapper)?.baseContext }
+                .filterIsInstance<android.app.Activity>().firstOrNull()?.window ?: return@SideEffect
+            androidx.core.view.WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = lightBars
+        }
+    }
     CompositionLocalProvider(
         LocalPalette provides resolved.first,
         com.wasimaster.wmpass.ui.parts.LocalSiteIcons provides com.wasimaster.wmpass.ui.parts.SiteIconLook(prefs.siteIconStyle.value, prefs.siteIconShape.value, prefs.iconSources, prefs.siteIconFrom.value),

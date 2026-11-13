@@ -60,7 +60,8 @@ pub struct Config {
     pub database_url: Option<String>,
     /// Who may register.
     pub signups: Signups,
-    /// Lowest cost a client may register with, in Argon2 memory MiB.
+    /// The address clients reach this server at, such as `https://pass.example.com`. When set,
+    /// `/api/config` advertises it; when not, it falls back to the request's `Host` header.
     pub public_url: Option<String>,
 }
 
@@ -121,7 +122,8 @@ fn router(state: State) -> Router {
         .merge(wm::routes())
         .fallback(unmatched)
         .with_state(state)
-        // Ciphers and notes are small. Shared files have their own larger limit.
+        // One cap for every route, shared vault files included. Ciphers and notes are small,
+        // and a shared file is a sealed vault document whose attachments are separate blobs.
         .layer(DefaultBodyLimit::max(32 * 1024 * 1024))
         // Browser extensions need this. A website does not, and gets nothing.
         .layer(

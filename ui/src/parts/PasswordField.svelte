@@ -9,6 +9,8 @@
     error = false,
     disabled = false,
     autofocus = false,
+    label,
+    describedby,
     onenter,
     oninput,
     extra,
@@ -20,6 +22,8 @@
     error?: boolean;
     disabled?: boolean;
     autofocus?: boolean;
+    label?: string;
+    describedby?: string;
     onenter?: () => void;
     oninput?: () => void;
     extra?: Snippet;
@@ -28,7 +32,7 @@
   } = $props();
 </script>
 
-<Field bind:value bind:ref type={showing ? 'text' : 'password'} mono {placeholder} {error} {disabled} {autofocus} {onenter} {oninput}>
+<Field bind:value bind:ref type={showing ? 'text' : 'password'} mono {placeholder} {label} {describedby} {error} {disabled} {autofocus} {onenter} {oninput}>
   {#snippet trail()}
     <IconBtn icon={showing ? 'visibility_off' : 'visibility'} label={showing ? 'Hide password' : 'Show password'} size={16} onclick={() => (showing = !showing)} />
     {@render extra?.()}

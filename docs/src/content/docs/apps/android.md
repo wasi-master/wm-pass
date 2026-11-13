@@ -15,7 +15,7 @@ Exports write an app in several ways: `androidapp://com.example.app`, the `andro
 
 ## Autofill
 
-Set WM Pass as your autofill service in Settings, or tap **Turn on** on the card the vault list shows until you do. It matches apps by package name and signing certificate, not by name alone, and matches browsers by web address only for browsers it knows. A login never fills without your tap, and a WebView inside another app asks first and names what it is filling.
+Set WM Pass as your autofill service in Settings, Security, **Autofill service**, or tap **Turn on** on the card the vault list shows until you do or tap **Not now**. It matches apps by package name and signing certificate, not by name alone, and matches browsers by web address only for browsers it knows. A login never fills without your tap, and a WebView inside another app asks first and names what it is filling. Many browsers that do not hand Android their pages' fields, such as Opera, UC Browser or Via, are filled through Android's compatibility mode, which reads the page and its address bar; Android allows it only for the browsers on its own list.
 
 Chrome, since version 135, fills from its own password manager unless you turn on **Autofill using another service** in its settings, and until then WM Pass never sees a page in it. Settings, Security lists Chrome and each browser built on it (Brave, Edge, Vivaldi, Samsung Internet and others) that says which way it is set, and a tap opens that browser's setting. Once WM Pass is your autofill service, the vault list asks once about a browser still on its own manager. Firefox needs nothing.
 
@@ -23,7 +23,7 @@ With inline suggestions on, saved logins also show in the suggestion row of any 
 
 A login can name the apps it is for as well as its websites. In the editor, open **Websites and apps** and tap **Add an app** to pick from the apps on your phone. WM Pass saves the app's package name and signing certificate, so a different app wearing the same name does not match.
 
-When WM Pass offers to save a login you just typed somewhere, the name, username, password and website can all be changed before it is kept. A login typed into an app with no website of its own gets the sites that go with that app offered, the first one filled in, and is linked to the app as well.
+When WM Pass offers to save a login you just typed somewhere, the name, username, password and website can all be changed before it is kept. A sign-in that asks for the username on one screen and the password on the next is saved as one login, on Android 10 and later. A login typed into an app with no website of its own gets the sites that go with that app offered, the first one filled in, and is linked to the app as well.
 
 The name, the websites and the apps suggest each other. Type facebook.com and **Goes with this login** offers Facebook, Facebook Lite and Messenger if they are installed, messenger.com, and Facebook as the name; start from the name or from an app and the rest follow the same way. The families come from Apple's list of sites that share one sign-in and from WM Pass's own, such as Google's sites in every country with YouTube and Gmail. Other names come before the same name under another ending, so google.com offers youtube.com before google.de, and an app is offered for a short word only when that word is the whole first word of its name: one.com does not bring OneDrive.
 
@@ -86,9 +86,11 @@ On Android 14 and up, WM Pass can be your passkey provider. Apps other than know
 
 A site adds a passkey itself, when you create one there with WM Pass chosen as the provider. The editor's **Passkeys** section lists the ones a login has, with the site and the account each is for, but cannot add or change one: its private half never leaves WM Pass.
 
+When a site asks for a new passkey and lists the ones the account already has, and one of those is in WM Pass, WM Pass says **This account already has a passkey in WM Pass** and saves no second one.
+
 ## Other ways in
 
-- A Quick Settings tile that locks everything at once.
+- Two Quick Settings tiles: **Lock WM Pass** locks the vault, or unlocks it while it is locked, and **Panic lock** locks it and refuses every password for an hour.
 - Home screen widgets: a quick bar, lock status, health, backups and a generator, plus codes and favorites if you turn on Show on widgets. See [Widgets](/guide/how-it-works/#feature-home-widget).
 - App shortcuts, and a share target for adding things to your vault.
 - Panic support, so Ripple and similar apps can lock or wipe it.
@@ -105,7 +107,7 @@ A scroll bar runs down the right edge of the vault list and the Health page. Dra
 
 Hold an item to start choosing several. With two or more chosen, **More**, **Link together** links each to the others, so every one lists the rest under **Linked**. **Merge into one**, for items of one kind, asks which one stays and, for each field they fill differently, which value to keep; a value that loses can be kept as a field of its own, and a losing password always goes to the history. Websites, tags, files, passkeys and custom fields from each join the kept item, and the others go to the trash.
 
-The scroll bar keeps the height of every row it has seen, so a list of short folder rows under a tall header no longer makes it jump as you scroll or as folders open and close.
+The scroll bar keeps the height of every row it has seen, so it does not jump as you scroll past rows of different heights or as folders open and close.
 
 **Compact** fits more rows on screen, with a small icon and the second line beside the name.
 
@@ -127,7 +129,7 @@ Wherever WM Pass asks you to scan a code, you can pick a picture of it instead, 
 
 ## Screenshots
 
-Screenshots and screen recording are blocked by default. You can change this under Settings, Security.
+Screenshots and screen recording are blocked by default, and the app shows blank in the recent apps list. You can change this under Settings, Security, **Block screenshots**.
 
 ## Accessibility services
 
@@ -135,7 +137,7 @@ A password field you have not shown gives screen readers and other accessibility
 
 ## If the app keeps closing
 
-If WM Pass closes by itself within a few seconds of opening, twice in a row, the next launch puts Appearance back to the standard style, theme, icons and list layout, and the unlock screen says why. Your vault and your other settings stay as they were. Leaving the app, locking it or swiping it away never counts, and you never need to clear the app's storage, which would delete the vault.
+If WM Pass closes by itself within a few seconds of opening, twice in a row, the next launch puts Appearance back to the standard style, theme, animations, icons, settings cards and list layout, and the unlock screen says why. Your vault and your other settings stay as they were. Leaving the app, locking it or swiping it away never counts, and you never need to clear the app's storage, which would delete the vault.
 
 ## The build without internet
 

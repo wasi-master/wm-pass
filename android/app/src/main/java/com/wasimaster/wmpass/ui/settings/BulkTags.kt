@@ -1,5 +1,10 @@
 package com.wasimaster.wmpass.ui.settings
 
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
@@ -84,6 +89,8 @@ fun BulkTagsScreen() {
     val scope = rememberCoroutineScope()
     var offers by remember { mutableStateOf<List<Offer>?>(null) }
     var tick by remember { mutableStateOf(0) }
+    // A list that could not be read says so, rather than claiming every item is already tagged.
+    var loadProblem by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(tick) {
         offers = runCatching {
             Pass.plainCall("categorise.all").json.jsonArray.flatMap { row ->
@@ -96,6 +103,9 @@ fun BulkTagsScreen() {
                     o["by_kind"]?.jsonPrimitive?.contentOrNull?.let { tag -> Offer(id, title, tag, TagSource.Kind, has.isEmpty()) },
                 ).filter { it.tag !in has }
             }
+        }.onSuccess { loadProblem = null }.onFailure {
+            if (it is kotlinx.coroutines.CancellationException) throw it
+            loadProblem = it.message ?: "The suggestions could not be worked out."
         }.getOrDefault(emptyList())
     }
     var sources by rememberSaveable { mutableStateOf(setOf(TagSource.List.word, TagSource.Name.word)) }
@@ -135,19 +145,24 @@ fun BulkTagsScreen() {
                 modifier = Modifier.padding(horizontal = 6.dp),
             )
             Row(
-                Modifier.fillMaxWidth().clickable { onlyUntagged = !onlyUntagged }.padding(horizontal = 6.dp, vertical = 4.dp),
+                // One switch to a screen reader: the row toggles, and the switch only shows it.
+                Modifier.fillMaxWidth().toggleable(onlyUntagged, role = androidx.compose.ui.semantics.Role.Switch) { onlyUntagged = it }.padding(horizontal = 6.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("Only items with no tags yet", color = colors.text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                com.wasimaster.wmpass.ui.vault.PassSwitch(onlyUntagged) { onlyUntagged = it }
+                com.wasimaster.wmpass.ui.vault.PassSwitch(onlyUntagged, null)
             }
             val shown = all.filter { it.source.word in sources && (!onlyUntagged || it.untagged) }
             val chosen = shown.filter { "${it.id}\n${it.tag}" !in skipped }
             val byTag = shown.groupBy { it.tag }.toSortedMap(String.CASE_INSENSITIVE_ORDER)
             if (byTag.isEmpty()) {
                 Text(
-                    if (all.isEmpty()) "Every item already has the tags WM Pass would suggest." else "Nothing from these sources. Turn on another above.",
-                    color = colors.textMid,
+                    when {
+                        loadProblem != null -> loadProblem!!
+                        all.isEmpty() -> "Every item already has the tags WM Pass would suggest."
+                        else -> "Nothing from these sources. Turn on another above."
+                    },
+                    color = if (loadProblem != null) colors.danger else colors.textMid,
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(6.dp),
                 )
@@ -156,7 +171,11 @@ fun BulkTagsScreen() {
                 val picked = group.count { "${it.id}\n${it.tag}" !in skipped }
                 GroupCard(Modifier.animateContentSize()) {
                     Row(
-                        Modifier.fillMaxWidth().clickable { if (tag in open) open.remove(tag) else open.add(tag) }.padding(start = 4.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
+                        Modifier
+                            .fillMaxWidth()
+                            .semantics { stateDescription = if (tag in open) "Expanded" else "Collapsed" }
+                            .clickable(onClickLabel = if (tag in open) "Hide the items" else "Show the items") { if (tag in open) open.remove(tag) else open.add(tag) }
+                            .padding(start = 4.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         TriStateCheckbox(
@@ -169,18 +188,20 @@ fun BulkTagsScreen() {
                                 val keys = group.map { "${it.id}\n${it.tag}" }
                                 if (picked == group.size) skipped.addAll(keys - skipped.toSet()) else skipped.removeAll(keys)
                             },
+                            // Named, as the row around it opens the list rather than ticking it.
+                            modifier = Modifier.semantics { contentDescription = "Add $tag to all of them" },
                         )
                         Column(Modifier.weight(1f)) {
                             Text(tag, color = colors.text, style = MaterialTheme.typography.bodyLarge)
                             Text(
-                                if (picked == group.size) "${group.size} items" else "$picked of ${group.size} items",
+                                if (picked == group.size) "${group.size} ${if (group.size == 1) "item" else "items"}" else "$picked of ${group.size} ${if (group.size == 1) "item" else "items"}",
                                 color = colors.textMid,
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
                         Icon(
                             PassIcons.ExpandMore,
-                            if (tag in open) "Hide the items" else "Show the items",
+                            null,
                             tint = colors.textLow,
                             modifier = Modifier.graphicsLayer { rotationZ = if (tag in open) 180f else 0f },
                         )
@@ -191,10 +212,11 @@ fun BulkTagsScreen() {
                                 val key = "${offer.id}\n${offer.tag}"
                                 Hairline(inset = 56.dp)
                                 Row(
-                                    Modifier.fillMaxWidth().clickable { if (key in skipped) skipped.remove(key) else skipped.add(key) }.padding(start = 4.dp, end = 12.dp),
+                                    // One tick box to a screen reader, named by the item: the row toggles, the box only shows it.
+                                    Modifier.fillMaxWidth().toggleable(key !in skipped, role = androidx.compose.ui.semantics.Role.Checkbox) { on -> if (on) skipped.remove(key) else skipped.add(key) }.padding(start = 4.dp, end = 12.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Checkbox(key !in skipped, onCheckedChange = { on -> if (on) skipped.remove(key) else skipped.add(key) })
+                                    Checkbox(key !in skipped, onCheckedChange = null, modifier = Modifier.minimumInteractiveComponentSize())
                                     Text(offer.title.ifEmpty { "Untitled" }, color = colors.text, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                                     Spacer(Modifier.width(8.dp))
                                     Text(offer.source.label, color = if (offer.source == TagSource.Guess) colors.warn else colors.textLow, style = MaterialTheme.typography.labelSmall)
@@ -234,7 +256,11 @@ fun BulkTagsScreen() {
                                 tick++
                             }
                         }
-                        .onFailure { shell.haptics.reject() }
+                        .onFailure {
+                            shell.haptics.reject()
+                            // Said, so a batch that stopped part-way is not taken for done.
+                            shell.notice(it.message ?: "The tags could not all be added")
+                        }
                     skipped.clear()
                     adding = false
                     tick++

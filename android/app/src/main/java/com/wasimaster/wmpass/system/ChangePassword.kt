@@ -73,7 +73,8 @@ object ChangePassword {
                 Engine.net("site.probe_change_password", online = true) { put("host", domain) }.obj["url"]?.jsonPrimitive?.contentOrNull
             }.getOrElse { return@withContext null }.orEmpty()
             asked[domain] = url
-            Sealed.write(context, name, "${System.currentTimeMillis()}\n$url".encodeToByteArray())
+            // Only a note to save asking again: a keystore that will not seal it costs a later probe, not this answer.
+            runCatching { Sealed.write(context, name, "${System.currentTimeMillis()}\n$url".encodeToByteArray()) }
             url
         }
     }

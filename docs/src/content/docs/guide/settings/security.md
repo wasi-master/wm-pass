@@ -24,6 +24,12 @@ The groups further down change the vault file itself: its passwords, key files a
 
 Look here once when you set up, and again whenever your situation changes, such as a new security key or someone you would trust with your vault.
 
+#### On Android
+
+Locking closes the vault and forgets its key, so getting back in takes the master password or another way in.
+
+The groups further down change the vault file itself: its passwords, key files and security keys, the duress passwords, and the emergency kit. **Autofill and panic** decides what other apps, WM Keyboard, widgets and a watch may see, and what a panic app can do.
+
 See also [Locking](/guide/how-it-works/#feature-locking), [Duress and decoys](/guide/how-it-works/#feature-duress), [Emergency access](/guide/how-it-works/#feature-emergency-kit), [The vault file](/guide/how-it-works/#concept-vault-file).
 
 <a id="setting-lock-after"></a>
@@ -79,6 +85,8 @@ On the phone it is called Lock after leaving the app.
 Locks the vault this long after you leave WM Pass for another app or the home screen.
 
 The timer starts when WM Pass goes into the background and stops when you come back.
+
+A vault opened from WM Keyboard, by fingerprint or master password, counts as left as soon as it opens, since you stay in the other app. Its timer runs for at least a minute, even with **At once**.
 
 | Choice | What it does |
 | --- | --- |
@@ -205,7 +213,7 @@ A copied secret is marked so that clipboard history and clipboard managers that 
 
 When the time is up, WM Pass empties the clipboard only if your secret is still on it. If you have copied something else since, that is left alone.
 
-On Android, a password just made with the generator, its widget or **Set a new password** is not cleared. It is saved nowhere yet and is usually on its way into a sign-up or change-password form, so clearing it there would lose it. It is still marked sensitive, and goes when you copy something else.
+Quitting WM Pass before the time is up clears the secret at once, under the same rule, since the timer cannot outlive the app.
 
 The message that says something was copied has a **Clear now** button.
 
@@ -228,7 +236,11 @@ A program reading the clipboard during those seconds still sees the secret. Auto
 
 A copied secret is marked as sensitive, so the system's copy preview, and keyboards that respect the mark, do not show it.
 
-When the time is up, WM Pass empties the clipboard if your secret is still on it.
+When the time is up, WM Pass empties the clipboard if your secret is still on it. If you have copied something else since, that is left alone.
+
+A password just made with the generator, its widget or **Set a new password** is not cleared. It is saved nowhere yet and is usually on its way into a sign-up or change-password form, so clearing it there would lose it. It is still marked sensitive, and goes when you copy something else.
+
+The message that says something was copied counts down the seconds and has a **Clear now** button.
 
 | Choice | What it does |
 | --- | --- |
@@ -236,6 +248,7 @@ When the time is up, WM Pass empties the clipboard if your secret is still on it
 | 30 s | Enough to switch apps and paste. |
 | 1 min | For slow forms or a second paste. |
 | 2 min | For typing into another device by hand. |
+| 5 min | For a long form, or a password typed in pieces. |
 
 An app reading the clipboard during those seconds still sees the secret. Autofill fills without the clipboard.
 
@@ -251,7 +264,7 @@ Keeps this vault's key in the system keyring, so the door can open it without th
 
 #### How it works
 
-The key is wrapped and stored with the operating system's secret store, for this vault file only. Turning it off removes it from the keyring.
+The vault's key itself is stored in the session's Secret Service keyring, such as GNOME Keyring or KWallet, under this vault file's name. Turning it off removes it from the keyring.
 
 #### When to use it
 
@@ -261,7 +274,9 @@ On a computer only you use, where typing the master password many times a day is
 
 A convenience, not protection: any program running in your session can ask the keyring for the key.
 
-macOS builds have no Secure Enclave unlock, because the app is not signed.
+Offered only on Linux, and only when the session has a keyring WM Pass can reach. The macOS and Windows builds do not offer it: macOS has no Secure Enclave unlock, because the app is not signed.
+
+After [a rekey](/guide/settings/security/#action-rekey) the key kept here is the old one, which no longer opens the vault. Turn this off and on again.
 
 See also [Locking](/guide/how-it-works/#feature-locking), [The master password](/guide/how-it-works/#concept-master-password).
 
@@ -289,6 +304,8 @@ The passkey belongs to wmpass.pages.dev, and your browser or phone may keep it w
 
 A browser without passkeys that can give an app a secret (the PRF extension) does not offer this.
 
+After [a rekey](/guide/settings/security/#action-rekey) the sealed copy holds the old key, which no longer opens the vault. Turn this off and on again.
+
 See also [Unlock from the system keyring](/guide/settings/security/#action-keyring-unlock), [Locking](/guide/how-it-works/#feature-locking), [The master password](/guide/how-it-works/#concept-master-password).
 
 <a id="action-change-password"></a>
@@ -309,7 +326,9 @@ When you want a stronger password, or think someone may have seen yours but has 
 
 Backups and copies made before the change still open with the old password. If someone may have a copy of the file, use [Change it and rekey](/guide/settings/security/#action-rekey) instead.
 
-See also [Change it and rekey](/guide/settings/security/#action-rekey), [The master password](/guide/how-it-works/#concept-master-password), [The vault file](/guide/how-it-works/#concept-vault-file).
+Changed on two devices before they sync, both new passwords open the vault, and WM Pass says so when you unlock. Remove the one you don't want under [Unlock methods](/guide/settings/security/#group-security-methods). A vault with every slot in use keeps only the later change, and says that instead.
+
+See also [Change it and rekey](/guide/settings/security/#action-rekey), [The master password](/guide/how-it-works/#concept-master-password), [The vault file](/guide/how-it-works/#concept-vault-file), [Unlock methods](/guide/settings/security/#group-security-methods).
 
 <a id="action-rekey"></a>
 
@@ -331,9 +350,11 @@ When a copy of the file and its password may both be in someone else's hands, su
 
 #### Limits
 
-Other passwords, key files and security keys stop working until you add them back under [Unlock methods](/guide/settings/security/#group-security-methods).
+Other passwords, key files and security keys, and the wipe and lockout passwords, stop working until you add them back under [Unlock methods](/guide/settings/security/#group-security-methods) and Duress.
 
 An emergency kit made before the rekey stops working. Make a new one.
+
+Quick unlock held the old key. On the phone, fingerprint unlock turns off; on a computer, turn keyring or passkey unlock off and on again.
 
 An old copy of the file can still be read by whoever has it and its old password. Rekeying protects what comes after.
 
@@ -358,9 +379,19 @@ Every way this vault can be opened. Each one opens the same vault.
 
 #### How it works
 
-The vault file has a fixed number of slots. Each way in fills one, and the empty ones are random bytes, so nobody can tell from the file how many ways in there are, or whether one of them is a duress password.
+The vault file has eight slots. Each way in fills one, the wipe and lockout passwords included, and the empty ones are random bytes, so nobody can tell from the file how many ways in there are, or whether one of them is a duress password.
 
-Click a password in the list to remove it. A vault always keeps at least one way in.
+The delete button beside a way in removes it. A vault always keeps at least one way in.
+
+A password changed on two devices at once leaves two ways in, each marked as changed at the same time as the other, with when and on which device. Both open the vault until you remove one.
+
+#### On Android
+
+The vault file has eight slots. Each way in fills one, the wipe and lockout passwords included, and the empty ones are random bytes, so nobody can tell from the file how many ways in there are, or whether one of them is a duress password.
+
+Tap a way in to remove it. A vault always keeps at least one way in.
+
+A password changed on two devices at once leaves two ways in, each marked as changed at the same time as the other, with when and on which device. Both open the vault until you remove one.
 
 See also [Add a password](/guide/settings/security/#action-add-password), [Add a key file](/guide/settings/security/#action-add-key-file), [Add a security key](/guide/settings/security/#action-add-security-key), [Duress and decoys](/guide/how-it-works/#feature-duress).
 
@@ -419,6 +450,10 @@ The key computes a secret from a value stored in the vault. That secret joins yo
 #### Limits
 
 Lose the key and this way in is gone. Register a second key, or keep another way in.
+
+#### On Android
+
+Adds a way in that needs a YubiKey or another FIDO2 key, held to the back of the phone or plugged in and touched.
 
 See also [Hardware key](/guide/settings/hardware/), [Unlock methods](/guide/settings/security/#group-security-methods).
 
@@ -556,7 +591,7 @@ The one switch every feature that talks to the internet needs. Off means nothing
 
 #### Why it is there
 
-WM Pass works fully without a network. Some extras cannot: checking breaches, making aliases, syncing with a server, signing in to an account, and checking for updates. Each one says what it sends, and to whom, on its own page.
+WM Pass works fully without a network. Some extras cannot: checking breaches, making aliases, the disposable inbox, the username checker, website icons, syncing with a server, signing in to an account, and checking for updates. Each one says what it sends, and to whom, on its own page.
 
 #### What each choice does
 
@@ -568,6 +603,12 @@ WM Pass works fully without a network. Some extras cannot: checking breaches, ma
 #### Limits
 
 Syncing with other devices on your own network uses its own pairing, under Settings, Sync and accounts.
+
+#### On Android
+
+Syncing with other devices on your own network uses its own pairing, under Settings, Sync and accounts.
+
+The offline build of the app has no way to reach the internet, so it has no such switch.
 
 See also [Breaches](/guide/settings/breaches/), [Email aliases](/guide/settings/aliases/), [Sync and accounts](/guide/settings/sync/), [Updates](/guide/settings/updates/).
 
@@ -601,6 +642,10 @@ It does not protect against someone who can make you touch the sensor. Duress pa
 
 It lives on this phone only. A backup, or the vault on another device, still needs the master password.
 
+It is only for the vault kept on this phone. A vault inside another, a shared vault or an account vault opens with its password.
+
+While the door makes you wait, after too many wrong tries or a panic lock, the fingerprint is not offered either.
+
 See also [Lock after no activity](/guide/settings/security/#setting-lock-after), [Locking](/guide/how-it-works/#feature-locking), [The master password](/guide/how-it-works/#concept-master-password), [Wipe password](/guide/settings/security/#action-wipe-password).
 
 <a id="group-security-autofill"></a>
@@ -609,15 +654,15 @@ See also [Lock after no activity](/guide/settings/security/#setting-lock-after),
 
 *Only in Android.*
 
-How other apps and your watch reach the vault, and what a panic app can make WM Pass do.
+How other apps, your widgets and your watch reach the vault, and what a panic app can make WM Pass do.
 
 #### How it works
 
-Autofill, WM Keyboard and the watch get nothing while the vault is locked. Autofill can ask for your fingerprint over the app you are in, or bring up the door; the keyboard and the watch cannot.
+Autofill, WM Keyboard, the widgets and the watch get nothing while the vault is locked. Autofill and the keyboard can ask for your fingerprint over the app you are in, or bring up the door, and the keyboard can also take your master password. The watch cannot open the vault.
 
 A panic app can lock or wipe the vault at any time.
 
-See also [Autofill service](/guide/settings/security/#action-autofill-service), [Let WM Keyboard fill](/guide/settings/security/#setting-keyboard-access), [Show on my watch](/guide/settings/security/#setting-wear-access), [When a panic app signals](/guide/settings/security/#setting-panic-action).
+See also [Autofill service](/guide/settings/security/#action-autofill-service), [Let WM Keyboard fill](/guide/settings/security/#setting-keyboard-access), [Show on widgets](/guide/settings/security/#setting-widget-access), [Show on my watch](/guide/settings/security/#setting-wear-access), [When a panic app signals](/guide/settings/security/#setting-panic-action).
 
 <a id="setting-autofill-inline"></a>
 
@@ -654,9 +699,13 @@ After you sign in somewhere with a password WM Pass does not have, asks whether 
 
 When a login form is sent, WM Pass looks for logins that match the app or site and the username. If one already has that password, nothing is asked.
 
-Otherwise it asks. With no match, **Save** makes a new login named after the site or the app. With a match, a button for each matching login puts the new password on it, and **Save as a new login** keeps both. **Not now** saves nothing.
+Otherwise it asks. With no match, **Save** makes a new login named after the site or the app; its name, username, password and website can be changed first. With a match, an **Update** button for each matching login puts the new password on it, and **Save as a new login** keeps both. **Not now** saves nothing.
 
-A login saved from an app remembers the app's package name and signing certificate, so it is offered there next time.
+A sign-in that asks for the username on one screen and the password on the next is saved as one login, on Android 10 and later.
+
+A login typed while the vault is locked can still be saved: the vault is opened first.
+
+A login saved from an app remembers the app's package name and signing certificate, so it is offered there next time. One saved from a browser is not tied to the browser.
 
 #### Limits
 
@@ -676,15 +725,15 @@ Lets the WM Pass tool in WM Keyboard browse your vault, type from it, add logins
 
 The keyboard gets an answer only while the vault is open here. While it is locked, the tool offers two ways in, and neither works without you.
 
-**Fingerprint** asks for your fingerprint over the app you are in, the way autofill does. WM Pass shows the prompt; the keyboard only starts it. Without fingerprint unlock set up, or after **Use password**, the door opens there instead.
+**Fingerprint** asks for your fingerprint over the app you are in, the way autofill does. WM Pass shows the prompt; the keyboard only starts it. After **Use password** the door opens there instead. Without fingerprint unlock set up, the keyboard's button reads **Unlock in WM Pass** and opens the door straight away.
 
-**Password** takes your master password in the keyboard's own box, which sends it to WM Pass and keeps nothing. It counts toward the same wrong tries and waits as the door, and a duress password does what it does there. A vault that also needs a key file or a hardware key opens at the door.
+**Password** (**Type password** when there is no fingerprint) takes your master password in the keyboard's own box, which sends it to WM Pass and keeps nothing. It counts toward the same wrong tries and waits as the door, and a duress password does what it does there. A vault that also needs a key file or a hardware key opens at the door.
 
 Opened from the keyboard, the vault locks after the time set under [Lock after no activity](/guide/settings/security/#setting-lock-after), counted from then, and never sooner than a minute, since you are still typing in the other app. The tool also has a **Lock** button.
 
-It is shown every item that is not in the trash or on the hidden shelf, those saved for the app in front first: each one's name, the line under it, and whether it has a password or a code. Its search goes through the vault's own search.
+It is shown the items that are not in the trash or on the hidden shelf, up to 200 at a time, those saved for the app in front first: each one's name, the line under it, and whether it has a password or a code. Its search goes through the vault's own search.
 
-Opening an item there shows its fields. A plain field, such as a username or a website, is shown as it is; a secret is only named. A secret is sent only when you tap to type that one field.
+Opening an item there shows its fields. A plain field, such as a username or a website, is shown as it is; a secret is only named. A secret is sent only when you tap to type or show that one field.
 
 Copying a field from the keyboard is done here: WM Pass puts it on the clipboard itself, marked sensitive and cleared after the time set under [Clear the clipboard after](/guide/settings/security/#setting-clipboard-seconds), so a copied secret never passes through the keyboard.
 
@@ -746,6 +795,8 @@ The watch keeps nothing. It asks the phone each time, and the phone answers only
 
 Each answer carries the current codes for up to 20 items, with favorite and pinned items first, and the names and usernames of up to 20 favorite or pinned logins. A password is sent only when you tap a favorite, and the watch shows it for 20 seconds.
 
+Counter-based codes are never sent, since showing one uses it up, and neither is anything in the trash or on the hidden shelf.
+
 A tile on the watch shows your first code. The complication opens the app and shows no code.
 
 It turns on by itself the first time a paired watch with WM Pass asks. Turn it off and it stays off.
@@ -776,9 +827,15 @@ Nothing leaves the vault until you tap a suggestion. WM Pass then fills the user
 
 Apps are matched by package name and signing certificate, not by name. Sites are matched by web address.
 
+Picking a login under **Search WM Pass** for an app links that app to it, so it is offered there next time.
+
+Many browsers that do not hand Android their pages' fields, such as Opera, UC Browser or Via, are filled through Android's compatibility mode, which reads the page and its address bar for WM Pass. Android allows it only for the browsers on its own list.
+
 #### Limits
 
 Only a browser WM Pass knows can vouch for the web address it shows. When any other app reports one, such as a page inside its own window, WM Pass names that app and asks **Fill it** or **Do not fill**.
+
+It asks the same for a login that names an app by its package name alone, with no signing certificate, since any app could take that name.
 
 See also [Inline suggestions](/guide/settings/security/#setting-autofill-inline), [Offer to save passwords](/guide/settings/security/#setting-autofill-save), [Filling logins](/guide/how-it-works/#feature-autofill), [Passkeys](/guide/how-it-works/#feature-passkeys), [Let WM Keyboard fill](/guide/settings/security/#setting-keyboard-access), [Browsers](/guide/settings/security/#action-browser-autofill).
 
@@ -844,7 +901,7 @@ The apps whose panic signal WM Pass listens to, picked from the apps on this pho
 
 #### How it works
 
-Apps known to send the signal, Ripple and Panic Button, are listed first. Tick the ones you use and tap **Done**, or **Wipe on their signal** when the choice above is Wipe.
+The apps you have ticked come first, then those known to send the signal, Ripple and Panic Button. Tick the ones you use and tap **Done**, or **Wipe on their signal** when the choice above is Wipe.
 
 #### Limits
 
@@ -877,6 +934,8 @@ Anyone who can see your screen can see these codes and names while the vault is 
 Off, those two widgets say only that they are turned off. With the vault locked, they say only that it is locked, and name nothing.
 
 Locking, from anywhere, empties them at once. If Android ends WM Pass while they show something, they are drawn locked again within a few minutes.
+
+Items in the trash or on the hidden shelf never appear on them.
 
 No other widget shows anything from inside the vault, whether this is on or not.
 

@@ -44,6 +44,12 @@ pub fn is_local_host(host: &str) -> bool {
             .any(|suffix| host.ends_with(suffix))
 }
 
+/// Whether a host is this machine: `localhost`, a name under it, or a loopback address.
+fn is_loopback(host: &str) -> bool {
+    let host = host.trim_end_matches('.').trim_start_matches('[').trim_end_matches(']').to_ascii_lowercase();
+    host == "localhost" || host.ends_with(".localhost") || host.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
+}
+
 /// Whether every address a login is saved for is on the local network. One with no address,
 /// or with an app, is not.
 fn local_only(entry: &Entry) -> bool {
@@ -110,6 +116,12 @@ pub fn entry_domains(entry: &Entry) -> Vec<String> {
         out.dedup();
         out
     })
+}
+
+/// The registrable domain of the first site a login is saved for, in the order it was saved:
+/// the one its icon and its group go by. [`entry_domains`] sorts them.
+pub fn first_domain(entry: &Entry) -> Option<String> {
+    entry.login()?.site_matchers.v.iter().find_map(matcher_domain)
 }
 
 /// Domains known to offer two-factor authentication.
@@ -179,7 +191,8 @@ pub fn report(vault: &Vault, input: &HealthInput) -> HealthReport {
             .or_default()
             .push(entry.id.clone());
 
-        let limit = reminders.change_every_days.map_or(old_after, u64::from);
+        // Zero days is no reminder, as every screen shows it, not one that is always due.
+        let limit = reminders.change_every_days.filter(|days| *days > 0).map_or(old_after, u64::from);
         if input.now_ms.saturating_sub(login.password.at.ms) > limit * DAY_MS {
             out.old.push(entry.id.clone());
         }
@@ -190,7 +203,13 @@ pub fn report(vault: &Vault, input: &HealthInput) -> HealthReport {
         if !has_second_factor && domains.iter().any(|domain| tfa.contains(domain.as_str())) {
             out.missing_two_factor.push(entry.id.clone());
         }
-        let plain = |m: &SiteMatcher| matches!(m, SiteMatcher::Url(url) if url.to_ascii_lowercase().starts_with("http://"));
+        // Plain http to this same machine never crosses a network, and browsers count it as
+        // secure. A router's page on the local network does cross one; leaving those out is
+        // what `skip_local` is for.
+        let plain = |m: &SiteMatcher| {
+            matches!(m, SiteMatcher::Url(url) if url.trim_start().to_ascii_lowercase().starts_with("http://")
+                && !host_of(url).is_some_and(|host| is_loopback(&host)))
+        };
         if login.site_matchers.v.iter().any(plain) {
             out.insecure_url.push(entry.id.clone());
         }
@@ -388,21 +407,50 @@ pub fn merge_duplicates(
     remove: &str,
     now_ms: u64,
 ) -> crate::Result<()> {
+    // Folding an entry into itself would only send it to the trash.
+    if keep == remove {
+        return Err(crate::Error::Invalid("choose two different entries to merge".into()));
+    }
     let other = vault
         .get(remove)
         .cloned()
         .ok_or_else(|| crate::Error::Invalid("no such entry".into()))?;
     vault.edit(keep, now_ms, |entry, at| {
-        let mut tags = entry.common.tags.v.clone();
-        for tag in &other.common.tags.v {
-            if !tags.contains(tag) {
-                tags.push(tag.clone());
+        fn joined<T: Clone + PartialEq>(mine: &[T], theirs: &[T], same: impl Fn(&T, &T) -> bool) -> Vec<T> {
+            let mut out = mine.to_vec();
+            for item in theirs {
+                if !out.iter().any(|held| same(held, item)) {
+                    out.push(item.clone());
+                }
             }
+            out
         }
+        // Lists join rather than one replacing the other: a newer list of files or fields on
+        // either side would otherwise drop the rest, and the files of the one sent to the trash
+        // with it.
+        let tags = joined(&entry.common.tags.v, &other.common.tags.v, PartialEq::eq);
+        let files = joined(&entry.common.attachments.v, &other.common.attachments.v, |a, b| a.blob == b.blob);
+        let fields = joined(&entry.common.custom_fields.v, &other.common.custom_fields.v, |a, b| {
+            a.name == b.name && a.value == b.value
+        });
         let mut merged = other.clone();
         merged.id.clone_from(&entry.id);
-        entry.merge_from(&merged);
-        entry.common.tags = Lww::new(tags, at);
+        // The one kept stays where it is: a copy already in the trash or on the shelf must not
+        // take it there too.
+        merged.common.deleted_at_ms.clone_from(&entry.common.deleted_at_ms);
+        merged.common.hidden.clone_from(&entry.common.hidden);
+        // Nor may the other's self-destruct timer come across and take the kept one with it.
+        merged.common.destroy_at_ms.clone_from(&entry.common.destroy_at_ms);
+        entry.absorb_item(&merged, at);
+        if entry.common.tags.v != tags {
+            entry.common.tags = Lww::new(tags, at);
+        }
+        if entry.common.attachments.v != files {
+            entry.common.attachments = Lww::new(files, at);
+        }
+        if entry.common.custom_fields.v != fields {
+            entry.common.custom_fields = Lww::new(fields, at);
+        }
     })?;
     vault.trash(remove, now_ms)
 }
@@ -410,6 +458,7 @@ pub fn merge_duplicates(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::clock::Hlc;
     use crate::model::{Lww, Reminders};
     use crate::otp::OtpConfig;
     use crate::vault::login_entry;
@@ -436,6 +485,22 @@ mod tests {
                 ..HealthInput::default()
             },
         )
+    }
+
+    #[test]
+    fn the_first_domain_is_the_first_saved() {
+        let at = Hlc::default();
+        let mut entry = login_entry("Outlook", "me", "pw", at);
+        entry.login_mut().unwrap().site_matchers = Lww::new(
+            vec![
+                SiteMatcher::Url("androidapp://com.microsoft.office.outlook".into()),
+                SiteMatcher::Url("https://account.microsoft.com".into()),
+                SiteMatcher::Url("https://outlook.live.com/mail".into()),
+            ],
+            at,
+        );
+        assert_eq!(first_domain(&entry).as_deref(), Some("microsoft.com"));
+        assert_eq!(entry_domains(&entry), vec!["live.com".to_owned(), "microsoft.com".to_owned()]);
     }
 
     #[test]
@@ -531,8 +596,18 @@ mod tests {
             },
             at,
         );
+        let mut zero = entry.clone();
+        zero.id = "c".into();
+        zero.common.reminders = Lww::new(
+            Reminders {
+                change_every_days: Some(0),
+                ..Reminders::default()
+            },
+            at,
+        );
         vault.add(entry, NOW).unwrap();
         vault.add(strict, NOW).unwrap();
+        vault.add(zero, NOW).unwrap();
         assert_eq!(run(&vault).old, vec!["b".to_owned()]);
     }
 
@@ -620,6 +695,12 @@ mod tests {
         let site = add(&mut vault, "Shop", Some("http://shop.example"), "me", STRONG);
         let all = run(&vault);
         assert!(all.insecure_url.contains(&router) && all.weak.contains(&nas));
+        // This machine's own server is no plain-http risk, whatever the setting.
+        let dev = add(&mut vault, "Dev", Some("http://localhost:3000"), "me", STRONG);
+        let loop6 = add(&mut vault, "Loop", Some("http://[::1]:8080"), "me", STRONG);
+        let app = add(&mut vault, "App", Some("http://app.localhost"), "me", STRONG);
+        let found = run(&vault).insecure_url;
+        assert!(![dev, loop6, app].iter().any(|id| found.contains(id)), "{found:?}");
         let input = HealthInput {
             now_ms: NOW,
             skip_local: true,
@@ -681,6 +762,86 @@ mod tests {
         assert!(past.contains(&"newer-password-2".to_owned()), "{past:?}");
         assert_eq!(entry.common.tags.v, vec!["work".to_owned()]);
         assert!(vault.get(&remove).unwrap().is_trashed());
+    }
+
+    #[test]
+    fn clearing_a_duplicate_from_the_same_import_keeps_what_only_it_held() {
+        let mut vault = fast_vault(1);
+        // One import stamps every item with the same moment.
+        let at = vault.tick(NOW);
+        let mut keep = login_entry("A", "me", STRONG, at);
+        keep.login_mut().unwrap().site_matchers = Lww::new(vec![SiteMatcher::Url("https://a.example".into())], at);
+        // As an importer writes it: every field stamped, the empty ones too.
+        keep.login_mut().unwrap().otp = Lww::new(None, at);
+        let mut remove = keep.clone();
+        remove.login_mut().unwrap().otp = Lww::new(Some(OtpConfig::totp("JBSWY3DPEHPK3PXP")), at);
+        remove.common.notes = Lww::new("recovery codes: 1234".into(), at);
+        keep.common.notes = Lww::new("kept note".into(), at);
+        let keep = vault.add(keep, NOW).unwrap();
+        let remove = vault.add(remove, NOW).unwrap();
+        merge_duplicates(&mut vault, &keep, &remove, NOW + 10).unwrap();
+        let entry = vault.get(&keep).unwrap();
+        assert!(entry.login().unwrap().otp.v.is_some(), "the code only the other held is kept");
+        assert!(entry.login().unwrap().otp.at > at, "and written anew, so other copies take it");
+        assert_eq!(entry.common.notes.v.expose(), "kept note");
+        let past: Vec<_> = entry.history_of("notes").map(|r| r.value.expose().to_owned()).collect();
+        assert_eq!(past, vec!["recovery codes: 1234".to_owned()]);
+    }
+
+    #[test]
+    fn clearing_a_duplicate_keeps_the_files_and_fields_of_both() {
+        use crate::model::{Field, FieldKind};
+        let mut vault = fast_vault(1);
+        let keep = add(&mut vault, "A", Some("https://a.example"), "me", STRONG);
+        let remove = add(&mut vault, "B", Some("https://a.example"), "me", STRONG);
+        let (mine, _) = Vault::seal_attachment("mine.txt", "text/plain", b"1").unwrap();
+        let (theirs, _) = Vault::seal_attachment("theirs.txt", "text/plain", b"2").unwrap();
+        let field = |name: &str| Field { name: name.into(), value: "v".into(), kind: FieldKind::Hidden };
+        vault
+            .edit(&keep, NOW + 1, |entry, at| {
+                entry.common.attachments = Lww::new(vec![mine.clone()], at);
+                entry.common.custom_fields = Lww::new(vec![field("PIN")], at);
+            })
+            .unwrap();
+        // The newer lists are on the copy.
+        vault
+            .edit(&remove, NOW + 2, |entry, at| {
+                entry.common.attachments = Lww::new(vec![theirs.clone()], at);
+                entry.common.custom_fields = Lww::new(vec![field("Recovery key")], at);
+            })
+            .unwrap();
+        merge_duplicates(&mut vault, &keep, &remove, NOW + 10).unwrap();
+        let entry = vault.get(&keep).unwrap();
+        let blobs: Vec<&str> = entry.common.attachments.v.iter().map(|a| a.blob.as_str()).collect();
+        assert_eq!(blobs, vec![mine.blob.as_str(), theirs.blob.as_str()]);
+        let names: Vec<&str> = entry.common.custom_fields.v.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(names, vec!["PIN", "Recovery key"]);
+        // Emptying the trash later leaves the file the kept item now holds.
+        assert!(vault.purge(&remove, NOW + 20).is_empty());
+    }
+
+    #[test]
+    fn a_self_destruct_timer_on_the_copy_does_not_come_across() {
+        let mut vault = fast_vault(1);
+        let keep = add(&mut vault, "A", Some("https://a.example"), "me", STRONG);
+        let remove = add(&mut vault, "B", Some("https://a.example"), "me", STRONG);
+        vault
+            .edit(&remove, NOW + 5, |entry, at| entry.common.destroy_at_ms = Lww::new(Some(NOW + DAY_MS), at))
+            .unwrap();
+        merge_duplicates(&mut vault, &keep, &remove, NOW + 10).unwrap();
+        assert_eq!(vault.get(&keep).unwrap().common.destroy_at_ms.v, None);
+    }
+
+    #[test]
+    fn merging_never_trashes_the_one_kept() {
+        let mut vault = fast_vault(1);
+        let keep = add(&mut vault, "A", Some("https://a.example"), "me", STRONG);
+        assert!(merge_duplicates(&mut vault, &keep, &keep, NOW + 1).is_err());
+        assert!(!vault.get(&keep).unwrap().is_trashed());
+        let remove = add(&mut vault, "B", Some("https://a.example"), "me", STRONG);
+        vault.trash(&remove, NOW + 5).unwrap();
+        merge_duplicates(&mut vault, &keep, &remove, NOW + 10).unwrap();
+        assert!(!vault.get(&keep).unwrap().is_trashed());
     }
 
     #[test]

@@ -58,6 +58,8 @@ type Hits = (Vec<(Rect, Hit)>, Option<usize>);
 thread_local! {
     /// Whether the last QR code drawn used big cells.
     static DREW_BIG: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// How far the keys list could scroll in the last frame.
+    static HELP_MOST: std::cell::Cell<u16> = const { std::cell::Cell::new(0) };
     static HITS: RefCell<Hits> = const { RefCell::new((Vec::new(), None)) };
 }
 
@@ -103,8 +105,19 @@ fn key_of(name: &str) -> Option<KeyEvent> {
     Some(KeyEvent::new(code, KeyModifiers::NONE))
 }
 
-/// A row of key hints, each one a button.
+/// As many hints, from the first, as fit in `width` whole: a hint cut off part way, as
+/// "Esc qui", reads as a different key.
+fn fitting<'k, 'a>(theme: &Theme, keys: &'k [(&'a str, &'a str)], width: u16) -> &'k [(&'a str, &'a str)] {
+    let mut n = keys.len();
+    while n > 0 && key_hint(theme, &keys[..n]).width() > usize::from(width) {
+        n -= 1;
+    }
+    &keys[..n]
+}
+
+/// A row of key hints, each one a button. Hints that do not fit whole are left off.
 fn hint_bar(frame: &mut Frame, area: Rect, theme: &Theme, keys: &[(&str, &str)], align: Alignment) {
+    let keys = fitting(theme, keys, area.width);
     let line = key_hint(theme, keys);
     let width = (line.width() as u16).min(area.width);
     let start = match align {
@@ -141,8 +154,8 @@ fn draw_all(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
     frame.render_widget(Block::new().style(theme.base()), area);
     if area.width < 40 || area.height < 12 {
-        let text = Paragraph::new("Make the window a little bigger").style(theme.dim()).alignment(Alignment::Center);
-        frame.render_widget(text, centered(area, area.width, 1));
+        let text = Paragraph::new("Make the window a little bigger").style(theme.dim()).alignment(Alignment::Center).wrap(Wrap { trim: true });
+        frame.render_widget(text, centered(area, area.width, 2));
         return;
     }
     let lock_in = app.lock_in();
@@ -278,6 +291,20 @@ struct BoxLook<'a> {
     placeholder: &'a str,
 }
 
+/// What a one-line box shows of `input` in `width` cells, and how many cells in its cursor is.
+/// A long line scrolls to keep the cursor in sight, and wide letters count two cells.
+fn visible(input: &Input, secret: bool, width: usize) -> (String, usize) {
+    let (line, col) = input.cursor_line_col();
+    let row = input.text().split('\n').nth(line).unwrap_or("");
+    if secret {
+        // Each letter shows as one dot, however wide it is.
+        let before: String = input.text().chars().take(input.cursor()).collect();
+        let at = before.rsplit('\n').next().map_or(0, |l| l.chars().count());
+        return crate::input::scrolled(&"•".repeat(row.chars().count()), at, width);
+    }
+    crate::input::scrolled(row, col, width)
+}
+
 /// Draws a text box; returns where the cursor goes.
 fn text_box(frame: &mut Frame, area: Rect, theme: &Theme, input: &Input, look: &BoxLook<'_>) -> Option<Position> {
     let BoxLook { label, secret, focused, placeholder } = *look;
@@ -287,18 +314,14 @@ fn text_box(frame: &mut Frame, area: Rect, theme: &Theme, input: &Input, look: &
         .title(Span::styled(format!(" {label} "), if focused { theme.brand() } else { theme.dim() }));
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    let shown: String = if secret { "•".repeat(input.text().chars().count()) } else { input.text().to_owned() };
-    let width = usize::from(inner.width.saturating_sub(1));
-    let (line, col) = input.cursor_line_col();
-    let skip = col.saturating_sub(width);
+    let (row, at) = visible(input, secret, usize::from(inner.width));
     let text = if input.is_empty() {
         Line::from(Span::styled(placeholder.to_owned(), theme.faint()))
     } else {
-        let row = shown.lines().nth(line).unwrap_or("").chars().skip(skip).collect::<String>();
         Line::from(Span::styled(row, Style::new().fg(theme.text)))
     };
     frame.render_widget(Paragraph::new(text), inner);
-    focused.then(|| Position::new(inner.x + (col - skip) as u16, inner.y))
+    focused.then(|| Position::new(inner.x + at as u16, inner.y))
 }
 
 fn draw_door(frame: &mut Frame, area: Rect, door: &Door, theme: &Theme, recent: &[std::path::PathBuf]) {
@@ -388,12 +411,12 @@ fn draw_door(frame: &mut Frame, area: Rect, door: &Door, theme: &Theme, recent: 
     }
     let hints = match door.mode {
         door::Mode::Unlock => {
-            let mut keys = vec![("Enter", "unlock"), ("Tab", "next"), ("^N", "new vault"), ("^G", "from another device"), ("^B", "from a backup")];
+            // In the order they matter, as a narrow window shows only the first few.
+            let mut keys = vec![("Enter", "unlock"), ("Tab", "next"), ("Esc", "quit"), ("^N", "new vault")];
             if !recent.is_empty() {
                 keys.push(("^R", "recent"));
             }
-            keys.push(("^F", "key file"));
-            keys.push(("Esc", "quit"));
+            keys.extend([("^G", "from another device"), ("^B", "from a backup"), ("^F", "key file")]);
             keys
         }
         door::Mode::Create => vec![("Enter", "next"), ("Tab", "move"), ("Esc", "back")],
@@ -530,9 +553,10 @@ fn draw_bottom(frame: &mut Frame, area: Rect, ui: &VaultUi, theme: &Theme, toast
         Tab::Health => vec![("←→", "group"), ("Enter", "open"), ("i", "ignore"), ("r", "check again"), ("?", "keys")],
         Tab::Settings => vec![("↑↓", "move"), ("←→", "change"), ("Enter", "open"), ("?", "keys")],
     };
-    let hint_w = (key_hint(theme, &hints).width() as u16 + 1).min(area.width);
     let left = match toast {
         Some(toast) => toast_line(toast, theme),
+        // What the vault has to say stays in view between messages, until it is dealt with.
+        None if !ui.notices.is_empty() => Line::from(Span::styled(format!(" {}", ui.notices.join("  ")), Style::new().fg(theme.warn))),
         None => {
             let shown = ui.rows.len();
             let text = if ui.tab == Tab::Items && !ui.marked.is_empty() {
@@ -545,8 +569,15 @@ fn draw_bottom(frame: &mut Frame, area: Rect, ui: &VaultUi, theme: &Theme, toast
             Line::from(Span::styled(text, theme.faint()))
         }
     };
+    // A message comes first: the hints give way to it, whole ones at a time, with a gap
+    // between the two.
+    let room = area.width.saturating_sub(left.width() as u16 + 3);
+    let hints = fitting(theme, &hints, room);
+    let hint_w = if hints.is_empty() { 0 } else { key_hint(theme, hints).width() as u16 + 1 };
     frame.render_widget(Paragraph::new(left), Rect { width: area.width.saturating_sub(hint_w), ..area });
-    hint_bar(frame, Rect { x: area.right() - hint_w, width: hint_w - 1, ..area }, theme, &hints, Alignment::Right);
+    if hint_w > 1 {
+        hint_bar(frame, Rect { x: area.right() - hint_w, width: hint_w - 1, ..area }, theme, hints, Alignment::Right);
+    }
 }
 
 fn draw_items(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme) -> Option<Position> {
@@ -646,16 +677,18 @@ fn draw_list(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme) -> 
     // The search box, part of the list.
     let mut cursor = None;
     let prompt = Span::styled(format!(" {} ", theme.g.get(Glyph::Search)), if ui.searching { theme.brand() } else { theme.faint() });
+    let prompt_w = prompt.width() as u16;
+    let (shown, at) = visible(&ui.search, false, usize::from(search.width.saturating_sub(prompt_w)));
     let typed = if ui.search.is_empty() && !ui.searching {
         Span::styled("Search   tag:work  has:otp  weak  kind:card", theme.faint())
     } else {
-        Span::styled(ui.search.text().to_owned(), Style::new().fg(theme.text))
+        Span::styled(shown, Style::new().fg(theme.text))
     };
     frame.render_widget(Paragraph::new(Line::from(vec![prompt, typed])), Rect { height: 1, ..search });
     let rule = "─".repeat(usize::from(search.width));
     frame.render_widget(Paragraph::new(Span::styled(rule, Style::new().fg(theme.line))), Rect { y: search.y + 1, height: 1, ..search });
     if ui.searching {
-        cursor = Some(Position::new(search.x + 3 + ui.search.cursor() as u16, search.y));
+        cursor = Some(Position::new(search.x + prompt_w + at as u16, search.y));
     }
 
     if ui.rows.is_empty() {
@@ -666,7 +699,16 @@ fn draw_list(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme) -> 
                 Line::default(),
             ]
         } else {
-            vec![Line::default(), Line::from(Span::styled("No matches", theme.dim())).centered()]
+            // "No matches" only when something was searched for; an empty trash or a section
+            // with nothing in it is not a search that failed.
+            let empty = if !ui.search.is_empty() {
+                "No matches"
+            } else if ui.in_trash() {
+                "The trash is empty"
+            } else {
+                "Nothing in this section"
+            };
+            vec![Line::default(), Line::from(Span::styled(empty, theme.dim())).centered()]
         };
         frame.render_widget(Paragraph::new(text), list_area);
         if ui.total == 0 && list_area.height > 4 {
@@ -675,8 +717,20 @@ fn draw_list(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme) -> 
         return cursor;
     }
     let width = usize::from(list_area.width.saturating_sub(2));
-    let items: Vec<ListItem> = ui
-        .rows
+    // Only the rows in sight are laid out: the list is drawn several times a second, and
+    // for every mouse move, and a vault of thousands would lay out thousands each time.
+    let in_sight = (usize::from(list_area.height) / 2).max(1);
+    let picked = ui.list.selected().map(|n| n.min(ui.rows.len() - 1));
+    let mut offset = ui.list.offset().min(ui.rows.len().saturating_sub(in_sight));
+    if let Some(picked) = picked {
+        if picked < offset {
+            offset = picked;
+        } else if picked >= offset + in_sight {
+            offset = picked + 1 - in_sight;
+        }
+    }
+    let end = (offset + in_sight + 1).min(ui.rows.len());
+    let items: Vec<ListItem> = ui.rows[offset..end]
         .iter()
         .map(|row| {
             let colour = theme.label(row.color.as_deref(), &row.kind);
@@ -744,8 +798,10 @@ fn draw_list(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme) -> 
         .highlight_style(theme.selected(focused))
         .highlight_symbol(Span::styled("▌", Style::new().fg(theme.primary)))
         .repeat_highlight_symbol(true);
-    frame.render_stateful_widget(list, list_area, &mut ui.list);
-    let first = ui.list.offset();
+    let mut window = ratatui::widgets::ListState::default().with_selected(picked.map(|n| n - offset));
+    frame.render_stateful_widget(list, list_area, &mut window);
+    *ui.list.offset_mut() = offset;
+    let first = offset;
     for n in first..ui.rows.len() {
         let y = list_area.y + ((n - first) * 2) as u16;
         if y >= list_area.bottom() {
@@ -948,13 +1004,21 @@ fn draw_detail(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme) {
             ])),
             DLine::Past { index, field, at_ms } => {
                 let shown = ui.revealed_text(&Secret::History(*index));
+                // The date after the value: in the label column it was cut to "2026-1".
+                let mut name = field.chars();
+                let name: String = name.next().map(|c| c.to_uppercase().chain(name).collect()).unwrap_or_default();
+                let value = shown.map_or(MASK.chars().count(), |v| v.chars().count());
+                // Whole or not at all: a narrow pane would cut it to "2026-11-".
+                let date = format!("  {}", date_text(*at_ms));
+                let room = usize::from(inner.width) >= 2 + label_w + value + date.chars().count();
                 lines.push(Line::from(vec![
                     marker,
-                    Span::styled(pad_label(&format!("{field} {}", date_text(*at_ms))), base.fg(theme.mid)),
+                    Span::styled(pad_label(&name), base.fg(theme.mid)),
                     match shown {
                         Some(v) => Span::styled(v.to_owned(), base.fg(theme.accent)),
                         None => Span::styled(MASK, base.fg(theme.low)),
                     },
+                    Span::styled(if room { date } else { String::new() }, base.fg(theme.low)),
                 ]));
             }
         }
@@ -991,24 +1055,31 @@ fn draw_codes(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme) ->
     let inner = block.inner(area).inner(Margin::new(1, 0));
     frame.render_widget(block, area);
     let [filter, grid] = Layout::vertical([Constraint::Length(2), Constraint::Min(0)]).areas(inner);
+    let prompt = Span::styled(format!("{} ", theme.g.get(Glyph::Search)), if ui.filtering_codes { theme.brand() } else { theme.faint() });
+    let prompt_w = prompt.width() as u16;
+    let (shown, at) = visible(&ui.code_filter, false, usize::from(filter.width.saturating_sub(prompt_w)));
     let typed = if ui.code_filter.is_empty() && !ui.filtering_codes {
         Span::styled("Filter by name", theme.faint())
     } else {
-        Span::styled(ui.code_filter.text().to_owned(), Style::new().fg(theme.text))
+        Span::styled(shown, Style::new().fg(theme.text))
     };
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![Span::styled(format!("{} ", theme.g.get(Glyph::Search)), if ui.filtering_codes { theme.brand() } else { theme.faint() }), typed])),
-        Rect { height: 1, ..filter },
-    );
+    frame.render_widget(Paragraph::new(Line::from(vec![prompt, typed])), Rect { height: 1, ..filter });
+    let filter_cursor = ui.filtering_codes.then(|| Position::new(filter.x + prompt_w + at as u16, filter.y));
     ui.areas.codes = grid;
     if ui.codes.is_empty() {
+        // With a filter typed, the codes are there but none is called that.
+        let (head, tip) = if ui.code_filter.is_empty() {
+            ("No one-time codes yet", "Edit a login and paste its otpauth:// link or seed")
+        } else {
+            ("No codes match", "Esc clears the filter")
+        };
         let text = vec![
             Line::default(),
-            Line::from(Span::styled("No one-time codes yet", theme.dim())).centered(),
-            Line::from(Span::styled("Edit a login and paste its otpauth:// link or seed", theme.faint())).centered(),
+            Line::from(Span::styled(head, theme.dim())).centered(),
+            Line::from(Span::styled(tip, theme.faint())).centered(),
         ];
         frame.render_widget(Paragraph::new(text), grid);
-        return ui.filtering_codes.then(|| Position::new(filter.x + 2 + ui.code_filter.cursor() as u16, filter.y));
+        return filter_cursor;
     }
     let card_w = 36u16;
     let cols = (grid.width / card_w).max(1);
@@ -1049,7 +1120,7 @@ fn draw_codes(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme) ->
         lines.push(Line::from(Span::styled(who, theme.faint())));
         frame.render_widget(Paragraph::new(lines), body);
     }
-    ui.filtering_codes.then(|| Position::new(filter.x + 2 + ui.code_filter.cursor() as u16, filter.y))
+    filter_cursor
 }
 
 fn coloured_value<'a>(value: &str, theme: &Theme) -> Line<'a> {
@@ -1402,7 +1473,12 @@ fn draw_settings(frame: &mut Frame, area: Rect, ui: &mut VaultUi, theme: &Theme,
             let used = text.len() as u16;
             frame.render_widget(Paragraph::new(text).wrap(Wrap { trim: true }), inner);
             // The vault itself, at the foot.
+            // The file's own name is the part that tells vaults apart, so a long path loses
+            // its start, not its end.
             let path = ui.engine.path().display().to_string();
+            let room = usize::from(inner.width.saturating_sub(7));
+            let count = path.chars().count();
+            let path = if count > room && room > 1 { format!("…{}", path.chars().skip(count - (room - 1)).collect::<String>()) } else { path };
             let mut foot = vec![
                 Line::from(Span::styled("THIS VAULT", theme.brand())),
                 Line::from(vec![Span::styled("Name   ", theme.faint()), Span::styled(ui.engine.name.clone(), Style::new().fg(theme.text))]),
@@ -1447,14 +1523,15 @@ fn popup(frame: &mut Frame, area: Rect, width: u16, height: u16, theme: &Theme, 
 
 fn draw_overlay(frame: &mut Frame, area: Rect, overlay: &Overlay, theme: &Theme, ui: Option<&VaultUi>) {
     match overlay {
-        Overlay::Help => draw_help(frame, area, theme),
+        Overlay::Help { scroll } => draw_help(frame, area, theme, *scroll),
         Overlay::Palette { input, at } => {
             let found = palette_matches(input.text());
             let height = (found.len() as u16 + 4).min(area.height - 4).max(6);
             let inner = popup(frame, area, 60, height, theme, "Commands", false);
-            let line = Line::from(vec![Span::styled("› ", theme.brand()), Span::styled(input.text().to_owned(), Style::new().fg(theme.text))]);
+            let (shown, col) = visible(input, false, usize::from(inner.width.saturating_sub(2)));
+            let line = Line::from(vec![Span::styled("› ", theme.brand()), Span::styled(shown, Style::new().fg(theme.text))]);
             frame.render_widget(Paragraph::new(line), Rect { height: 1, ..inner });
-            frame.set_cursor_position(Position::new(inner.x + 2 + input.cursor() as u16, inner.y));
+            frame.set_cursor_position(Position::new(inner.x + 2 + col as u16, inner.y));
             let list_area = Rect { y: inner.y + 2, height: inner.height.saturating_sub(2), ..inner };
             let width = usize::from(list_area.width);
             let skip = at.saturating_sub(usize::from(list_area.height.saturating_sub(1)));
@@ -1473,6 +1550,9 @@ fn draw_overlay(frame: &mut Frame, area: Rect, overlay: &Overlay, theme: &Theme,
                     ])
                 })
                 .collect();
+            if found.is_empty() {
+                frame.render_widget(Paragraph::new(Line::from(Span::styled(" No command matches that", theme.dim()))), list_area);
+            }
             frame.render_widget(Paragraph::new(lines), list_area);
             for n in skip..found.len() {
                 let y = list_area.y + (n - skip) as u16;
@@ -1556,15 +1636,21 @@ fn draw_overlay(frame: &mut Frame, area: Rect, overlay: &Overlay, theme: &Theme,
                 Line::default(),
                 Line::from(vec![
                     Span::styled(format!("{} ", preview.count), theme.brand()),
-                    Span::styled(format!("items found in a {} file", preview.format), Style::new().fg(theme.text)),
+                    Span::styled(
+                        format!("{} found in a {} file", if preview.count == 1 { "item" } else { "items" }, preview.format),
+                        Style::new().fg(theme.text),
+                    ),
                 ]),
                 Line::default(),
             ];
-            for title in preview.titles.iter().take(usize::from(inner.height.saturating_sub(9))) {
+            let room = usize::from(inner.height.saturating_sub(9));
+            for title in preview.titles.iter().take(room) {
                 lines.push(Line::from(vec![Span::styled("  • ", theme.faint()), Span::styled(title.clone(), Style::new().fg(theme.mid))]));
             }
-            if preview.count > preview.titles.len() {
-                lines.push(Line::from(Span::styled(format!("  and {} more", preview.count - preview.titles.len()), theme.faint())));
+            // Counted from what this window shows, which can be fewer than the titles sent.
+            let listed = preview.titles.len().min(room);
+            if preview.count > listed {
+                lines.push(Line::from(Span::styled(format!("  and {} more", preview.count - listed), theme.faint())));
             }
             for note in preview.skipped.iter().take(3) {
                 lines.push(Line::from(Span::styled(format!("! {note}"), Style::new().fg(theme.warn))));
@@ -1595,9 +1681,12 @@ fn app_names(packages: &str) -> String {
 }
 
 fn draw_editor(frame: &mut Frame, area: Rect, editor: &Editor, theme: &Theme, ui: Option<&VaultUi>) {
+    // The title as saved, from the item the editor has open: the one picked in the list can be
+    // another.
     let title = match (&editor.id, ui.and_then(|u| u.detail.as_ref())) {
-        (Some(_), Some(detail)) => format!("{}  Edit {}", theme.g.kind(&editor.kind), detail.row.title),
-        _ => format!("{}  New {}", theme.g.kind(&editor.kind), vault::kind_name(&editor.kind).to_lowercase()),
+        (Some(id), Some(detail)) if detail.row.id == *id => format!("{}  Edit {}", theme.g.kind(&editor.kind), detail.row.title),
+        (Some(_), _) => format!("{}  Edit {}", theme.g.kind(&editor.kind), vault::kind_in_text(&editor.kind)),
+        _ => format!("{}  New {}", theme.g.kind(&editor.kind), vault::kind_in_text(&editor.kind)),
     };
     let width = area.width.saturating_sub(8).min(96);
     let height = area.height.saturating_sub(2);
@@ -1681,7 +1770,7 @@ fn draw_editor(frame: &mut Frame, area: Rect, editor: &Editor, theme: &Theme, ui
             } else {
                 Text::from(Span::styled(row.name.text().to_owned(), style))
             };
-            let col = row.name.cursor() as u16;
+            let col = row.name.cursor_cells() as u16;
             let inner_w = label_box.width.saturating_sub(2);
             let hscroll = if on { col.saturating_sub(inner_w.saturating_sub(1)) } else { 0 };
             let text_box = Rect { x: label_box.x + 1, width: inner_w, ..label_box };
@@ -1844,36 +1933,65 @@ fn draw_editor(frame: &mut Frame, area: Rect, editor: &Editor, theme: &Theme, ui
     }
 }
 
-fn draw_help(frame: &mut Frame, area: Rect, theme: &Theme) {
+/// The keys list. Two columns when they fit, one otherwise; either way it scrolls when the
+/// window is too short for all of it, as 80 by 24 is.
+fn draw_help(frame: &mut Frame, area: Rect, theme: &Theme, scroll: u16) {
     let inner = popup(frame, area, 96, (area.height - 2).min(36), theme, "Keys", false);
     let groups: [(&str, &[(&str, &str)]); 7] = [
-        ("Anywhere", &[("1-5", "Items, Codes, Generator, Health, Settings"), (": or ^K", "commands"), ("^L", "lock now"), ("^T", "next theme"), ("?", "this list"), ("q", "quit")]),
-        ("Moving", &[("↑↓ or j k", "move"), ("←→ or h l", "pane"), ("Tab", "next pane"), ("g G", "top, bottom"), ("Enter", "open")]),
+        ("Anywhere", &[("1-5", "go to a tab"), (": or ^K", "commands"), ("^L", "lock now"), ("^T", "next theme"), ("?", "this list"), ("q", "quit")]),
+        ("Moving", &[("↑↓ or j k", "move"), ("←→ or h l", "pane"), ("Tab", "next pane"), ("g G", "top, bottom"), ("Enter", "open"), ("s", "sort the list")]),
         ("Search", &[("/", "search"), ("Esc", "clear"), ("tag:work", "by tag"), ("kind:card", "by kind"), ("has:otp", "with codes"), ("weak reused old", "health")]),
         ("In the editor", &[("Tab ⇧Tab", "next, back"), ("^S Esc", "save, cancel"), ("^N ^X", "add or remove a field"), ("^O", "hide a field's value"), ("^G ^R", "generate, show"), ("→", "take the value offered")]),
         ("Item", &[("c", "copy password"), ("u", "copy username"), ("t", "copy code"), ("r", "show password"), ("e n", "edit, new"), ("d", "trash"), ("f p", "favorite, pin"), ("m + -", "folder, tags"), ("a", "attach a file"), ("w", "Wi-Fi QR code"), ("Space", "mark, to act on several")]),
         ("In an item", &[("r Space", "show or hide"), ("y Enter", "copy the line"), ("o", "save a file")]),
         ("Elsewhere", &[("u D", "trash: restore, delete for good"), ("i r", "Health: ignore, check again"), ("R D", "a sidebar tag: rename, delete"), ("←→ Enter", "Settings: change, open")]),
     ];
-    let half = inner.width / 2;
-    let mut col = [Vec::new(), Vec::new()];
-    for (n, (title, keys)) in groups.iter().enumerate() {
-        let side = &mut col[usize::from(n >= 4)];
-        side.push(Line::from(Span::styled(title.to_uppercase(), theme.brand())));
-        for (key, what) in keys.iter() {
-            side.push(Line::from(vec![Span::styled(format!("  {key:<16}"), theme.key()), Span::styled(*what, Style::new().fg(theme.text))]));
+    let column = |groups: &[(&str, &[(&str, &str)])]| -> Vec<Line<'static>> {
+        // Keys as wide as the widest in the column, so the words have the rest of it.
+        let key_w = groups.iter().flat_map(|(_, keys)| keys.iter()).map(|(key, _)| key.chars().count()).max().unwrap_or(0) + 2;
+        let mut lines = Vec::new();
+        for (title, keys) in groups {
+            lines.push(Line::from(Span::styled(title.to_uppercase(), theme.brand())));
+            for (key, what) in *keys {
+                lines.push(Line::from(vec![Span::styled(format!("  {key:<key_w$}"), theme.key()), Span::styled((*what).to_owned(), Style::new().fg(theme.text))]));
+            }
+            lines.push(Line::default());
         }
-        side.push(Line::default());
+        lines
+    };
+    let (left, right) = (column(&groups[..4]), column(&groups[4..]));
+    let widest = |lines: &[Line]| lines.iter().map(Line::width).max().unwrap_or(0) as u16;
+    let two = widest(&left) + 2 <= inner.width / 2 && widest(&right) <= inner.width - inner.width / 2;
+    let body = Rect { height: inner.height.saturating_sub(1), ..inner };
+    let tall = if two { left.len().max(right.len()) } else { left.len() + right.len() };
+    let most = u16::try_from(tall).unwrap_or(u16::MAX).saturating_sub(body.height);
+    HELP_MOST.set(most);
+    let scroll = scroll.min(most);
+    if two {
+        let half = inner.width / 2;
+        frame.render_widget(Paragraph::new(left).scroll((scroll, 0)), Rect { width: half, ..body });
+        frame.render_widget(Paragraph::new(right).scroll((scroll, 0)), Rect { x: inner.x + half, width: inner.width - half, ..body });
+    } else {
+        let mut lines = left;
+        lines.extend(right);
+        frame.render_widget(Paragraph::new(lines).scroll((scroll, 0)), body);
     }
-    let [l, r] = col;
-    frame.render_widget(Paragraph::new(l), Rect { width: half, ..inner });
-    frame.render_widget(Paragraph::new(r), Rect { x: inner.x + half, width: inner.width - half, ..inner });
-    let foot = Line::from(Span::styled(
-        format!("Copied secrets clear themselves. Every change is saved at once. {} commands under :", COMMANDS.len()),
-        theme.faint(),
-    ))
-    .centered();
+    let foot = if most > 0 {
+        let more = if scroll < most { "↓ more" } else { "↑ back" };
+        Line::from(vec![Span::styled(format!("{more}  "), theme.brand()), Span::styled("↑↓ PgUp PgDn scroll  Esc close", theme.faint())]).centered()
+    } else {
+        Line::from(Span::styled(
+            format!("Copied secrets clear themselves. Every change is saved at once. {} commands under :", COMMANDS.len()),
+            theme.faint(),
+        ))
+        .centered()
+    };
     frame.render_widget(Paragraph::new(foot), Rect { y: inner.bottom() - 1, height: 1, ..inner });
+}
+
+/// How far the keys list could scroll when last drawn.
+pub fn help_most() -> u16 {
+    HELP_MOST.get()
 }
 
 /// Digits five cells tall, for the six to compare.
@@ -2022,14 +2140,10 @@ fn draw_restore(frame: &mut Frame, area: Rect, ui: &crate::restore::RestoreUi, t
                         continue;
                     }
                     Some(input) if input.is_empty() => Span::styled(field.hint().to_owned(), theme.faint()),
-                    Some(input) => {
-                        let shown: String = if field.secret() { "•".repeat(input.text().chars().count()) } else { input.text().to_owned() };
-                        let skip = input.cursor().saturating_sub(value_w.saturating_sub(1));
-                        Span::styled(shown.chars().skip(skip).take(value_w).collect::<String>(), text)
-                    }
+                    Some(input) => Span::styled(visible(input, field.secret(), value_w).0, text),
                 };
                 if focused && let Some(input) = ui.input(field) {
-                    let col = input.cursor().min(value_w.saturating_sub(1));
+                    let col = visible(input, field.secret(), value_w).1;
                     cursor = Some(Position::new(body.x + (label_w + 3 + col) as u16, body.y + lines.len() as u16));
                 }
                 lines.push(Line::from(vec![mark, label, value]));
@@ -2079,6 +2193,24 @@ fn draw_restore(frame: &mut Frame, area: Rect, ui: &crate::restore::RestoreUi, t
     hint_bar(frame, foot, theme, &keys, Alignment::Right);
 }
 
+/// `text` as lines no wider than `width`, broken between words.
+fn wrapped(text: &str, width: u16, style: Style) -> Vec<Line<'static>> {
+    let width = usize::from(width.max(10));
+    let mut lines = Vec::new();
+    let mut line = String::new();
+    for word in text.split(' ') {
+        if !line.is_empty() && line.chars().count() + 1 + word.chars().count() > width {
+            lines.push(Line::from(Span::styled(std::mem::take(&mut line), style)));
+        }
+        if !line.is_empty() {
+            line.push(' ');
+        }
+        line.push_str(word);
+    }
+    lines.push(Line::from(Span::styled(line, style)));
+    lines
+}
+
 fn draw_link(frame: &mut Frame, area: Rect, link: &LinkUi, theme: &Theme) {
     let title = match link.role {
         Role::Receive => "Get your vault from another device",
@@ -2088,8 +2220,6 @@ fn draw_link(frame: &mut Frame, area: Rect, link: &LinkUi, theme: &Theme) {
     let inner = popup(frame, area, area.width, area.height, theme, title, false);
     let [body, foot] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(inner);
     let body = body.inner(Margin::new(1, 0));
-    let text = |s: String| Line::from(Span::styled(s, Style::new().fg(theme.text)));
-    let dim = |s: String| Line::from(Span::styled(s, theme.dim()));
     let faint = |s: String| Line::from(Span::styled(s, theme.faint()));
     let mut keys: Vec<(&str, &str)> = Vec::new();
 
@@ -2158,15 +2288,16 @@ fn draw_link(frame: &mut Frame, area: Rect, link: &LinkUi, theme: &Theme) {
             keys.push(("Esc", "stop"));
         }
         Stage::Searching => {
-            let mut lines = vec![
-                text("On the new device, choose I already have a vault, then Get it from another device.".into()),
-                dim("It shows a code and waits. Pick it below, or paste the text under its code.".into()),
+            // Wrapped by hand, since the list and the box below are placed by line count.
+            let mut lines = wrapped("On the new device, choose I already have a vault, then Get it from another device.", body.width, Style::new().fg(theme.text));
+            lines.extend(wrapped("It shows a code and waits. Pick it below, or paste the text under its code.", body.width, theme.dim()));
+            lines.extend([
                 Line::default(),
                 Line::from(vec![
                     Span::styled("Devices waiting on this network  ", theme.brand()),
                     Span::styled(link.spinner(), theme.faint()),
                 ]),
-            ];
+            ]);
             let list_y = body.y + lines.len() as u16;
             if link.found.is_empty() {
                 lines.push(faint("  Looking… none yet. Both need the same network.".into()));

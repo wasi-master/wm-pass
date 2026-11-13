@@ -130,11 +130,12 @@ The search box finds items across the whole vault by their name, websites, usern
 
 Type part of a name. Words of four letters or more also match with a letter or two missing, so "gthub" still finds GitHub.
 
-Search looks at names, websites, tags, usernames, the holder and issuer of cards, names and emails on identities, database hosts and users, Wi-Fi names, products, providers, and the names of fields you added. It never looks inside a password or another secret.
+Search looks at names, websites, tags, usernames, the holder and issuer of cards, names and emails on identities, database names, hosts and users, Wi-Fi names, products, providers, the issuer and account of a code, a document's type, SSH key fingerprints, and the names of fields you added. It never looks inside a password or another secret.
 
 These words narrow a search, and can be combined:
 
 - "tag:work", "kind:card", "site:github" and "folder:bank" keep to one tag, kind, website or folder. "kind:" takes login, otp, note, card, identity, recovery, wifi, ssh, api, database, license or document.
+- "site:" also takes an address pasted from the browser, and leaves out a leading "www.". An address pasted on its own, such as https://www.github.com/login, finds the logins for that site.
 - "has:otp", "has:passkey", "has:attachment", "has:alias", "has:notes", "has:link", "has:history" and "has:reminder" keep the items that have one.
 - "weak", "reused", "breached", "old" and "duplicate" keep the items the health check flags, and "pinned" and "favorite" keep those.
 - "modified\<30d" keeps items changed in the last 30 days, and "modified\>1y" those not changed for a year. "created\<" and "created\>" work the same way. Use d, w, m or y.
@@ -147,7 +148,7 @@ Results are in the list's order: by name, or newest first when the list is sorte
 
 #### When to use it
 
-Press <kbd>Ctrl+F</kbd> (<kbd>⌘F</kbd> on a Mac) from anywhere in the window to jump to the box. If nothing matches, **Add it as a login** starts a new login with that name.
+Press <kbd>Ctrl+F</kbd> (<kbd>⌘F</kbd> on a Mac) from anywhere in the window to jump to the box. If nothing matches, **Add it as a login** starts a new login with that name. While you look at one kind of item, the button adds that kind instead.
 
 #### Limits
 
@@ -159,11 +160,12 @@ Search leaves passwords and other secrets alone on purpose: a search box must no
 
 Type part of a name. Words of four letters or more also match with a letter or two missing, so "gthub" still finds GitHub.
 
-Search looks at names, websites, tags, usernames, the holder and issuer of cards, names and emails on identities, database hosts and users, Wi-Fi names, products, providers, and the names of fields you added. It never looks inside a password or another secret.
+Search looks at names, websites, tags, usernames, the holder and issuer of cards, names and emails on identities, database names, hosts and users, Wi-Fi names, products, providers, the issuer and account of a code, a document's type, SSH key fingerprints, and the names of fields you added. It never looks inside a password or another secret.
 
 These words narrow a search, and can be combined:
 
 - "tag:work", "kind:card", "site:github" and "folder:bank" keep to one tag, kind, website or folder. "kind:" takes login, otp, note, card, identity, recovery, wifi, ssh, api, database, license or document.
+- "site:" also takes an address pasted from the browser, and leaves out a leading "www.". An address pasted on its own, such as https://www.github.com/login, finds the logins for that site.
 - "has:otp", "has:passkey", "has:attachment", "has:alias", "has:notes", "has:link", "has:history" and "has:reminder" keep the items that have one.
 - "weak", "reused", "breached", "old" and "duplicate" keep the items the health check flags, and "pinned" and "favorite" keep those.
 - "modified\<30d" keeps items changed in the last 30 days, and "modified\>1y" those not changed for a year. "created\<" and "created\>" work the same way. Use d, w, m or y.
@@ -219,6 +221,8 @@ Locking does not protect a vault from a program that was already running on the 
 
 Locking does not empty the clipboard. A secret copied before the lock keeps its own timer. See [Copying secrets](/guide/how-it-works/#feature-clipboard).
 
+If WM Pass hits an internal error, it locks the vault by itself rather than close, and says so over the screen. Anything you were typing stays there for you to copy before you unlock again. Saved items are not affected, since a save replaces the file in one step.
+
 #### On Android
 
 Before it locks, WM Pass saves any change still waiting and leaves a nested vault you were in. The key is then wiped from memory, and the hidden shelf closes.
@@ -260,7 +264,7 @@ When the time set under [Clear the clipboard after](/guide/settings/security/#se
 
 Usernames, websites and other plain fields are copied as they are, and not cleared.
 
-On Android, a password just made with the generator, its widget or **Set a new password** is not cleared. It is saved nowhere yet and is usually on its way into a sign-up or change-password form, so clearing it there would lose it. It is still marked sensitive, and goes when you copy something else.
+Quitting WM Pass clears a secret whose time is not up yet, if it is still on the clipboard.
 
 #### When to use it
 
@@ -284,6 +288,8 @@ If WM Keyboard is your keyboard, its clipboard history keeps the copy only until
 
 Usernames, websites and other plain fields are copied as they are, and not cleared.
 
+A password just made with the generator, its widget or **Set a new password** is not cleared. It is saved nowhere yet and is usually on its way into a sign-up or change-password form, so clearing it there would lose it. It is still marked sensitive, and goes when you copy something else.
+
 See also [Clear the clipboard after](/guide/settings/security/#setting-clipboard-seconds), [Filling logins](/guide/how-it-works/#feature-autofill), [Typing logins with auto-type](/guide/how-it-works/#feature-autotype), [Item view](/guide/screens/#screen-item).
 
 <a id="feature-shelf"></a>
@@ -298,9 +304,9 @@ A place for items you do not want seen by accident. Items on the shelf stay out 
 <div class="guide-down">↓</div>
 <div class="guide-row"><div class="guide-box"><strong>Lists, search, autofill</strong><span>everything else</span></div><div class="guide-box muted"><svg class="guide-icon" width="16" height="16" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M403.5-423.5Q372-455 372-500t31.5-76.5Q435-608 480-608t76.5 31.5Q588-545 588-500t-31.5 76.5Q525-392 480-392t-76.5-31.5ZM480-200q-146 0-266-81.5T40-500q54-137 174-218.5T480-800q141 0 257.5 76T912-520h-91q-52-93-143-146.5T480-720q-113 0-207.5 59.5T128-500q50 101 144.5 160.5T480-280q20 0 40-2t40-6v81q-20 3-40 5t-40 2Zm0-120q22 0 42.5-5t38.5-14q5-50 31.5-90t67.5-64v-7q0-75-52.5-127.5T480-680q-75 0-127.5 52.5T300-500q0 75 52.5 127.5T480-320Zm-5-180Zm205 380q-17 0-28.5-11.5T640-160v-120q0-17 11.5-28.5T680-320v-40q0-33 23.5-56.5T760-440q33 0 56.5 23.5T840-360v40q17 0 28.5 11.5T880-280v120q0 17-11.5 28.5T840-120H680Zm40-200h80v-40q0-17-11.5-28.5T760-400q-17 0-28.5 11.5T720-360v40Z"/></svg><strong>Hidden shelf</strong><span>closed</span></div></div>
 <div class="guide-down">↑</div>
-<div class="guide-row"><div class="guide-box"><strong>Master password</strong><span>opens it until you lock</span></div></div>
+<div class="guide-row"><div class="guide-box"><strong>Master password</strong><span>opens it until you leave or lock</span></div></div>
 </div>
-<figcaption>Items on the shelf stay out of sight until you open it with your password. It closes when the vault locks.</figcaption>
+<figcaption>Items on the shelf stay out of sight until you open it with your password. It closes again when you leave it or the vault locks.</figcaption>
 </figure>
 
 #### Why it is there
@@ -333,7 +339,7 @@ Backups and sync carry shelf items like any other, since they copy the whole fil
 
 #### On Android
 
-Open an item and, under **More** at the bottom, choose **Move to hidden shelf**.
+Open an item, tap **More options** at the bottom, and choose **Move to hidden shelf**. Several selected items go at once with **Put on the hidden shelf**.
 
 To see them, open Settings, Hidden shelf, and type your master password. It is asked even though the vault is already open.
 
@@ -396,7 +402,7 @@ Each way into the vault fills a slot in the file, and the slot says what happens
 - A [Decoy vault](/guide/settings/security/#action-decoy-vault) is a separate vault with its own password. Fill it with a few believable logins, so it holds up to a look.
 - A panic app such as Ripple can tell WM Pass to lock, or to wipe, as set under [When a panic app signals](/guide/settings/security/#setting-panic-action).
 
-Two more things help: the [hidden shelf](/guide/how-it-works/#feature-shelf) keeps chosen items out of sight, and **Self-destruct**, under **More** on an item, removes it at a time you choose.
+Two more things help: the [hidden shelf](/guide/how-it-works/#feature-shelf) keeps chosen items out of sight, and **Self-destruct**, under **More options** on an item, removes it at a time you choose.
 
 See also [Wipe password](/guide/settings/security/#action-wipe-password), [Lockout password](/guide/settings/security/#action-lockout-password), [Decoy vault](/guide/settings/security/#action-decoy-vault), [Lock and refuse passwords now](/guide/settings/security/#action-panic-now), [The hidden shelf](/guide/how-it-works/#feature-shelf), [Security](/guide/settings/security/).
 
@@ -463,15 +469,16 @@ One switch, [Allow network features](/guide/settings/security/#setting-network-a
 
 Setting up a backup place on a server, or adding a Bitwarden or server account, turns it on, since that is your yes to reaching it.
 
-With it on, network features run when you use them. In the background, only what you set up runs: scheduled backups, file sync after a change, and the update check when the app starts, if you turned it on.
+With it on, network features run when you use them. In the background, only what you set up runs: scheduled backups, file sync while the vault is open, and the update check when the app starts, if you turned it on.
 
 Web requests go over https. Plain http is refused, except to this device and to Tailscale addresses, where nothing readable crosses a network. SFTP, FTP, SMB, NFS and IMAP connections encrypt or not as the server and the place's settings decide.
 
-Site icons come with the app, so showing them never tells anyone which sites are in your vault.
+Brand marks for well-known sites come with the app, so showing them tells nobody which sites are in your vault. Website icons are fetched only if you add them under [Icons](/guide/settings/icons/).
 
 What each feature sends:
 
-- Breach checks: the first five characters of each password's SHA-1 hash to Have I Been Pwned, and an email address to the service you pick.
+- Breach checks: the first five characters of each password's SHA-1 hash to Have I Been Pwned, or ten of its Keccak-512 hash to XposedOrNot, and an email address to the service you pick.
+- Website icons, if you add them under Settings, Icons: each site's name, to that site or to DuckDuckGo.
 - Email aliases: your API key and the note you write, to the forwarding service.
 - Disposable inbox: a request for a throwaway address, to a public mail service.
 - Username checker: the name, to each site it asks.
@@ -498,11 +505,12 @@ With it on, network features run when you use them. In the background, only what
 
 Web requests go over https. Plain http is refused, except to this device and to Tailscale addresses, where nothing readable crosses a network. SFTP, FTP, SMB, NFS and IMAP connections encrypt or not as the server and the place's settings decide.
 
-Site icons come with the app, so showing them never tells anyone which sites are in your vault.
+Brand marks for well-known sites come with the app, so showing them tells nobody which sites are in your vault. Website icons are fetched only if you add them under [Icons](/guide/settings/icons/).
 
 What each feature sends:
 
-- Breach checks: the first five characters of each password's SHA-1 hash to Have I Been Pwned, and an email address to the service you pick.
+- Breach checks: the first five characters of each password's SHA-1 hash to Have I Been Pwned, or ten of its Keccak-512 hash to XposedOrNot, and an email address to the service you pick.
+- Website icons, if you add them under Settings, Icons: each site's name, to that site or to DuckDuckGo.
 - Email aliases: your API key and the note you write, to the forwarding service.
 - Disposable inbox: a request for a throwaway address, to a public mail service.
 - Username checker: the name, to each site it asks.
@@ -552,7 +560,7 @@ Passwords it finds lead the list on the [Health screen](/guide/screens/#screen-h
 Under **Your email addresses**, each address used in your items can be checked with one of three services:
 
 - **LeakCheck** names the services an address appeared in. The address goes to LeakCheck.
-- **Have I Been Pwned** needs an API key of your own. The address and the key go to Have I Been Pwned.
+- **Have I Been Pwned** needs an API key of your own. The address and the key go to Have I Been Pwned. After the first check the key is kept in the vault as an API key item, so your other devices have it too.
 - **Passwords in COMB** asks Proxynova about the address, then compares the passwords it lists with your own, on your device. Only yes or no comes out: the leaked text is never shown or kept.
 
 #### When to use it
@@ -630,7 +638,7 @@ Add one under Settings, Backups or Settings, Sync and accounts, with **Add a pla
 - Servers and storage, which covers WebDAV, S3, SFTP, FTP, SMB, NFS, and Synology or QNAP NAS boxes. WebDAV and S3 fill in the address for many services, such as Nextcloud, Backblaze B2 or Cloudflare R2.
 - Somewhere else, which means a Git repository on GitHub, GitLab or Gitea, or a mailbox over IMAP.
 
-What WM Pass needs to reach a place is kept on this phone under a key in its secure hardware, not in the vault, so scheduled backups can run while the vault is locked. For pCloud, MEGA and Proton Drive it keeps only the session the sign-in hands back.
+What WM Pass needs to reach a place is kept on this phone under a key in its secure hardware, not in the vault, so scheduled backups can run while the vault is locked. For pCloud, MEGA and Proton Drive it keeps only the session the sign-in hands back. iCloud Drive keeps your password too, and asks for a code from one of your devices about once a month.
 
 Each backup is written, read back and compared before any older copy is removed, so a failed run can leave one copy too many, never one too few.
 
@@ -667,7 +675,13 @@ There are three ways, and you can use more than one:
 
 Merging goes field by field, and the newest value of each field wins. If two devices changed the same password, the value that loses goes into that item's history, so a conflict never destroys a password.
 
-File sync runs about 20 seconds after you change something, so a burst of edits makes one trip, and whenever you choose **Sync now**. Attachments are carried across once each, already encrypted.
+An item put back from the trash on one device stays, whole, even if another device emptied its trash before it heard of that, or its trash emptied itself. Emptying the trash deletes items only as that device last saw them.
+
+Which edit is newest comes from each device's clock. A device whose clock runs more than a day ahead does not drag the others' clocks along, and an edit you make after its change arrives still wins over it. When a device's clock looks wrong by an hour or more, the vault says so, naming the other device when it can. Fix the time in that device's system settings.
+
+If the master password is changed on two devices before they sync, both new passwords open the vault afterwards, each with any key file or security key it needed, and WM Pass says so when you unlock. Remove the one you don't want under Settings, Security, [Unlock methods](/guide/settings/security/#group-security-methods). When the vault has no free slot for both, only the later change stays, and you are told.
+
+File sync runs about 20 seconds after you change something, so a burst of edits makes one trip. It also runs on its own to bring in what other devices changed: just after you unlock, when you come back to WM Pass after a minute or more, and every five minutes while the vault is open. **Sync now** runs one at once. Attachments are carried across once each, already encrypted.
 
 #### When to use it
 
@@ -708,7 +722,7 @@ Some people want their vault on a phone and a computer without it ever touching 
 
 #### How it works
 
-Pair under Settings, Sync and accounts, with **Pair a device**. Either show a code on one device and paste its text on the other, or compare six digits on both screens and accept on both.
+Pair under Settings, Sync and accounts, with **Pair a device**. Either show a code on one device and scan it, or paste its text, on the other, or compare six digits on both screens and choose **They match** on both. **Add a new device** sends this vault to a phone or computer that has none yet, and pairs the two.
 
 A shown code holds a one-off secret and stops working after two minutes. Six digits work without a camera: each side commits to its part before seeing the other's, so someone in the middle gets one chance in a million, and a failed try shows on both screens.
 
@@ -734,7 +748,7 @@ A device you forget needs pairing again before it can sync.
 
 #### On Android
 
-Pair under Settings, Sync and accounts, with **Add a device**. It asks whether the other device already has this vault: one with none gets a copy and is paired, one that has it is only paired. Either scan a code that the other device shows, or compare six digits on both screens and accept on both.
+Pair under Settings, Sync and accounts, with **Add a device**. It asks whether the other device already has this vault: one with none gets a copy and is paired, one that has it is only paired. Either show a code for the other device to scan, scan the one it shows, or compare six digits on both screens and tap **They match** on both.
 
 A shown code holds a one-off secret and stops working after two minutes. Six digits work without a camera: each side commits to its part before seeing the other's, so someone in the middle gets one chance in a million, and a failed try shows on both screens.
 
@@ -786,9 +800,9 @@ Removing an account forgets it on this device, with its offline copy. Nothing on
 
 #### On Android
 
-Add one under Settings, Sync and accounts, with **Add an account**, or at the door. Choose Bitwarden, a server of your own, or a KeePass file.
+Add one under Settings, Sync and accounts, with **Add an account**, or at the door. Choose **Bitwarden**, **Bitwarden EU**, **Own server** or **KeePass file**.
 
-It then appears at the door beside your own vault. Choose it there and type its own password.
+An account opens in place of your vault, so adding one under Settings offers **Sign in now**: the vault locks and the door asks for the account's password. Later, it appears at the door beside your own vault; choose it and type its own password.
 
 For a server account, your password is never sent: a key made from it proves who you are, as with any Bitwarden app. The first sign-in from a new device may need a code Bitwarden emails you, or a two-step code, typed beside the password.
 
@@ -865,7 +879,7 @@ Password managers: 1Password, Apple Passwords, Avast, Avira, Bitwarden, Buttercu
 
 A file with a password, such as a KeePass or SafeInCloud database, asks for it first. A KeePass database can also take its key file and a YubiKey set up for challenge-response (**Use security key**), with or without a password, and KeePass 1 files (.kdb) import as well. Items already in the vault are skipped, and the result says how many.
 
-Under Settings, Export, a **WM Pass vault** or a **KeePass database** stays encrypted. **Bitwarden JSON**, **CSV** and a **Printable page** are plain text that anyone who opens them can read.
+Under Settings, Export, a **WM Pass vault** or a **KeePass database** stays encrypted. **Bitwarden JSON**, **CSV**, a **Printable page** and **PDF or printer** are plain text that anyone who opens or sees them can read.
 
 #### When to use it
 
@@ -889,7 +903,7 @@ Password managers: 1Password, Apple Passwords, Avast, Avira, Bitwarden, Buttercu
 
 A file with a password, such as a KeePass or SafeInCloud database, asks for it first. A KeePass database can also take its key file and a YubiKey set up for challenge-response (**Use security key**), with or without a password, and KeePass 1 files (.kdb) import as well. Items already in the vault are skipped, and the result says how many.
 
-Under Settings, Export, a **WM Pass vault** or a **KeePass database** stays encrypted. **Bitwarden JSON**, **CSV** and a **Printable page** are plain text that anyone who opens them can read.
+Under Settings, Export, a **WM Pass vault** or a **KeePass database** stays encrypted. **Bitwarden JSON**, **CSV**, a **Printable page** and **PDF or printer** are plain text that anyone who opens or sees them can read.
 
 See also [Import](/guide/settings/import/), [Export](/guide/settings/export/), [One-time codes](/guide/how-it-works/#feature-codes), [The vault file](/guide/how-it-works/#concept-vault-file).
 
@@ -907,11 +921,11 @@ A code beside its password means one app to open when you sign in, and one backu
 
 A code can live in a login, under **One-time code** in the editor, or on its own as a **Code** item. Give it the setup key a site shows, or the otpauth link behind its QR code.
 
-Time-based codes change on a fixed period, usually 30 seconds, and the ring beside each one shows how long it has left. In its last ten seconds the next code shows too, so a late copy still works.
+Time-based codes change on a fixed period, usually 30 seconds, and the ring beside each one shows how long it has left. With [Show the next code](/guide/settings/codes/#setting-code-next) on, the next code shows too in the last ten seconds, so a late copy still works.
 
 Counter-based codes are not shown until you ask, since showing one uses it up. Steam Guard codes work as well.
 
-The [Codes screen](/guide/screens/#screen-codes) lists them all. Click one to copy it; the copy clears from the clipboard as a password does.
+The [Codes screen](/guide/screens/#screen-codes) lists them all, each under its item's name. Click one to copy it, and double-click it to open its item. The copy clears from the clipboard as a password does.
 
 Bring codes over from Aegis, 2FAS, andOTP, Ente Auth, FreeOTP+, Raivo or Google Authenticator under Settings, Import.
 
@@ -929,7 +943,7 @@ Codes on the hidden shelf do not appear on the Codes screen.
 
 A code can live in a login, under **One-time code** in the editor, or on its own as a **Code** item. Give it the setup key a site shows, or the otpauth link behind its QR code.
 
-Time-based codes change on a fixed period, usually 30 seconds, and the ring beside each one shows how long it has left. In its last ten seconds the next code shows too, so a late copy still works.
+Time-based codes change on a fixed period, usually 30 seconds, and the ring beside each one shows how long it has left. With [Show the next code](/guide/settings/codes/#setting-code-next) on, the next code shows too in the last ten seconds, so a late copy still works.
 
 Counter-based codes are not shown until you ask, since showing one uses it up. Steam Guard codes work as well.
 
@@ -1016,7 +1030,23 @@ Breach results last only until the vault locks, so that group is empty until you
 
 Items on the hidden shelf count towards the score.
 
-Only logins with a password count towards the score.
+Only logins with a password count towards the score. A login you tell one check to leave out no longer counts against the score for it, and logins left out by [Leave out local addresses](/guide/settings/health/#setting-health-skip-local) are not counted at all.
+
+#### On Android
+
+All of it is worked out on your device, over every item not in the trash:
+
+- *In a known breach* lists passwords a [breach check](/guide/how-it-works/#feature-breaches) found in published leaks.
+- *Used more than once* lists shared passwords, since one leak opens every site that uses it.
+- *Easy to guess* lists passwords an attacker with a password list would find quickly. A password built from the site's name or your username scores lower.
+- *Unencrypted sites* lists logins saved with a plain http address.
+- *Expiring soon* lists items whose reminder or expiry date is close.
+- *Not changed in a year* lists passwords older than that, or older than the item's own reminder allows.
+- *No second factor* lists sites known to offer one-time codes where you have no code or passkey saved. The list of sites comes with the app.
+- *Duplicate items* finds the same site, username and password saved more than once. Merging them keeps both histories.
+- *Maybe the same account* finds logins that share a password and look like one account saved twice: another spelling of the name, an email in place of a username or phone number, or another address for the same site.
+
+The score is the share of logins with a password that are none of weak, reused, leaked or old.
 
 See also [Health screen](/guide/screens/#screen-health), [Health checks](/guide/settings/health/), [Breach checks](/guide/how-it-works/#feature-breaches), [Show the score](/guide/settings/health/#setting-health-score), [Compare two passwords](/guide/settings/compare/).
 
@@ -1079,6 +1109,8 @@ Type a name on the [Username checker](/guide/settings/usernames/) page and choos
 
 Sites that refuse anonymous lookups, or give the same answer for every name, get no answer, because a guess is worse than none. X, Threads and Reddit are among them, and the page links their profiles for you to open yourself.
 
+TikTok and Instagram only answer a browser, so their pages load in a hidden, private window that runs their scripts and keeps nothing afterwards.
+
 #### Limits
 
 Every site checked learns the name you looked up.
@@ -1129,17 +1161,19 @@ A login saved without a website, or for another site, is not offered. Search for
 
 Set WM Pass as the phone's autofill service, from **Autofill service** under Settings, Security. A login field in another app or a browser then offers your saved logins.
 
-Apps are matched by their package name and signing certificate, never by name alone. Browsers are matched by web address, but only browsers WM Pass knows.
+Apps are matched by their package name and signing certificate, never by name alone. Browsers are matched by web address, but only browsers WM Pass knows. A browser that does not give Android the page's fields is filled in Android's compatibility mode, which reads the address from the browser's address bar.
 
 A suggestion fills only when you tap it. A locked vault asks you to unlock first, and a web page shown inside another app asks before filling and names what it is filling.
 
-[Inline suggestions](/guide/settings/security/#setting-autofill-inline) shows logins in the keyboard's suggestion row, and [Offer to save passwords](/guide/settings/security/#setting-autofill-save) offers to save after you sign in with a new or changed password.
+[Inline suggestions](/guide/settings/security/#setting-autofill-inline) shows logins in the keyboard's suggestion row, and [Offer to save passwords](/guide/settings/security/#setting-autofill-save) offers to save after you sign in with a new or changed password. A sign-in that asks for the username on one screen and the password on the next is saved as one login.
 
-WM Keyboard's WM Pass tool is another way to fill, once you allow it under [Let WM Keyboard fill](/guide/settings/security/#setting-keyboard-access).
+WM Keyboard's WM Pass tool is another way to fill, once you allow it under [Let WM Keyboard fill](/guide/settings/security/#setting-keyboard-access). While the vault is locked, the tool can open it with your fingerprint, if you turned that on, or with the master password typed into the keyboard's own box.
 
 Items in the trash or on the hidden shelf are never offered.
 
 A password typed by WM Keyboard passes through the keyboard's process, as anything you type does. The autofill service keeps it out of there.
+
+A master password typed into the keyboard's own box goes through the keyboard too, as it does at the door, and meets the same wrong-try waits and duress passwords. A vault that also needs a key file or a security key opens only at the door.
 
 See also [Extension popup](/guide/screens/#screen-popup), [Connecting the extension](/guide/how-it-works/#feature-bridge), [Passkeys](/guide/how-it-works/#feature-passkeys), [Desktop app](/guide/settings/desktop-link/), [Copying secrets](/guide/how-it-works/#feature-clipboard).
 
@@ -1161,7 +1195,9 @@ When a site asks to create or use a passkey, a WM Pass window asks you first, na
 
 If you type your master password in that window, the site is told you were verified. Some sites require it.
 
-If you have no passkey for that site, the browser's own handling carries on as usual.
+If you have no passkey for that site, or the extension's vault is locked, the browser's own handling carries on as usual.
+
+When a site asks to create a passkey for an account that already has one in WM Pass, the window says **Passkey already saved** and makes no second one. **Continue** tells the site so.
 
 Passkeys are kept in a login item, which lists each one with its site and when it was made.
 
@@ -1180,6 +1216,8 @@ A locked vault offers only a way to unlock it, since the keys stay in the vault.
 An app other than a browser WM Pass knows gets a confirmation that names it, in place of a check against the site's published list of apps.
 
 The site is told you were verified only after a real fingerprint or device check.
+
+When a site asks to create a passkey for an account that already has one in WM Pass, WM Pass says so and makes no second one.
 
 Passkeys are kept in a login item, which lists each one with its site and when it was made.
 
@@ -1380,6 +1418,8 @@ Edit the tiles in your phone's Quick Settings and add **Lock WM Pass**.
 
 A tap saves anything not yet saved and forgets every key, as locking inside the app does.
 
+While the vault is locked, a tap unlocks it over whatever is on screen: the fingerprint prompt alone when fingerprint unlock is set up, the door otherwise. On a locked phone, the phone asks to be unlocked first.
+
 See also [Panic lock tile](/guide/how-it-works/#feature-panic-tile), [Locking](/guide/how-it-works/#feature-locking), [Lock after no activity](/guide/settings/security/#setting-lock-after).
 
 <a id="feature-panic-tile"></a>
@@ -1393,6 +1433,8 @@ A Quick Settings tile that locks the vault at once and refuses every password fo
 #### How it works
 
 Edit the tiles in your phone's Quick Settings and add **Panic lock**. It works whether or not the vault is open.
+
+A tap also clears a copied password from the clipboard. For the hour, the fingerprint is not offered either.
 
 #### When to use it
 
@@ -1410,11 +1452,11 @@ See also [Lock and refuse passwords now](/guide/settings/security/#action-panic-
 
 *Only in Android.*
 
-Touch and hold the WM Pass icon to go straight to **Search**, **Add a login**, **Codes** or **Generate**.
+Touch and hold the WM Pass icon to go straight to **Search**, **Add an item**, **Codes** or **Generate**.
 
 #### How it works
 
-**Add a login** opens the add menu. If the vault is locked, the door comes first, then the page you picked.
+**Add an item** opens the add menu. If the vault is locked, the door comes first, then the page you picked.
 
 See also [Widgets](/guide/how-it-works/#feature-home-widget).
 
@@ -1430,6 +1472,7 @@ Other apps can share text, pictures and PDFs to WM Pass. Text appears in the sha
 
 - A web link searches the vault for its site, so you can see what is saved there.
 - A one-time code link, one that starts with otpauth://, opens a new code with its details filled in. Tapping such a link in another app does the same.
+- A Wi-Fi network's text, one that starts with WIFI:, as a shared network's QR code holds, opens a new Wi-Fi network with its details filled in.
 - Any other text opens a new note with the text in it.
 - A picture or a PDF becomes a new document item, named after the file, with the file attached.
 
@@ -1449,7 +1492,7 @@ A setting that makes the app crash as soon as it draws would otherwise leave cle
 
 #### How it works
 
-The style, theme, animations, the app, site and settings icons, and the list layout go back to how they started. The door says why.
+The style, theme, animations, the app, site and settings icons, the cards on the settings pages, and the list layout go back to how they started. The door says why.
 
 Your vault, dark mode, accent and your other settings stay as they were. Leaving the app, locking it, the screen going off or swiping it away never counts.
 
@@ -1486,9 +1529,9 @@ Touch and hold an empty spot on the home screen, choose **Widgets**, then WM Pas
 
 - *Quick bar*: the buttons you choose under [Quick bar](/guide/settings/widgets/#setting-widget-buttons). Search, add, codes, generator and health open WM Pass on that page, after the door if the vault is locked. Lock locks the vault without opening WM Pass, and while it is locked, unlocks it over the home screen.
 - *Lock status*: whether the vault is open, and its name while it is. A tap locks it, or unlocks it over the home screen: the fingerprint prompt alone when fingerprint unlock is set up, the door otherwise.
-- *Health*: your score and how many passwords are weak, reused or in a known breach. The counts are kept from the last time the vault was open, with when that was.
-- *Backups*: when each backup place last ran, and whether that failed or the next run is late.
-- *Generator*: a tap copies a new password made the way the generator is set up. Nothing is shown, and the clipboard is cleared as usual.
-- *Codes* and *Favorites*: only with [Show on widgets](/guide/settings/security/#setting-widget-access) on, and only while the vault is open. Codes shows the codes chosen under [Codes on widgets](/guide/settings/widgets/#setting-widget-codes), and a tap copies one. Favorites shows a letter and a name for each favorite, and a tap opens it. Locked, a tap unlocks them where they are.
+- *Health*: your score, unless [Show the score](/guide/settings/health/#setting-health-score) is off, and how many passwords are weak, reused or in a known breach. The counts are kept from the last time the vault was open, with when that was.
+- *Backups*: when each backup place last ran, and whether that failed or the next run is late. A tap opens the backup settings.
+- *Generator*: a tap copies a new password made the way the generator is set up. Nothing is shown. The password stays on the clipboard until something else replaces it, since it is saved nowhere yet.
+- *Codes* and *Favorites*: only with [Show on widgets](/guide/settings/security/#setting-widget-access) on, and only while the vault is open. Codes shows the codes chosen under [Codes on widgets](/guide/settings/widgets/#setting-widget-codes), and a tap copies one. Favorites shows a letter and a name for each favorite, and a tap opens it. Nothing in the trash or on the hidden shelf is shown. Locked, a tap unlocks them where they are.
 
 If Android ends WM Pass while a widget shows codes or names, the widgets are drawn locked again within a few minutes.

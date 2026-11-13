@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The window behind the first frame: the light door's ground. -->
+    <color name="launch_ground">#FFF4F9F7</color>
+</resources>

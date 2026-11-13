@@ -39,7 +39,7 @@
       trick = (await pass.engine<{ address: string }>(method, { address: address.trim(), tag: tag.trim() }, {})).json.address;
       trickProblem = null;
     } catch (failure: any) {
-      trickProblem = failure.message;
+      trickProblem = failure?.message ?? 'That address could not be made.';
     }
   }
 
@@ -60,7 +60,7 @@
     try {
       aliases = (await withKey(async (secret) => (await pass.engine<Alias[]>('alias.list', { provider: service.id }, { secret, online: online() })).json)) ?? [];
     } catch (failure: any) {
-      problem = failure.message;
+      problem = failure?.message ?? 'The aliases could not be listed.';
     }
   }
 
@@ -70,9 +70,19 @@
     void refresh();
   });
 
+  let keeping = $state(false);
   async function keepKey() {
-    await saveServiceKey(service.keyTitle, keyText.trim());
-    keyText = '';
+    if (keeping) return;
+    keeping = true;
+    problem = null;
+    try {
+      await saveServiceKey(service.keyTitle, keyText.trim());
+      keyText = '';
+    } catch (failure: any) {
+      problem = failure?.message ?? 'The key could not be kept.';
+    } finally {
+      keeping = false;
+    }
   }
 
   async function make() {
@@ -83,7 +93,7 @@
       note = '';
       await refresh();
     } catch (failure: any) {
-      problem = failure.message;
+      problem = failure?.message ?? 'The alias could not be made.';
     }
     busy = false;
   }
@@ -92,7 +102,7 @@
     try {
       await withKey((secret) => pass.engine('alias.set_enabled', { provider: service.id, id: alias.id, enabled: on }, { secret, online: online() }));
     } catch (failure: any) {
-      problem = failure.message;
+      problem = failure?.message ?? 'That could not be changed.';
     }
     await refresh();
   }
@@ -107,7 +117,7 @@
       <Btn label="Plus tag" onclick={() => runTrick('alias.plus')} />
       <Btn label="Gmail dots" onclick={() => runTrick('alias.dots')} />
     </div>
-    {#if trickProblem}<p class="danger-text">{trickProblem}</p>{/if}
+    {#if trickProblem}<p class="danger-text" role="alert">{trickProblem}</p>{/if}
     {#if trick}
       <div class="gap">
         <span class="mono selectable grow">{trick}</span>
@@ -120,16 +130,16 @@
 <Group title="Forwarding services" help="group.aliases.services">
   <div class="set-body stack">
     <NetGate what="Alias services create addresses that forward to you, so a site never sees your real one. The service you pick receives your API key and the note you write.">
-      <Segmented value={serviceId} options={ALIAS_SERVICES.map((s) => [s.id, s.name] as [string, string])} onchange={(id) => (serviceId = id)} />
+      <Segmented label="Service" value={serviceId} options={ALIAS_SERVICES.map((s) => [s.id, s.name] as [string, string])} onchange={(id) => (serviceId = id)} />
       {#if !hasKey}
         <p class="dim">{service.note}</p>
         <PasswordField bind:value={keyText} placeholder="API key" />
-        <div><Btn label="Keep this key in the vault" variant="primary" disabled={!keyText.trim()} onclick={keepKey} /></div>
+        <div><Btn label="Keep this key in the vault" variant="primary" disabled={!keyText.trim() || keeping} onclick={keepKey} /></div>
       {:else}
         <Field bind:value={note} placeholder="What is it for?" />
         <div><Btn label={busy ? 'Making it…' : 'Make a new alias'} icon="alternate_email" variant="primary" disabled={busy} onclick={make} /></div>
       {/if}
-      {#if problem}<p class="danger-text">{problem}</p>{/if}
+      {#if problem}<p class="danger-text" role="alert">{problem}</p>{/if}
     </NetGate>
   </div>
   {#each aliases as alias (alias.id)}

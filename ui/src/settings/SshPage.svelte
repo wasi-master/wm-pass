@@ -7,10 +7,11 @@
   import { ui } from '../vault/ui.svelte';
   import { copyPlainLine } from './clipboard';
   import IconBtn from '../parts/IconBtn.svelte';
+  import { overlays } from '../parts/floating.svelte';
   import Toggle from './Toggle.svelte';
 
   const desktop = host().desktop!;
-  let shown = $state<{ running: boolean; socket: string | null; last: string | null }>({ running: false, socket: null, last: null });
+  let shown = $state<{ running: boolean; socket: string | null; last: string | null; stopped?: string | null }>({ running: false, socket: null, last: null });
   const keys = $derived(pass.entries.filter((e) => e.kind === 'ssh'));
 
   async function refresh() {
@@ -18,14 +19,18 @@
   }
 
   $effect(() => {
-    void refresh();
-    const timer = setInterval(() => void refresh(), 2000);
+    void refresh().catch(() => undefined);
+    const timer = setInterval(() => void refresh().catch(() => undefined), 2000);
     return () => clearInterval(timer);
   });
 
   async function apply() {
-    await desktop.sshSetEnabled(prefs.v.ssh_agent, prefs.v.ssh_confirm);
-    await refresh();
+    try {
+      await desktop.sshSetEnabled(prefs.v.ssh_agent, prefs.v.ssh_confirm);
+    } catch (failure: any) {
+      overlays.toast(failure?.message ?? 'The SSH agent could not be changed.');
+    }
+    await refresh().catch(() => undefined);
   }
 
   const line = $derived(shown.socket ? (host().os === 'windows' ? `$env:SSH_AUTH_SOCK = "${shown.socket}"` : `export SSH_AUTH_SOCK="${shown.socket}"`) : '');
@@ -42,6 +47,7 @@
     </Row>
   {/if}
   {#if shown.last}<Row title="Last used" sub={shown.last} />{/if}
+  {#if shown.stopped && !shown.running}<Row title="Stopped" sub={shown.stopped} icon="warning" />{/if}
 </Group>
 
 <Group title="Keys in this vault" help="group.ssh.keys">

@@ -929,6 +929,17 @@ struct RsaKey {
 }
 
 impl RsaKey {
+    /// A key whose parts fit together. A damaged one (a zero prime, a modulus that is not
+    /// their product) would otherwise divide by zero in signing, or loop for ever looking
+    /// for a blinding factor.
+    fn new(n: BigUint, e: BigUint, d: BigUint, p: BigUint, q: BigUint, iqmp: BigUint) -> Result<Self> {
+        let one = BigUint::from(1u8);
+        if p <= one || q <= one || e <= one || &p * &q != n {
+            return Err(Fault::Io);
+        }
+        Ok(Self { n, e, d, p, q, iqmp })
+    }
+
     /// PKCS#1 v1.5 signing, with the CRT for speed and blinding so the time it takes says
     /// nothing about the key; the result is checked with the public half before use.
     fn sign(&self, hash: RsaHash, data: &[u8]) -> Result<Vec<u8>> {
@@ -1091,7 +1102,7 @@ fn parse_openssh_key(body: &[u8], passphrase: &str) -> Result<ClientKey> {
         "ssh-rsa" => {
             let mut next = || k.mpint().map(BigUint::from_bytes_be);
             let (n, e, d, iqmp, p, q) = (next()?, next()?, next()?, next()?, next()?, next()?);
-            Ok(ClientKey::Rsa(Box::new(RsaKey { n, e, d, p, q, iqmp })))
+            Ok(ClientKey::Rsa(Box::new(RsaKey::new(n, e, d, p, q, iqmp)?)))
         }
         "ecdsa-sha2-nistp256" => {
             if k.text()? != "nistp256" {
@@ -1146,7 +1157,7 @@ fn parse_pkcs1(body: &[u8]) -> Result<ClientKey> {
     next()?;
     next()?;
     let iqmp = next()?;
-    Ok(ClientKey::Rsa(Box::new(RsaKey { n, e, d, p, q, iqmp })))
+    Ok(ClientKey::Rsa(Box::new(RsaKey::new(n, e, d, p, q, iqmp)?)))
 }
 
 // ---- Host keys kept between connections ----
@@ -1207,11 +1218,15 @@ fn direction(
 }
 
 /// What a disconnect from the server means. Turned away during sign-in is a refusal,
-/// whatever reason code the server chose for it.
+/// whatever reason code the server chose for it, except too many connections (12), which
+/// says nothing about the password: it is a server that is full for now.
 fn disconnect_fault(payload: &[u8], authenticating: bool) -> Fault {
+    const TOO_MANY_CONNECTIONS: u32 = 12;
     let reason = Parse::new(payload.get(1..).unwrap_or_default()).u32().unwrap_or(0);
     match reason {
-        12..=14 => Fault::PermissionLost,
+        TOO_MANY_CONNECTIONS => Fault::Io,
+        // No more methods to try, or a user name it will not take.
+        13..=15 => Fault::PermissionLost,
         _ if authenticating => Fault::PermissionLost,
         _ => Fault::Io,
     }

@@ -59,9 +59,13 @@
         </intent>
     </queries>
 
-    <!-- allowBackup off: a vault leaves this phone only by the owner's hand. -->
+    <!-- allowBackup off: a vault leaves this phone only by the owner's hand. hasFragileUserData:
+         uninstalling asks whether to keep the app's data, so a vault with no copy elsewhere is not
+         erased by one tap meant to reinstall. -->
     <application
         android:enableOnBackInvokedCallback="true"
+        android:hasFragileUserData="true"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:name=".app.PassApplication"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/no_extraction"

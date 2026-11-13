@@ -29,6 +29,13 @@ object SecureClipboard {
     private var listener: ClipboardManager.OnPrimaryClipChangedListener? = null
     private val mutable = MutableStateFlow<CopyInFlight?>(null)
 
+    /**
+     * Whether the clip is still a secret copied here, timed or not: a panic takes it off the
+     * clipboard even when the timer is off or the copy was a generated password.
+     */
+    @Volatile
+    private var ownsClip = false
+
     /** The copy under way, for the capsule that counts it down. */
     val current: StateFlow<CopyInFlight?> = mutable.asStateFlow()
 
@@ -66,39 +73,59 @@ object SecureClipboard {
             }
         }
         listener?.let(manager::removePrimaryClipChangedListener)
+        listener = null
         manager.setPrimaryClip(clip)
         wipeJob?.cancel()
-        if (!sensitive || !wipe || clearAfterSeconds == 0) {
+        ownsClip = sensitive
+        if (!sensitive) {
             mutable.value = null
             return
         }
-        val now = System.currentTimeMillis()
-        val delayMs = clearAfterSeconds * 1000L
-        mutable.value = CopyInFlight(label, now, now + delayMs)
         val onChanged = ClipboardManager.OnPrimaryClipChangedListener {
             // Something else was copied: the secret is gone and the new clip is not ours.
             wipeJob?.cancel()
+            ownsClip = false
             mutable.value = null
             listener?.let(manager::removePrimaryClipChangedListener)
             listener = null
         }
         listener = onChanged
         manager.addPrimaryClipChangedListener(onChanged)
+        if (!wipe || clearAfterSeconds == 0) {
+            mutable.value = null
+            return
+        }
+        val now = System.currentTimeMillis()
+        val delayMs = clearAfterSeconds * 1000L
+        mutable.value = CopyInFlight(label, now, now + delayMs)
+        // The application, not the screen that copied: an activity would be held until the wipe.
+        val app = context.applicationContext
         wipeJob = scope.launch {
             delay(delayMs)
-            wipe(context)
+            wipe(app)
         }
     }
 
-    /** Wipes now. */
-    fun wipe(context: Context) {
+    /**
+     * Wipes now: a timed copy, or with [everything], any secret copied here that is still on the
+     * clipboard, as a panic wants.
+     */
+    fun wipe(context: Context, everything: Boolean = false) {
         val manager = context.applicationContext.getSystemService(ClipboardManager::class.java) ?: return
         wipeJob?.cancel()
         listener?.let(manager::removePrimaryClipChangedListener)
         listener = null
-        if (mutable.value != null) {
-            runCatching { manager.clearPrimaryClip() }
+        if (mutable.value != null || (everything && ownsClip)) {
+            runCatching {
+                // clearPrimaryClip is Android 9 and up. Before it, an empty clip takes the secret's place.
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    manager.clearPrimaryClip()
+                } else {
+                    manager.setPrimaryClip(ClipData.newPlainText("", ""))
+                }
+            }
         }
+        ownsClip = false
         mutable.value = null
     }
 }

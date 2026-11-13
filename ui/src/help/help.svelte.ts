@@ -31,7 +31,15 @@ class Help {
   }
 
   load(): Promise<Content> {
-    this.loading ??= import('$help').then((content) => (this.content = content));
+    // A load that fails, such as a part of the app that could not be read, is tried again next time
+    // rather than failing for good.
+    this.loading ??= import('$help').then(
+      (content) => (this.content = content),
+      (failure) => {
+        this.loading = null;
+        throw failure;
+      },
+    );
     return this.loading;
   }
 
@@ -72,7 +80,8 @@ class Help {
   // ---- the sheet ----
 
   async open(id: TopicId | string) {
-    await this.load();
+    // Opened from a "?" or a key, where nothing waits on the answer: a guide that cannot load opens nothing.
+    if (!(await this.load().catch(() => null))) return;
     if (!this.topic(id)) return;
     if (this.stack[this.stack.length - 1] !== id) this.stack = [...this.stack, id];
   }
@@ -136,8 +145,8 @@ class Help {
   }
 
   async startTour(id: TourId) {
-    const content = await this.load();
-    const tour = content.TOURS.find((t) => t.id === id);
+    const content = await this.load().catch(() => null);
+    const tour = content?.TOURS.find((t) => t.id === id);
     if (!tour) return;
     this.close();
     this.welcome = false;

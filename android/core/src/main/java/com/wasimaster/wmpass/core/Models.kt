@@ -207,7 +207,29 @@ data class MatchRow(val entry: Summary, val level: String)
 
 @Immutable
 @Serializable
-data class SlotView(val index: Int, val label: String = "")
+data class SlotView(
+    val index: Int,
+    val label: String = "",
+    /** False for a duress password; absent from an older engine. */
+    val opens: Boolean? = null,
+    /** One of two passwords changed from one on two devices at once. */
+    val conflict: Boolean = false,
+    @SerialName("changed_ms") val changedMs: Long = 0,
+    /** The device it was last written on, if that device gave its name. */
+    @SerialName("changed_on") val changedOn: String? = null,
+)
+
+/**
+ * What the open vault has to tell its owner, in the words to show. [passwordConflict] is said when
+ * the master password was changed on two devices at once, [bothOpen] when both new ones still open
+ * the vault (otherwise only the later one stayed); [clockWarning] when a device's clock looks wrong.
+ */
+@Immutable
+data class VaultNotices(
+    val passwordConflict: String? = null,
+    val bothOpen: Boolean = false,
+    val clockWarning: String? = null,
+)
 
 @Immutable
 @Serializable

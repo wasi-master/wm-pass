@@ -45,7 +45,16 @@ impl Sink for Folder {
         let target = self.checked(name)?;
         fs::create_dir_all(&self.path).map_err(|e| fault(&e))?;
         let staged = self.path.join(format!(".{name}.upload"));
-        fs::write(&staged, bytes).map_err(|e| fault(&e))?;
+        // On disk before the rename, so a power cut cannot leave the real name pointing at
+        // a file whose contents never landed.
+        let written = fs::File::create(&staged).and_then(|mut file| {
+            std::io::Write::write_all(&mut file, bytes)?;
+            file.sync_all()
+        });
+        if let Err(error) = written {
+            let _ = fs::remove_file(&staged);
+            return Err(fault(&error));
+        }
         fs::rename(&staged, &target).map_err(|e| fault(&e))?;
         Ok(Stored { id: name.to_owned(), name: name.to_owned(), size: bytes.len() as u64 })
     }
@@ -59,9 +68,19 @@ impl Sink for Folder {
         let mut out = Vec::new();
         for item in reader {
             let item = item.map_err(|e| fault(&e))?;
-            let meta = item.metadata().map_err(|e| fault(&e))?;
             let Ok(name) = item.file_name().into_string() else { continue };
-            if meta.is_file() && !name.starts_with('.') {
+            // Hidden names are uploads under way, here or by the app that syncs the folder,
+            // and can be renamed away at any moment.
+            if name.starts_with('.') {
+                continue;
+            }
+            let meta = match item.metadata() {
+                Ok(meta) => meta,
+                // Gone since the folder was read, by another device's write: not a missing folder.
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(fault(&error)),
+            };
+            if meta.is_file() {
                 out.push(Stored { id: name.clone(), name, size: meta.len() });
             }
         }

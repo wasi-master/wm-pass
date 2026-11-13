@@ -75,15 +75,17 @@ import com.wasimaster.wmpass.ui.theme.Haptics
 import com.wasimaster.wmpass.ui.theme.LocalReduceMotion
 import com.wasimaster.wmpass.ui.theme.palette
 import com.wasimaster.wmpass.ui.theme.rememberHaptics
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.plus
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
-/** A change that can still be taken back. */
-/** A line at the bottom of the screen, with a way to take back what it reports when there is one. */
 /**
  * A tab coming in from the side its button sits on, as pages are pushed: the new one slides the
  * whole way across, the old one drifts a third of the way back and fades under it.
@@ -100,6 +102,7 @@ fun tabSlide(forward: Boolean): androidx.compose.animation.ContentTransform {
     )
 }
 
+/** A line at the bottom of the screen, with a way to take back what it reports when there is one. */
 class UndoOffer(val message: String, val action: (suspend () -> Unit)? = null)
 
 /** What every screen in the vault can ask of the shell around it. */
@@ -107,16 +110,43 @@ class UndoOffer(val message: String, val action: (suspend () -> Unit)? = null)
 class Shell(
     val nav: NavHostController,
     val prefs: Prefs,
-    private val scope: CoroutineScope,
+    scope: CoroutineScope,
     private val context: Context,
     val haptics: Haptics,
 ) {
+    /**
+     * Work started from a tap. A call that fails, such as a code from a broken secret or one that
+     * lands after the vault locked, is said at the bottom of the screen instead of closing the app.
+     */
+    // Under a supervisor, so one failed call does not cancel the scope and leave every later tap
+    // doing nothing until the next unlock.
+    private val scope: CoroutineScope = scope + SupervisorJob(scope.coroutineContext[Job]) + CoroutineExceptionHandler { _, failure ->
+        notice(failure.message ?: "That did not work")
+    }
+
     var undo by mutableStateOf<UndoOffer?>(null)
     var tab by mutableStateOf(
         prefs.lastTab.value.takeIf { prefs.startTab.value == "last" && it in prefs.tabs } ?: prefs.tabs.firstOrNull() ?: "vault",
     )
     var searching by mutableStateOf(false)
     var adding by mutableStateOf(false)
+
+    /**
+     * The Generator tab's settings and value. They outlive a trip to another tab and back, until
+     * the defaults in Settings change: then the tab starts again from the new ones.
+     */
+    val generator: GenState
+        get() {
+            val defaults = listOf(prefs.genMode.value, prefs.genLength.value, prefs.genWords.value, prefs.genSymbols.value, prefs.genNoAmbiguous.value)
+            val kept = generatorState
+            if (kept != null && defaults == generatorDefaults) return kept
+            return GenState.fromPrefs(prefs).also {
+                generatorState = it
+                generatorDefaults = defaults
+            }
+        }
+    private var generatorState: GenState? = null
+    private var generatorDefaults: List<Any>? = null
 
     /** What the search box holds. It outlives a trip to an entry and back. */
     val searchField = TextFieldState()
@@ -125,7 +155,7 @@ class Shell(
     val recents = mutableStateListOf<String>()
 
     /** Searches that led somewhere, kept in the vault. */
-    val searchHistory = SearchHistory(scope)
+    val searchHistory = SearchHistory(this.scope)
 
     /** A password just generated, waiting for the editor it was meant for. */
     var pendingPassword: String? = null
@@ -195,7 +225,11 @@ class Shell(
 
     fun copySecret(label: String, fetch: suspend () -> SecretBytes) {
         haptics.confirm()
-        scope.launch { SecureClipboard.copy(context, label, fetch()) }
+        scope.launch {
+            SecureClipboard.copy(context, label, fetch())
+            // With clearing off there is no countdown to show, so the capsule says it as for a plain value.
+            if (SecureClipboard.current.value == null) plainCopied = label to System.currentTimeMillis()
+        }
     }
 
     fun copyPassword(id: String) = copySecret("Password") { Pass.reveal(id, "password") }
@@ -276,7 +310,8 @@ class Shell(
         haptics.click()
         scope.launch {
             Pass.change("entry.trash") { put("id", id) }
-            undo = UndoOffer("“$title” moved to the trash") {
+            // An item with no title is not named as “”.
+            undo = UndoOffer(if (title.isBlank()) "Moved to the trash" else "“$title” moved to the trash") {
                 Pass.change("entry.restore") { put("id", id) }
             }
         }
@@ -286,6 +321,9 @@ class Shell(
         val target = if (url.contains("://")) url else "https://$url"
         runCatching {
             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }.onFailure {
+            // No browser, or one the owner turned off: the tap gets an answer rather than nothing.
+            notice("No app on this phone can open that address")
         }
     }
 
@@ -311,7 +349,8 @@ private fun ReceiveIncoming() {
                 what.name == "backups" -> shell.nav.navigate("settings/backup")
                 // From the Favorites widget: an item id, which names nothing by itself.
                 what.name.startsWith("item:") -> shell.open(what.name.removePrefix("item:"))
-                else -> shell.tab = what.name
+                // Only a page the app has: another name, which any app could send, would be kept as the last tab.
+                else -> if (AllTabs.any { it.id == what.name }) shell.tab = what.name
             }
             is Incoming.OtpLink -> {
                 shell.pendingOtp = what.uri
@@ -340,20 +379,40 @@ private fun ReceiveIncoming() {
                     }
                 }
             }
-            is Incoming.SharedFile -> {
+            // On the shell's own scope: a file the sharing app no longer lets us read is said at the
+            // bottom of the screen, where here it would close the app.
+            is Incoming.SharedFile -> shell.launch {
                 val resolver = context.contentResolver
-                val name = resolver.query(what.uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
-                    if (it.moveToFirst()) it.getString(0) else null
-                } ?: "Shared file"
-                val bytes = withContext(Dispatchers.IO) { resolver.openInputStream(what.uri)?.use { it.readBytes() } }
+                val name = runCatching {
+                    resolver.query(what.uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                        if (it.moveToFirst()) it.getString(0) else null
+                    }
+                }.getOrNull() ?: "Shared file"
+                val bytes = try {
+                    withContext(Dispatchers.IO) { resolver.openInputStream(what.uri)?.use { it.readBytes() } }
+                } catch (_: java.io.IOException) {
+                    null
+                } catch (_: SecurityException) {
+                    null
+                }
                 if (bytes != null) {
                     val id = Pass.change("entry.create") {
                         put("kind", "document")
                         put("title", name)
                     }.obj["id"]!!.jsonPrimitive.content
-                    Pass.addAttachment(id, name, what.mime, bytes)
-                    bytes.fill(0)
+                    try {
+                        Pass.addAttachment(id, name, what.mime, bytes)
+                    } catch (failure: Exception) {
+                        // No empty item left behind by a file that would not attach: it goes, and
+                        // the failure is said as before.
+                        if (failure !is kotlinx.coroutines.CancellationException) runCatching { Pass.change("entry.purge") { put("id", id) } }
+                        throw failure
+                    } finally {
+                        bytes.fill(0)
+                    }
                     shell.open(id)
+                } else {
+                    shell.notice("Could not read “$name”")
                 }
             }
         }
@@ -433,6 +492,10 @@ fun VaultShell(prefs: Prefs) {
                 },
         ) {
             ReceiveIncoming()
+            // A save in the background that failed is said, since the change is not on disk yet.
+            LaunchedEffect(shell) {
+                Pass.saveProblem.collect { problem -> if (problem != null) shell.notice("Not saved yet: ${problem.trimEnd('.')}. It is tried again with the next change") }
+            }
             KeepItemAcrossShapes(shell, LocalWindowShape.current.panes)
             BackdropSource(backdrop, Modifier.fillMaxSize()) {
             SharedTransitionLayout(Modifier.fillMaxSize()) {
@@ -504,6 +567,8 @@ fun VaultShell(prefs: Prefs) {
                 CopyCapsule(Modifier.align(Alignment.TopCenter).statusBarsPadding())
             }
             ChildPill(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 96.dp))
+            // A password changed on two devices at once, a clock that looks wrong.
+            VaultNoticeBanner(Modifier.align(Alignment.TopCenter).statusBarsPadding())
             // A paired device asking to merge while this phone waited for it in the background.
             com.wasimaster.wmpass.ui.settings.LanMergeAsk()
             shell.scanTarget?.let { target ->

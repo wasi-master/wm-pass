@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    HTTPS everywhere, as Android's default is, with one address let through in plain HTTP: the one
+    Tailscale serves Taildrive shares on (the Tailscale Taildrive backup place). It never leaves
+    the phone in the clear, since Tailscale carries it inside its own encrypted tunnel, and
+    Taildrive offers nothing else. Every other place still has to be HTTPS.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">100.100.100.100</domain>
+    </domain-config>
+</network-security-config>

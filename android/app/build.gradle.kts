@@ -104,9 +104,12 @@ android {
     sourceSets["main"].assets.directories.add("../../data/passkeys")
     // The card scanner's digit detector and its license.
     sourceSets["main"].assets.directories.add("../../data/cardscan")
-    // The offline build drops the permission, so no line of code can reach a network.
+    // The offline build drops the permission, so no line of code can reach a network. Merged
+    // over the main manifest, with a higher priority, for each build type: in place of it, a
+    // second copy fell behind it, and could not take away what a library's manifest adds.
     if (providers.gradleProperty("wmpass.offline").orNull == "true") {
-        sourceSets["main"].manifest.srcFile("src/offline/AndroidManifest.xml")
+        sourceSets["debug"].manifest.srcFile("src/offline/AndroidManifest.xml")
+        sourceSets["release"].manifest.srcFile("src/offline/AndroidManifest.xml")
     }
     testOptions.unitTests.isIncludeAndroidResources = true
     testOptions.unitTests.all {

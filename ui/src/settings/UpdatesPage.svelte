@@ -20,7 +20,7 @@
       found = await desktop.checkUpdate();
       if (!found) message = 'WM Pass is up to date.';
     } catch (failure: any) {
-      message = failure.message;
+      message = failure?.message ?? 'The check did not finish.';
     }
     checking = false;
   }
@@ -30,7 +30,7 @@
     try {
       await desktop.installUpdate();
     } catch (failure: any) {
-      overlays.toast(failure.message);
+      overlays.toast(failure?.message ?? 'The update could not be installed.');
       installing = false;
     }
   }

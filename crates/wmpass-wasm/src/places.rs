@@ -57,6 +57,19 @@ impl AsyncHttp for JsFetch {
         let retry_after = field("retry_after").as_f64().map(|s| s as u64);
         Ok(Response { status, retry_after, body, headers })
     }
+
+    /// A `setTimeout` from the global scope, which a page and the extension's service worker
+    /// both have. A future that only checked the clock would spin the browser's one thread.
+    async fn pause(&self, ms: u64) {
+        let global = js_sys::global();
+        let Ok(set_timeout) = Reflect::get(&global, &JsValue::from_str("setTimeout")).and_then(|f| f.dyn_into::<Function>()) else {
+            return;
+        };
+        let promise = Promise::new(&mut |resolve, _| {
+            let _ = set_timeout.call2(&global, &resolve, &JsValue::from_f64(ms as f64));
+        });
+        let _ = JsFuture::from(promise).await;
+    }
 }
 
 fn app(id: Option<&'static str>, secret: Option<&'static str>) -> App {

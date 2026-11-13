@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import com.wasimaster.wmpass.ui.parts.announced
 import com.wasimaster.wmpass.ui.theme.readableWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -56,12 +57,22 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.isTraversalGroup
+import androidx.compose.ui.semantics.traversalIndex
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.wasimaster.wmpass.app.Prefs
 import com.wasimaster.wmpass.core.AttachmentView
 import com.wasimaster.wmpass.core.Detail
@@ -176,6 +187,13 @@ fun whenText(ms: Long): String {
 }
 
 /**
+ * A date field's day. The picker here, and every other app, keeps the day as midnight UTC, so it is
+ * read in UTC too: in local time, west of Greenwich, it would show the day before.
+ */
+fun dayText(ms: Long): String =
+    DateFormat.getDateInstance(DateFormat.MEDIUM).apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(Date(ms))
+
+/**
  * An entry's page: lit in the colour of its site. [inPane] when it sits beside the list on a wide
  * window rather than over it, where there is nothing to go back to and the list is still there.
  */
@@ -185,10 +203,36 @@ fun EntryScreen(id: String, inPane: Boolean = false) {
     val colors = palette
     val shell = LocalShell.current
     val revision by Pass.revision.collectAsStateWithLifecycle()
-    var detail by remember { mutableStateOf<Detail?>(null) }
+    // Per item: beside the list, picking another one must not keep showing the last one's page
+    // while the new one loads, nor skip the notice when the new one turns out to be gone.
+    var detail by remember(id) { mutableStateOf<Detail?>(null) }
     LaunchedEffect(id, revision) {
-        val loaded = runCatching { Pass.detail(id) }.getOrNull()
-        if (loaded != null) detail = loaded else if (detail != null) shell.leaveEntry()
+        // A load cut short, by another item picked in the pane or the vault changing again, is not
+        // an item gone: it leaves the page alone rather than closing it.
+        val loaded = try {
+            Pass.detail(id)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+        // Gone since it was opened, or never there, as an item a widget still points at: back to
+        // the list rather than an empty page.
+        if (loaded != null) {
+            detail = loaded
+        } else {
+            if (detail == null) shell.notice("That item is no longer in this vault")
+            // Only while this page is still the one in front. One already on its way out, as after
+            // deleting it for good, still reloads during its exit; leaving again from there would
+            // close the list behind it and leave an empty screen.
+            val here = shell.nav.currentBackStackEntry
+            val inFront = if (inPane) {
+                shell.paneEntry == id
+            } else {
+                here?.destination?.route == "entry/{id}" && here?.arguments?.getString("id") == id
+            }
+            if (inFront) shell.leaveEntry()
+        }
     }
     val revealed = remember { mutableStateMapOf<String, String>() }
     DisposableEffect(id) { onDispose { revealed.clear() } }
@@ -249,7 +293,7 @@ fun EntryScreen(id: String, inPane: Boolean = false) {
                     color = colors.text,
                     style = MaterialTheme.typography.headlineMedium,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.sharedEntryWhileShown("title-$id", inSearch),
+                    modifier = Modifier.sharedEntryWhileShown("title-$id", inSearch).semantics { heading() },
                 )
                 val under = entry.subtitle.ifEmpty { kindName(entry.kind) }
                 Text(under, color = colors.textMid, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.sharedEntryWhileShown("subtitle-$id", inSearch))
@@ -340,7 +384,7 @@ private fun StandardEntry(id: String, entry: Detail?, revealed: MutableMap<Strin
                     SiteTile(entry.title, entry.site, entry.kind, Modifier.sharedEntryWhileShown("tile-$id", inSearch), 56.dp, entry.color, entry.icon, app = entry.app)
                     Spacer(Modifier.width(16.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(entry.title.ifEmpty { "Untitled" }, color = colors.text, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.sharedEntryWhileShown("title-$id", inSearch))
+                        Text(entry.title.ifEmpty { "Untitled" }, color = colors.text, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.sharedEntryWhileShown("title-$id", inSearch).semantics { heading() })
                         Text(entry.subtitle.ifEmpty { kindName(entry.kind) }, color = colors.textMid, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.sharedEntryWhileShown("subtitle-$id", inSearch))
                     }
                 }
@@ -358,7 +402,17 @@ private fun TopBar(entry: Detail?, scrolled: Int, inPane: Boolean) {
     val colors = palette
     val shell = LocalShell.current
     val solid by remember(scrolled) { derivedStateOf { (scrolled / 240f).coerceIn(0f, 1f) } }
-    Box(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 14.dp, vertical = 8.dp)) {
+    // Read first, though drawn over the page: back, then the page's own actions, then the page.
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .semantics {
+                isTraversalGroup = true
+                traversalIndex = -1f
+            }
+            .statusBarsPadding()
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+    ) {
         if (inPane) {
             GlassCircle(PassIcons.Close, "Close", Modifier.align(Alignment.CenterStart)) { shell.leaveEntry() }
         } else {
@@ -371,8 +425,11 @@ private fun TopBar(entry: Detail?, scrolled: Int, inPane: Boolean) {
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                // Only a reminder of the heading below, faded in as it scrolls away: a screen reader
+                // already has the heading, and would otherwise read an invisible copy first.
                 modifier = Modifier
                     .align(Alignment.Center)
+                    .clearAndSetSemantics { }
                     .padding(horizontal = 112.dp)
                     .graphicsLayer {
                         alpha = solid
@@ -482,12 +539,20 @@ private fun LabelledAction(icon: ImageVector, label: String, filled: Boolean, co
                     },
                     label = "copied",
                 ) { copied ->
-                    Icon(if (copied) PassIcons.Check else icon, label, modifier = Modifier.size(22.dp))
+                    Icon(if (copied) PassIcons.Check else icon, if (copied) "Copied" else label, modifier = Modifier.size(22.dp))
                 }
             }
         }
         Spacer(Modifier.height(6.dp))
-        Text(if (done) "Copied" else label, color = colors.textMid, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // The button carries the name, so TalkBack does not read it a second time from here.
+        Text(
+            if (done) "Copied" else label,
+            color = colors.textMid,
+            style = MaterialTheme.typography.labelMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.clearAndSetSemantics {},
+        )
     }
 }
 
@@ -511,7 +576,7 @@ private fun RoundAction(icon: ImageVector, label: String, onClick: () -> Unit) {
             .pressScale(source, 0.9f)
             .size(56.dp)
             .glass(CircleShape)
-            .clickable(source, androidx.compose.material3.ripple(), onClickLabel = label) {
+            .clickable(source, androidx.compose.material3.ripple(), role = androidx.compose.ui.semantics.Role.Button) {
                 shell.haptics.click()
                 onClick()
             },
@@ -541,9 +606,10 @@ private fun TrashedActions(entry: Detail) {
             "Delete for good",
             onDismiss = { confirm = false },
         ) {
+            // Away first, as Move to trash does: the page then has nothing left to show.
+            shell.leaveEntry()
             shell.launch {
                 Pass.change("entry.purge") { put("id", entry.id) }
-                shell.leaveEntry()
             }
         }
     }
@@ -582,8 +648,9 @@ private fun Shell.toggle(map: MutableMap<String, String>, key: String, fetch: su
 private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
     val shell = LocalShell.current
     val colors = palette
-    var sheet by remember { mutableStateOf<String?>(null) }
-    var linking by remember { mutableStateOf(false) }
+    // Per item, so a sheet left open as another item is picked beside the list does not act on that one.
+    var sheet by remember(entry.id) { mutableStateOf<String?>(null) }
+    var linking by remember(entry.id) { mutableStateOf(false) }
     val pickAttachment = rememberAttachmentPicker(entry.id)
 
     if (entry.otp != null && !colors.flat) OtpCard(entry)
@@ -626,7 +693,8 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .then(if (open != null) Modifier.clickable(onClick = open) else Modifier)
+                        // One stop: the address and what a tap does, with the button beside it kept quiet.
+                        .then(if (open != null) Modifier.clickable(onClickLabel = "Open", role = androidx.compose.ui.semantics.Role.Button, onClick = open) else Modifier.semantics(mergeDescendants = true) { })
                         .padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -635,7 +703,7 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
                         Spacer(Modifier.height(2.dp))
                         Text(remember(site.label, colors) { addressText(site.label, colors) }, style = MaterialTheme.typography.bodyLarge)
                     }
-                    if (open != null) RowIconButton(PassIcons.OpenInNew, "Open ${site.label}", onClick = open)
+                    if (open != null) RowIconButton(PassIcons.OpenInNew, "Open ${site.label}", Modifier.clearAndSetSemantics { }, onClick = open)
                 }
             }
             apps.forEach { pkg -> AppLine(pkg) }
@@ -664,7 +732,8 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
         GroupCard(plain = true) {
             entry.passkeys.forEachIndexed { index, key ->
                 if (index > 0) Hairline()
-                PlainRow("${key.rpId}  ${key.userName}", PassIcons.KeyVertical, null, "Made ${whenText(key.createdMs)}")
+                // A passkey brought in without its date says nothing, rather than "Made never".
+                PlainRow("${key.rpId}  ${key.userName}", PassIcons.KeyVertical, null, key.createdMs.takeIf { it > 0 }?.let { "Made ${whenText(it)}" })
             }
         }
     }
@@ -722,17 +791,20 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
 
     Attachments(entry)
 
-    var managing by remember { mutableStateOf<String?>(null) }
+    var managing by remember(entry.id) { mutableStateOf<String?>(null) }
     var suggested by remember(entry.id) { mutableStateOf<List<String>>(emptyList()) }
     LaunchedEffect(entry.id, entry.title, entry.sites) {
         suggested = runCatching {
             Pass.plainCall("categorise.suggest") { put("id", entry.id) }.obj["categories"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }
         }.getOrNull().orEmpty()
     }
-    fun setTags(next: List<String>) = shell.launch {
-        Pass.change("entry.common") {
-            put("id", entry.id)
-            putJsonArray("tags") { next.distinct().forEach { add(it) } }
+    // One tag at a time, against what the vault holds now: a whole list written from this page
+    // would drop a tag tapped a moment before, while the page still showed the item without it.
+    fun setTag(tag: String, on: Boolean) = shell.launch {
+        Pass.change("entries.bulk") {
+            putJsonArray("ids") { add(entry.id) }
+            put("op", if (on) "tag_add" else "tag_remove")
+            put("tag", tag)
         }
     }
     if (!entry.trashed || entry.tags.isNotEmpty()) {
@@ -745,7 +817,7 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
             modifier = Modifier.padding(horizontal = 2.dp).animateContentSize(Springs.glide()),
         ) {
             com.wasimaster.wmpass.ui.parts.AppearingEach(entry.tags) { tag ->
-                TagChip(tag, true, onRemove = { setTags(entry.tags - tag) }, onLongClick = { managing = tag }) { managing = tag }
+                TagChip(tag, true, onRemove = { setTag(tag, false) }, onLongClick = { managing = tag }, onClickLabel = "Rename or delete") { managing = tag }
             }
             if (!entry.trashed) Pill(if (entry.tags.isEmpty()) "Add a tag" else "Add", false, icon = PassIcons.Add) { sheet = "tags" }
         }
@@ -760,7 +832,7 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(horizontal = 2.dp).animateContentSize(Springs.glide())) {
                     com.wasimaster.wmpass.ui.parts.AppearingEach(offered) { tag ->
-                        Pill(tag, false, icon = PassIcons.Add) { setTags(entry.tags + tag) }
+                        Pill(tag, false, icon = PassIcons.Add) { setTag(tag, true) }
                     }
                 }
             }
@@ -775,8 +847,10 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
     GroupCard(plain = true) {
         val remind = entry.reminders
         val reminderText = when {
+            remind.changeEveryDays == 1 -> "Every day"
             remind.changeEveryDays != null -> "Every ${remind.changeEveryDays} days"
-            remind.expiresMs != null -> "Expires ${whenText(remind.expiresMs!!)}"
+            // One already past reads as such, not "Expires 3 days ago".
+            remind.expiresMs != null -> (if (remind.expiresMs!! < System.currentTimeMillis()) "Expired " else "Expires ") + whenText(remind.expiresMs!!)
             else -> "Off"
         }
         ActionLine(PassIcons.AttachFile, "Attach a file") { pickAttachment.launch(arrayOf("*/*")) }
@@ -854,15 +928,7 @@ private fun Sections(entry: Detail, revealed: MutableMap<String, String>) {
     )
 
     when (sheet) {
-        "tags" -> TagSheet(entry.tags, { sheet = null }, suggested) { tag, on ->
-            val next = if (on) entry.tags + tag else entry.tags - tag
-            shell.launch {
-                Pass.change("entry.common") {
-                    put("id", entry.id)
-                    putJsonArray("tags") { next.distinct().forEach { add(it) } }
-                }
-            }
-        }
+        "tags" -> TagSheet(entry.tags, { sheet = null }, suggested) { tag, on -> setTag(tag, on) }
         "folder" -> FolderSheet(entry.folder, { sheet = null }) { folder ->
             shell.launch {
                 Pass.change("entry.common") {
@@ -892,26 +958,52 @@ private fun OtpCard(entry: Detail) {
     val shell = LocalShell.current
     val scope = rememberCoroutineScope()
     val ink = remember { InkState(scope) }
-    var row by remember { mutableStateOf<OtpRow?>(null) }
-    var hotp by remember { mutableStateOf<String?>(null) }
+    // Per item: another item's code must never show here, not even for the second a read takes.
+    var row by remember(entry.id) { mutableStateOf<OtpRow?>(null) }
+    var hotp by remember(entry.id) { mutableStateOf<String?>(null) }
+    var advancing by remember(entry.id) { mutableStateOf(false) }
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(entry.id, entry.otp) {
-        while (true) {
-            row = runCatching { Pass.codes(listOf(entry.id)).firstOrNull() }.getOrNull()
-            delay(1000 - System.currentTimeMillis() % 1000 + 10)
+        // Only while the app is on screen: a vault left open in the background has nobody to read
+        // its code to, and coming back reads a fresh one at once.
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            while (true) {
+                // A read cut short is not a counter-based code: it leaves the row alone.
+                row = try {
+                    Pass.codes(listOf(entry.id)).firstOrNull()
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    row
+                }
+                delay(1000 - System.currentTimeMillis() % 1000 + 10)
+            }
         }
     }
     val otp = entry.otp ?: return
     if (!colors.flat) Eyebrow("One-time code")
     GroupCard(plain = true) {
         val current = row?.code ?: hotp
+        // A counter-based code on show was made by moving the counter on: asked again, the vault
+        // would give the one after it. That one is copied as shown.
+        fun copyCode() {
+            val shown = hotp
+            if (row?.code == null && shown != null) {
+                shell.copySecret("Code") { com.wasimaster.wmpass.core.SecretBytes(shown.toByteArray()) }
+            } else {
+                shell.copySecret("Code") { Pass.code(entry.id) }
+            }
+        }
         Row(
             Modifier
                 .fillMaxWidth()
+                // The tap that copies has no button of its own, so a screen reader is offered it by name.
+                .semantics(mergeDescendants = true) { }
                 .inkSurface(ink, colors.primary)
-                .tapAt { at ->
+                .tapAt(tapLabel = "Copy code", enabled = current != null) { at ->
                     if (current != null) {
                         ink.splash(at)
-                        shell.copySecret("Code") { Pass.code(entry.id) }
+                        copyCode()
                     }
                 }
                 .padding(horizontal = if (colors.flat) 16.dp else 18.dp, vertical = if (colors.flat) 12.dp else 16.dp),
@@ -935,10 +1027,17 @@ private fun OtpCard(entry: Detail) {
             if (otp.period != null) {
                 if (shell.prefs.codeRing.value) LifeRing(otp.period!!, size = 34.dp, stroke = 3.5.dp)
             } else {
+                // One step per tap: a second tap while the first is asked would skip a code.
                 QuietButton("New code", height = 42.dp, tint = colors.primary) {
+                    if (advancing) return@QuietButton
+                    advancing = true
                     shell.launch {
-                        val reply = Pass.change("otp.hotp_next") { put("id", entry.id) }
-                        hotp = reply.secret?.consumeText()
+                        try {
+                            val reply = Pass.change("otp.hotp_next") { put("id", entry.id) }
+                            hotp = reply.secret?.consumeText()
+                        } finally {
+                            advancing = false
+                        }
                     }
                 }
             }
@@ -965,7 +1064,7 @@ private fun FieldRow(entry: Detail, field: FieldView, revealed: MutableMap<Strin
                 },
             )
         }
-        field.input == "date" -> field.number?.let { TextRow(field.label, whenText(it), field.label) }
+        field.input == "date" -> field.number?.let { TextRow(field.label, dayText(it), field.label) }
         field.number != null -> TextRow(field.label, field.number.toString(), field.label)
         else -> TextRow(field.label, field.text, field.label)
     }
@@ -996,12 +1095,20 @@ private fun TextRow(label: String, value: String, copyAs: String) {
     val shell = LocalShell.current
     val scope = rememberCoroutineScope()
     val ink = remember { InkState(scope) }
+    val tapCopies = shell.prefs.tapCopies.value
     Column(
         Modifier
             .fillMaxWidth()
+            // One focus stop: the label and value read together, and copying is offered by name,
+            // as the tap when a tap copies and as an action when it does not.
+            .semantics(mergeDescendants = true) {
+                if (!tapCopies) {
+                    customActions = listOf(CustomAccessibilityAction("Copy $label") { shell.copyPlain(copyAs, value); true })
+                }
+            }
             .inkSurface(ink, colors.primary)
-            .tapAt { at ->
-                if (shell.prefs.tapCopies.value) {
+            .tapAt(tapLabel = "Copy $label", enabled = tapCopies) { at ->
+                if (tapCopies) {
                     ink.splash(at)
                     shell.copyPlain(copyAs, value)
                 }
@@ -1015,7 +1122,7 @@ private fun TextRow(label: String, value: String, copyAs: String) {
                     Spacer(Modifier.height(2.dp))
                     Text(value, color = colors.text, style = MaterialTheme.typography.bodyLarge)
                 }
-                RowIconButton(PassIcons.ContentCopy, "Copy $label") { shell.copyPlain(copyAs, value) }
+                RowIconButton(PassIcons.ContentCopy, "Copy $label", Modifier.clearAndSetSemantics { }) { shell.copyPlain(copyAs, value) }
             }
         } else {
             Text(label, color = colors.textLow, style = MaterialTheme.typography.labelMedium)
@@ -1038,16 +1145,23 @@ private fun SecretRow(
     val scope = rememberCoroutineScope()
     val ink = remember { InkState(scope) }
     val appContext = androidx.compose.ui.platform.LocalContext.current
+    val tapCopies = Prefs.of(appContext).tapCopies.value
     Column(
         Modifier
             .fillMaxWidth()
             .animateContentSize(Springs.glide())
+            // One focus stop: the label and the value (or "Hidden") read together, with showing and
+            // copying offered as actions instead of two more stops on the small buttons.
+            .semantics(mergeDescendants = true) {
+                customActions = listOfNotNull(
+                    CustomAccessibilityAction(if (shown != null) "Hide $label" else "Show $label") { onToggle(); true },
+                    if (tapCopies) null else CustomAccessibilityAction("Copy $label") { onCopy(); true },
+                )
+            }
             .inkSurface(ink, colors.primary)
-            .tapAt { at ->
-                if (Prefs.of(appContext).tapCopies.value) {
-                    ink.splash(at)
-                    onCopy()
-                }
+            .tapAt(tapLabel = "Copy $label", enabled = tapCopies) { at ->
+                ink.splash(at)
+                onCopy()
             }
             .padding(start = if (colors.flat) 16.dp else 18.dp, end = if (colors.flat) 4.dp else 10.dp, top = 12.dp, bottom = 12.dp),
     ) {
@@ -1065,10 +1179,11 @@ private fun SecretRow(
             RowIconButton(
                 if (shown != null) PassIcons.VisibilityOff else PassIcons.Visibility,
                 if (shown != null) "Hide $label" else "Show $label",
+                Modifier.clearAndSetSemantics { },
                 onClick = onToggle,
             )
             Spacer(Modifier.width(6.dp))
-            RowIconButton(PassIcons.ContentCopy, "Copy $label", onClick = onCopy)
+            RowIconButton(PassIcons.ContentCopy, "Copy $label", Modifier.clearAndSetSemantics { }, onClick = onCopy)
         }
         footer?.let { Box(Modifier.padding(end = 8.dp)) { it() } }
     }
@@ -1273,7 +1388,11 @@ private fun rememberAttachmentPicker(id: String) = run {
                     if (it.moveToFirst()) it.getString(0) else null
                 } ?: "Attachment"
                 val mime = resolver.getType(uri).orEmpty()
-                val bytes = resolver.openInputStream(uri)?.use { it.readBytes() } ?: return@launch
+                // Off the main thread: a large file read here would freeze the page.
+                // A file its app will not hand over is said, rather than nothing happening.
+                val bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    resolver.openInputStream(uri)?.use { it.readBytes() }
+                } ?: throw java.io.FileNotFoundException("Could not read $name")
                 Pass.addAttachment(id, name, mime, bytes)
                 bytes.fill(0)
                 shell.haptics.confirm()
@@ -1284,7 +1403,8 @@ private fun rememberAttachmentPicker(id: String) = run {
 
 @Composable
 private fun Attachments(entry: Detail) {
-    var opened by remember { mutableStateOf<AttachmentView?>(null) }
+    // Per item: a sheet left open as another item is picked beside the list must not act on that one.
+    var opened by remember(entry.id) { mutableStateOf<AttachmentView?>(null) }
     if (entry.attachmentList.isNotEmpty()) {
         Eyebrow("Attachments")
         GroupCard(plain = true) {
@@ -1298,6 +1418,7 @@ private fun Attachments(entry: Detail) {
 }
 
 fun sizeText(bytes: Long): String = when {
+    bytes == 1L -> "1 byte"
     bytes < 1024 -> "$bytes bytes"
     bytes < 1024 * 1024 -> "${bytes / 1024} KB"
     else -> "%.1f MB".format(bytes / (1024.0 * 1024.0))
@@ -1312,8 +1433,10 @@ private fun AttachmentSheet(id: String, file: AttachmentView, onDismiss: () -> U
     LaunchedEffect(file.blob) {
         if (file.mime.startsWith("image/")) {
             image = runCatching {
-                Pass.openAttachment(id, file.blob).consume { bytes ->
-                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                val opened = Pass.openAttachment(id, file.blob)
+                // Off the main thread: a camera photo takes long enough to decode to freeze the sheet.
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                    opened.consume { bytes -> BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap() }
                 }
             }.getOrNull()
         }
@@ -1321,8 +1444,13 @@ private fun AttachmentSheet(id: String, file: AttachmentView, onDismiss: () -> U
     val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(file.mime.ifEmpty { "application/octet-stream" })) { uri ->
         if (uri != null) {
             shell.launch {
-                Pass.openAttachment(id, file.blob).consume { bytes ->
-                    context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                val opened = Pass.openAttachment(id, file.blob)
+                // Written off the main thread, as the picker's own provider may be slow or remote.
+                // A place that will not take the copy says so, rather than the sheet closing as if it had.
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    opened.consume { bytes ->
+                        context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) } ?: throw java.io.IOException("Could not save the copy there")
+                    }
                 }
                 shell.haptics.confirm()
                 onDismiss()
@@ -1383,8 +1511,22 @@ private fun Linked(entry: Detail, picking: Boolean, onPicking: (Boolean) -> Unit
         }
     }
     if (picking) {
+        val query = androidx.compose.foundation.text.input.rememberTextFieldState()
         PassSheet({ onPicking(false) }, "Link to") {
-            all.filter { it.id != entry.id }.take(60).forEach { other ->
+            // Searched, since only the first few dozen are listed: any item must be reachable.
+            SheetField(query, "Search items")
+            Spacer(Modifier.height(8.dp))
+            val typed = query.text.toString().trim()
+            val matching = all.filter { it.id != entry.id && (typed.isEmpty() || it.title.contains(typed, true) || it.subtitle.contains(typed, true)) }
+            if (matching.isEmpty()) {
+                Text(
+                    if (typed.isEmpty()) "There are no other items to link to yet." else "No item matches “$typed”.",
+                    color = colors.textMid,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(8.dp),
+                )
+            }
+            matching.take(60).forEach { other ->
                 val on = other.id in entry.links
                 SheetRow(com.wasimaster.wmpass.ui.parts.kindIcon(other.kind), other.title, other.subtitle.ifEmpty { null }, selected = on) {
                     val next = if (on) entry.links - other.id else entry.links + other.id
@@ -1412,7 +1554,10 @@ private fun History(entry: Detail, revealed: MutableMap<String, String>) {
             if (open) "Hide" else "${entry.history.size} earlier",
             color = colors.primary,
             style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier.clickable { open = !open }.padding(horizontal = 4.dp),
+            modifier = Modifier
+                .semantics { stateDescription = if (open) "Expanded" else "Collapsed" }
+                .clickable(onClickLabel = if (open) "Hide history" else "Show history", role = androidx.compose.ui.semantics.Role.Button) { open = !open }
+                .padding(horizontal = 4.dp),
         )
     }
     AnimatedVisibility(open) {
@@ -1454,8 +1599,9 @@ private fun RemindersSheet(entry: Detail, onDismiss: () -> Unit) {
     PassSheet(onDismiss, "Remind me to change it") {
         val current = entry.reminders.changeEveryDays
         SheetRow(PassIcons.Close, "Never", selected = current == null) { set(null) }
-        listOf(30, 90, 180, 365).forEach { days ->
-            SheetRow(PassIcons.Snooze, "Every $days days", selected = current == days) { set(days) }
+        // A period set elsewhere, such as by an import or another device, still shows as chosen.
+        (listOf(30, 90, 180, 365) + listOfNotNull(current)).distinct().sorted().forEach { days ->
+            SheetRow(PassIcons.Snooze, if (days == 1) "Every day" else "Every $days days", selected = current == days) { set(days) }
         }
     }
 }
@@ -1512,7 +1658,7 @@ private fun SendSheet(entry: Detail, onDismiss: () -> Unit) {
             )
             problem?.let {
                 Spacer(Modifier.height(10.dp))
-                Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium)
+                Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced())
             }
             Spacer(Modifier.height(16.dp))
             PrimaryButton("Scan its code", Modifier.fillMaxWidth(), icon = PassIcons.QrCodeScanner) {

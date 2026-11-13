@@ -1,8 +1,8 @@
 package com.wasimaster.wmpass.ui.vault
 
-import android.Manifest
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
 import android.content.Context
-import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.os.SystemClock
@@ -136,7 +136,7 @@ private fun ReaderChoice(onPick: (String) -> Unit, onClose: () -> Unit) {
                 .padding(horizontal = 20.dp, vertical = 16.dp),
         ) {
             Spacer(Modifier.height(56.dp))
-            Text("Choose a card reader", color = colors.text, style = MaterialTheme.typography.headlineSmall)
+            Text("Choose a card reader", color = colors.text, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
             Text(
                 "Both read the card on this phone. You can change this later in Settings, Editor.",
                 color = colors.textMid,
@@ -180,18 +180,14 @@ internal fun TradeOff(icon: ImageVector, tint: Color, text: String) {
 
 @Composable
 private fun CardScanScreen(google: Boolean, onCard: (CardReader.Read) -> Unit, onClose: () -> Unit) {
-    val colors = palette
     val shell = LocalShell.current
     val context = LocalContext.current
-    var allowed by remember {
-        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
-    }
+    val camera = rememberCameraAccess()
+    val allowed = camera.allowed
     var problem by remember { mutableStateOf<String?>(null) }
     // Whether the reader running reads the date and name too, and whether the number is in.
     var readsAll by remember { mutableStateOf(google) }
     var numberIn by remember { mutableStateOf(false) }
-    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed = it }
-    LaunchedEffect(Unit) { if (!allowed) ask.launch(Manifest.permission.CAMERA) }
     // A photo of the card, chosen through Android's picker, which hands over that one picture.
     var picture by remember { mutableStateOf<android.net.Uri?>(null) }
     val choose = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> if (uri != null) picture = uri }
@@ -201,7 +197,8 @@ private fun CardScanScreen(google: Boolean, onCard: (CardReader.Read) -> Unit, o
         problem = null
         // The camera's reader lets go on its own thread first; only one reader runs at a time.
         kotlinx.coroutines.delay(400)
-        val read = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { readPicture(context, uri, google) }
+        // A reader that fails on the picture says so like one that found nothing, rather than closing the app.
+        val read = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { runCatching { readPicture(context, uri, google) }.getOrNull() }
         if (read != null) {
             shell.haptics.confirm()
             onCard(read)
@@ -241,13 +238,14 @@ private fun CardScanScreen(google: Boolean, onCard: (CardReader.Read) -> Unit, o
             ) {
                 Text(
                     "The camera is only for reading the card, on this phone. You can also type it by hand.",
-                    color = colors.text,
+                    // White, as everything else here: the ground is black in the light look too.
+                    color = Color.White,
                     style = MaterialTheme.typography.bodyLarge,
                     textAlign = TextAlign.Center,
                 )
-                PrimaryButton("Allow the camera", Modifier.padding(top = 20.dp)) { ask.launch(Manifest.permission.CAMERA) }
+                PrimaryButton(camera.buttonLabel, Modifier.padding(top = 20.dp)) { camera.request() }
                 com.wasimaster.wmpass.ui.parts.QuietButton("Choose a picture of the card", Modifier.padding(top = 12.dp), PassIcons.Image) { pickPicture() }
-                problem?.let { Text(it, color = colors.warn, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 12.dp)) }
+                problem?.let { Text(it, color = ScannerProblem, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 12.dp)) }
             }
         }
         GlassCircle(PassIcons.Close, "Close", Modifier.statusBarsPadding().padding(14.dp), onClick = onClose)
@@ -268,7 +266,7 @@ private fun CardScanScreen(google: Boolean, onCard: (CardReader.Read) -> Unit, o
                 )
                 Text(
                     problem ?: if (readsAll) "Reads the number, expiry date and name." else "Reads the card number. The expiry date and name are yours to type.",
-                    color = if (problem != null) colors.warn else Color.White.copy(alpha = 0.75f),
+                    color = if (problem != null) ScannerProblem else Color.White.copy(alpha = 0.75f),
                     style = MaterialTheme.typography.bodyMedium,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
@@ -435,7 +433,8 @@ private fun CardFeed(
             future.addListener(
                 {
                     if (held.closed) return@addListener
-                    val provider = future.get()
+                    // A camera that will not open, or none on the back, says so rather than closing the app.
+                    val provider = runCatching { future.get() }.getOrNull() ?: return@addListener onFailed()
                     held.provider = provider
                     // Preview and frames at the same 16:9, so the window drawn over the preview
                     // marks the same part of each frame. Full HD keeps a card's digits sharp.
@@ -468,7 +467,8 @@ private fun CardFeed(
                             }
                             val rotation = it.imageInfo.rotationDegrees
                             val crop = cardCrop(held.viewWidth, held.viewHeight, it.width, it.height, rotation)
-                            val read = engine.read(it, crop) ?: return@use
+                            // A frame the reader chokes on is skipped: thrown on the camera's thread, it would close the app.
+                            val read = runCatching { engine.read(it, crop) }.getOrNull() ?: return@use
                             if (held.closed) return@use
                             val now = SystemClock.elapsedRealtime()
                             if (held.numberAt == 0L) {
@@ -482,8 +482,10 @@ private fun CardFeed(
                             }
                         }
                     }
-                    provider.unbindAll()
-                    provider.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
+                    runCatching {
+                        provider.unbindAll()
+                        provider.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
+                    }.onFailure { onFailed() }
                 },
                 main,
             )

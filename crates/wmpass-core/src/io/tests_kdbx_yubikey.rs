@@ -39,13 +39,11 @@ macro_rules! fixture {
 
 const KEY_FILE: &[u8] = fixture!("key-binary32.key");
 
+/// A fixture's name, bytes, password and key file.
+type Fixture = (&'static str, &'static [u8], &'static str, Option<&'static [u8]>);
+
 /// Each fixture, with the password and key file that go with the YubiKey.
-fn fixtures() -> [(
-    &'static str,
-    &'static [u8],
-    &'static str,
-    Option<&'static [u8]>,
-); 4] {
+fn fixtures() -> [Fixture; 4] {
     [
         (
             "3.1 password",

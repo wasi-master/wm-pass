@@ -17,6 +17,14 @@ export const security = [
     tour: 'tour.security',
     related: ['feature.locking', 'feature.duress', 'feature.emergency_kit', 'concept.vault_file'],
     docs: '/security/threat-model/',
+    on: {
+      android: {
+        how: [
+          'Locking closes the vault and forgets its key, so getting back in takes the master password or another way in.',
+          'The groups further down change the vault file itself: its passwords, key files and security keys, the duress passwords, and the emergency kit. **Autofill and panic** decides what other apps, WM Keyboard, widgets and a watch may see, and what a panic app can do.',
+        ],
+      },
+    },
   },
 
   // ---- locking ----
@@ -50,7 +58,10 @@ export const security = [
       android: {
         title: 'Lock after leaving the app',
         what: 'Locks the vault this long after you leave WM Pass for another app or the home screen.',
-        how: 'The timer starts when WM Pass goes into the background and stops when you come back.',
+        how: [
+          'The timer starts when WM Pass goes into the background and stops when you come back.',
+          'A vault opened from WM Keyboard, by fingerprint or master password, counts as left as soon as it opens, since you stay in the other app. Its timer runs for at least a minute, even with **At once**.',
+        ],
         when: 'A minute gives time to copy a password, paste it into another app and come back for the username without unlocking again.',
         effects: [
           { value: 0, label: 'At once', text: 'Locks as soon as you leave the app.' },
@@ -77,6 +88,11 @@ export const security = [
     ],
     related: ['setting.lock_after', 'feature.locking'],
     words: 'suspend lid hibernate',
+    on: {
+      extension: {
+        what: 'Locks the vault when the computer goes to sleep, its lid is closed or its screen is locked.',
+      },
+    },
   },
   {
     id: 'setting.lock_screen_off',
@@ -130,6 +146,13 @@ export const security = [
         ],
         caveats: 'An accessibility service you have turned on can still read what is on screen.',
       },
+      extension: {
+        effects: [
+          { value: true, label: 'On', text: 'No effect here: the browser still shows the extension in screenshots and shared screens.' },
+          { value: false, label: 'Off', text: 'The extension appears in screenshots and shared screens, as it does with this on.' },
+        ],
+        caveats: 'The browser draws the extension\'s windows, and an extension cannot ask it to keep them out of screenshots or shared screens. Here this setting changes nothing; the desktop app and the phone honour it.',
+      },
     },
   },
   {
@@ -143,7 +166,7 @@ export const security = [
     how: [
       'A copied secret is marked so that clipboard history and clipboard managers that respect the mark leave it out.',
       'When the time is up, WM Pass empties the clipboard only if your secret is still on it. If you have copied something else since, that is left alone.',
-      'On Android, a password just made with the generator, its widget or **Set a new password** is not cleared. It is saved nowhere yet and is usually on its way into a sign-up or change-password form, so clearing it there would lose it. It is still marked sensitive, and goes when you copy something else.',
+      'Quitting WM Pass before the time is up clears the secret at once, under the same rule, since the timer cannot outlive the app.',
       'The message that says something was copied has a **Clear now** button.',
     ],
     effects: [
@@ -165,7 +188,7 @@ export const security = [
           'When the time is up, the extension empties the clipboard, whatever is on it by then. The message that says something was copied has a **Clear now** button.',
         ],
         effects: [
-          { value: 15, label: '15 seconds', text: 'Waits 30 seconds: a browser cannot set a shorter timer.' },
+          { value: 15, label: '15 seconds', text: 'Enough to paste once. If the browser stops the extension\'s background meanwhile, the clear can wait until 30 seconds.' },
           { value: 30, label: '30 seconds', text: 'Enough to switch tabs and paste.' },
           { value: 60, label: '1 minute', text: 'For slow forms or a second paste.' },
           { value: 120, label: '2 minutes', text: 'For typing into another device by hand.' },
@@ -177,13 +200,16 @@ export const security = [
       android: {
         how: [
           'A copied secret is marked as sensitive, so the system\'s copy preview, and keyboards that respect the mark, do not show it.',
-          'When the time is up, WM Pass empties the clipboard if your secret is still on it.',
+          'When the time is up, WM Pass empties the clipboard if your secret is still on it. If you have copied something else since, that is left alone.',
+          'A password just made with the generator, its widget or **Set a new password** is not cleared. It is saved nowhere yet and is usually on its way into a sign-up or change-password form, so clearing it there would lose it. It is still marked sensitive, and goes when you copy something else.',
+          'The message that says something was copied counts down the seconds and has a **Clear now** button.',
         ],
         effects: [
           { value: 15, label: '15 s', text: 'Enough to paste once.' },
           { value: 30, label: '30 s', text: 'Enough to switch apps and paste.' },
           { value: 60, label: '1 min', text: 'For slow forms or a second paste.' },
           { value: 120, label: '2 min', text: 'For typing into another device by hand.' },
+          { value: 300, label: '5 min', text: 'For a long form, or a password typed in pieces.' },
         ],
         caveats: 'An app reading the clipboard during those seconds still sees the secret. Autofill fills without the clipboard.',
         related: ['feature.autofill', 'feature.clipboard'],
@@ -197,11 +223,12 @@ export const security = [
     page: 'security',
     shells: ['desktop'],
     what: 'Keeps this vault\'s key in the system keyring, so the door can open it without the master password.',
-    how: 'The key is wrapped and stored with the operating system\'s secret store, for this vault file only. Turning it off removes it from the keyring.',
+    how: 'The vault\'s key itself is stored in the session\'s Secret Service keyring, such as GNOME Keyring or KWallet, under this vault file\'s name. Turning it off removes it from the keyring.',
     when: 'On a computer only you use, where typing the master password many times a day is the bigger risk.',
     caveats: [
       'A convenience, not protection: any program running in your session can ask the keyring for the key.',
-      'macOS builds have no Secure Enclave unlock, because the app is not signed.',
+      'Offered only on Linux, and only when the session has a keyring WM Pass can reach. The macOS and Windows builds do not offer it: macOS has no Secure Enclave unlock, because the app is not signed.',
+      'After [[action.rekey|a rekey]] the key kept here is the old one, which no longer opens the vault. Turn this off and on again.',
     ],
     related: ['feature.locking', 'concept.master_password'],
     docs: '/security/threat-model/',
@@ -220,6 +247,7 @@ export const security = [
       'The sealed copy opens nothing without the passkey, so a copied browser profile does not open the vault.',
       'The passkey belongs to wmpass.pages.dev, and your browser or phone may keep it with your other passkeys. Deleting it there turns this off.',
       'A browser without passkeys that can give an app a secret (the PRF extension) does not offer this.',
+      'After [[action.rekey|a rekey]] the sealed copy holds the old key, which no longer opens the vault. Turn this off and on again.',
     ],
     related: ['action.keyring_unlock', 'feature.locking', 'concept.master_password'],
     docs: '/security/threat-model/',
@@ -236,8 +264,11 @@ export const security = [
     what: 'Changes the master password and keeps the vault\'s key as it is.',
     how: 'The vault is protected by a random key. Your password only unlocks that key, so changing it rewraps the key and leaves your items untouched. It is quick.',
     when: 'When you want a stronger password, or think someone may have seen yours but has not had a copy of the file.',
-    caveats: 'Backups and copies made before the change still open with the old password. If someone may have a copy of the file, use [[action.rekey]] instead.',
-    related: ['action.rekey', 'concept.master_password', 'concept.vault_file'],
+    caveats: [
+      'Backups and copies made before the change still open with the old password. If someone may have a copy of the file, use [[action.rekey]] instead.',
+      'Changed on two devices before they sync, both new passwords open the vault, and WM Pass says so when you unlock. Remove the one you don\'t want under [[group.security.methods|Unlock methods]]. A vault with every slot in use keeps only the later change, and says that instead.',
+    ],
+    related: ['action.rekey', 'concept.master_password', 'concept.vault_file', 'group.security.methods'],
     words: 'master password new',
   },
   {
@@ -250,8 +281,9 @@ export const security = [
     how: 'Everything in the vault is encrypted again under the new key. Every other way in is dropped and the new password becomes the only one.',
     when: 'When a copy of the file and its password may both be in someone else\'s hands, such as a lost laptop that was unlocked, or a trustee you no longer trust.',
     caveats: [
-      'Other passwords, key files and security keys stop working until you add them back under [[group.security.methods|Unlock methods]].',
+      'Other passwords, key files and security keys, and the wipe and lockout passwords, stop working until you add them back under [[group.security.methods|Unlock methods]] and Duress.',
       'An emergency kit made before the rekey stops working. Make a new one.',
+      'Quick unlock held the old key. On the phone, fingerprint unlock turns off; on a computer, turn keyring or passkey unlock off and on again.',
       'An old copy of the file can still be read by whoever has it and its old password. Rekeying protects what comes after.',
     ],
     related: ['action.change_password', 'action.emergency_kit', 'concept.vault_file'],
@@ -267,11 +299,21 @@ export const security = [
     page: 'security',
     what: 'Every way this vault can be opened. Each one opens the same vault.',
     how: [
-      'The vault file has a fixed number of slots. Each way in fills one, and the empty ones are random bytes, so nobody can tell from the file how many ways in there are, or whether one of them is a duress password.',
-      'Click a password in the list to remove it. A vault always keeps at least one way in.',
+      'The vault file has eight slots. Each way in fills one, the wipe and lockout passwords included, and the empty ones are random bytes, so nobody can tell from the file how many ways in there are, or whether one of them is a duress password.',
+      'The delete button beside a way in removes it. A vault always keeps at least one way in.',
+      'A password changed on two devices at once leaves two ways in, each marked as changed at the same time as the other, with when and on which device. Both open the vault until you remove one.',
     ],
     figure: 'fig.vault',
     related: ['action.add_password', 'action.add_key_file', 'action.add_security_key', 'feature.duress'],
+    on: {
+      android: {
+        how: [
+          'The vault file has eight slots. Each way in fills one, the wipe and lockout passwords included, and the empty ones are random bytes, so nobody can tell from the file how many ways in there are, or whether one of them is a duress password.',
+          'Tap a way in to remove it. A vault always keeps at least one way in.',
+          'A password changed on two devices at once leaves two ways in, each marked as changed at the same time as the other, with when and on which device. Both open the vault until you remove one.',
+        ],
+      },
+    },
   },
   {
     id: 'action.add_password',
@@ -309,6 +351,11 @@ export const security = [
     caveats: 'Lose the key and this way in is gone. Register a second key, or keep another way in.',
     related: ['page.hardware', 'group.security.methods'],
     words: 'yubikey fido2 hardware hmac-secret usb nfc',
+    on: {
+      android: {
+        what: 'Adds a way in that needs a YubiKey or another FIDO2 key, held to the back of the phone or plugged in and touched.',
+      },
+    },
   },
 
   // ---- duress ----
@@ -400,7 +447,7 @@ export const security = [
     pref: 'network_allowed',
     shells: ['desktop', 'extension', 'android'],
     what: 'The one switch every feature that talks to the internet needs. Off means nothing leaves this device.',
-    why: 'WM Pass works fully without a network. Some extras cannot: checking breaches, making aliases, syncing with a server, signing in to an account, and checking for updates. Each one says what it sends, and to whom, on its own page.',
+    why: 'WM Pass works fully without a network. Some extras cannot: checking breaches, making aliases, the disposable inbox, the username checker, website icons, syncing with a server, signing in to an account, and checking for updates. Each one says what it sends, and to whom, on its own page.',
     effects: [
       { value: false, label: 'Off', text: 'No feature can reach the internet. Pages that need it say so and offer to turn this on.' },
       { value: true, label: 'On', text: 'Network features run when you use them. Nothing is sent in the background except what you set up, such as scheduled backups or update checks.' },
@@ -408,5 +455,13 @@ export const security = [
     caveats: 'Syncing with other devices on your own network uses its own pairing, under Settings, Sync and accounts.',
     related: ['page.breaches', 'page.aliases', 'page.sync', 'page.updates'],
     words: 'offline internet online privacy',
+    on: {
+      android: {
+        caveats: [
+          'Syncing with other devices on your own network uses its own pairing, under Settings, Sync and accounts.',
+          'The offline build of the app has no way to reach the internet, so it has no such switch.',
+        ],
+      },
+    },
   },
 ] as const satisfies readonly Topic[];

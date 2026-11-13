@@ -1,5 +1,10 @@
 package com.wasimaster.wmpass.ui.vault
 
+import androidx.compose.ui.semantics.isTraversalGroup
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.heading
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -57,6 +62,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -108,10 +116,15 @@ fun HomeScreen() {
     val panes = showsPanes()
     // The page keeps clear of the rail, which floats over the ground beside it.
     val clear = if (!rail) Modifier else if (prefs.leftHanded) Modifier.padding(end = RailWidth) else Modifier.padding(start = RailWidth)
+    // While the add menu or search covers the page, a screen reader is kept to what is on top:
+    // the page and dock under the scrim are taken out of its reach until it closes.
+    val covered = if (shell.adding || shell.searching) Modifier.clearAndSetSemantics { } else Modifier
     Box(Modifier.fillMaxSize().background(colors.ground)) {
         val order = prefs.tabs
         BackdropSource(backdrop, Modifier.fillMaxSize()) {
-        ListAndItem(panes, Modifier.fillMaxSize().then(clear)) {
+        // A group of its own beside the rail, so a screen reader reads the page through rather
+        // than zigzagging between a tab and the row level with it.
+        ListAndItem(panes, Modifier.fillMaxSize().then(clear).then(covered).semantics { isTraversalGroup = true }) {
         AnimatedContent(
             targetState = shell.tab,
             modifier = Modifier.fillMaxSize(),
@@ -132,12 +145,13 @@ fun HomeScreen() {
         }
         CompositionLocalProvider(LocalBackdrop provides backdrop) {
         if (rail) {
-            SideDock(Modifier.align(if (prefs.leftHanded) Alignment.CenterEnd else Alignment.CenterStart))
+            SideDock(Modifier.align(if (prefs.leftHanded) Alignment.CenterEnd else Alignment.CenterStart).then(covered))
             // What the dock carried besides the tabs, at the foot of the page it is about.
             Column(
                 Modifier
                     .align(Alignment.BottomCenter)
                     .then(clear)
+                    .then(covered)
                     .navigationBarsPadding()
                     .padding(horizontal = 14.dp, vertical = 10.dp)
                     .widthIn(max = 560.dp),
@@ -166,7 +180,7 @@ fun HomeScreen() {
                     )
                 },
         )
-        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(horizontal = 14.dp, vertical = 10.dp)) {
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().then(covered).navigationBarsPadding().padding(horizontal = 14.dp, vertical = 10.dp)) {
             UndoBar(Modifier.padding(bottom = 10.dp))
             Dock()
         }
@@ -220,6 +234,7 @@ private fun SideDock(modifier: Modifier = Modifier) {
         modifier
             .fillMaxHeight()
             .width(RailWidth)
+            .semantics { isTraversalGroup = true }
             .statusBarsPadding()
             .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
@@ -233,6 +248,8 @@ private fun SideDock(modifier: Modifier = Modifier) {
                     .helpAnchor("narrow.tabs")
                     .width(64.dp)
                     .glass(CircleShape)
+                    // One group, so a screen reader says "tab 2 of 5".
+                    .selectableGroup()
                     .padding(vertical = 6.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -316,7 +333,7 @@ private fun TabsPill(modifier: Modifier = Modifier) {
         val room = maxWidth - TabShut * (tabs.size - 1) - TabOpen
         val fits = label == null || with(density) { measurer.measure(label, style, maxLines = 1).size.width.toDp() } <= room
         Row(
-            Modifier.fillMaxWidth(),
+            Modifier.fillMaxWidth().selectableGroup(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
@@ -338,6 +355,8 @@ private fun TabButton(tab: Tab, selected: Boolean, named: Boolean, style: TextSt
             .height(52.dp)
             .clip(CircleShape)
             .background(colors.primary.copy(alpha = lit * if (colors.dark) 0.17f else 0.12f))
+            // A screen reader says which tab is the one showing, as it does for the standard look's bar.
+            .semantics { this.selected = selected }
             .clickable(source, androidx.compose.material3.ripple(), role = Role.Tab, onClickLabel = tab.label) {
                 if (shell.tab != tab.id) shell.haptics.tick()
                 shell.tab = tab.id
@@ -363,7 +382,8 @@ private fun TabButton(tab: Tab, selected: Boolean, named: Boolean, style: TextSt
         ) {
             Row {
                 Spacer(Modifier.width(6.dp))
-                Text(tab.label, color = colors.primary, style = style, maxLines = 1, softWrap = false)
+                // The icon already names the tab; read once, not twice.
+                Text(tab.label, color = colors.primary, style = style, maxLines = 1, softWrap = false, modifier = Modifier.clearAndSetSemantics { })
             }
         }
     }
@@ -391,7 +411,16 @@ private fun SelectionBar() {
             },
             label = "count",
         ) { count ->
-            Text("$count", color = colors.text, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 8.dp))
+            // Said as what it counts, not a bare number.
+            Text(
+                "$count",
+                color = colors.text,
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(horizontal = 8.dp).semantics {
+                    contentDescription = "$count selected"
+                    liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite
+                },
+            )
         }
         Spacer(Modifier.weight(1f))
         BulkActions()

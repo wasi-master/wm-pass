@@ -1,0 +1,10 @@
+<!doctype html><title>Failed sign-in fixture</title>
+<p id="said"></p>
+<form id="f" onsubmit="event.preventDefault(); location.href='/fail.html?error=1'">
+<input id="user" name="email" type="email" autocomplete="username" style="width:280px;height:32px;margin:40px">
+<input id="pass" name="password" type="password" style="width:280px;height:32px;margin:40px">
+<button id="go" style="margin:40px">Sign in</button></form>
+<script>
+// A wrong password: the same form again, at the same page with a note added to its address.
+if (location.search.includes('error=1')) document.getElementById('said').textContent = 'That password is not right.';
+</script>

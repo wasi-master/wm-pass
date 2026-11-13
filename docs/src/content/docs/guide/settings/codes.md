@@ -36,6 +36,10 @@ How large codes are drawn on the Codes page.
 
 *The guide in the app shows this live, with your own settings.*
 
+#### On Android
+
+How large codes are drawn on the Codes page and on an item's page.
+
 <a id="setting-code-groups"></a>
 
 ## Split in two groups
@@ -91,7 +95,7 @@ The order of the codes on the Codes page.
 | Choice | What it does |
 | --- | --- |
 | As in the vault | The order the vault holds them in. |
-| By name | A to Z by the service that issued the code, or by the item's name when it does not say. |
+| By name | A to Z by the item's name, or by the service that issued the code when the item has no name. |
 
 <a id="setting-code-hidden"></a>
 
@@ -114,5 +118,7 @@ An item's own page still shows its code.
 On the phone it is called Hide codes until tapped.
 
 Covers every code on the Codes page with dots. A tap shows that code for 15 seconds and copies it.
+
+An item's own page still shows its code. Codes on home screen widgets stay covered too.
 
 See also [Block screenshots](/guide/settings/security/#setting-screen-protection).

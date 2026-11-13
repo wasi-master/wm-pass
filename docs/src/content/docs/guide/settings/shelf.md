@@ -20,9 +20,9 @@ A place for items you would rather not have on show. Items on the shelf stay out
 <div class="guide-down">↓</div>
 <div class="guide-row"><div class="guide-box"><strong>Lists, search, autofill</strong><span>everything else</span></div><div class="guide-box muted"><svg class="guide-icon" width="16" height="16" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M403.5-423.5Q372-455 372-500t31.5-76.5Q435-608 480-608t76.5 31.5Q588-545 588-500t-31.5 76.5Q525-392 480-392t-76.5-31.5ZM480-200q-146 0-266-81.5T40-500q54-137 174-218.5T480-800q141 0 257.5 76T912-520h-91q-52-93-143-146.5T480-720q-113 0-207.5 59.5T128-500q50 101 144.5 160.5T480-280q20 0 40-2t40-6v81q-20 3-40 5t-40 2Zm0-120q22 0 42.5-5t38.5-14q5-50 31.5-90t67.5-64v-7q0-75-52.5-127.5T480-680q-75 0-127.5 52.5T300-500q0 75 52.5 127.5T480-320Zm-5-180Zm205 380q-17 0-28.5-11.5T640-160v-120q0-17 11.5-28.5T680-320v-40q0-33 23.5-56.5T760-440q33 0 56.5 23.5T840-360v40q17 0 28.5 11.5T880-280v120q0 17-11.5 28.5T840-120H680Zm40-200h80v-40q0-17-11.5-28.5T760-400q-17 0-28.5 11.5T720-360v40Z"/></svg><strong>Hidden shelf</strong><span>closed</span></div></div>
 <div class="guide-down">↑</div>
-<div class="guide-row"><div class="guide-box"><strong>Master password</strong><span>opens it until you lock</span></div></div>
+<div class="guide-row"><div class="guide-box"><strong>Master password</strong><span>opens it until you leave or lock</span></div></div>
 </div>
-<figcaption>Items on the shelf stay out of sight until you open it with your password. It closes when the vault locks.</figcaption>
+<figcaption>Items on the shelf stay out of sight until you open it with your password. It closes again when you leave it or the vault locks.</figcaption>
 </figure>
 
 #### Why it is there

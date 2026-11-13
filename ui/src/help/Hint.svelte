@@ -11,7 +11,7 @@
 
   const shown = $derived(prefs.v.help_hints && !help.seen(`hint:${id}`));
   $effect(() => {
-    if (shown) void help.load();
+    if (shown) void help.load().catch(() => undefined);
   });
   const words = $derived.by(() => {
     const t = help.topic(topic);

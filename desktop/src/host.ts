@@ -1,11 +1,26 @@
 // The desktop shell. Everything goes through the app's own commands, and nothing here holds state.
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke as call } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { Host, MenuItem, PlaceFile, PlacesHost } from '$ui/engine/host';
 import { prefs } from '$ui/engine/prefs.svelte';
 
 const encoder = new TextEncoder();
+
+/**
+ * The app's commands refuse with plain words, such as "the folder or bucket is not there". The
+ * pages read `failure.message`, so a refusal arrives as an Error with them as a sentence, rather
+ * than as a bare string every page would show as its own vague fallback.
+ */
+function invoke<T>(command: string, args?: Parameters<typeof call>[1]): Promise<T> {
+  return call<T>(command, args).catch((failure: unknown) => {
+    if (failure instanceof Error) throw failure;
+    const text = String(failure ?? '').trim();
+    if (!text) throw new Error('The app did not answer.');
+    const sentence = text.charAt(0).toUpperCase() + text.slice(1);
+    throw new Error(/[.!?]$/.test(sentence) ? sentence : `${sentence}.`);
+  });
+}
 
 /** A JSON head and bytes in one body: `head_len(u32 LE) head bytes`. */
 function packed(head: unknown, bytes: Uint8Array = new Uint8Array()) {
@@ -72,14 +87,19 @@ export async function desktopHost(): Promise<Host> {
       pendingMenu?.(null);
       return new Promise((resolve) => {
         pendingMenu = resolve;
-        void invoke('popup_menu', { items });
+        // A menu that could not be shown answers nothing, rather than leaving its caller waiting.
+        invoke('popup_menu', { items }).catch((failure) => {
+          console.warn('The menu could not be shown', failure);
+          if (pendingMenu === resolve) pendingMenu = null;
+          resolve(null);
+        });
       });
     },
     onCommand(run) {
       void listen<string>('command', (event) => run(event.payload));
     },
     stateChanged({ unlocked, handle }) {
-      void invoke('state_changed', { unlocked, handle: handle ?? 0 });
+      invoke('state_changed', { unlocked, handle: handle ?? 0 }).catch((failure) => console.warn('The menus did not follow the lock state', failure));
     },
     setScreenProtection: (on) => invoke('set_screen_protection', { on }),
     quick: {
@@ -136,7 +156,7 @@ export async function desktopHost(): Promise<Host> {
       showMain: () => invoke('show_main'),
       hidePalette: () => invoke('hide_palette'),
       currentHandle: () => invoke('current_handle'),
-      checkUpdate: () => invoke('check_update'),
+      checkUpdate: () => invoke('check_update', { online: prefs.v.network_allowed }),
       installUpdate: () => invoke('install_update'),
       version: () => invoke('app_version'),
       widgetsFeed: (feed) => invoke('widgets_feed', { feed }),
@@ -151,7 +171,11 @@ async function collected<T>(run: Promise<T>): Promise<T> {
   try {
     return await run;
   } finally {
-    const updates: [string, Record<string, unknown>][] = await invoke('places_updates');
+    // Collecting the changes must not turn a run that worked into one that failed, nor hide why one did.
+    const updates = await invoke<[string, Record<string, unknown>][]>('places_updates').catch((failure) => {
+      console.warn('The changes to a backup place could not be collected', failure);
+      return [];
+    });
     for (const [id, extra] of updates) places.onUpdate?.(id, extra);
   }
 }
@@ -166,4 +190,6 @@ const places: PlacesHost = {
   signIn: (place, step) => invoke('places_sign_in', { place, step, online: prefs.v.network_allowed }),
 };
 
-void invoke<string[]>('places_kinds').then((kinds) => (places.kinds = kinds));
+invoke<string[]>('places_kinds')
+  .then((kinds) => (places.kinds = kinds))
+  .catch((failure) => console.warn('The kinds of backup place could not be read', failure));

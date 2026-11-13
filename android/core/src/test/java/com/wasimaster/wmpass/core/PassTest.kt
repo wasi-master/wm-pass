@@ -67,4 +67,43 @@ class PassTest {
         secret.consume { assertArrayEquals("s3cret-value".toByteArray(), it) }
         Pass.lock()
     }
+
+    /** A bug in the core: the app is told and locks, the process goes on, and the vault opens again. */
+    @Test
+    fun `an internal error locks every vault without ending the process`() = runBlocking {
+        val context = RuntimeEnvironment.getApplication()
+        Pass.init(context)
+        if (Pass.state.value == LockState.NoVault) {
+            coroutineScope {
+                val door = launch { Pass.create("Personal", password) }
+                Pass.state.first { it is LockState.Unlocked }
+                door.join()
+            }
+        } else {
+            assertEquals(UnlockResult.Opened, Pass.unlock(password))
+        }
+        val open = Pass.state.value
+        assertTrue(open is LockState.Unlocked)
+        val before = Pass.handleForTests
+        // `debug.panic` is in debug builds of the core only, which the unit tests load.
+        val failure = runCatching { Pass.plainCall("debug.panic") }.exceptionOrNull()
+        assertTrue("an internal error, not a crash: $failure", failure is InternalFailure)
+        assertTrue((failure as NativeFailure).isInternal)
+        assertTrue("every call is held back", Engine.stopped.value)
+        assertTrue("the vault is locked for widgets, tiles and autofill", Pass.state.value is LockState.Locked)
+        assertEquals("the app's screens keep what they showed", open, Pass.internalHeld.value)
+        assertEquals(0L, Pass.handleForTests)
+        // Swallowed or not, a call meanwhile fails at once, without reaching the core.
+        assertTrue(runCatching { Engine.call("kinds") }.exceptionOrNull() is InternalFailure)
+        // The core itself started afresh: the old handle is locked there.
+        Pass.leaveInternal()
+        assertFalse(Engine.stopped.value)
+        assertEquals(null, Pass.internalHeld.value)
+        assertTrue(Pass.entries.value.isEmpty())
+        val stale = runCatching { Engine.call("vault.info", before) }.exceptionOrNull()
+        assertEquals("locked", (stale as NativeFailure).code)
+        assertEquals(UnlockResult.Opened, Pass.unlock(password))
+        assertTrue(Pass.state.value is LockState.Unlocked)
+        Pass.lock()
+    }
 }

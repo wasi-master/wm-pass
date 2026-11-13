@@ -12,8 +12,6 @@ Found under Settings, Security, Hardware key.
 
 ## About this page
 
-*Only in the desktop app and Android.*
-
 Adds a security key as a way in: a password you choose that opens the vault only with the key plugged in and touched.
 
 #### Why it is there
@@ -52,8 +50,6 @@ See also [Add a security key](/guide/settings/security/#action-add-security-key)
 
 ## A FIDO2 security key
 
-*Only in the desktop app and Android.*
-
 Sets up a FIDO2 key, such as a YubiKey 5, a SoloKey or a Nitrokey, by USB.
 
 #### How it works
@@ -73,8 +69,6 @@ See also [Hardware key](/guide/settings/hardware/), [A YubiKey with challenge-re
 <a id="action-hardware-yubikey"></a>
 
 ## A YubiKey with challenge-response
-
-*Only in the desktop app and Android.*
 
 Sets up a YubiKey through its challenge-response feature in slot 2, instead of FIDO2.
 

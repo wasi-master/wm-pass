@@ -45,6 +45,8 @@ pub struct Door {
     pub busy: Option<&'static str>,
     /// How strong a new password looks, 0 to 4.
     pub strength: Option<(u8, String)>,
+    /// The vault file named before a new one was started, to go back to.
+    unlock_path: Option<String>,
 }
 
 /// What the door wants done.
@@ -79,6 +81,7 @@ impl Door {
             notice: None,
             busy: None,
             strength: None,
+            unlock_path: None,
         };
         match path {
             Some(path) => door.path.set(&path.to_string_lossy()),
@@ -128,12 +131,19 @@ impl Door {
         self.password.clear();
         self.confirm.clear();
         self.error = None;
+        // "Locked" and the like were about the vault being left, not the one being made.
+        self.notice = None;
         self.strength = None;
         if self.mode == Mode::Create {
+            self.unlock_path = Some(self.path.text().to_owned());
             self.path.set(&default_new_path().to_string_lossy());
             self.focus = Field::Name;
         } else {
-            self.focus = Field::Password;
+            // Going back from a new vault reopens the one that was named before.
+            if let Some(path) = self.unlock_path.take() {
+                self.path.set(&path);
+            }
+            self.focus = if self.path.is_empty() { Field::Path } else { Field::Password };
         }
     }
 
@@ -182,6 +192,18 @@ impl Door {
                 let fields = self.fields();
                 let last = fields.last().copied() == Some(self.focus);
                 let ready = !self.password.is_empty() && !self.path.is_empty();
+                // An empty box is never sent: an empty password would only cost a second of
+                // key stretching and count as a wrong guess against the lockout.
+                if last && self.mode == Mode::Unlock && !ready {
+                    let (focus, error) = if self.path.is_empty() {
+                        (Field::Path, "Type where the vault file is")
+                    } else {
+                        (Field::Password, "Type the vault's password")
+                    };
+                    self.focus = focus;
+                    self.error = Some(error.to_owned());
+                    return Ask::Nothing;
+                }
                 if last || (ready && self.mode == Mode::Unlock) {
                     return match self.mode {
                         Mode::Unlock => Ask::Unlock,
@@ -238,4 +260,32 @@ pub fn join_target(typed: &str) -> PathBuf {
 pub fn place_label(path: &str) -> Option<&'static str> {
     let path = crate::store::expand(path);
     (crate::app_folder::is_app_folder(&path) || crate::app_folder::root_of(&path).is_some()).then_some("The WM Pass app's vault on this computer")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backing_out_of_a_new_vault_keeps_the_one_named_before() {
+        let mut door = Door::new(Some(PathBuf::from("/somewhere/mine.wmvault")), &[]);
+        door.key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL), &[]);
+        assert_eq!(door.mode, Mode::Create);
+        assert_ne!(door.path.text(), "/somewhere/mine.wmvault");
+        door.key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), &[]);
+        assert_eq!(door.mode, Mode::Unlock);
+        assert_eq!(door.path.text(), "/somewhere/mine.wmvault");
+        assert_eq!(door.focus, Field::Password);
+    }
+
+    #[test]
+    fn enter_on_an_empty_password_asks_for_one_rather_than_trying_it() {
+        let mut door = Door::new(Some(PathBuf::from("/somewhere/mine.wmvault")), &[]);
+        assert_eq!(door.focus, Field::Password);
+        assert_eq!(door.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &[]), Ask::Nothing);
+        assert_eq!(door.error.as_deref(), Some("Type the vault's password"));
+        door.key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE), &[]);
+        assert!(door.error.is_none());
+        assert_eq!(door.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &[]), Ask::Unlock);
+    }
 }

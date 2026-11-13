@@ -11,31 +11,61 @@
   let choice = $state(0);
   let password = $state('');
   let wrong = $state(false);
+  let needed = $state(false);
+  let problem = $state<string | null>(null);
+  let busy = $state(false);
   applyTheme(prefs.theme, matchMedia('(prefers-color-scheme: dark)').matches, false);
 
-  void send({ type: 'confirm.get', id }).then((found) => {
-    ask = found;
-    if (!found) window.close();
-  });
+  // With nothing to answer, the window goes, and closing it answers no.
+  void send({ type: 'confirm.get', id }).then(
+    (found) => {
+      ask = found;
+      if (!found) window.close();
+    },
+    () => window.close(),
+  );
 
   async function answer(picked: number) {
+    if (busy) return;
+    busy = true;
     wrong = false;
+    needed = false;
+    problem = null;
     const secret = password ? toB64(new TextEncoder().encode(password)) : null;
-    const reply = await send({ type: 'confirm.answer', id, choice: picked, password: secret });
-    password = '';
-    if (reply?.wrong) wrong = true;
-    else window.close();
+    try {
+      const reply = await send({ type: 'confirm.answer', id, choice: picked, password: secret });
+      password = '';
+      if (reply?.wrong) wrong = true;
+      else if (reply?.needed) needed = true;
+      else window.close();
+    } catch (failure: any) {
+      // Such as the vault locking while this window was open: said here, not a window that stays put.
+      if (picked < 0) window.close();
+      else problem = failure?.message ?? 'That did not work.';
+    } finally {
+      busy = false;
+    }
+  }
+  // Escape answers no, as closing the window does.
+  function keys(event: KeyboardEvent) {
+    if (event.key !== 'Escape' || !ask || event.defaultPrevented) return;
+    event.preventDefault();
+    void answer(-1);
   }
 </script>
 
+<svelte:window onkeydown={keys} />
+
 {#if ask}
-  <div class="confirm">
-    <h1>{ask.op === 'create' ? 'Save a passkey' : 'Sign in with a passkey'}</h1>
+  <main class="confirm">
+    <h1>{ask.exists ? 'Passkey already saved' : ask.op === 'create' ? 'Save a passkey' : 'Sign in with a passkey'}</h1>
     <p class="dim">{ask.site} asks for this{ask.rp !== ask.site ? `, for ${ask.rp}` : ''}.</p>
-    {#if ask.op === 'create'}
+    {#if ask.exists}
+      <p>A passkey for <strong>{ask.user || 'this account'}</strong> is already in your vault, so no second one is made. Continue to tell the site.</p>
+    {:else if ask.op === 'create'}
       <p>Save a passkey for <strong>{ask.user || 'this account'}</strong> in your vault.</p>
     {:else}
-      <div class="choices">
+      <div class="choices" role="radiogroup" aria-label="Passkeys saved for this site">
         {#each ask.choices as item, i}
           <label class="choice">
             <input type="radio" name="key" checked={choice === i} onchange={() => (choice = i)} />
@@ -44,16 +74,25 @@
         {/each}
       </div>
     {/if}
-    <div>
-      <p class="small dim">Enter your password to prove it is you. Some sites require this.</p>
-      <PasswordField bind:value={password} placeholder="Master password (optional)" />
-      {#if wrong}<p class="small danger-text">That password is not right.</p>{/if}
-    </div>
+    {#if ask.exists}
+      {#if problem}<p class="small danger-text" role="alert">{problem}</p>{/if}
+    {:else}
+      <div>
+      <p class="small dim">{ask.verify ? 'This site requires your master password, to prove it is you.' : 'Enter your password to prove it is you. Some sites require this.'}</p>
+      <!-- Enter in the box answers as the main button does, so the window opens with it ready to type in. -->
+      <PasswordField bind:value={password} placeholder={ask.verify ? 'Master password' : 'Master password (optional)'} error={wrong || needed} describedby={wrong || needed || problem ? 'confirm-problem' : undefined} autofocus onenter={() => answer(choice)} />
+      <div id="confirm-problem">
+        {#if wrong}<p class="small danger-text" role="alert">That password is not right.</p>{/if}
+        {#if needed}<p class="small danger-text" role="alert">Enter your master password first.</p>{/if}
+        {#if problem}<p class="small danger-text" role="alert">{problem}</p>{/if}
+      </div>
+      </div>
+    {/if}
     <div class="gap">
       <Btn label="Cancel" onclick={() => answer(-1)} />
-      <Btn label={ask.op === 'create' ? 'Save passkey' : 'Sign in'} variant="primary" onclick={() => answer(choice)} />
+      <Btn label={ask.exists ? 'Continue' : ask.op === 'create' ? 'Save passkey' : 'Sign in'} variant="primary" disabled={busy} onclick={() => answer(choice)} />
     </div>
-  </div>
+  </main>
 {/if}
 
 <style>

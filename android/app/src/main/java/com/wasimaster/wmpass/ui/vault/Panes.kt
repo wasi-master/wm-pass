@@ -1,5 +1,7 @@
 package com.wasimaster.wmpass.ui.vault
 
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
@@ -73,19 +75,26 @@ internal fun ListAndItem(panes: Boolean, modifier: Modifier = Modifier, list: @C
     var start by remember { mutableFloatStateOf(0f) }
     BoxWithConstraints(modifier.onPlaced { start = with(density) { it.positionInWindow().x.toDp().value } }) {
         val hinge = shape.hinge
-        val (listWidth, gap) = if (hinge != null && hinge.start - start > 280f && maxWidth.value - (hinge.endInclusive - start) > 280f) {
-            (hinge.start - start).dp to (hinge.endInclusive - hinge.start).dp
+        // The hinge is measured from the window's left edge, but the list leads the row: on the
+        // left, or on the right in a right-to-left language, where it runs back to the hinge's far side.
+        val rtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
+        val leftOfHinge = hinge?.let { it.start - start } ?: 0f
+        val rightOfHinge = hinge?.let { maxWidth.value - (it.endInclusive - start) } ?: 0f
+        val (listWidth, gap) = if (hinge != null && leftOfHinge > 280f && rightOfHinge > 280f) {
+            (if (rtl) rightOfHinge else leftOfHinge).dp to (hinge.endInclusive - hinge.start).dp
         } else {
             (maxWidth * 0.4f).coerceIn(360.dp, 440.dp) to 0.dp
         }
         Row(Modifier.fillMaxSize()) {
-            Box(Modifier.width(listWidth).fillMaxHeight()) { list() }
+            // Each pane a group of its own, so a screen reader goes down the list and then through
+            // the item, rather than zigzagging between a row and the field level with it.
+            Box(Modifier.width(listWidth).fillMaxHeight().semantics { isTraversalGroup = true }) { list() }
             if (gap > 0.dp) {
                 Box(Modifier.width(gap).fillMaxHeight().background(colors.ground))
             } else {
                 Box(Modifier.width(1.dp).fillMaxHeight().background(colors.hairline))
             }
-            Box(Modifier.weight(1f).fillMaxHeight().background(colors.ground)) {
+            Box(Modifier.weight(1f).fillMaxHeight().background(colors.ground).semantics { isTraversalGroup = true }) {
                 ItemPane()
             }
         }

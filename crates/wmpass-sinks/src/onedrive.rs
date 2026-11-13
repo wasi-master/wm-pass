@@ -99,7 +99,7 @@ impl<H: AsyncHttp> Sink for OneDrive<H> {
         if first.status != 302 {
             return Err(crate::status_fault(first.status));
         }
-        let meta = self.client.ok(self.auth(Request::get(format!("{}?select=@microsoft.graph.downloadUrl", file.id)))).await?;
+        let meta = self.client.ok(self.auth(Request::get(format!("{}?$select=@microsoft.graph.downloadUrl", file.id)))).await?;
         let root = meta.json().map_err(|_| Fault::Io)?;
         let url = root.get("@microsoft.graph.downloadUrl").and_then(Value::as_str).ok_or(Fault::Io)?;
         let mut download = Request::get(url);

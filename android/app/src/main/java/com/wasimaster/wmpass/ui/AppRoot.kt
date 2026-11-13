@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.PlatformTextInputMethodRequest
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.wasimaster.wmpass.app.Prefs
+import com.wasimaster.wmpass.core.Engine
 import com.wasimaster.wmpass.core.LockState
 import com.wasimaster.wmpass.core.Pass
 import com.wasimaster.wmpass.ui.door.DoorScreen
@@ -49,12 +50,21 @@ private val OpenEase = CubicBezierEasing(0.65f, 0f, 0.15f, 1f)
  */
 @Composable
 fun AppRoot(prefs: Prefs) {
-    val colors = palette
-    val state by Pass.state.collectAsStateWithLifecycle()
-    if (colors.flat) {
-        FlatDoor(state, prefs)
-        return
+    val live by Pass.state.collectAsStateWithLifecycle()
+    // After an internal error the vault is locked already, but the screens it showed stay, with
+    // whatever was typed in them, under a message until the person goes to the door.
+    val held by Pass.internalHeld.collectAsStateWithLifecycle()
+    val stopped by Engine.stopped.collectAsStateWithLifecycle()
+    val state = held ?: live
+    Box(Modifier.fillMaxSize()) {
+        if (palette.flat) FlatDoor(state, prefs) else ShieldDoor(state, prefs)
+        if (stopped || held != null) InternalErrorNotice()
     }
+}
+
+@Composable
+private fun ShieldDoor(state: LockState, prefs: Prefs) {
+    val colors = palette
     val reduce = LocalReduceMotion.current
     val haptics = rememberHaptics()
     val unlocked = state is LockState.Unlocked
@@ -85,7 +95,8 @@ fun AppRoot(prefs: Prefs) {
                         alpha = 1f - p * p
                     },
             ) {
-                DoorScreen(state, prefs)
+                // The door's own fields too: an account's email and server, a new vault's name.
+                NoLearningInput { DoorScreen(state, prefs) }
             }
         }
         if (vaultShown) {
@@ -180,7 +191,7 @@ private fun FlatDoor(state: LockState, prefs: Prefs) {
                         scaleY = 1f - 0.06f * p
                         alpha = 1f - p
                     },
-            ) { DoorScreen(state, prefs) }
+            ) { NoLearningInput { DoorScreen(state, prefs) } }
         }
         if (vaultShown) {
             Box(

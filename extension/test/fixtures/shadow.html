@@ -1,0 +1,16 @@
+<!doctype html><title>Shadow DOM fixture</title>
+<x-field kind="email" name="email" fid="user"></x-field>
+<x-field kind="password" name="password" fid="pass"></x-field>
+<script>
+// Each box in a shadow root of its own, as design systems built from web components draw them.
+customElements.define('x-field', class extends HTMLElement {
+  connectedCallback() {
+    const input = document.createElement('input');
+    input.type = this.getAttribute('kind');
+    input.name = this.getAttribute('name');
+    input.id = this.getAttribute('fid');
+    input.style.cssText = 'width:280px;height:32px;margin:40px';
+    this.attachShadow({ mode: 'open' }).append(input);
+  }
+});
+</script>

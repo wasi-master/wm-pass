@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -34,6 +35,7 @@ import com.wasimaster.wmpass.system.Destination
 import com.wasimaster.wmpass.system.Destinations
 import com.wasimaster.wmpass.system.SharedVaults
 import com.wasimaster.wmpass.system.sinkProblem
+import com.wasimaster.wmpass.ui.parts.announced
 import com.wasimaster.wmpass.ui.door.PasswordPill
 import com.wasimaster.wmpass.ui.icons.PassIcons
 import com.wasimaster.wmpass.ui.parts.Eyebrow
@@ -133,6 +135,7 @@ fun VaultsScreen() {
                     shell.nav.popBackStack("home", false)
                 }
             } catch (failure: Exception) {
+                if (failure is kotlinx.coroutines.CancellationException) throw failure
                 problem = file to ((failure as? NativeFailure)?.message ?: sinkProblem(failure))
                 shell.haptics.reject()
             }
@@ -143,7 +146,9 @@ fun VaultsScreen() {
         Column(Modifier.padding(horizontal = 16.dp)) {
             child?.let { name ->
                 Eyebrow("You are inside")
-                GroupCard { NavRow(name, "Back to the vault it lives in", icon = PassIcons.ArrowBack) { scope.launch { Pass.leaveChild() } } }
+                // On the shell's scope: a shared vault whose place is out of reach fails its save on the way
+                // out, which is said at the bottom of the screen rather than closing the app.
+                GroupCard { NavRow(name, "Back to the vault it lives in", icon = PassIcons.ArrowBack) { shell.launch { Pass.leaveChild() } } }
             }
             Text(
                 "A nested vault is its own encrypted file, opened from inside this one. A shared vault is held at a place you and others can reach, and each person has their own key to it.",
@@ -192,7 +197,7 @@ fun VaultsScreen() {
                             }
                         }
                         problem?.takeIf { it.first == file }?.let { (_, words) ->
-                            Text(words, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 70.dp, end = 16.dp, bottom = 12.dp))
+                            Text(words, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced().padding(start = 70.dp, end = 16.dp, bottom = 12.dp))
                         }
                     }
                 }
@@ -231,8 +236,13 @@ private fun NestedSheet(onDismiss: () -> Unit, onMade: () -> Unit) {
     val colors = palette
     val scope = rememberCoroutineScope()
     val name = rememberTextFieldState()
-    val password = rememberTextFieldState()
+    // Not saved with the activity's state: a password must not land in a Bundle.
+    val password = remember { TextFieldState() }
+    // Typed twice: it is the way in for a recovery, and nothing can reset it.
+    val again = remember { TextFieldState() }
     var problem by remember { mutableStateOf<String?>(null) }
+    // Its key takes a moment to make, long enough for a second tap to make a second vault.
+    var busy by remember { mutableStateOf(false) }
     PassSheet(onDismiss, "A nested vault") {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(
@@ -242,9 +252,17 @@ private fun NestedSheet(onDismiss: () -> Unit, onMade: () -> Unit) {
                 modifier = Modifier.padding(horizontal = 6.dp),
             )
             SheetField(name, "Its name, such as Work")
-            PasswordPill(password, "Its own password")
-            problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
-            PrimaryButton("Make it", Modifier.fillMaxWidth(), enabled = name.text.isNotBlank() && password.text.isNotEmpty()) {
+            PasswordPill(password, "Its own password", imeAction = androidx.compose.ui.text.input.ImeAction.Next)
+            val matches = again.text.toString() == password.text.toString()
+            PasswordPill(again, "Its password again", error = again.text.isNotEmpty() && !matches)
+            if (again.text.isNotEmpty() && !matches) {
+                Text("The passwords do not match.", color = colors.danger, style = MaterialTheme.typography.bodySmall, modifier = Modifier.announced().padding(horizontal = 6.dp))
+            }
+            problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced()) }
+            PrimaryButton(if (busy) "Making it…" else "Make it", Modifier.fillMaxWidth(), enabled = !busy && name.text.isNotBlank() && password.text.isNotEmpty() && matches) {
+                if (busy) return@PrimaryButton
+                busy = true
+                problem = null
                 scope.launch {
                     val secret = password.text.toString().toByteArray()
                     try {
@@ -256,10 +274,13 @@ private fun NestedSheet(onDismiss: () -> Unit, onMade: () -> Unit) {
                         Pass.flush()
                         onMade()
                         onDismiss()
-                    } catch (failure: NativeFailure) {
-                        problem = failure.message
+                    } catch (failure: Exception) {
+                        // This sheet's scope has no handler of its own: a full disk is said here, not a crash.
+                        if (failure is kotlinx.coroutines.CancellationException) throw failure
+                        problem = failure.message ?: "The vault could not be made."
                     } finally {
                         secret.fill(0)
+                        busy = false
                     }
                 }
             }
@@ -282,7 +303,7 @@ private fun CreateSharedSheet(onDismiss: () -> Unit, onMade: () -> Unit) {
             SheetField(name, "Its name, such as Family")
             SheetField(me, "Your name, as the others will see it")
             PlacePicker(place) { place = it }
-            problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
+            problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced()) }
             Text(
                 "Everyone with the key can read and change what is in it. Removing someone moves it to a new key, but they keep any copy they already have.",
                 color = colors.textLow,
@@ -297,7 +318,11 @@ private fun CreateSharedSheet(onDismiss: () -> Unit, onMade: () -> Unit) {
                             onMade()
                             onDismiss()
                         }
-                        .onFailure { problem = it.message?.let { _ -> sinkProblem(it) } }
+                        // Every failure is said, including one that comes with no message of its own.
+                        .onFailure {
+                            if (it is kotlinx.coroutines.CancellationException) throw it
+                            problem = (it as? NativeFailure)?.message ?: sinkProblem(it)
+                        }
                     busy = false
                 }
             }
@@ -308,21 +333,29 @@ private fun CreateSharedSheet(onDismiss: () -> Unit, onMade: () -> Unit) {
 @Composable
 private fun JoinSheet(onDismiss: () -> Unit, onMade: () -> Unit) {
     val colors = palette
+    val shell = LocalShell.current
     val me = rememberTextFieldState()
-    val scope = rememberCoroutineScope()
     var code by remember { mutableStateOf<String?>(null) }
     var fingerprint by remember { mutableStateOf("") }
+    // One code per tap: a second while the first is made would leave a second waiting entry.
+    var busy by remember { mutableStateOf(false) }
     PassSheet(onDismiss, "Join a shared vault") {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             val shown = code
             if (shown == null) {
                 SheetField(me, "Your name, as the others will see it")
-                PrimaryButton("Make my code", Modifier.fillMaxWidth(), enabled = me.text.isNotBlank()) {
-                    scope.launch {
-                        val reply = Pass.change("shared.join_code") { put("my_name", me.text.toString().trim()) }
-                        code = reply.obj["code"]!!.jsonPrimitive.content
-                        fingerprint = reply.obj["fingerprint"]!!.jsonPrimitive.content
-                        onMade()
+                PrimaryButton(if (busy) "Making it…" else "Make my code", Modifier.fillMaxWidth(), enabled = !busy && me.text.isNotBlank()) {
+                    if (busy) return@PrimaryButton
+                    busy = true
+                    shell.launch {
+                        try {
+                            val reply = Pass.change("shared.join_code") { put("my_name", me.text.toString().trim()) }
+                            code = reply.obj["code"]!!.jsonPrimitive.content
+                            fingerprint = reply.obj["fingerprint"]!!.jsonPrimitive.content
+                            onMade()
+                        } finally {
+                            busy = false
+                        }
                     }
                 }
             } else {
@@ -344,8 +377,13 @@ private fun AcceptSheet(link: JsonObject, onDismiss: () -> Unit, onDone: () -> U
     val invite = rememberTextFieldState()
     var place by remember { mutableStateOf<Destination?>(null) }
     var problem by remember { mutableStateOf<String?>(null) }
+    // One acceptance at a time: a second tap, or a scan landing during a paste, would use the invitation twice.
+    var busy by remember { mutableStateOf(false) }
     fun accept(text: String) {
         val where = place ?: return
+        if (busy) return
+        busy = true
+        problem = null
         scope.launch {
             try {
                 val reply = Pass.change("shared.accept") {
@@ -356,8 +394,12 @@ private fun AcceptSheet(link: JsonObject, onDismiss: () -> Unit, onDone: () -> U
                 Pass.flush()
                 onDone()
                 onDismiss()
-            } catch (failure: NativeFailure) {
-                problem = failure.message
+            } catch (failure: Exception) {
+                // A place that cannot be written is said here too, rather than closing the app.
+                if (failure is kotlinx.coroutines.CancellationException) throw failure
+                problem = (failure as? NativeFailure)?.message ?: sinkProblem(failure)
+            } finally {
+                busy = false
             }
         }
     }
@@ -365,12 +407,12 @@ private fun AcceptSheet(link: JsonObject, onDismiss: () -> Unit, onDone: () -> U
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             PlacePicker(place) { place = it }
             SheetField(invite, "Paste the invitation")
-            problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
+            problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced()) }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 QuietButton("Scan it", Modifier.weight(1f), PassIcons.QrCodeScanner, enabled = place != null) {
                     shell.scanTarget = { accept(it) }
                 }
-                PrimaryButton("Accept", Modifier.weight(1f), enabled = place != null && invite.text.isNotBlank()) { accept(invite.text.toString()) }
+                PrimaryButton("Accept", Modifier.weight(1f), enabled = !busy && place != null && invite.text.isNotBlank()) { accept(invite.text.toString()) }
             }
         }
     }
@@ -392,6 +434,7 @@ private fun PeopleSheet(link: JsonObject, onDismiss: () -> Unit) {
     var reading by remember { mutableStateOf<Pair<String, String>?>(null) }
     var invite by remember { mutableStateOf<String?>(null) }
     var removing by remember { mutableStateOf<JsonObject?>(null) }
+    var adding by remember { mutableStateOf(false) }
     // A code that could not be read or added. It shows under the field or check it concerns.
     var codeProblem by remember { mutableStateOf<String?>(null) }
     // The member whose removal failed, by their key, with the words for why. They show under that person.
@@ -405,6 +448,7 @@ private fun PeopleSheet(link: JsonObject, onDismiss: () -> Unit) {
             val manifest = SharedVaults.manifest(context, place, file)
             members = (Pass.plainCall("shared.members", blobs = listOf(manifest)) { put("file", file) }.json as JsonArray).map { it.jsonObject }
         } catch (failure: Exception) {
+            if (failure is kotlinx.coroutines.CancellationException) throw failure
             problem = if (failure is NativeFailure) failure.message else sinkProblem(failure)
         }
     }
@@ -414,8 +458,10 @@ private fun PeopleSheet(link: JsonObject, onDismiss: () -> Unit) {
             try {
                 val reply = Engine.call("shared.read_code", Pass.handleForTests, { put("code", text.trim()) })
                 reading = text.trim() to "${reply.obj["name"]!!.jsonPrimitive.content}\n${reply.obj["fingerprint"]!!.jsonPrimitive.content}"
-            } catch (failure: NativeFailure) {
-                codeProblem = failure.message
+            } catch (failure: Exception) {
+                // This sheet's scope has no handler: a code missing a field is said here, not a crash.
+                if (failure is kotlinx.coroutines.CancellationException) throw failure
+                codeProblem = failure.message ?: "That code could not be read."
             }
         }
     }
@@ -432,10 +478,10 @@ private fun PeopleSheet(link: JsonObject, onDismiss: () -> Unit) {
                     }
                 }
                 removeProblem?.takeIf { it.first == member["key"]?.jsonPrimitive?.content }?.let { (_, words) ->
-                    Text(words, color = colors.danger, style = MaterialTheme.typography.bodyMedium)
+                    Text(words, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced())
                 }
             }
-            problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
+            problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced()) }
             val offered = invite
             val check = reading
             if (offered != null) {
@@ -450,7 +496,10 @@ private fun PeopleSheet(link: JsonObject, onDismiss: () -> Unit) {
                         reading = null
                         codeProblem = null
                     }
-                    PrimaryButton("It matches", Modifier.weight(1f)) {
+                    // One add per tap: a second while the first writes would add the person twice.
+                    PrimaryButton(if (adding) "Adding…" else "It matches", Modifier.weight(1f), enabled = !adding) {
+                        if (adding) return@PrimaryButton
+                        adding = true
                         codeProblem = null
                         scope.launch {
                             try {
@@ -458,16 +507,19 @@ private fun PeopleSheet(link: JsonObject, onDismiss: () -> Unit) {
                                 reading = null
                                 tick++
                             } catch (failure: Exception) {
+                                if (failure is kotlinx.coroutines.CancellationException) throw failure
                                 codeProblem = if (failure is NativeFailure) failure.message else sinkProblem(failure)
+                            } finally {
+                                adding = false
                             }
                         }
                     }
                 }
-                codeProblem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
+                codeProblem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced()) }
             } else if (owner && place != null) {
                 Eyebrow("Add someone")
                 SheetField(code, "Paste their code")
-                codeProblem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
+                codeProblem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced()) }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     QuietButton("Scan it", Modifier.weight(1f), PassIcons.QrCodeScanner) {
                         shell.scanTarget = { read(it) }
@@ -483,6 +535,7 @@ private fun PeopleSheet(link: JsonObject, onDismiss: () -> Unit) {
             "Remove ${member["name"]!!.jsonPrimitive.content}?",
             "The vault moves to a new key, so they cannot open anything written from now on. Change any password they could see: they may have kept a copy.",
             "Remove them",
+            icon = PassIcons.Group,
             onDismiss = { removing = null },
         ) {
             val key = member["key"]!!.jsonPrimitive.content
@@ -492,6 +545,7 @@ private fun PeopleSheet(link: JsonObject, onDismiss: () -> Unit) {
                     SharedVaults.removeMember(context, place!!, file, key)
                     tick++
                 } catch (failure: Exception) {
+                    if (failure is kotlinx.coroutines.CancellationException) throw failure
                     removeProblem = key to ((failure as? NativeFailure)?.message ?: sinkProblem(failure))
                 }
             }

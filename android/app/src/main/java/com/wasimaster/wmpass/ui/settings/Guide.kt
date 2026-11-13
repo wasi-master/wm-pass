@@ -78,7 +78,7 @@ fun GuidePageSheet(file: String, web: String, onDismiss: () -> Unit) {
     val shell = LocalShell.current
     val context = LocalContext.current
     val page = remember(file) {
-        runCatching { context.assets.open(file).bufferedReader().use { it.readText() } }.map(::readGuide).getOrNull()
+        runCatching { context.assets.open(file).bufferedReader().use { it.readText() } }.mapCatching(::readGuide).getOrNull()
     }
     var device by remember(page) { mutableStateOf(page?.tabs?.firstOrNull { it == lastDevice } ?: page?.tabs?.firstOrNull()) }
     PassSheet(onDismiss, page?.title ?: "Export guide") {

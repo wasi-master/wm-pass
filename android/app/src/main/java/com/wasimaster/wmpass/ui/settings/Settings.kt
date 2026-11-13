@@ -1,5 +1,9 @@
 package com.wasimaster.wmpass.ui.settings
 
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.biometric.BiometricPrompt
@@ -55,6 +59,7 @@ import com.wasimaster.wmpass.core.Pass
 import com.wasimaster.wmpass.core.QuickUnlock
 import com.wasimaster.wmpass.core.SlotView
 import com.wasimaster.wmpass.core.Summary
+import com.wasimaster.wmpass.ui.parts.announced
 import com.wasimaster.wmpass.ui.door.PasswordPill
 import com.wasimaster.wmpass.ui.help.Help
 import com.wasimaster.wmpass.ui.help.helpAnchor
@@ -168,7 +173,7 @@ private fun SettingsHome(onSearch: () -> Unit) {
     ) {
         SettingsGroup("Protection") {
             item {
-                NavRow("Security", "Auto-lock, biometrics, duress and emergency access", route = "settings/security", accent = routeAccent("settings/security"), icon = PassIcons.Shield) { nav.navigate("settings/security") }
+                NavRow("Security", "Auto-lock, fingerprint, duress and emergency access", route = "settings/security", accent = routeAccent("settings/security"), icon = PassIcons.Shield) { nav.navigate("settings/security") }
             }
             item {
                 NavRow("Hidden shelf", "Hide items from lists and autofill", route = "settings/shelf", accent = routeAccent("settings/shelf"), icon = PassIcons.VisibilityLock) { nav.navigate("settings/shelf") }
@@ -356,6 +361,11 @@ private fun SecurityScreen() {
         onPauseOrDispose { }
     }
     LaunchedEffect(revision, refresh) { slots = runCatching { Pass.slots() }.getOrDefault(emptyList()) }
+    // Inside a nested or shared vault, or an account, the password, its ways in, duress and the
+    // emergency kit belong to the vault this page cannot change, as on the desktop.
+    val account by Pass.account.collectAsStateWithLifecycle()
+    val child by Pass.child.collectAsStateWithLifecycle()
+    val inside = account != null || child != null
     // Keyboard and watch access start on once their companion is really there; the toggles show what was decided.
     LaunchedEffect(Unit) {
         if (com.wasimaster.wmpass.system.KeyboardProvider.installed(context)) prefs.switchOnFirstTime(prefs.keyboardAccess)
@@ -363,10 +373,23 @@ private fun SecurityScreen() {
     }
     val quick = remember { runCatching { QuickUnlock(context) }.getOrNull() }
     var quickOn by remember { mutableStateOf(quick?.enrolledFile() != null) }
+    // A fingerprint added in the phone's settings destroys the key: checked each time the page
+    // comes back, so the switch does not stay on until it is reopened.
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        quickOn = runCatching { quick?.cipherForUnlocking() != null }.getOrElse { quick?.enrolledFile() != null }
+        onPauseOrDispose { }
+    }
     val keyFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            pendingKeyFile = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            sheet = "keyfile"
+            // A file the picker's app will not hand over is said, rather than closing the app.
+            // The file chosen before, if any, is wiped rather than left for the collector.
+            pendingKeyFile?.fill(0)
+            pendingKeyFile = null
+            // Off the main thread: a key file on a cloud drive can take a while to arrive.
+            shell.launch {
+                pendingKeyFile = runCatching { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } } }.getOrNull()
+                if (pendingKeyFile != null) sheet = "keyfile" else shell.notice("That key file could not be read")
+            }
         }
     }
     WmScreen("Security", route = "settings/security", onBack = back()) {
@@ -395,8 +418,30 @@ private fun SecurityScreen() {
                         quickOn = false
                     } else {
                         val activity = context as? FragmentActivity ?: return@ToggleSetting
+                        // The door opens only a vault in this phone's folder with it: a nested or
+                        // shared vault, or an account, would be enrolled under a file it cannot find.
+                        if (!Pass.carriesSettings) {
+                            shell.notice("Fingerprint unlock is only for the vault kept on this phone")
+                            return@ToggleSetting
+                        }
                         val file = Pass.currentFileName ?: return@ToggleSetting
-                        val cipher = runCatching { quick?.cipherForEnrolling(file) }.getOrNull() ?: return@ToggleSetting
+                        // Said rather than leaving the switch off with no reason.
+                        val can = androidx.biometric.BiometricManager.from(context).canAuthenticate(androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG)
+                        if (can != androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS) {
+                            shell.notice(
+                                if (can == androidx.biometric.BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED) {
+                                    "Add a fingerprint in the phone's settings first"
+                                } else {
+                                    "This phone has no fingerprint sensor that WM Pass can use"
+                                },
+                            )
+                            return@ToggleSetting
+                        }
+                        val cipher = runCatching { quick?.cipherForEnrolling(file) }.getOrNull()
+                        if (cipher == null) {
+                            shell.notice("Fingerprint unlock could not be set up on this phone")
+                            return@ToggleSetting
+                        }
                         val prompt = BiometricPrompt(
                             activity,
                             ContextCompat.getMainExecutor(context),
@@ -406,6 +451,14 @@ private fun SecurityScreen() {
                                         quick?.finishEnrolling(file, result.cryptoObject!!.cipher!!, Pass.keyForWrapping())
                                         quickOn = true
                                         shell.haptics.confirm()
+                                    }
+                                }
+
+                                // No fingerprint enrolled, or the sensor locked out: say so rather than
+                                // leave the switch off with no reason. Cancelling needs no word.
+                                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                                    if (errorCode != BiometricPrompt.ERROR_USER_CANCELED && errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON && errorCode != BiometricPrompt.ERROR_CANCELED) {
+                                        shell.notice(errString.toString())
                                     }
                                 }
                             },
@@ -444,7 +497,7 @@ private fun SecurityScreen() {
                 ToggleSetting("Lock when the screen goes off", null, prefs.lockScreenOff.value, info = infoFor("lock_screen_off"), icon = PassIcons.ScreenLockPortrait) { prefs.lockScreenOff.set(it) }
             }
         }
-        SettingsGroup("Master password", modifier = Modifier.helpAnchor("group:security.master")) {
+        if (!inside) SettingsGroup("Master password", modifier = Modifier.helpAnchor("group:security.master")) {
             item {
                 NavRow("Change it", "Old backups still open with the old password", icon = PassIcons.Password, info = Help.info("action.change_password")) { sheet = "change" }
             }
@@ -452,10 +505,18 @@ private fun SecurityScreen() {
                 NavRow("Change it and rekey", "A new vault key too, so old copies of the file cannot follow new changes", icon = PassIcons.LockReset, info = Help.info("action.rekey")) { sheet = "rekey" }
             }
         }
-        SettingsGroup("Unlock methods", info = Help.info("group.security.methods"), modifier = Modifier.helpAnchor("group:security.methods")) {
+        if (!inside) SettingsGroup("Unlock methods", info = Help.info("group.security.methods"), modifier = Modifier.helpAnchor("group:security.methods")) {
             slots.forEach { slot ->
                 item {
-                    NavRow(slot.label.ifEmpty { "Password ${slot.index + 1}" }, icon = PassIcons.Key) { sheet = "slot:${slot.index}" }
+                    // One of two passwords changed from one on two devices at once: when, and where, so the
+                    // one to keep can be told from the other.
+                    val conflict = if (slot.conflict) {
+                        val time = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(java.util.Date(slot.changedMs))
+                        "Changed at the same time as another: $time${slot.changedOn?.let { " on $it" } ?: ""}"
+                    } else {
+                        null
+                    }
+                    NavRow(slot.label.ifEmpty { "Password ${slot.index + 1}" }, conflict, icon = if (slot.conflict) PassIcons.Warning else PassIcons.Key) { sheet = "slot:${slot.index}" }
                 }
             }
             item {
@@ -468,7 +529,7 @@ private fun SecurityScreen() {
                 NavRow("Add a security key", "YubiKey or another FIDO2 key, by USB or NFC", icon = PassIcons.SecurityKey, info = Help.info("action.add_security_key")) { shell.nav.navigate("settings/hardware") }
             }
         }
-        SettingsGroup("Duress", modifier = Modifier.helpAnchor("group:security.duress")) {
+        if (!inside) SettingsGroup("Duress", modifier = Modifier.helpAnchor("group:security.duress")) {
             item {
                 NavRow("Wipe password", "Erases the vault on this device. Looks like a wrong password.", icon = PassIcons.Dangerous, info = Help.info("action.wipe_password")) { sheet = "duress:wipe" }
             }
@@ -489,7 +550,7 @@ private fun SecurityScreen() {
             item {
                 ToggleSetting(
                     "Let WM Keyboard fill",
-                    "Its WM Pass tool can list your logins and type them, and unlock the vault with your fingerprint or master password without leaving the app you are in. Its settings can fill API keys from here or save new ones. A password it types passes through the keyboard. On by default when WM Keyboard is installed.",
+                    "Its WM Pass tool can list your items and type from them, and unlock the vault with your fingerprint or master password without leaving the app you are in. Its settings can fill API keys from here or save new ones. A password it types passes through the keyboard. On by default when WM Keyboard is installed.",
                     prefs.keyboardAccess.value,
                     info = infoFor("keyboard_access"),
                     icon = PassIcons.Keyboard,
@@ -564,6 +625,9 @@ private fun SecurityScreen() {
             }
             if (prefs.panicAction != "none") {
                 item {
+                    // Apps chosen before their certificates were kept get them now, on this visit,
+                    // where the list below shows which apps they are. Until then they are not heard.
+                    LaunchedEffect(prefs.panicApps) { com.wasimaster.wmpass.system.PanicPins.pinMissing(context, prefs) }
                     val names = prefs.panicApps.map { pkg -> com.wasimaster.wmpass.system.PanicActivity.KNOWN[pkg] ?: com.wasimaster.wmpass.system.Trust.labelOf(context, pkg) }
                     NavRow(
                         "Panic apps",
@@ -578,7 +642,7 @@ private fun SecurityScreen() {
                 }
             }
         }
-        SettingsGroup("Emergency access", modifier = Modifier.helpAnchor("group:security.emergency")) {
+        if (!inside) SettingsGroup("Emergency access", modifier = Modifier.helpAnchor("group:security.emergency")) {
             item {
                 NavRow("Emergency kit", "Split your key between trusted people", icon = PassIcons.FamilyRestroom, info = Help.info("action.emergency_kit")) { sheet = "kit" }
             }
@@ -600,9 +664,19 @@ private fun SecurityScreen() {
     val current = sheet
     when {
         current == "change" -> ChangePasswordSheet(rekey = false) { sheet = null }
-        current == "rekey" -> ChangePasswordSheet(rekey = true) { sheet = null }
+        current == "rekey" -> ChangePasswordSheet(rekey = true) {
+            sheet = null
+            // A new key turns fingerprint unlock off, so the switch says so.
+            quickOn = quick?.enrolledFile() != null
+        }
         current == "add" -> AddPasswordSheet("Add a password", "Opens the same vault.", "open") { sheet = null; refresh++ }
-        current == "keyfile" -> AddPasswordSheet("Password for the key file", "This password and the file together will open the vault.", "open", keyFile = true) { sheet = null; refresh++ }
+        current == "keyfile" -> AddPasswordSheet("Password for the key file", "This password and the file together will open the vault.", "open", keyFile = true) {
+            // Closed with or without adding it: the file's bytes go too.
+            pendingKeyFile?.fill(0)
+            pendingKeyFile = null
+            sheet = null
+            refresh++
+        }
         current == "duress:wipe" -> AddPasswordSheet(
             "Wipe password",
             "Entering this erases the vault on this device. Flash storage may keep traces, and backups and synced copies are not affected.",
@@ -613,6 +687,8 @@ private fun SecurityScreen() {
         current == "kit" -> KitSheet { sheet = null }
         current == "panic" || current == "panic:wipe" -> PanicAppsSheet(wiping = current == "panic:wipe" || prefs.panicAction == "wipe", onDismiss = { sheet = null }) { apps ->
             prefs.updatePanic(if (current == "panic:wipe") "wipe" else prefs.panicAction, apps)
+            // Each app as it is signed now, when it is chosen.
+            com.wasimaster.wmpass.system.PanicPins.pinMissing(context, prefs)
             sheet = null
         }
         current?.startsWith("slot:") == true -> {
@@ -624,7 +700,9 @@ private fun SecurityScreen() {
                 onDismiss = { sheet = null },
             ) {
                 shell.launch {
+                    // Refused, as the last way in is: said, rather than the row staying with no reason.
                     runCatching { Pass.change("slot.remove") { put("index", index) } }
+                        .onFailure { shell.notice(it.message ?: "That way in could not be removed") }
                     refresh++
                 }
             }
@@ -639,12 +717,76 @@ private var pendingKeyFile: ByteArray? = null
 private fun ChangePasswordSheet(rekey: Boolean, onDismiss: () -> Unit) {
     val colors = palette
     val shell = LocalShell.current
-    val old = rememberTextFieldState()
-    val new = rememberTextFieldState()
+    val context = LocalContext.current
+    // Not saved with the activity's state: master passwords must not land in a Bundle.
+    val old = remember { TextFieldState() }
+    val new = remember { TextFieldState() }
+    // Typed twice, since a slip in the only password that opens the vault cannot be undone.
+    val again = remember { TextFieldState() }
     var error by remember { mutableStateOf<String?>(null) }
     // A wrong current password is said under that field, not under the new one.
     var wrongCurrent by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
+    // The key file or security key the current password's way in also needs, once it asks.
+    var needed by remember { mutableStateOf<List<com.wasimaster.wmpass.core.NeededFactor>?>(null) }
+
+    fun submit(factors: List<Pair<String, ByteArray>> = emptyList()) {
+        if (busy || old.text.isEmpty() || new.text.isEmpty() || again.text.toString() != new.text.toString()) {
+            factors.forEach { it.second.fill(0) }
+            return
+        }
+        busy = true
+        error = null
+        wrongCurrent = false
+        shell.launch {
+            val current = old.text.toString().toByteArray()
+            val next = new.text.toString().toByteArray()
+            try {
+                // The slot the old password opens is the one replaced, not simply the first, and
+                // with its key file or security key: the change keeps that factor on it.
+                when (val check = Pass.passwordSlot(current, factors)) {
+                    com.wasimaster.wmpass.core.SlotCheck.Wrong -> {
+                        needed = null
+                        wrongCurrent = true
+                        shell.haptics.reject()
+                    }
+                    is com.wasimaster.wmpass.core.SlotCheck.NeedsFactor -> {
+                        // Asked again with the factor; a wrong one reads as a wrong password.
+                        if (factors.isNotEmpty()) {
+                            wrongCurrent = true
+                            shell.haptics.reject()
+                        }
+                        needed = check.factors
+                    }
+                    is com.wasimaster.wmpass.core.SlotCheck.Opens -> {
+                        needed = null
+                        if (rekey) {
+                            Pass.rekey(next)
+                            // The fingerprint holds the old key, which no longer opens the vault.
+                            // Only this vault's enrolment: another vault on the phone keeps its own.
+                            val hadFingerprint = Pass.carriesSettings && runCatching {
+                                QuickUnlock(context).let { q -> (q.enrolledFile() != null && q.enrolledFile() == Pass.currentFileName).also { if (it) q.disable() } }
+                            }.getOrDefault(false)
+                            shell.haptics.confirm()
+                            if (hadFingerprint) shell.notice("Fingerprint unlock is off, since the old key is gone. Turn it on again here")
+                            onDismiss()
+                        } else {
+                            Pass.change("vault.change_password", secret = next) { put("index", check.slot) }
+                            shell.haptics.confirm()
+                            onDismiss()
+                        }
+                    }
+                }
+            } catch (failure: NativeFailure) {
+                error = failure.message
+            } finally {
+                current.fill(0)
+                next.fill(0)
+                factors.forEach { it.second.fill(0) }
+                busy = false
+            }
+        }
+    }
     PassSheet(onDismiss, if (rekey) "Change it and rekey" else "Change your password") {
         Text(
             if (rekey) {
@@ -656,48 +798,37 @@ private fun ChangePasswordSheet(rekey: Boolean, onDismiss: () -> Unit) {
             style = MaterialTheme.typography.bodyMedium,
         )
         Spacer(Modifier.height(14.dp))
-        PasswordPill(old, "Current password", error = wrongCurrent)
+        PasswordPill(old, "Current password", imeAction = androidx.compose.ui.text.input.ImeAction.Next, error = wrongCurrent)
         if (wrongCurrent) {
             Spacer(Modifier.height(4.dp))
-            Text("That is not the current password.", color = colors.danger, style = MaterialTheme.typography.bodySmall)
+            Text(
+                if (needed != null) "That is not the current password, or not its key file or security key." else "That is not the current password.",
+                color = colors.danger,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.announced(),
+            )
         }
         Spacer(Modifier.height(10.dp))
-        PasswordPill(new, "New password")
+        PasswordPill(new, "New password", imeAction = androidx.compose.ui.text.input.ImeAction.Next)
+        Spacer(Modifier.height(10.dp))
+        val matches = again.text.toString() == new.text.toString()
+        PasswordPill(again, "New password again", error = again.text.isNotEmpty() && !matches)
+        if (again.text.isNotEmpty() && !matches) {
+            Spacer(Modifier.height(4.dp))
+            Text("The new passwords do not match.", color = colors.danger, style = MaterialTheme.typography.bodySmall, modifier = Modifier.announced())
+        }
         error?.let {
             Spacer(Modifier.height(8.dp))
-            Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium)
+            Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced())
+        }
+        // The current password's key file or security key, asked for as the door asks: a key
+        // held to the phone or plugged in answers at once and the change goes on.
+        needed?.let { factors ->
+            Spacer(Modifier.height(14.dp))
+            com.wasimaster.wmpass.ui.door.FactorEntry(factors, enabled = !busy) { kind, output -> submit(listOf(kind to output)) }
         }
         Spacer(Modifier.height(16.dp))
-        PrimaryButton(if (busy) "Working…" else "Change", Modifier.fillMaxWidth(), enabled = !busy && old.text.isNotEmpty() && new.text.isNotEmpty()) {
-            busy = true
-            error = null
-            wrongCurrent = false
-            shell.launch {
-                val current = old.text.toString().toByteArray()
-                val next = new.text.toString().toByteArray()
-                try {
-                    if (!Pass.verify(current)) {
-                        wrongCurrent = true
-                        shell.haptics.reject()
-                    } else if (rekey) {
-                        Pass.rekey(next)
-                        shell.haptics.confirm()
-                        onDismiss()
-                    } else {
-                        val slot = Pass.slots().firstOrNull()?.index ?: 0
-                        Pass.change("vault.change_password", secret = next) { put("index", slot) }
-                        shell.haptics.confirm()
-                        onDismiss()
-                    }
-                } catch (failure: NativeFailure) {
-                    error = failure.message
-                } finally {
-                    current.fill(0)
-                    next.fill(0)
-                    busy = false
-                }
-            }
-        }
+        PrimaryButton(if (busy) "Working…" else "Change", Modifier.fillMaxWidth(), enabled = !busy && old.text.isNotEmpty() && new.text.isNotEmpty() && matches) { submit() }
     }
 }
 
@@ -705,21 +836,40 @@ private fun ChangePasswordSheet(rekey: Boolean, onDismiss: () -> Unit) {
 private fun AddPasswordSheet(title: String, body: String, action: String, keyFile: Boolean = false, onDismiss: () -> Unit) {
     val colors = palette
     val shell = LocalShell.current
-    val field = rememberTextFieldState()
+    val field = remember { TextFieldState() }
+    // Typed twice, as everywhere a password is set: a slip would add a way in nobody knows, or a
+    // wipe password that does not wipe.
+    val again = remember { TextFieldState() }
     val label = rememberTextFieldState()
     var error by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
     PassSheet(onDismiss, title) {
         Text(body, color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(14.dp))
         SheetField(label, "A name only you will see")
         Spacer(Modifier.height(10.dp))
-        PasswordPill(field, "Password")
+        PasswordPill(field, "Password", imeAction = androidx.compose.ui.text.input.ImeAction.Next)
+        Spacer(Modifier.height(10.dp))
+        val matches = again.text.toString() == field.text.toString()
+        PasswordPill(again, "Password again", error = again.text.isNotEmpty() && !matches)
+        if (again.text.isNotEmpty() && !matches) {
+            Spacer(Modifier.height(4.dp))
+            Text("The passwords do not match.", color = colors.danger, style = MaterialTheme.typography.bodySmall, modifier = Modifier.announced())
+        }
         error?.let {
             Spacer(Modifier.height(8.dp))
-            Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium)
+            Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced())
         }
         Spacer(Modifier.height(16.dp))
-        PrimaryButton("Add", Modifier.fillMaxWidth(), enabled = field.text.isNotEmpty()) {
+        PrimaryButton("Add", Modifier.fillMaxWidth(), enabled = field.text.isNotEmpty() && matches && !busy) {
+            if (busy) return@PrimaryButton
+            // The sheet comes back after Android restarts the app, but the chosen file does not;
+            // adding then would make a plain password where a password and a file were meant.
+            if (keyFile && pendingKeyFile == null) {
+                error = "The key file is no longer chosen. Close this and add the key file again."
+                return@PrimaryButton
+            }
+            busy = true
             shell.launch {
                 val secret = field.text.toString().toByteArray()
                 val file = if (keyFile) pendingKeyFile else null
@@ -732,12 +882,12 @@ private fun AddPasswordSheet(title: String, body: String, action: String, keyFil
                     shell.haptics.confirm()
                     onDismiss()
                 } catch (failure: NativeFailure) {
+                    // The file stays chosen, so Add can be tried again; closing the sheet wipes it.
                     error = failure.message
                     shell.haptics.reject()
                 } finally {
                     secret.fill(0)
-                    file?.fill(0)
-                    pendingKeyFile = null
+                    busy = false
                 }
             }
         }
@@ -748,8 +898,11 @@ private fun AddPasswordSheet(title: String, body: String, action: String, keyFil
 private fun DecoySheet(onDismiss: () -> Unit) {
     val colors = palette
     val shell = LocalShell.current
-    val field = rememberTextFieldState()
+    val field = remember { TextFieldState() }
+    // Typed twice: nothing can reset a decoy's password.
+    val again = remember { TextFieldState() }
     val name = rememberTextFieldState("Personal")
+    var busy by remember { mutableStateOf(false) }
     PassSheet(onDismiss, "A decoy vault") {
         Text(
             "A second vault, opened by its own password. The door looks the same either way and nothing in the file says it exists. This resists a quick look under pressure. It does not stand up to forensics, or to someone who has an older copy of your files.",
@@ -759,15 +912,28 @@ private fun DecoySheet(onDismiss: () -> Unit) {
         Spacer(Modifier.height(14.dp))
         SheetField(name, "Its name")
         Spacer(Modifier.height(10.dp))
-        PasswordPill(field, "Its password")
+        PasswordPill(field, "Its password", imeAction = androidx.compose.ui.text.input.ImeAction.Next)
+        Spacer(Modifier.height(10.dp))
+        val matches = again.text.toString() == field.text.toString()
+        PasswordPill(again, "Its password again", error = again.text.isNotEmpty() && !matches)
+        if (again.text.isNotEmpty() && !matches) {
+            Spacer(Modifier.height(4.dp))
+            Text("The passwords do not match.", color = colors.danger, style = MaterialTheme.typography.bodySmall, modifier = Modifier.announced())
+        }
         Spacer(Modifier.height(16.dp))
-        PrimaryButton("Make it", Modifier.fillMaxWidth(), enabled = field.text.isNotEmpty()) {
+        PrimaryButton(if (busy) "Making it…" else "Make it", Modifier.fillMaxWidth(), enabled = field.text.isNotEmpty() && matches && !busy) {
+            if (busy) return@PrimaryButton
+            busy = true
             shell.launch {
                 val secret = field.text.toString().toByteArray()
-                Pass.createHidden(name.text.toString().ifBlank { "Personal" }, secret)
-                secret.fill(0)
-                shell.haptics.confirm()
-                onDismiss()
+                try {
+                    Pass.createHidden(name.text.toString().ifBlank { "Personal" }, secret)
+                    shell.haptics.confirm()
+                    onDismiss()
+                } finally {
+                    secret.fill(0)
+                    busy = false
+                }
             }
         }
     }
@@ -780,21 +946,43 @@ private fun KitSheet(onDismiss: () -> Unit) {
     var total by remember { mutableStateOf(3) }
     var threshold by remember { mutableStateOf(2) }
     var shares by remember { mutableStateOf<List<String>?>(null) }
+    var making by remember { mutableStateOf(false) }
+    // The shares exist only on this sheet until saved: it does not close on them by accident.
+    var kitSaved by remember { mutableStateOf(false) }
+    var leaving by remember { mutableStateOf(false) }
     val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
         val list = shares
         if (uri != null && list != null) {
             val context = shell.nav.context
-            context.contentResolver.openOutputStream(uri)?.use { out ->
-                out.write(
-                    buildString {
-                        append("WM Pass emergency kit\n\nGive each person one share. Any $threshold of them, together with a copy of the vault file, can open it. They can do so at once: the waiting period is a promise between you, not something the software can enforce.\n\n")
-                        list.forEachIndexed { index, share -> append("Share ${index + 1}\n$share\n\n") }
-                    }.toByteArray(),
-                )
+            val text = buildString {
+                append("WM Pass emergency kit\n\nGive each person one share. Any $threshold of them, together with a copy of the vault file, can open it. They can do so at once: the waiting period is a promise between you, not something the software can enforce.\n\n")
+                list.forEachIndexed { index, share -> append("Share ${index + 1}\n$share\n\n") }
+            }
+            // Off the main thread, since the picker's provider may be a cloud drive, and a failure
+            // there is said rather than closing the app with the shares on screen.
+            shell.launch {
+                val saved = runCatching {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        context.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) } != null
+                    }
+                }.getOrDefault(false)
+                if (saved) {
+                    kitSaved = true
+                    shell.haptics.confirm()
+                    shell.notice("The emergency kit is saved")
+                } else {
+                    shell.haptics.reject()
+                    shell.notice("The kit could not be saved there. Try another place")
+                }
             }
         }
     }
-    PassSheet(onDismiss, "Emergency kit") {
+    PassSheet(
+        onDismiss,
+        "Emergency kit",
+        canDismiss = { shares == null || kitSaved || leaving },
+        onRefused = { shell.haptics.reject() },
+    ) {
         Text(
             "Your key is split into shares. Any $threshold of the $total people can open your vault together, and fewer learn nothing. They can do it at once: any waiting period is a promise between you, not something software can enforce.",
             color = colors.textMid,
@@ -809,19 +997,44 @@ private fun KitSheet(onDismiss: () -> Unit) {
             }
             ChoiceSetting("Needed together", options = (2..total).map { it to it.toString() }, selected = threshold) { threshold = it }
             Spacer(Modifier.height(12.dp))
-            PrimaryButton("Make the shares", Modifier.fillMaxWidth()) {
+            // One kit per tap: a second tap while the first is made would split the key twice.
+            PrimaryButton("Make the shares", Modifier.fillMaxWidth(), enabled = !making) {
+                if (making) return@PrimaryButton
+                making = true
                 shell.launch {
-                    val reply = Pass.change("emergency.kit") {
-                        put("threshold", threshold)
-                        put("total", total)
+                    try {
+                        val reply = Pass.change("emergency.kit") {
+                            put("threshold", threshold)
+                            put("total", total)
+                        }
+                        shares = reply.secret?.consumeText()?.split('\n')
+                    } finally {
+                        making = false
                     }
-                    shares = reply.secret?.consumeText()?.split('\n')
                 }
             }
         } else {
             Text("Save this file, print it, and delete the file once each person has their share.", color = colors.text, style = MaterialTheme.typography.bodyMedium)
             Spacer(Modifier.height(12.dp))
             PrimaryButton("Save the kit", Modifier.fillMaxWidth(), icon = PassIcons.Download) { save.launch("wm-pass-emergency-kit.txt") }
+            if (!kitSaved) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "The shares are not kept anywhere else. Closing without saving them means making a new kit.",
+                    color = colors.textMid,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        leaving = true
+                        onDismiss()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Close without saving", color = colors.danger) }
+            } else {
+                Spacer(Modifier.height(8.dp))
+                QuietButton("Done", Modifier.fillMaxWidth(), onClick = onDismiss)
+            }
         }
     }
 }
@@ -873,7 +1086,9 @@ internal fun LookScreen() {
                                 .clip(CircleShape)
                                 .background(Brush.linearGradient(listOf(accent.from, accent.to)))
                                 .then(if (accent == prefs.accent) Modifier.border(3.dp, colors.text, CircleShape) else Modifier)
-                                .clickable(onClickLabel = accent.label) {
+                                // Named, and which is chosen: a swatch has no words of its own.
+                                .semantics { contentDescription = "${accent.label} accent" }
+                                .selectable(accent == prefs.accent, role = androidx.compose.ui.semantics.Role.RadioButton) {
                                     shell.haptics.tick()
                                     prefs.updateAccent(accent)
                                 },
@@ -905,8 +1120,8 @@ private fun EntryLine(entry: Summary, onClick: () -> Unit) {
         SiteTile(entry.title, entry.site, entry.kind, size = 42.dp, label = entry.color, icon = entry.icon, app = entry.app)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(entry.title, color = colors.text, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold), maxLines = 1)
-            if (entry.subtitle.isNotEmpty()) Text(entry.subtitle, color = colors.textMid, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+            Text(entry.title, color = colors.text, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            if (entry.subtitle.isNotEmpty()) Text(entry.subtitle, color = colors.textMid, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         }
     }
 }
@@ -916,7 +1131,8 @@ private fun TrashScreen() {
     val shell = LocalShell.current
     val colors = palette
     val revision by Pass.revision.collectAsStateWithLifecycle()
-    var items by remember { mutableStateOf<List<Summary>>(emptyList()) }
+    // Null until read, so an empty trash is not claimed while it is still being looked at.
+    var items by remember { mutableStateOf<List<Summary>?>(null) }
     var days by remember { mutableStateOf(30) }
     var confirm by remember { mutableStateOf(false) }
     LaunchedEffect(revision) {
@@ -929,20 +1145,31 @@ private fun TrashScreen() {
                 ChoiceSetting(
                     "Keep deleted items for",
                     info = Help.info("action.trash_keep"),
-                    options = (listOf(7, 30, 90, 365) + days).distinct().sorted().map { it to "$it days" },
+                    // Another device or the terminal app may have chosen 0, which keeps them until the trash is emptied.
+                    options = (listOf(7, 30, 90, 365) + days).distinct().sortedBy { if (it == 0) Int.MAX_VALUE else it }.map {
+                        it to when (it) {
+                            0 -> "Until emptied"
+                            1 -> "1 day"
+                            else -> "$it days"
+                        }
+                    },
                     selected = days,
                     icon = PassIcons.Timer,
                 ) { value ->
-                    days = value
-                    shell.launch { Pass.change("vault.prefs") { put("trash_days", value) } }
+                    // Shown as chosen only once the vault took it.
+                    shell.launch {
+                        Pass.change("vault.prefs") { put("trash_days", value) }
+                        days = value
+                    }
                 }
             }
         }
-        if (items.isEmpty()) {
+        val listed = items ?: return@WmScreen
+        if (listed.isEmpty()) {
             Text("Nothing in the trash.", color = colors.textMid, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(24.dp))
         } else {
             SettingsGroup {
-                items.forEach { entry ->
+                listed.forEach { entry ->
                     item {
                         EntryLine(entry) { shell.open(entry.id) }
                     }
@@ -952,12 +1179,13 @@ private fun TrashScreen() {
             QuietButton("Empty the trash", Modifier.fillMaxWidth().padding(horizontal = 16.dp), PassIcons.Delete, colors.danger) { confirm = true }
         }
     }
-    if (confirm) {
-        ConfirmSheet("Empty the trash?", "These ${items.size} items and their attachments will be deleted for good.", "Delete them for good", onDismiss = { confirm = false }) {
+    val trashed = items.orEmpty()
+    if (confirm && trashed.isNotEmpty()) {
+        ConfirmSheet("Empty the trash?", if (trashed.size == 1) "This item and its attachments will be deleted for good." else "These ${trashed.size} items and their attachments will be deleted for good.", if (trashed.size == 1) "Delete it for good" else "Delete them for good", onDismiss = { confirm = false }) {
             shell.launch {
                 Pass.change("entries.bulk") {
                     put("op", "purge")
-                    put("ids", kotlinx.serialization.json.buildJsonArray { items.forEach { add(kotlinx.serialization.json.JsonPrimitive(it.id)) } })
+                    put("ids", kotlinx.serialization.json.buildJsonArray { trashed.forEach { add(kotlinx.serialization.json.JsonPrimitive(it.id)) } })
                 }
             }
         }
@@ -969,7 +1197,7 @@ private fun ShelfScreen() {
     val shell = LocalShell.current
     val colors = palette
     val revision by Pass.revision.collectAsStateWithLifecycle()
-    val field = rememberTextFieldState()
+    val field = remember { TextFieldState() }
     var open by remember { mutableStateOf(false) }
     var checking by remember { mutableStateOf(false) }
     var items by remember { mutableStateOf<List<Summary>>(emptyList()) }
@@ -996,21 +1224,8 @@ private fun ShelfScreen() {
                     modifier = Modifier.padding(horizontal = 4.dp),
                 )
                 Spacer(Modifier.height(16.dp))
-                PasswordPill(field, "Master password")
-                error?.let {
-                    Spacer(Modifier.height(8.dp))
-                    Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium)
-                }
-                Spacer(Modifier.height(12.dp))
-                // The password is stretched the same way as at the door, which takes a moment.
-                androidx.compose.animation.AnimatedVisibility(checking) {
-                    androidx.compose.material3.LinearProgressIndicator(
-                        color = colors.primary,
-                        trackColor = colors.surface3,
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp).clip(androidx.compose.foundation.shape.CircleShape),
-                    )
-                }
-                PrimaryButton(if (checking) "Checking the password…" else "Open the shelf", Modifier.fillMaxWidth(), enabled = field.text.isNotEmpty() && !checking) {
+                fun openShelf() {
+                    if (checking || field.text.isEmpty()) return
                     checking = true
                     error = null
                     shell.launch {
@@ -1029,6 +1244,22 @@ private fun ShelfScreen() {
                         }
                     }
                 }
+                // The keyboard's Go opens it too, as at the door.
+                PasswordPill(field, "Master password", imeAction = androidx.compose.ui.text.input.ImeAction.Go, enabled = !checking, onSubmit = { openShelf() })
+                error?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced())
+                }
+                Spacer(Modifier.height(12.dp))
+                // The password is stretched the same way as at the door, which takes a moment.
+                androidx.compose.animation.AnimatedVisibility(checking) {
+                    androidx.compose.material3.LinearProgressIndicator(
+                        color = colors.primary,
+                        trackColor = colors.surface3,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp).clip(androidx.compose.foundation.shape.CircleShape),
+                    )
+                }
+                PrimaryButton(if (checking) "Checking the password…" else "Open the shelf", Modifier.fillMaxWidth(), enabled = field.text.isNotEmpty() && !checking) { openShelf() }
             }
         } else {
             if (items.isEmpty()) {
@@ -1235,7 +1466,8 @@ private fun ImportScreen() {
     var needsPassword by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var result by remember { mutableStateOf<String?>(null) }
-    val password = rememberTextFieldState()
+    val password = remember { TextFieldState() }
+    var importing by remember { mutableStateOf(false) }
     // A KeePass database may also need its key file, or only that.
     var keyFile by remember { mutableStateOf<ByteArray?>(null) }
     // Or a YubiKey's challenge-response slot, as KeePassXC sets one up. Zero is none.
@@ -1299,7 +1531,10 @@ private fun ImportScreen() {
                     return@launch
                 }
                 codes = emptyList()
-                bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                // Off the main thread: an export on a cloud drive can take a while to arrive.
+                bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                }
                 preview = null
                 result = null
                 password.clearText()
@@ -1313,8 +1548,12 @@ private fun ImportScreen() {
     val pickKeyFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             keyFile?.fill(0)
-            keyFile = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            error = null
+            keyFile = null
+            // Off the main thread: a key file on a cloud drive can take a while to arrive.
+            shell.launch {
+                keyFile = runCatching { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } } }.getOrNull()
+                error = if (keyFile == null) "That key file could not be read." else null
+            }
         }
     }
     var savedWifi by remember { mutableStateOf(false) }
@@ -1392,7 +1631,7 @@ private fun ImportScreen() {
                             Pill(name, enteredFor == file, icon = PassIcons.Layers) { shell.launch { importInto(file) } }
                         }
                     }
-                    intoError?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
+                    intoError?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced()) }
                 }
             } else if (child != null && result == null) {
                 Text("Importing into ${child.orEmpty()}, the nested vault you are inside.", color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
@@ -1413,14 +1652,20 @@ private fun ImportScreen() {
                     }
                 }
                 shown != null -> {
-                    Text("${shown.count} items from ${shown.format}", color = colors.text, style = MaterialTheme.typography.titleLarge)
+                    Text("${shown.count} ${if (shown.count == 1) "item" else "items"} from ${shown.format}", color = colors.text, style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
                     Text(shown.titles.take(6).joinToString(", ") + if (shown.count > 6) " and more" else "", color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
                     if (shown.skipped.isNotEmpty()) {
                         Text("${shown.skipped.size} could not be read: ${shown.skipped.take(3).joinToString(", ")}", color = colors.warn, style = MaterialTheme.typography.bodyMedium)
                     }
-                    PrimaryButton("Import ${shown.count} items", Modifier.fillMaxWidth(), icon = PassIcons.Download) {
+                    PrimaryButton(if (shown.count == 1) "Import 1 item" else "Import ${shown.count} items", Modifier.fillMaxWidth(), icon = PassIcons.Download, enabled = !importing) {
+                        if (importing) return@PrimaryButton
+                        importing = true
                         shell.launch {
-                            val reply = Pass.change("import.apply")
+                            val reply = try {
+                                Pass.applyImport()
+                            } finally {
+                                importing = false
+                            }
                             val added = reply.obj["added"]?.jsonPrimitive?.content ?: "0"
                             val dupes = reply.obj["duplicates"]?.jsonPrimitive?.content ?: "0"
                             shell.haptics.confirm()
@@ -1437,7 +1682,7 @@ private fun ImportScreen() {
                             color = colors.textMid,
                             style = MaterialTheme.typography.bodyMedium,
                         )
-                        error?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
+                        error?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced()) }
                         QuietButton("Scan the next code", Modifier.fillMaxWidth(), PassIcons.QrCodeScanner, colors.primary) { scanCode() }
                     }
                     QuietButton("Choose another file", Modifier.fillMaxWidth()) {
@@ -1448,12 +1693,12 @@ private fun ImportScreen() {
                     }
                 }
                 needsPassword -> {
-                    Text(if (isKeePass) "This database is locked" else "This file has a password", color = colors.text, style = MaterialTheme.typography.titleLarge)
+                    Text(if (isKeePass) "This database is locked" else "This file has a password", color = colors.text, style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
                     if (isKeePass) {
                         Text("Enter its password. If it also uses a key file or a security key, add those too. A database locked by a key file or security key alone needs no password.", color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
                     }
                     PasswordPill(password, if (keyFile != null || keySlot != 0) "The password, if it has one" else "The file's password")
-                    error?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
+                    error?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced()) }
                     PrimaryButton("Open", Modifier.fillMaxWidth(), enabled = password.text.isNotEmpty() || keyFile != null || keySlot != 0) { shell.launch { read() } }
                     if (isKeePass) {
                         QuietButton(if (keyFile == null) "Add key file" else "Key file added", Modifier.fillMaxWidth(), PassIcons.Key, colors.primary) { pickKeyFile.launch(arrayOf("*/*")) }
@@ -1461,9 +1706,9 @@ private fun ImportScreen() {
                     }
                 }
                 else -> {
-                    Text("Bring everything over", color = colors.text, style = MaterialTheme.typography.titleLarge)
+                    Text("Bring everything over", color = colors.text, style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
                     Text(ImportFormats, color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
-                    error?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
+                    error?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced()) }
                     PrimaryButton("Choose a file", Modifier.fillMaxWidth(), icon = PassIcons.FileOpen) { pick.launch(arrayOf("*/*")) }
                     QuietButton("Scan Google Authenticator's code", Modifier.fillMaxWidth(), PassIcons.QrCodeScanner, colors.primary) { scanCode() }
                     QuietButton("Wi-Fi saved on this phone", Modifier.fillMaxWidth(), PassIcons.Wifi, colors.primary) { savedWifi = true }
@@ -1481,29 +1726,64 @@ private fun ExportScreen() {
     val context = LocalContext.current
     var format by remember { mutableStateOf<String?>(null) }
     var pendingName by remember { mutableStateOf("wm-pass") }
-    val password = rememberTextFieldState()
+    val password = remember { TextFieldState() }
+    // Typed twice: a slip leaves a file nothing opens.
+    val again = remember { TextFieldState() }
     var askingPassword by remember { mutableStateOf(false) }
     var warned by remember { mutableStateOf<String?>(null) }
-    val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+    // The picker names and files the export by its type, so each format asks with its own.
+    val saveAs = remember {
+        object : ActivityResultContracts.CreateDocument("application/octet-stream") {
+            override fun createIntent(context: android.content.Context, input: String): android.content.Intent =
+                super.createIntent(context, input).setType(
+                    when (format) {
+                        "csv" -> "text/csv"
+                        "bitwarden" -> "application/json"
+                        "html" -> "text/html"
+                        else -> "application/octet-stream"
+                    },
+                )
+        }
+    }
+    val save = rememberLauncherForActivityResult(saveAs) { uri ->
         val chosen = format
         if (uri != null && chosen != null) {
             shell.launch {
                 val secret = if (chosen == "kdbx") password.text.toString().toByteArray() else null
-                val reply = Pass.plainCall("export.file", secret = secret) { put("format", chosen) }
-                context.contentResolver.openOutputStream(uri)?.use { out ->
-                    if (reply.blobs.isNotEmpty()) out.write(reply.blobs[0]) else reply.secret?.consume { out.write(it) }
+                try {
+                    val reply = Pass.plainCall("export.file", secret = secret) { put("format", chosen) }
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        // A place that hands back no stream is said, rather than "Exported".
+                        context.contentResolver.openOutputStream(uri)?.use { out ->
+                            if (reply.blobs.isNotEmpty()) out.write(reply.blobs[0]) else reply.secret?.consume { out.write(it) }
+                        } ?: throw java.io.IOException("The file could not be written there.")
+                    }
+                } finally {
+                    secret?.fill(0)
+                    if (chosen == "kdbx") {
+                        password.clearText()
+                        again.clearText()
+                    }
                 }
-                secret?.fill(0)
                 shell.haptics.confirm()
+                shell.notice("Exported")
             }
+        } else if (chosen == "kdbx") {
+            // The picker closed with nothing chosen: the new file's password does not stay behind.
+            password.clearText()
+            again.clearText()
         }
     }
     val sealed = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         if (uri != null) {
             shell.launch {
                 val file = Pass.sealedFile()
-                context.contentResolver.openOutputStream(uri)?.use { it.write(file) }
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    context.contentResolver.openOutputStream(uri)?.use { it.write(file) }
+                        ?: throw java.io.IOException("The file could not be written there.")
+                }
                 shell.haptics.confirm()
+                shell.notice("Exported")
             }
         }
     }
@@ -1543,6 +1823,7 @@ private fun ExportScreen() {
             "Export without encryption?",
             "$label holds every password in plain text. Keep it off shared storage and delete it when you are done.",
             "Export",
+            icon = PassIcons.Download,
             danger = false,
             onDismiss = { warned = null },
         ) {
@@ -1562,10 +1843,22 @@ private fun ExportScreen() {
         }
     }
     if (askingPassword) {
-        PassSheet({ askingPassword = false }, "Password for the new file") {
-            PasswordPill(password, "Password")
+        // Closed without exporting: the password typed for the file does not stay behind.
+        PassSheet({
+            askingPassword = false
+            password.clearText()
+            again.clearText()
+        }, "Password for the new file") {
+            PasswordPill(password, "Password", imeAction = androidx.compose.ui.text.input.ImeAction.Next)
+            Spacer(Modifier.height(10.dp))
+            val matches = again.text.toString() == password.text.toString()
+            PasswordPill(again, "Password again", error = again.text.isNotEmpty() && !matches)
+            if (again.text.isNotEmpty() && !matches) {
+                Spacer(Modifier.height(4.dp))
+                Text("The passwords do not match.", color = palette.danger, style = MaterialTheme.typography.bodySmall, modifier = Modifier.announced())
+            }
             Spacer(Modifier.height(14.dp))
-            PrimaryButton("Export", Modifier.fillMaxWidth(), enabled = password.text.isNotEmpty()) {
+            PrimaryButton("Export", Modifier.fillMaxWidth(), enabled = password.text.isNotEmpty() && matches) {
                 askingPassword = false
                 save.launch("wm-pass.kdbx")
             }
@@ -1578,8 +1871,8 @@ private fun ExportScreen() {
 @Composable
 private fun CompareScreen() {
     val colors = palette
-    val first = rememberTextFieldState()
-    val second = rememberTextFieldState()
+    val first = remember { TextFieldState() }
+    val second = remember { TextFieldState() }
     var result by remember { mutableStateOf<com.wasimaster.wmpass.core.CompareView?>(null) }
     LaunchedEffect(first.text, second.text) {
         if (first.text.isEmpty() || second.text.isEmpty()) {

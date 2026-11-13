@@ -178,6 +178,13 @@ object CloudSignIn {
             mutableResult.value = Result(waiting.placeId, Outcome.CANCELLED)
             return
         }
+        // Box signs in with no PKCE, so its state is what ties the answer to the sign-in begun
+        // here: without the check, any page could send its own account's code to wmpass://oauth
+        // and have this phone's backups go to that account.
+        if (waiting.kind == "box" && uri?.getQueryParameter("state") != waiting.verifier.take(STATE_CHARS)) {
+            mutableResult.value = Result(waiting.placeId, Outcome.FAILED)
+            return
+        }
         val app = context.applicationContext
         mutableExchanging.value = waiting.placeId
         scope.launch {
@@ -197,6 +204,12 @@ object CloudSignIn {
                     Destinations.update(app, waiting.placeId) { it.copy(refreshToken = refresh) }
                     mutableResult.value = Result(waiting.placeId, Outcome.SIGNED_IN)
                 }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // The network gone, or an answer the service did not mean: said as a failed
+                // sign-in, rather than thrown out of this scope, which would close the app.
+                mutableResult.value = Result(waiting.placeId, Outcome.FAILED)
             } finally {
                 mutableExchanging.value = null
             }

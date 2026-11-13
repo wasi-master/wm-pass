@@ -9,6 +9,7 @@
   import Icon from '../parts/Icon.svelte';
   import Tile from '../parts/Tile.svelte';
   import { host } from '../engine/host';
+  import { overlays } from '../parts/floating.svelte';
   import { GUIDES, GUIDE_LIST, loadGuide, publisherSite, type GuidePage, type Run } from './guides';
 
   // Import, How to export from your old app: the list of apps, then one app's steps in the same
@@ -31,10 +32,17 @@
   async function open(guide: (typeof GUIDE_LIST)[number]) {
     reading = guide;
     page = undefined;
-    const loaded = await loadGuide(guide.page);
+    // A guide that cannot be read is offered on the website, rather than opening for ever.
+    const loaded = await loadGuide(guide.page).catch(() => null);
     if (reading !== guide) return;
     page = loaded;
     device = loaded ? here(loaded.tabs) : null;
+  }
+
+  function visit(url: string) {
+    void host()
+      .openUrl(url)
+      .catch((failure: any) => overlays.toast(failure?.message ?? 'That address could not be opened.'));
   }
 
   function pick(tab: string) {
@@ -49,7 +57,7 @@
         href={run.url}
         onclick={(e) => {
           e.preventDefault();
-          void host().openUrl(run.url);
+          visit(run.url);
         }}>{run.s}</a
       >{:else}{run.s}{/if}
   {/each}
@@ -87,9 +95,9 @@
                 <span class="dim">{@render runs(block.runs)}</span>
               </div>
             {:else if block.t === 'picture'}
-              <button type="button" class="guide-picture" title={block.caption} onclick={() => void host().openUrl(block.src)}>
+              <button type="button" class="guide-picture" title={block.caption} onclick={() => visit(block.src)}>
                 <span class="dimmer" style="display:flex"><Icon name="image" size={18} /></span>
-                <span style="color:var(--primary)">Picture on {publisherSite(block.publisher)}</span>
+                <span class="ok-text">Picture on {publisherSite(block.publisher)}</span>
               </button>
             {/if}
           {/if}
@@ -97,7 +105,7 @@
       {/if}
     </div>
     {#snippet foot()}
-      <Btn label="Open on the website" icon="open_in_new" onclick={() => reading && void host().openUrl(`${GUIDES}${reading.page}/`)} />
+      <Btn label="Open on the website" icon="open_in_new" onclick={() => reading && visit(`${GUIDES}${reading.page}/`)} />
       <Btn label="Back" onclick={() => (reading = null)} />
     {/snippet}
   </Dialog>

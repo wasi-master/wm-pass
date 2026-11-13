@@ -18,6 +18,14 @@ What a new password looks like: the type and length the generator starts with, a
 
 These are starting values. The generator opens with them each time, and changes you make on the generator itself last until you leave it.
 
+Only the settings the chosen **Type** uses are shown: **Length**, **Symbols** and **Avoid look-alikes** for Random, and **Words** for Words.
+
+The same settings make the password that [Start logins with a password](/guide/settings/editor/#setting-editor-generate) fills in for a new login.
+
+#### On Android
+
+These are starting values. The generator opens with them each time, and changes you make on the generator itself last until you leave it.
+
 The same settings make the password that [Start logins with a password](/guide/settings/editor/#setting-editor-generate) fills in for a new login.
 
 See also [Generator screen](/guide/screens/#screen-generator), [Generated passwords](/guide/how-it-works/#feature-generator).
@@ -39,6 +47,17 @@ Which kind of secret the generator makes first.
 | Pattern | Follows a template you type, for sites with fixed rules. |
 
 *The guide in the app shows this live, with your own settings.*
+
+#### On Android
+
+| Choice | What it does |
+| --- | --- |
+| Random | Letters, digits and symbols chosen at random, with at least one of each kind you allow. |
+| Words | Random words from a list of 7,776, joined by dashes, with a number. Easier to remember and to type. |
+| Pronounceable | Pairs of a consonant and a vowel, easy to say aloud and type. |
+| PIN | Digits only. |
+| Pattern | Follows a template you type, for sites with fixed rules. |
+| Lock pattern | A path through the dots of a phone's lock screen grid, drawn and written out for you to copy. |
 
 See also [Length](/guide/settings/generator/#setting-gen-length), [Words](/guide/settings/generator/#setting-gen-words).
 

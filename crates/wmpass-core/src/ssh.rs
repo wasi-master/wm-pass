@@ -46,10 +46,20 @@ pub fn public_blob(line: &str) -> Result<(Vec<u8>, String)> {
     Ok((blob, key.comment().to_owned()))
 }
 
+/// Whether the agent can sign with the key behind this public line. Only Ed25519 signing is
+/// built in, so an RSA or ECDSA key is not offered: a server would pick it, ask for a
+/// signature that never comes, and the login would fail instead of trying the next key.
+pub fn agent_can_sign(line: &str) -> bool {
+    PublicKey::from_openssh(line.trim()).is_ok_and(|key| key.algorithm() == Algorithm::Ed25519)
+}
+
 /// Signs for the SSH agent protocol, with a key held as OpenSSH text. Returns the encoded
 /// signature, which is not secret, in wipeable bytes all the same.
 pub fn agent_sign(private: &str, passphrase: &str, data: &[u8]) -> Result<Zeroizing<Vec<u8>>> {
     let mut key = PrivateKey::from_openssh(private.trim()).map_err(|_| Error::Invalid("that is not an OpenSSH private key".into()))?;
+    if key.algorithm() != Algorithm::Ed25519 {
+        return Err(Error::Invalid(format!("the agent signs only with Ed25519 keys, not {}", key.algorithm())));
+    }
     if key.is_encrypted() {
         key = key.decrypt(passphrase).map_err(|_| Error::Invalid("the key's passphrase is wrong".into()))?;
     }
@@ -102,6 +112,20 @@ pub fn encrypt_private(text: &str, passphrase: &str) -> Result<Secret> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_keys_the_agent_can_sign_with_are_offered() {
+        let ed = generate_ed25519("me").unwrap();
+        assert!(agent_can_sign(&ed.public_key));
+        assert!(agent_sign(ed.private_key.expose(), "", b"data").is_ok());
+        // An RSA public key, as `ssh-keygen -t rsa` writes one.
+        let rsa = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAAAgQC80wCoaLi59quPQ602uexTwQrvzb6dlfsqjakoMR18Dey88MeBxTNdT3/4gT/yt1/b/f42catXAEgWOYCR8bBC3Nh1TIBmItvcVtx+2gXNkWvPCEiHdE9tYIk0CTokCI2iG42Is1SXGhXad7HI6jdxqJGtCqM3nkiV3B5w6oUXDQ== me";
+        let ecdsa = "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBBNCsg/D8+xpXb3zjUuGL9+0P9RJ1EKB7vFc76R06Vn1PMQjT2D1q4H1IpZmNcMOCohGmdOSkwgIOKFouOHn5rE= me";
+        assert!(public_blob(rsa).is_ok() && public_blob(ecdsa).is_ok(), "both read as keys");
+        assert!(!agent_can_sign(ecdsa));
+        assert!(!agent_can_sign(rsa));
+        assert!(!agent_can_sign("not a key"));
+    }
 
     #[test]
     fn generated_keys_read_back() {

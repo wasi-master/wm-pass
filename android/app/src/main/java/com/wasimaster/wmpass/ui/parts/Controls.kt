@@ -1,5 +1,6 @@
 package com.wasimaster.wmpass.ui.parts
 
+import androidx.compose.ui.semantics.text
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -7,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,8 +18,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -28,6 +32,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
@@ -42,6 +48,13 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -76,14 +89,16 @@ fun PrimaryButton(
                 haptics.click()
                 onClick()
             },
-            modifier = modifier.height(48.dp),
+            // A floor, not a height: at a large font size the label wraps to a second line and the
+            // button grows to hold it, rather than clipping it or cutting it short.
+            modifier = modifier.heightIn(min = 48.dp),
             enabled = enabled,
         ) {
             if (icon != null) {
                 Icon(icon, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
             }
-            Text(text, maxLines = 1)
+            Text(text, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         }
         return
     }
@@ -93,7 +108,7 @@ fun PrimaryButton(
         modifier
             .pressScale(source)
             .alpha(fade)
-            .height(56.dp)
+            .heightIn(min = 56.dp)
             .clip(CircleShape)
             .background(Brush.linearGradient(listOf(colors.brandFrom, colors.brandTo)))
             .rim(CircleShape, colors)
@@ -109,7 +124,17 @@ fun PrimaryButton(
             Icon(icon, null, tint = colors.onBrand, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(10.dp))
         }
-        Text(text, color = colors.onBrand, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+        // The pill's height is a floor: a long label at a large font size wraps to a second line and
+        // the pill grows to hold it, rather than ending in an ellipsis.
+        Text(
+            text,
+            color = colors.onBrand,
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            modifier = Modifier.padding(vertical = 4.dp),
+        )
     }
 }
 
@@ -132,7 +157,7 @@ fun QuietButton(
                 haptics.click()
                 onClick()
             },
-            modifier = modifier.height(48.dp),
+            modifier = modifier.heightIn(min = 48.dp),
             enabled = enabled,
             colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
                 contentColor = if (tint == colors.text) colors.primary else tint,
@@ -142,7 +167,7 @@ fun QuietButton(
                 Icon(icon, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
             }
-            Text(text, maxLines = 1)
+            Text(text, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         }
         return
     }
@@ -151,7 +176,7 @@ fun QuietButton(
         modifier
             .pressScale(source)
             .alpha(if (enabled) 1f else 0.4f)
-            .height(height)
+            .heightIn(min = height)
             .clip(CircleShape)
             .background(colors.surface2)
             .rim(CircleShape, colors)
@@ -167,7 +192,15 @@ fun QuietButton(
             Icon(icon, null, tint = tint, modifier = Modifier.size(19.dp))
             Spacer(Modifier.width(9.dp))
         }
-        Text(text, color = tint, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+        Text(
+            text,
+            color = tint,
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            modifier = Modifier.padding(vertical = 4.dp),
+        )
     }
 }
 
@@ -249,6 +282,10 @@ fun Pill(
     selected: Boolean,
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
+    // An on and off switch, read as a checkbox, rather than one choice of several.
+    toggle: Boolean = false,
+    // The name a screen reader says, when the text on the pill does not read well aloud.
+    description: String? = null,
     onClick: () -> Unit,
 ) {
     val colors = palette
@@ -260,8 +297,8 @@ fun Pill(
                 haptics.tick()
                 onClick()
             },
-            label = { Text(text, maxLines = 1) },
-            modifier = modifier,
+            label = { Text(text, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            modifier = if (description != null) modifier.semantics { contentDescription = description } else modifier,
             leadingIcon = if (icon != null) ({ Icon(icon, null, modifier = Modifier.size(18.dp)) }) else null,
         )
         return
@@ -271,7 +308,7 @@ fun Pill(
     Row(
         modifier
             .pressScale(source, 0.94f)
-            .height(36.dp)
+            .heightIn(min = 36.dp)
             .clip(CircleShape)
             .background(colors.surface2)
             .drawWithContent {
@@ -279,7 +316,16 @@ fun Pill(
                 drawContent()
             }
             .rim(CircleShape, colors)
-            .clickable(source, androidx.compose.material3.ripple(), role = Role.Tab) {
+            // Whether it is on, read out as the standard look's chip reads it.
+            .semantics {
+                if (toggle) {
+                    toggleableState = androidx.compose.ui.state.ToggleableState(selected)
+                } else {
+                    this.selected = selected
+                }
+                if (description != null) contentDescription = description
+            }
+            .clickable(source, androidx.compose.material3.ripple(), role = if (toggle) Role.Checkbox else Role.Tab) {
                 haptics.tick()
                 onClick()
             }
@@ -291,7 +337,7 @@ fun Pill(
             Icon(icon, null, tint = tint, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(6.dp))
         }
-        Text(text, color = if (selected) colors.primary else colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Text(text, color = if (selected) colors.primary else colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -301,13 +347,22 @@ fun Eyebrow(text: String, modifier: Modifier = Modifier, trailing: (@Composable 
     val colors = palette
     if (colors.flat) {
         Row(modifier.fillMaxWidth().padding(top = 20.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(text, style = MaterialTheme.typography.titleSmall, color = colors.primary, modifier = Modifier.weight(1f))
+            Text(text, style = MaterialTheme.typography.titleSmall, color = colors.primary, modifier = Modifier.weight(1f).semantics { heading() })
             trailing?.invoke(this)
         }
         return
     }
     Row(modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, top = 22.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(text.uppercase(), style = PassType.eyebrow, color = colors.textLow, modifier = Modifier.weight(1f))
+        // A heading to a screen reader, read in its own case: in capitals a short word can be spelt out letter by letter.
+        Text(
+            text.uppercase(),
+            style = PassType.eyebrow,
+            color = colors.textLow,
+            modifier = Modifier.weight(1f).clearAndSetSemantics {
+                heading()
+                contentDescription = text
+            },
+        )
         trailing?.invoke(this)
     }
 }
@@ -389,7 +444,7 @@ fun NavRow(
     Row(
         modifier
             .fillMaxWidth()
-            .clickable {
+            .clickable(role = Role.Button) {
                 haptics.tick()
                 onClick()
             }
@@ -401,14 +456,23 @@ fun NavRow(
             Spacer(Modifier.width(14.dp))
         }
         Column(Modifier.weight(1f)) {
-            Text(title, color = colors.text, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // Two lines, so a title at a large font size is not cut down to its first word or two.
+            Text(title, color = colors.text, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (subtitle != null) {
                 Text(subtitle, color = colors.textMid, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
         if (trailing != null) {
             Spacer(Modifier.width(10.dp))
-            Text(trailing, color = colors.textLow, style = MaterialTheme.typography.bodyMedium)
+            // Measured before the title, which takes what is left: a long value must not take it all.
+            Text(
+                trailing,
+                color = colors.textLow,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 160.dp),
+            )
         }
         if (help != null) com.wasimaster.wmpass.ui.help.HelpMark(help, title)
         Spacer(Modifier.width(6.dp))
@@ -447,15 +511,54 @@ fun Modifier.inkSurface(state: InkState, color: Color): Modifier = drawWithConte
     drawContent()
 }
 
-/** Tap and long-press with the finger's position, for ink. */
-fun Modifier.tapAt(onLongPress: (() -> Unit)? = null, onTap: (Offset) -> Unit): Modifier = composed {
-    pointerInput(onTap, onLongPress) {
-        detectTapGestures(
-            onLongPress = onLongPress?.let { action -> { _ -> action() } },
-            onTap = onTap,
-        )
+/**
+ * Tap and long-press with the finger's position, for ink. A real click underneath, so a hardware
+ * keyboard or D-pad can reach it (Enter taps, from the middle), a ring shows where focus is, and a
+ * screen reader hears [tapLabel] and [longPressLabel]. With [enabled] off it takes no focus and
+ * says it does nothing, rather than offering a tap that does nothing.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+fun Modifier.tapAt(
+    onLongPress: (() -> Unit)? = null,
+    tapLabel: String? = null,
+    longPressLabel: String? = null,
+    enabled: Boolean = true,
+    onTap: (Offset) -> Unit,
+): Modifier = composed {
+    val source = remember { MutableInteractionSource() }
+    val at = remember { androidx.compose.runtime.mutableStateOf(Offset.Unspecified) }
+    val size = remember { androidx.compose.runtime.mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+    androidx.compose.runtime.LaunchedEffect(source) {
+        source.interactions.collect { if (it is androidx.compose.foundation.interaction.PressInteraction.Press) at.value = it.pressPosition }
     }
+    val focused by source.collectIsFocusedAsState()
+    val ring = palette.primary
+    this
+        .onSizeChanged { size.value = it }
+        .drawWithContent {
+            drawContent()
+            if (focused) drawRect(ring, style = androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx()))
+        }
+        .combinedClickable(
+            interactionSource = source,
+            indication = null,
+            enabled = enabled,
+            onClickLabel = tapLabel,
+            onLongClickLabel = longPressLabel,
+            onLongClick = onLongPress,
+        ) {
+            val from = at.value.takeIf { it != Offset.Unspecified && it != Offset.Zero }
+                ?: Offset(size.value.width / 2f, size.value.height / 2f)
+            at.value = Offset.Unspecified
+            onTap(from)
+        }
 }
+
+/**
+ * Text that appears to say something went wrong, or what happened: a screen reader says it as
+ * it appears or changes, rather than leaving it for someone to find.
+ */
+fun Modifier.announced(): Modifier = semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite }
 
 /** Lets a row run to the screen's edge from inside a page's margins. */
 fun Modifier.bleed(margin: Dp): Modifier = layout { measurable, constraints ->
@@ -475,4 +578,51 @@ fun Modifier.fadeEdges(width: Dp = 20.dp): Modifier = graphicsLayer { compositin
             Brush.horizontalGradient(0f to Color.Transparent, edge to Color.Black, 1f - edge to Color.Black, 1f to Color.Transparent),
             blendMode = BlendMode.DstIn,
         )
+    }
+
+/**
+ * [placeholderDecorator] with the field's name drawn above it, inside the field, so a screen
+ * reader names the field by it even once something is typed, as it does a Material field's label.
+ * Outside the field, the name would be a stray line beside a box that says only what is in it.
+ */
+fun labelledDecorator(
+    state: androidx.compose.foundation.text.input.TextFieldState,
+    label: @Composable () -> Unit,
+    minHeight: Dp,
+    placeholder: @Composable () -> Unit,
+): androidx.compose.foundation.text.input.TextFieldDecorator =
+    androidx.compose.foundation.text.input.TextFieldDecorator { inner ->
+        Column {
+            label()
+            Box(Modifier.heightIn(min = minHeight), contentAlignment = Alignment.CenterStart) {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart, propagateMinConstraints = true) {
+                    if (state.text.isEmpty()) placeholder()
+                    inner()
+                }
+            }
+        }
+    }
+
+/**
+ * A field's placeholder drawn inside the field, so a screen reader takes it as the field's own
+ * name, as it does a Material field's, rather than as a stray line beside an unnamed box.
+ */
+fun placeholderDecorator(
+    state: androidx.compose.foundation.text.input.TextFieldState,
+    // The field's name once something is typed and the placeholder has gone, for a field with no
+    // label on show: a screen reader would otherwise say only what is in it.
+    name: String? = null,
+    placeholder: @Composable () -> Unit,
+): androidx.compose.foundation.text.input.TextFieldDecorator =
+    androidx.compose.foundation.text.input.TextFieldDecorator { inner ->
+        // Both take the field's whole width, so a centred title and its placeholder line up.
+        Box(contentAlignment = Alignment.CenterStart, propagateMinConstraints = true) {
+            if (state.text.isEmpty()) {
+                placeholder()
+            } else if (name != null) {
+                // Draws nothing; it only names the field.
+                Box(Modifier.semantics { text = androidx.compose.ui.text.AnnotatedString(name) })
+            }
+            inner()
+        }
     }

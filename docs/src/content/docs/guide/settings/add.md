@@ -28,9 +28,11 @@ The types the add button offers, in order. The first one is also what <kbd>Ctrl+
 
 #### How it works
 
-Drag a type to move it, or use its arrow to move it down one. The minus button hides it, and its **Add** row under **Hidden** brings it back.
+Drag a type to move it, or use its arrows to move it up or down one. The minus button hides it, and its **Add** row under **Hidden** brings it back.
 
 With only one type shown, the add button skips the menu and starts that type.
+
+An item added while a folder or a tag is open in the list starts in that folder, or with that tag.
 
 #### Limits
 

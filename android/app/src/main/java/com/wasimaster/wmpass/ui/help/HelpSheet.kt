@@ -1,5 +1,7 @@
 package com.wasimaster.wmpass.ui.help
 
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
@@ -108,7 +110,7 @@ private fun Head(where: String?, title: String) {
         }
         Column(Modifier.weight(1f).padding(top = 6.dp)) {
             if (where != null) Text(where, color = colors.textMid, style = MaterialTheme.typography.labelMedium)
-            Text(title, color = colors.text, style = MaterialTheme.typography.titleLarge)
+            Text(title, color = colors.text, style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
         }
         IconButton(onClick = { Guide.close() }) { Icon(PassIcons.Close, "Close", tint = colors.textMid) }
     }

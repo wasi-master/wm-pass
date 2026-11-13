@@ -15,6 +15,8 @@ const FILES: &str = "https://www.googleapis.com/drive/v3/files";
 const UPLOAD: &str = "https://www.googleapis.com/upload/drive/v3/files";
 const BOUNDARY: &str = "wmpass-part-boundary-7f3a";
 const FOLDER_MIME: &str = "application/vnd.google-apps.folder";
+/// Without an order Drive lists files in no particular one.
+const NEWEST_FIRST: &str = "modifiedTime%20desc";
 
 /// Scope for the hidden app folder.
 pub const SCOPE_APP_DATA: &str = "https://www.googleapis.com/auth/drive.appdata";
@@ -116,14 +118,16 @@ impl<H: AsyncHttp> Drive<H> {
     }
 
     /// Drive allows several files of one name, so an existing one must be found to
-    /// replace it.
-    async fn find(&self, name: &str) -> Result<Option<String>> {
+    /// replace it. Every file of that name, newest first: two devices writing a new name at
+    /// once can each make one.
+    async fn find(&self, name: &str) -> Result<Vec<String>> {
         let parent = self.parent().await?;
         let query = wmpass_core::otp::percent_encode(&format!("name = '{}' and '{}' in parents and trashed = false", escape(name), escape(&parent)));
-        let url = format!("{FILES}?spaces={}&fields=files(id)&q={query}", self.spaces());
+        let url = format!("{FILES}?spaces={}&orderBy={NEWEST_FIRST}&fields=files(id)&q={query}", self.spaces());
         let response = self.client.ok(self.auth(Request::get(url))).await?;
         let root = response.json().map_err(|_| Fault::Io)?;
-        Ok(root.pointer("/files/0/id").and_then(Value::as_str).map(str::to_owned))
+        let files = root.get("files").and_then(Value::as_array).ok_or(Fault::Io)?;
+        Ok(files.iter().filter_map(|file| file.get("id").and_then(Value::as_str)).map(str::to_owned).collect())
     }
 }
 
@@ -149,7 +153,7 @@ impl<H: AsyncHttp> Sink for Drive<H> {
 
     async fn write(&self, name: &str, bytes: &[u8]) -> Result<Stored> {
         let existing = self.find(name).await?;
-        let (method, url, metadata) = match &existing {
+        let (method, url, metadata) = match existing.first() {
             Some(id) => ("PATCH", format!("{UPLOAD}/{id}?uploadType=multipart&fields=id"), json!({})),
             None => (
                 "POST",
@@ -163,6 +167,12 @@ impl<H: AsyncHttp> Sink for Drive<H> {
         let response = self.client.ok(request).await?;
         let root = response.json().map_err(|_| Fault::Io)?;
         let id = root.get("id").and_then(Value::as_str).ok_or(Fault::Io)?;
+        // A write replaces: older copies of this name go once the new one is in. Only those
+        // found before it, so a copy another device made meanwhile stays. Best effort: a
+        // leftover is hidden by `list` and goes next time.
+        for older in existing.iter().skip(1) {
+            let _ = self.delete(&Stored { id: older.clone(), name: name.to_owned(), size: 0 }).await;
+        }
         Ok(Stored { id: id.to_owned(), name: name.to_owned(), size: bytes.len() as u64 })
     }
 
@@ -174,7 +184,7 @@ impl<H: AsyncHttp> Sink for Drive<H> {
             Space::Folder(_) => format!("&q={}", wmpass_core::otp::percent_encode(&format!("'{}' in parents and trashed = false", escape(&self.parent().await?)))),
         };
         loop {
-            let mut url = format!("{FILES}?spaces={}&pageSize=200&fields=nextPageToken,files(id,name,size){within}", self.spaces());
+            let mut url = format!("{FILES}?spaces={}&orderBy={NEWEST_FIRST}&pageSize=200&fields=nextPageToken,files(id,name,size){within}", self.spaces());
             if let Some(token) = &token {
                 url.push_str("&pageToken=");
                 url.push_str(&wmpass_core::otp::percent_encode(token));
@@ -182,9 +192,14 @@ impl<H: AsyncHttp> Sink for Drive<H> {
             let response = self.client.ok(self.auth(Request::get(url))).await?;
             let root = response.json().map_err(|_| Fault::Io)?;
             for item in root.get("files").and_then(Value::as_array).ok_or(Fault::Io)? {
+                // Newest first, so of several files of one name a reader gets the newest.
+                let name = item.get("name").and_then(Value::as_str).unwrap_or_default();
+                if out.iter().any(|kept: &Stored| kept.name == name) {
+                    continue;
+                }
                 out.push(Stored {
                     id: item.get("id").and_then(Value::as_str).ok_or(Fault::Io)?.to_owned(),
-                    name: item.get("name").and_then(Value::as_str).unwrap_or_default().to_owned(),
+                    name: name.to_owned(),
                     // Drive sends sizes as strings.
                     size: item.get("size").and_then(Value::as_str).and_then(|s| s.parse().ok()).unwrap_or(0),
                 });
@@ -240,6 +255,27 @@ mod tests {
     }
 
     #[test]
+    fn of_two_files_one_name_the_newest_is_replaced_and_read_and_the_older_goes() {
+        // As two devices writing a new name at once leave it. Drive answers newest first.
+        let http = FakeHttp::new()
+            .answer(UPLOAD, 200, r#"{"id":"newer"}"#)
+            .answer(&format!("{FILES}/older"), 204, "")
+            .answer_once(FILES, 200, r#"{"files":[{"id":"newer"},{"id":"older"}]}"#)
+            .answer(FILES, 200, r#"{"files":[{"id":"newer","name":"v","size":"2"},{"id":"older","name":"v","size":"1"},{"id":"w","name":"w","size":"3"}]}"#);
+        block_on(sink(&http).write("v", b"x")).unwrap();
+        let asked = http.asked.lock().unwrap().clone();
+        assert!(asked[0].url.contains("orderBy=modifiedTime%20desc"), "{}", asked[0].url);
+        assert_eq!(asked[1].method, "PATCH");
+        assert!(asked[1].url.contains("/newer?"));
+        assert_eq!((asked[2].method, asked[2].url.clone()), ("DELETE", format!("{FILES}/older")));
+        assert_eq!(asked.len(), 3);
+
+        let listed = block_on(sink(&http).list()).unwrap();
+        let names: Vec<(&str, &str)> = listed.iter().map(|f| (f.name.as_str(), f.id.as_str())).collect();
+        assert_eq!(names, vec![("v", "newer"), ("w", "w")]);
+    }
+
+    #[test]
     fn a_name_cannot_break_out_of_the_query() {
         let http = FakeHttp::new().answer(UPLOAD, 200, r#"{"id":"x"}"#).answer(FILES, 200, r#"{"files":[]}"#);
         block_on(sink(&http).write("a' or name != 'b", b"x")).unwrap();
@@ -269,7 +305,7 @@ mod tests {
     #[test]
     fn listing_reads_string_sizes_and_pages() {
         let http = FakeHttp::new()
-            .answer(&format!("{FILES}?spaces=appDataFolder&pageSize=200&fields=nextPageToken,files(id,name,size)&pageToken="), 200, r#"{"files":[{"id":"2","name":"b","size":"7"}]}"#)
+            .answer(&format!("{FILES}?spaces=appDataFolder&orderBy={NEWEST_FIRST}&pageSize=200&fields=nextPageToken,files(id,name,size)&pageToken="), 200, r#"{"files":[{"id":"2","name":"b","size":"7"}]}"#)
             .answer(FILES, 200, r#"{"nextPageToken":"t","files":[{"id":"1","name":"a","size":"5"}]}"#);
         let files = block_on(sink(&http).list()).unwrap();
         assert_eq!((files[0].size, files[1].size), (5, 7));

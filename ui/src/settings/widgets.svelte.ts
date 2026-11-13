@@ -54,7 +54,8 @@ function recipe(): unknown {
 /** The ids the Codes widget shows: the chosen ones, or the favorites that have a code. */
 export function widgetCodeIds(): string[] {
   const chosen = prefs.listOf('widget_codes');
-  const live = pass.entries.filter((e) => e.has_otp && !e.trashed);
+  // Nothing on the hidden shelf: it stays out of every list until opened with the password.
+  const live = pass.entries.filter((e) => e.has_otp && !e.trashed && !e.hidden);
   const ids = chosen.length ? chosen.filter((id) => live.some((e) => e.id === id)) : live.filter((e) => e.favourite).map((e) => e.id);
   return ids.slice(0, MAX_CODES);
 }
@@ -81,7 +82,7 @@ function feed(): WidgetFeed {
     code_ids: allowed ? widgetCodeIds() : [],
     favorites: allowed
       ? pass.entries
-          .filter((e) => e.favourite && !e.trashed)
+          .filter((e) => e.favourite && !e.trashed && !e.hidden)
           .slice(0, MAX_FAVORITES)
           .map((e) => {
             const label = e.color != null && e.color !== '' && !Number.isNaN(Number(e.color)) ? Number(e.color) : null;

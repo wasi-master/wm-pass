@@ -7,8 +7,10 @@ import type { Topic } from '../schema.ts';
 const DOOR_TROUBLE = [
   'After five wrong passwords in a row, the door makes you wait before the next try: 30 seconds at first, doubling up to 15 minutes. The wait is shown on screen.',
   'A vault that needs a key file says so after you type the password. **Choose the key file** lets you pick it: the same file you added, unchanged.',
-  'Forgot the password? Nothing can reset it. If you made an emergency kit, the people holding it can open the vault with **Recover with emergency shares**, found under **Add another vault or account**.',
+  'Forgot the password? Nothing can reset it. If you made an emergency kit, the people holding it can open the vault with **Recover with emergency shares**, found under **Add another vault or account**, or **I already have a vault** on a new device.',
 ];
+
+const DOOR_RESTORE_HELD = 'Restoring on a device that has a vault already replaces nothing. The copies wait, and merge into your vault the next time you unlock it: newer values stay, and older ones go to the item\'s history. If your password opens only the restored copy, because the vault here is damaged or its password has changed since, that copy opens as a vault of its own and the one here is kept.';
 
 const LIST_ROWS = [
   'Each row shows the item\'s icon, its name, small marks for a favorite, a one-time code, a passkey, an attachment or a self-destruct date, and a second line such as the username. What a row shows is set under [[page.list]].',
@@ -22,7 +24,7 @@ const ITEM_FIELDS = [
   'A login for a website also has **Change the password on the site**, but only for a site that has a page for it: one on a list of known pages, or one that answers at its /.well-known/change-password address after first refusing an address no site has. A site off the list is asked only while WM Pass may use the network. Logins for apps and for devices on your own network have none.',
   'Each tag has a cross that takes it off this item; clicking a tag lists everything with it. Right-click a tag to rename it, delete it from every item, or give it an icon. **Suggested** offers the tags the item\'s site and kind suggest, guessed on your device.',
   'A Wi-Fi network has **QR code**, which shows the code another phone\'s camera reads to join it. An enterprise network has none.',
-  'The history link at the bottom, such as **History, 2 earlier**, lists earlier values of secret fields, each hidden until you show it.',
+  'The history link at the bottom, such as **Show history, 2 earlier values**, lists earlier values of secret fields, each hidden until you show it.',
 ];
 
 const EDITOR_PARTS = [
@@ -33,25 +35,48 @@ const EDITOR_PARTS = [
   'Fields with common values, such as a database\'s engine or a card\'s issuer, offer them as chips while you type.',
 ];
 
+const ANDROID_EDITOR_PARTS = [
+  'The name field comes first. Leave it empty and the website\'s name is used.',
+  'The fields that kind of item needs come next. For some kinds, the less used ones wait under **Other details**, unless [[setting.editor_fold_details]] is off.',
+  'Further sections show as one line each, saying what is inside, and open when you tap them: **Websites and apps** for a login, **One-time code** for a login or code, **Notes**, **Custom fields**, **Security questions** for a login, and **Organize** for the folder, tags, icon, color and favorite. [[page.editor]] sets which ones show and which start open.',
+  '**Add more**, at the bottom, adds what is not on show: a one-time code, notes, a text or secret field, a security question, an app, a file, a link to another item, or a change reminder.',
+  EDITOR_PARTS[3],
+  EDITOR_PARTS[4],
+];
+
 const EDITOR_SECRETS = 'A secret that is already saved shows as **Saved. Click to change** and stays in the vault until you click it, so fixing a name never brings the password onto the screen.';
 
-const GENERATOR_TYPES = [
-  '**Type** picks what to make. **Random** has a length from 8 to 64 and the character sets a-z, A-Z, 0-9 and !@#, plus **Avoid look-alikes**. **Words** has the number of words, what goes between them, and **Capitals** and **Number**. **Pronounceable** has syllables, **PIN** has digits, and **Pattern** takes a template.',
+const GENERATOR_REST = [
   '**Presets** set several of these at once.',
   'Changes here last until you leave. The starting choices are under [[page.generator]].',
 ];
 
+const GENERATOR_TYPES = [
+  '**Type** picks what to make, and only the controls for that type show. **Random** has a length from 8 to 64 and the character sets a-z, A-Z, 0-9 and !@#, plus **Avoid look-alikes**. **Words** has the number of words, what goes between them, and **Capitals** and **Number**. **Pronounceable** has syllables, **PIN** has digits, and **Pattern** takes a template.',
+  ...GENERATOR_REST,
+];
+
+const ANDROID_GENERATOR_TYPES = [
+  'The row of choices under it picks what to make, and only the controls for that type show. **Random** has a length from 8 to 64 and the character sets a-z, A-Z, 0-9 and !@#, plus **Avoid look-alikes**. **Words** has the number of words, what goes between them, and **Capitals** and **Number**. **Pronounceable** has syllables, **PIN** has digits, **Pattern** takes a template, and **Lock pattern** draws a pattern of 4 to 9 dots for a phone\'s lock screen.',
+  ...GENERATOR_REST,
+];
+
 const HEALTH_PARTS = [
   'The score out of 100 is the share of your logins with a password that are not weak, reused, leaked or old. The bar under it changes color as the score rises.',
-  'Below it, each kind of problem has its own group with a count. Open a group to see why it matters and which items have it, and click an item to open it.',
+  'Below it, each kind of problem has its own group with a count. Open a group to see why it matters and which items have it.',
   'Problems are listed from the most serious down, so start at the top. [[page.health]] chooses which groups are listed and whether the score shows.',
-  'For duplicate items, the button that merges each set asks **Which one stays?** The others fold into it: their passwords move to its history and their extra fields come along, so nothing is lost.',
 ];
 
 const TRASH_PARTS = [
   'Moving an item to the trash takes it out of every list, search and fill, and keeps it for the time set under Settings, Trash. A message offers **Undo** straight after.',
   'Open a trashed item to see it, then **Restore** to put it back as it was, or **Delete for good**.',
   'After that time, WM Pass deletes it for good the next time the vault opens, with its history and attachments.',
+];
+
+const ANDROID_TRASH_PARTS = [
+  TRASH_PARTS[0],
+  'Open a trashed item to see it, then **Restore** to put it back as it was, or **Delete** to delete it for good.',
+  TRASH_PARTS[2],
 ];
 
 const TRASH_CAVEATS = [
@@ -72,7 +97,8 @@ export const screens = [
       'After that it asks for your password. Type it and press Enter or **Unlock**.',
       'If you have accounts or KeePass files, they show as choices above the password: **This device** for your own vault, and one for each account.',
       'A vault that needs a security key asks you to plug it in and touch it. If you turned on [[action.keyring_unlock]], **Unlock from the system keyring** opens the vault without the password.',
-      '**Add another vault or account**, or **I already have a vault** on a new device, offers these ways in: [[action.join_device|Get it from another device]], over this network; **Restore from a file**, for a .wmvault or .wmbackup file; **Restore from a backup location**, which signs in to a place such as WebDAV or a cloud drive, lists the copies there and brings one back, and keeps it as a place for backups; **Open a KeePass file or sign in**; and **Recover with emergency shares**.',
+      '**Add another vault or account**, or **I already have a vault** on a new device, offers these ways in: [[action.join_device|Get it from another device]], over this network; **Restore from a file**, for a .wmvault or .wmbackup file; **Restore from a backup location**, which signs in to a place such as WebDAV or a cloud drive, lists the copies there and brings one back, and keeps it as a place for backups; **Open a KeePass file or sign in**; and **Recover with emergency shares**. A place you already back up to is listed by its name, as **Restore from** that place.',
+      DOOR_RESTORE_HELD,
     ],
     when: DOOR_TROUBLE,
     caveats: 'A duress password looks like a wrong one here, or opens its decoy vault as if it were the real one. That is on purpose. See [[feature.duress]].',
@@ -83,18 +109,21 @@ export const screens = [
         how: [
           'On the first run it asks you to **Create your vault**. Type a master password, watch the meter under it, and confirm it. **Create vault** stays off until the password is strong enough and both boxes match. **Generate a passphrase** suggests five random words.',
           'After that it asks for your password. Type it and press Enter or **Unlock**.',
-          'If you have KeePass files open in place, they show as choices above the password: **This device** for your own vault, and one for each file.',
+          'If you have accounts or KeePass files, they show as choices above the password: **This device** for your own vault, and one for each account.',
+          'A vault that needs a security key asks you to plug it in and touch it. If you turned on [[action.passkey_unlock]], **Unlock with a passkey** opens the vault without the password.',
           '**Add another vault or account**, or **I already have a vault**, offers **Use the vault in the desktop app**, which connects this browser to WM Pass on this computer; **Restore from a file**, for a .wmvault or .wmbackup file; **Restore from a backup location**, for a copy kept at WebDAV, S3 or a cloud drive; **Open a KeePass file or sign in**; and **Recover with emergency shares**.',
-          'Connected to the desktop app, the extension can fill from the vault open there without this screen. See [[feature.bridge]].',
+          DOOR_RESTORE_HELD,
+          'Once connected, **Use the vault open in WM Pass** opens the vault the app has open, and the extension can fill from it without this screen. See [[feature.bridge]].',
         ],
       },
       android: {
         how: [
-          'On the first run it asks you to make your vault: type a master password, then type it again. You cannot go on until the password is strong enough and the two match. **Generate a passphrase** suggests random words.',
+          'On the first run it asks you to create your vault: type a master password, then type it again. You cannot go on until the password is strong enough and the two match. **Generate a passphrase**, or **Suggest one** in some styles, suggests random words.',
           'After that it asks for your password. Type it and tap **Unlock**, or tap **Use fingerprint** if you turned fingerprint unlock on.',
           'If you have accounts or KeePass files, they show as chips above the password: one for your own vault on this phone, and one for each account.',
-          'A vault that needs a security key asks you to hold it to the back of the phone, or plug it in and touch it.',
-          'For a vault you already have, the door offers [[action.join_device|Get it from another device]], **Restore from a file**, **Restore from a backup location**, **Open a KeePass file or sign in**, and **Recover with emergency shares**.',
+          'A vault that needs a security key asks you to hold it to the back of the phone, or plug it in and touch it. A vault that needs a key file asks for it after the password, with **Choose the key file**.',
+          'On the first run, **I already have a vault** offers [[action.join_device|Get it from another device]], **Restore from a file**, **Restore from a backup location**, **Open a KeePass file or sign in**, and **Recover with emergency shares**.',
+          'Once there is a vault on the phone, **Restore a backup** under the password offers **Restore from a file** and **Restore from a backup location**, for a vault here that will not open or is out of date. Nothing on the phone is replaced. The backup waits, and merges into your vault the next time you unlock it: newer values stay, and older ones go to the item\'s history. If your password opens only the restored copy, that copy opens as a vault of its own and the one here is kept.',
         ],
         when: [
           'After five wrong passwords in a row, the door makes you wait before the next try: 30 seconds at first, doubling up to 15 minutes. The wait is shown on screen.',
@@ -155,7 +184,7 @@ export const screens = [
     how: [
       'At the top are the places you chose under [[page.navigation]]: **All items**, **Favorites**, **Codes**, **Generator**, **Health**, **Trash**, and **Hidden shelf** if you add it. Counts beside them can be turned off.',
       '**Types** lists each kind of item you have, with how many.',
-      '**Folders** lists your folders. The **+** beside the heading makes a new one, and right-clicking a folder offers **Rename…** and **Remove folder**. Removing a folder keeps what was in it, in no folder.',
+      '**Folders** lists your folders. The **+** beside the heading makes a new one, and right-clicking a folder offers **Rename…** and **Remove folder…**. Removing a folder keeps what was in it, in no folder.',
       '**Tags** lists every tag in use. Tags are added from an item\'s **More** menu or in the editor.',
       'At the bottom are the vault\'s name, **Lock** and **Settings**.',
       'Drag its right edge to change its width. {{key:toggle_sidebar}} hides it or brings it back.',
@@ -181,11 +210,11 @@ export const screens = [
     id: 'screen.list',
     kind: 'screen',
     title: 'Item list',
-    what: 'The middle pane lists the items in the place you picked in the sidebar, or everything that matches a search.',
+    what: 'The middle pane lists the items in the place you picked in the sidebar, or those of them that match a search.',
     how: [
-      'The search box on top looks through the whole vault, whatever the sidebar shows. {{key:search}} jumps to it, Escape clears it, and [[concept.search]] lists the words that narrow it down.',
-      'The sort button beside it changes the order, the layout (list, compact or grid) and the grouping, by site or by folder.',
-      'The add button (+) offers the kinds of item set under [[page.add]]. {{key:add}} adds the first of them straight away.',
+      'The search box on top looks through the place the sidebar shows, so **All items** searches the whole vault. {{key:search}} jumps to it, Escape clears it, and [[concept.search]] lists the words that narrow it down.',
+      'The sort button beside it changes the order, the layout (list, compact or grid) and the grouping, by site, folder or type.',
+      'The add button (+) offers the kinds of item set under [[page.add]]. {{key:add}} adds the first of them straight away. A new item made while a folder or a tag is showing starts in that folder, or with that tag.',
       ...LIST_ROWS,
       'Clicking a row opens the item, and [[setting.tap_action]] can make it copy something as well. Double-clicking does what [[setting.double_click]] says. The copy button on a row\'s right edge shows when you point at it.',
       'Right-click a row for **Copy password**, **Copy username**, **Copy code**, **Open site**, **Edit**, **Duplicate**, favorites, **Pin to the top**, **Move to hidden shelf** and **Move to trash**.',
@@ -203,7 +232,7 @@ export const screens = [
           'The chips under it filter the list by favorites or by kind.',
           ...LIST_ROWS,
           'Tap a row to open the item. Swipe a row right or left for a quick action, such as copying the password or moving it to the trash; [[page.list]] sets what each swipe does.',
-          'Hold a row to start choosing several. The bar on top then moves them to a folder, tags them, changes their color, or moves them to the trash, with **Undo** after.',
+          'Hold a row to start choosing several. The bar on top then tags them or moves them to the trash, with **Undo** after, and **More** moves them to a folder, changes their color, adds them to favorites, pins them, or merges or links them together. With one chosen, it also has **Edit**.',
           'The add button adds an item, of the kinds set under [[page.add]].',
           'On a tablet, an unfolded phone or a phone on its side, the tabs run down the side of the screen. When the screen is wide enough, the item you tap opens beside the list instead of over it; fold the phone or narrow the window and the item becomes a page of its own.',
         ],
@@ -239,8 +268,9 @@ export const screens = [
           'Below come its fields. A secret shows as dots until you tap **Show**, and it hides again after the time set under [[setting.reveal_seconds]] or when you leave. Tap a field to copy it.',
           'A one-time code counts down with a ring and shows the next code in its last ten seconds. A counter-based code shows **New code** in place of the code.',
           'Further down are the websites, passkeys, fields of your own, security questions, notes, attachments and linked items, then **History** with earlier values of secret fields.',
-          '**More**, at the bottom, adds a tag, attaches a file, links another item, sets a reminder, a folder, a color or a self-destruct date, pins it, puts it on the hidden shelf, duplicates it, sends it to another device, or moves it to the trash.',
+          '**More**, at the bottom, attaches a file, links another item, sets a reminder, a folder or a color, pins it, sends it to another device, or moves it to the trash. **More options** there adds **Move to hidden shelf**, **Self-destruct** and **Duplicate**. Tags are added in the tags line above it.',
           'A login for a website also has **Change the password on the site**, but only for a site that has a page for it, found the way Health finds it. An app that is not installed offers the app stores on this phone, or Google Play and F-Droid in the browser when there are none.',
+          'A Wi-Fi network can show its QR code, for another phone to join, and can be added to this phone\'s saved networks.',
         ],
         when: 'A copied secret is cleared from the clipboard after the time set under [[setting.clipboard_seconds]].',
       },
@@ -266,11 +296,12 @@ export const screens = [
     on: {
       android: {
         how: [
-          ...EDITOR_PARTS,
+          ...ANDROID_EDITOR_PARTS,
           'A secret that is already saved shows as **Saved. Tap to change** and stays in the vault until you tap it, so fixing a name never brings the password onto the screen.',
           'Each custom field has a lock beside it that turns it secret, or back to plain, keeping its value: nothing has to be typed again.',
           'A password field has **Show** and **Generate**, which opens the generator; **Use this** puts the result in the field. A username field has **Use an alias**. Under **One-time code**, **Scan a QR code** reads the code a site shows.',
-          '**Save** saves and shows the item. **Close** leaves, and asks first if you changed anything.',
+          'A Wi-Fi network has **Fill in from a QR code** and **Pick a network saved on this phone**. A card has **Scan the card**.',
+          '**Save**, or **Save changes** for an item you are editing, saves and shows the item. **Close** leaves, and asks **Discard changes?** first if you changed anything.',
         ],
       },
     },
@@ -284,7 +315,7 @@ export const screens = [
     title: 'Codes screen',
     what: 'Every one-time code in the vault on one screen, counting down, ready to copy.',
     how: [
-      'Each code shows the site or issuer, the account, the code, and a ring for the time it has left. In its last ten seconds the next code shows under it.',
+      'Each code shows the item\'s name, or the issuer when the item has none, the account, the code, and a ring for the time it has left. In its last ten seconds the next code shows under it.',
       'Click a code to copy it. Double-click to open its item.',
       'A counter-based code shows **Show the next code**, since each one shown is used up.',
       '[[page.codes]] sets the size of the codes, whether they are split in two groups, the next code, the ring, the order, and whether codes stay hidden until clicked. A hidden code shows for 15 seconds after you click it.',
@@ -297,7 +328,7 @@ export const screens = [
     on: {
       android: {
         how: [
-          'Each code shows the site or issuer, the account, the code, and a ring for the time it has left. In its last ten seconds the next code shows under it.',
+          'Each code shows the item\'s name, or the issuer when the item has none, then the issuer if it says something the name does not, the account, the code, and a ring for the time it has left. In its last ten seconds the next code shows under it.',
           'Tap a code to copy it. Hold it to open its item.',
           'A counter-based code shows **Show the next code**, since each one shown is used up.',
           'The add button adds a code, and can scan the QR code a site shows.',
@@ -330,7 +361,7 @@ export const screens = [
           'The new value sits at the top. **Generate again** makes another.',
           'Under it, a bar and a line show how long the password would take to crack, and the bits figure shows its strength as a number, if [[setting.gen_show_bits]] is on.',
           '**Copy** copies it, and the copy is cleared like any other secret. **Save as login** starts a new login with it as the password.',
-          ...GENERATOR_TYPES,
+          ...ANDROID_GENERATOR_TYPES,
         ],
         when: 'In the editor, **Generate** beside a password field opens the same choices.',
       },
@@ -343,8 +374,9 @@ export const screens = [
     what: 'A score for your passwords, and a list of what to fix, worst first.',
     how: [
       ...HEALTH_PARTS,
-      'Under **Used more than once**, the logins are grouped by the password they share, so each group is one password to change. Under **In a known breach**, each item says how many times it was seen, and the most seen come first.',
-      'Clicking an item offers what fixes it: **Change the password on the site** opens the site\'s own page for that, and shows only for a site that has one: either it is on a list of known pages, or it answers at /.well-known/change-password after first refusing an address no site has. A missing second factor offers the site\'s settings. **Ignore for this check** takes the item off that list only, for sites with a second factor of their own and the like. **Ignored** lists them again, to put any back.',
+      'Under **Used more than once**, the logins are grouped by the password they share, so each group is one password to change. Under **In a known breach**, each item says how many times it was seen, and the most seen come first; **Name** sorts them by name instead.',
+      'For duplicate items, the button that merges each set asks **Which one stays?** The others fold into it: their passwords move to its history and their extra fields come along, so nothing is lost.',
+      'Clicking an item offers what fixes it: **Change the password on the site** opens the site\'s own page for that, and shows only for a site that has one: either it is on a list of known pages, or it answers at /.well-known/change-password after first refusing an address no site has. A missing second factor offers **Turn on a second factor on the site**. **Open the item** and **Edit** go to it. **Ignore for this check** takes the item off that list only, for sites with a second factor of their own and the like. **Ignored** lists them again, to put any back.',
       '**Fix the most urgent** opens the first item of the most serious group in the editor.',
       '**Check for breaches** opens Settings, Breaches, and **Compare two passwords** opens a side-by-side comparison.',
     ],
@@ -375,6 +407,7 @@ export const screens = [
       'Open **Trash** in the sidebar to see them.',
       ...TRASH_PARTS,
       'Right-clicking a trashed item offers **Restore** and **Delete for good…**. **Empty** at the top deletes everything in the trash for good.',
+      'Ctrl-click, or Cmd-click on a Mac, to choose several trashed items. The right pane then offers **Restore** or **Delete for good** for all of them at once.',
       'Search finds trashed items when you add the word "trashed".',
     ],
     caveats: TRASH_CAVEATS,
@@ -384,7 +417,7 @@ export const screens = [
       android: {
         what: 'Settings, Trash holds items you deleted, kept for a while so you can change your mind.',
         how: [
-          ...TRASH_PARTS,
+          ...ANDROID_TRASH_PARTS,
           '**Empty the trash** deletes everything in it for good.',
           'Search finds trashed items with the **Trash** chip, or the word "trashed".',
         ],
@@ -398,7 +431,7 @@ export const screens = [
     what: 'Shows the items on the hidden shelf, once you open it with your master password.',
     how: [
       'While the shelf is closed, this screen asks for your master password, even though the vault is open. Type it and choose **Open the shelf**.',
-      'Once open, its items list here and open like any other. **Close it** at the top puts them out of sight again, and so does locking.',
+      'Once open, its items list here and open like any other. **Close it** at the top puts them out of sight again, and so do leaving this screen and locking.',
       'To take an item off the shelf, choose **Remove from hidden shelf** from its menu.',
       'Add **Hidden shelf** to the sidebar under [[page.navigation]] to reach this screen from there.',
     ],
@@ -432,7 +465,7 @@ export const screens = [
     when: 'For copying a password while you work in another program.',
     caveats: [
       'While the vault is locked it says "WM Pass is locked." and offers **Open WM Pass**.',
-      'A copied password is cleared from the clipboard after the time set under [[setting.clipboard_seconds]].',
+      'A copied password is cleared from the clipboard after the time set under [[setting.clipboard_seconds]], or when WM Pass quits before then, if it is still there.',
     ],
     tour: 'tour.palette',
     related: ['setting.global_palette', 'feature.autotype', 'page.desktop', 'concept.search'],
@@ -448,8 +481,8 @@ export const screens = [
     how: [
       'The top shows the site, and says **From the desktop app** when the logins come from the vault open there. The buttons beside it open WM Pass in a tab and lock the extension\'s own vault.',
       'Click a login to fill it into the page and close the popup. Only logins saved for this site can fill.',
-      'With the extension\'s own vault open, **Search logins** finds any login by name, username or site, and each row has buttons to copy its username, password or code.',
-      'With no vault yet, it offers **Open WM Pass**, to make one or connect the desktop app. A locked vault shows the unlock screen here.',
+      'With the extension\'s own vault open, the search box, **Search your vault**, finds any item by name, username or site, and each row has buttons to copy its username, password or code. Enter fills the page, or copies the password, and Ctrl+Enter, or Cmd+Enter on a Mac, copies the username.',
+      'With no vault yet, it offers **Open WM Pass**, to make one or connect the desktop app. A locked vault shows the unlock screen here. When the desktop app is connected but locked, the popup says so: unlock it there, then open the popup again.',
     ],
     when: 'The browser\'s shortcut for the popup starts as Ctrl+Shift+L, or Cmd+Shift+L on a Mac. Filling from the key in a login field does the same without opening it.',
     caveats: 'A fill through the desktop app may ask in the app first, once per site. If you refuse there, the popup says "Not filled."',

@@ -194,7 +194,9 @@ async fn password_grant(state: &State, form: &HashMap<String, String>) -> Result
     if identifier.is_empty() {
         return Err(ApiError::Bad("A device identifier is required."));
     }
-    if let Some(seconds) = state.throttle.wait(&email) {
+    // Counted as a failure from here until it succeeds, so guesses sent in parallel are held to
+    // the same limit as guesses sent one after another.
+    if let Some(seconds) = state.throttle.attempt(&email) {
         return Err(ApiError::TooMany(seconds));
     }
     let user = state.db.user_by_email(&email).await?;
@@ -206,10 +208,7 @@ async fn password_grant(state: &State, form: &HashMap<String, String>) -> Result
     let actual = hash_password(state, login_hash, &salt).await?;
     let user = match user {
         Some(user) if same(&actual, &expected) => user,
-        _ => {
-            state.throttle.failed(&email);
-            return Ok(invalid_grant());
-        }
+        _ => return Ok(invalid_grant()),
     };
     state.throttle.succeeded(&email);
 

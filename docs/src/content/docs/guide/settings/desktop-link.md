@@ -20,9 +20,11 @@ Connects this extension to the WM Pass desktop app on this computer, so it uses 
 
 In the desktop app, open Settings, Browser extension, turn on **Let the extension connect** and choose **Set up browsers**. Then choose [Connect](/guide/settings/desktop-link/#action-link-connect) here.
 
-Everything between the two is encrypted, and the relay program the browser starts in the middle cannot read it.
+Once connected, the unlock screen opens the vault that is open in the desktop app, and offers **Use the vault open in WM Pass** for when it could not. The first time, the desktop app asks whether to let this extension open its vault.
 
-The first fill on each site asks in the desktop app, unless that is turned off there.
+While this extension's own vault is locked, the menu in login fields fills from the vault open in the desktop app. The first fill on each site asks in the desktop app, unless that is turned off there.
+
+Everything between the two is encrypted, and the relay program the browser starts in the middle cannot read it.
 
 See also [Connecting the extension](/guide/how-it-works/#feature-bridge), [Connect](/guide/settings/desktop-link/#action-link-connect), [Offer to save logins](/guide/settings/desktop-link/#action-offer-save).
 
@@ -46,7 +48,7 @@ After that, the extension remembers the app's key and connects without a code.
 
 If it says it could not connect, the line under that says why. Most often the app is closed, **Let the extension connect** is off, or the browser has not been set up: start the app, turn the setting on, choose **Set up browsers**, and restart the browser.
 
-**Disconnect** forgets the app. Connecting again means comparing a code again.
+**Disconnect** asks first, then forgets the app. Connecting again means comparing a code again.
 
 See also [Desktop app](/guide/settings/desktop-link/), [Connecting the extension](/guide/how-it-works/#feature-bridge).
 
@@ -61,5 +63,7 @@ After you sign in somewhere new, or with a changed password, a small bar offers 
 #### How it works
 
 It saves into the extension's own vault, and only while that vault is open. Logins are not offered to the desktop app's vault.
+
+On the bar, **Never here** stops it offering on that site, and **Not now** puts it away.
 
 See also [Desktop app](/guide/settings/desktop-link/), [Filling logins](/guide/how-it-works/#feature-autofill).

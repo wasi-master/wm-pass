@@ -40,7 +40,7 @@ In the app, start a tour from Settings, Guide, from **Show me** on a page of the
 1. Search. Type part of a name, a website, a username or a tag.
 2. Add an item. Choose what kind it is: a login, a one-time code, a note, a card and more.
 3. Your items. Tap one to see it and copy from it. Swipe a row for a quick action, which you can choose under Settings, Appearance, Vault list.
-4. Pages. Your items, one-time codes, the generator and health checks. Which ones show, and in what order, is under Settings, Appearance, Navigation.
+4. Pages. Your items, one-time codes, the generator, health checks and tools. Which ones show, and in what order, is under Settings, Appearance, Navigation.
 5. Lock. Locks the vault now. It also locks by itself after you leave the app, which you can change under Settings, Security.
 6. Settings and this guide. Every setting has a **?** beside it that says what it does, and Settings, Guide has the rest.
 
@@ -56,13 +56,13 @@ In the app, start a tour from Settings, Guide, from **Show me** on a page of the
 
 ## One-time codes
 
-1. Every code in one place. Each item that has a one-time code is listed here. Click a code to copy it; double-click to open its item.
+1. Every code in one place. Each item that has a one-time code is listed here, counting down. Click or tap a code to copy it.
 2. Add a code. Paste or scan the setup key a site shows when you turn on two-step sign-in, or bring your codes over from another app.
 
 ## The password generator
 
 1. A new password. A fresh one each time something changes. Copy it, or save it as a new login.
-2. What kind. Random characters, a few words, something you can say aloud, a PIN, or a pattern of your own.
+2. What kind. Random characters, a few words, something you can say aloud, a PIN, or a pattern of your own. The phone can also make a lock pattern.
 3. Length and characters. Changes apply at once. What the generator starts with is under Settings, Adding and editing, Generator.
 4. Keep it. Starts a new login with this password already filled in.
 
@@ -73,7 +73,7 @@ In the app, start a tour from Settings, Guide, from **Show me** on a page of the
 
 ## Security settings
 
-1. When the vault locks. After a time with nothing happening, when the computer sleeps, and what the clipboard keeps.
+1. When the vault locks. After a time with nothing happening, when the computer sleeps or the phone's screen goes off, and how long a copied secret stays on the clipboard.
 2. Your master password. Change it here. Rekeying also gives the vault a new key, so an old copy of the file cannot follow what you add later.
 3. Ways in. Extra passwords, a key file or a security key. Each one opens the same vault.
 4. If you are made to open it. Passwords that look ordinary at the door but erase, lock or open a decoy instead.

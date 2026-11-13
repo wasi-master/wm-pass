@@ -20,6 +20,10 @@ How the widgets look, which buttons the quick bar has, what its lock button does
 
 Which widget shows what is under [Widgets](/guide/how-it-works/#feature-home-widget). Whether any widget may show codes or favorites is decided under Security, by [Show on widgets](/guide/settings/security/#setting-widget-access).
 
+#### On Android
+
+Which widget shows what is under [Widgets](/guide/how-it-works/#feature-home-widget). Whether any widget may show codes or favorites is [Show on widgets](/guide/settings/security/#setting-widget-access), on this page and under Security.
+
 See also [Widgets](/guide/how-it-works/#feature-home-widget), [Show on widgets](/guide/settings/security/#setting-widget-access).
 
 <a id="setting-widget-colours"></a>
@@ -68,7 +72,7 @@ The buttons on the quick bar widget, in order.
 
 #### How it works
 
-Drag a row by its handle to move it. The bin removes it, and its **Add** row brings it back.
+Drag a row by its handle to move it. The bin removes it, and its own row below, such as **Add Health**, brings it back.
 
 A quick bar too narrow for all of them shows the first ones that fit.
 

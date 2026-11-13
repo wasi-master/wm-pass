@@ -8,7 +8,7 @@
   import { ui } from '../vault/ui.svelte';
   import EntryLines from './EntryLines.svelte';
   import NetGate from './NetGate.svelte';
-  import { whenText } from '../engine/text';
+  import { byName, whenText } from '../engine/text';
   import { breachCheck, breachCounts, breachLast, breachSourceName, online, type BreachLast, type BreachSource } from './net.svelte';
   import { saveServiceKey, serviceKey } from './aliasServices';
 
@@ -30,7 +30,7 @@
     const list = pass.entries.filter((e) => e.id in breachCounts.counts);
     return byCount
       ? list.sort((a, b) => (breachCounts.counts[b.id] ?? 0) - (breachCounts.counts[a.id] ?? 0))
-      : list.sort((a, b) => a.title.toLowerCase().localeCompare(b.title.toLowerCase()));
+      : list.sort((a, b) => byName(a.title, b.title));
   });
   const emails = $derived([...new Set(pass.entries.map((e) => e.subtitle.trim().toLowerCase()).filter((s) => s.includes('@')))]);
   const last = $derived(breachLast());
@@ -41,7 +41,12 @@
   }
 
   async function checkEmail(email: string) {
+    if (source === 'hibp' && !hibpKept && !apiKey.trim()) {
+      results[email] = 'Enter your Have I Been Pwned API key above first.';
+      return;
+    }
     busy = email;
+    let secret: Uint8Array | null = null;
     try {
       if (source === 'comb') {
         const reply = await pass.net<{ matched: unknown[]; lines: number }>('breach.comb', online(), { email });
@@ -49,9 +54,8 @@
         results[email] =
           matched > 0 ? `${matched} of your passwords for it are in this leak. Change them.` : reply.json.lines > 0 ? 'The address is listed, with passwords you no longer use.' : 'Not listed.';
       } else {
-        const secret = source !== 'hibp' ? null : hibpKept ? await serviceKey(HIBP_KEY) : bytesOf(apiKey.trim());
+        secret = source !== 'hibp' ? null : hibpKept ? await serviceKey(HIBP_KEY) : bytesOf(apiKey.trim());
         const rows = await pass.engine<{ name: string }[]>('breach.account', { source, email }, { secret, online: online() });
-        secret?.fill(0);
         if (source === 'hibp' && !hibpKept && apiKey.trim()) {
           await saveServiceKey(HIBP_KEY, apiKey.trim());
           apiKey = '';
@@ -59,9 +63,12 @@
         results[email] = rows.json.length === 0 ? 'Not listed.' : `In ${rows.json.length}: ${rows.json.slice(0, 5).map((r) => r.name).join(', ')}`;
       }
     } catch (failure: any) {
-      results[email] = failure.message;
+      results[email] = failure?.message ?? 'The check did not finish.';
+    } finally {
+      // The key is wiped whether or not the service answered.
+      secret?.fill(0);
+      busy = null;
     }
-    busy = null;
   }
 
   const WHAT_EMAIL = $derived(
@@ -79,24 +86,24 @@
       <p class:dim={found.length === 0 || running} class:danger-text={found.length > 0 && !running}>
         {#if checkable.length === 0}No item in this vault holds a password yet, so there is nothing to check.
         {:else if running}Checked {breachCheck.done} of {breachCheck.total} with {breachSourceName(breachCheck.source)}. You can leave this page; the check carries on.
-        {:else if found.length > 0}{found.length} of them have appeared in leaks. They now lead the list on the Health page.
+        {:else if found.length > 0}{found.length === 1 ? 'One of them has appeared in a leak. It now leads' : `${found.length} of them have appeared in leaks. They now lead`} the list on the Health page.
         {:else}See whether any password in this vault has appeared in a known leak.{/if}
       </p>
       {#if last && !running}<p class="dimmer small">{lastText(last)}</p>{/if}
       {#if running}<div class="progress"><i style="width:{breachCheck.total === 0 ? 0 : (breachCheck.done * 100) / breachCheck.total}%"></i></div>{/if}
       {#if checkable.length > 0 && !running}
-        <Segmented value={passwordSource} options={[['hibp', 'Have I Been Pwned'], ['xon', 'XposedOrNot']]} onchange={(v) => (passwordSource = v)} />
+        <Segmented label="Check with" value={passwordSource} options={[['hibp', 'Have I Been Pwned'], ['xon', 'XposedOrNot']]} onchange={(v) => (passwordSource = v)} />
         <div><Btn label={last ? 'Check again' : 'Check every password'} icon="gpp_good" variant="primary" onclick={() => void breachCheck.start(checkable.map((e) => e.id), passwordSource)} /></div>
       {/if}
       {#if running}<div><Btn label="Stop" icon="close" onclick={() => breachCheck.stop()} /></div>{/if}
-      {#if breachCheck.problem}<p class="danger-text">{breachCheck.problem}</p>{/if}
+      {#if breachCheck.problem}<p class="danger-text" role="alert">{breachCheck.problem}</p>{/if}
     </div>
   </Group>
   {#if breached.length > 0}
     <div class="stack" style="margin-bottom:18px;gap:8px">
-      <div><Segmented value={byCount ? 'count' : 'name'} options={[['count', 'Most seen'], ['name', 'Name']]} onchange={(v) => (byCount = v === 'count')} /></div>
+      <div><Segmented label="Sort by" value={byCount ? 'count' : 'name'} options={[['count', 'Most seen'], ['name', 'Name']]} onchange={(v) => (byCount = v === 'count')} /></div>
       <EntryLines items={breached} onpick={(e) => { ui.go('all'); ui.open(e.id); }}>
-        {#snippet note(e)}<span class="small danger-text" style="display:block">Seen {breachCounts.counts[e.id].toLocaleString()} times</span>{/snippet}
+        {#snippet note(e)}<span class="small danger-text" style="display:block">{breachCounts.counts[e.id] === 1 ? 'Seen once' : `Seen ${breachCounts.counts[e.id].toLocaleString()} times`}</span>{/snippet}
       </EntryLines>
     </div>
   {/if}
@@ -104,7 +111,7 @@
     <Group title="Your email addresses" help="group.breaches.emails">
       <div class="set-body stack">
         <p class="dim">{WHAT_EMAIL}</p>
-        <Segmented value={source} options={[['leakcheck', 'LeakCheck'], ['hibp', 'Have I Been Pwned'], ['comb', 'Passwords in COMB']]} onchange={(v) => (source = v)} />
+        <Segmented label="Check with" value={source} options={[['leakcheck', 'LeakCheck'], ['hibp', 'Have I Been Pwned'], ['comb', 'Passwords in COMB']]} onchange={(v) => { source = v; results = {}; }} />
         {#if source === 'hibp'}
           {#if hibpKept}
             <p class="dim">Using the key kept in the vault as “{HIBP_KEY}”.</p>

@@ -86,8 +86,9 @@ object HardwareKeys {
         return manager to device
     }
 
-    private suspend fun permission(context: Context, manager: UsbManager, device: UsbDevice): Boolean {
+    private suspend fun permission(context: Context, manager: UsbManager, device: UsbDevice, ask: Boolean): Boolean {
         if (manager.hasPermission(device)) return true
+        if (!ask) return false
         return suspendCancellableCoroutine { waiter ->
             val receiver = object : BroadcastReceiver() {
                 override fun onReceive(c: Context, intent: Intent) {
@@ -103,9 +104,9 @@ object HardwareKeys {
     }
 
     /** A key plugged in now, for [fido] (raw HID) or for a YubiKey's OTP interface. */
-    suspend fun usb(context: Context, fido: Boolean): FoundKey? {
+    suspend fun usb(context: Context, fido: Boolean, ask: Boolean = true): FoundKey? {
         val (manager, device) = usbDevice(context) ?: return null
-        if (!permission(context, manager, device)) return null
+        if (!permission(context, manager, device, ask)) return null
         val connection = manager.openDevice(device) ?: return null
         val interfaces: List<UsbInterface> = (0 until device.interfaceCount).map(device::getInterface).filter { it.interfaceClass == HID_CLASS }
         if (fido) {
@@ -115,10 +116,15 @@ object HardwareKeys {
                 connection.close()
                 return null
             }
-            connection.claimInterface(chosen, true)
             val endpoints = (0 until chosen.endpointCount).map(chosen::getEndpoint)
-            val input = endpoints.first { it.direction == UsbConstants.USB_DIR_IN }
-            val output = endpoints.first { it.direction == UsbConstants.USB_DIR_OUT }
+            val input = endpoints.firstOrNull { it.direction == UsbConstants.USB_DIR_IN }
+            val output = endpoints.firstOrNull { it.direction == UsbConstants.USB_DIR_OUT }
+            // Not a key's interface after all, or one another app holds: let go of the device
+            // rather than keep it open with nothing to say to it.
+            if (input == null || output == null || !connection.claimInterface(chosen, true)) {
+                connection.close()
+                return null
+            }
             return FoundKey(FidoUsb(connection, input, output), false) {
                 connection.releaseInterface(chosen)
                 connection.close()
@@ -129,7 +135,10 @@ object HardwareKeys {
             connection.close()
             return null
         }
-        connection.claimInterface(chosen, true)
+        if (!connection.claimInterface(chosen, true)) {
+            connection.close()
+            return null
+        }
         return FoundKey(OtpUsb(connection, chosen.id), false) {
             connection.releaseInterface(chosen)
             connection.close()
@@ -146,9 +155,15 @@ object HardwareKeys {
                 { tag: Tag ->
                     val iso = IsoDep.get(tag)
                     if (iso != null && waiter.isActive) {
-                        runCatching {
+                        val connected = runCatching {
                             iso.connect()
                             iso.timeout = 30_000
+                        }.isSuccess
+                        // Gone again before it could be spoken to, as a key brushed past the phone:
+                        // keep waiting for a proper tap rather than fail on this one.
+                        if (!connected) {
+                            runCatching { iso.close() }
+                            return@enableReaderMode
                         }
                         waiter.resume(
                             FoundKey(NfcKey(iso), true) {
@@ -170,8 +185,15 @@ object HardwareKeys {
         val overNfc = async { nfc(activity) ?: awaitCancellation() }
         val overUsb = async {
             var found: FoundKey? = null
+            // A key whose permission was refused is asked about once, not every time round.
+            val refused = mutableSetOf<String>()
             while (found == null) {
-                if (usbAttached(activity)) found = usb(activity, fido)
+                val plugged = usbDevice(activity)
+                if (plugged != null) {
+                    val name = plugged.second.deviceName
+                    found = usb(activity, fido, ask = name !in refused)
+                    if (found == null && !plugged.first.hasPermission(plugged.second)) refused += name
+                }
                 if (found == null) delay(600)
             }
             found

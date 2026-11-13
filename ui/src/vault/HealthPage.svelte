@@ -12,8 +12,10 @@
   import { prefs } from '../engine/prefs.svelte';
   import type { IconName } from '../engine/icons.svelte';
   import type { Summary } from '../engine/types';
+  import { overlays } from '../parts/floating.svelte';
   import { ui } from './ui.svelte';
   import { breachCounts } from '../settings/net.svelte';
+  import { byName } from '../engine/text';
   import { CHECK_NAMES, healthMemory, healthNow, ignoreHealth, ignoredChecks } from './health.svelte';
 
   interface Issue {
@@ -72,6 +74,15 @@
         { key: 'old', title: CHECK_NAMES.old, why: 'Worth changing if the site holds anything you care about.', lead: 'you have not changed in a year', icon: 'history', ids: h.old, serious: false },
         { key: 'twofactor', title: CHECK_NAMES.twofactor, why: 'These sites offer one-time codes and you have none saved.', lead: 'with no second factor', icon: 'pin', ids: h.missing_two_factor, serious: false },
         { key: 'duplicates', title: CHECK_NAMES.duplicates, why: 'The same login saved more than once. Merging keeps both histories.', lead: 'saved twice', icon: 'layers', ids: h.duplicates.flat(), serious: false },
+        {
+          key: 'similar',
+          title: CHECK_NAMES.similar,
+          why: 'These share a password and look like one account saved twice: another spelling of the name, an email in place of a username or phone number, or another address for the same site. Open them to compare, and keep the one you want.',
+          lead: 'that look like one account saved twice',
+          icon: 'layers',
+          ids: (h.similar ?? []).flat(),
+          serious: false,
+        },
       ] as Issue[]
     ).filter((issue) => issue.ids.length > 0 && !hidden.includes(issue.key));
   });
@@ -91,15 +102,18 @@
 
   const scoreColour = $derived((health?.score ?? 0) >= 80 ? 'var(--primary)' : (health?.score ?? 0) >= 50 ? 'var(--warn)' : 'var(--danger)');
 
+  // Looked up by id in one step: a vault with thousands of weak passwords asks once per row, and
+  // sorting by name asks twice per comparison.
+  const byId = $derived(new Map(pass.entries.map((e) => [e.id, e])));
   function entry(id: string) {
-    return pass.entries.find((e) => e.id === id);
+    return byId.get(id);
   }
 
   function breachedOrder(ids: string[]) {
     const list = [...new Set(ids)];
     return byCount
       ? list.sort((a, b) => (counts[b] ?? 0) - (counts[a] ?? 0))
-      : list.sort((a, b) => (entry(a)?.title ?? '').toLowerCase().localeCompare((entry(b)?.title ?? '').toLowerCase()));
+      : list.sort((a, b) => byName(entry(a)?.title ?? '', entry(b)?.title ?? ''));
   }
 
   function seenText(seen: number) {
@@ -107,7 +121,10 @@
   }
 
   function fixMostUrgent() {
-    const first = entry(issues[0].ids[0]);
+    // The one at the top of the list, so breached ones in the order the list is sorted.
+    const issue = issues[0];
+    const ids = issue.key === 'breached' ? breachedOrder(issue.ids) : issue.ids;
+    const first = ids.map(entry).find((e) => e !== undefined);
     if (first) editItem(first);
   }
 
@@ -125,7 +142,7 @@
     const now = acting;
     if (!now) return;
     acting = null;
-    if (what === 'change' && change) void host().openUrl(change);
+    if (what === 'change' && change) void host().openUrl(change).catch((failure: Error) => overlays.toast(failure?.message || 'That address could not be opened.'));
     else if (what === 'open') ui.open(now.entry.id);
     else if (what === 'edit') editItem(now.entry);
     else if (what === 'ignore') ignoreHealth(now.issue.key, now.entry.id, true);
@@ -134,8 +151,14 @@
   async function merge(keep: string) {
     const group = merging ?? [];
     merging = null;
-    for (const other of group.filter((id) => id !== keep)) {
-      await pass.change('health.merge_duplicates', { keep, remove: other });
+    try {
+      await pass.batch(async () => {
+        for (const other of group.filter((id) => id !== keep)) {
+          await pass.change('health.merge_duplicates', { keep, remove: other });
+        }
+      });
+    } catch (failure: any) {
+      overlays.toast(failure?.message ?? 'They could not be merged.');
     }
   }
 </script>
@@ -147,7 +170,7 @@
     <button type="button" class="row" style={indent ? 'padding-left:22px' : ''} onclick={() => (acting = { issue, entry: e })}>
       <Tile title={e.title} site={e.site} kind={e.kind} label={e.color} icon={e.icon} size={28} />
       <span class="grow">
-        <span class="title ell" style="display:block">{e.title}</span>
+        <span class="title ell" style="display:block">{e.title || 'Untitled'}</span>
         {#if issue.key === 'breached' && seen}<span class="sub ell danger-text" style="display:block">{seenText(seen)}</span>
         {:else if e.subtitle}<span class="sub ell" style="display:block">{e.subtitle}</span>{/if}
       </span>
@@ -168,7 +191,7 @@
         <span class="tnum" style="font-size:34px;font-weight:500;line-height:1.1">{health?.score ?? '-'}</span>
         <span class="dim">out of 100</span>
       </div>
-      <div class="progress"><i style="width:{health?.score ?? 0}%;background:{scoreColour}"></i></div>
+      <div class="progress" aria-hidden="true"><i style="width:{health?.score ?? 0}%;background:{scoreColour}"></i></div>
     {/if}
     <p class="dim" style="padding:8px 0 4px">{line}</p>
     {#if issues.length > 0}
@@ -185,15 +208,21 @@
             <p class="dim small" style="padding:8px 0 2px;font-weight:500">{set.length} items share one password</p>
             {#each set as id}{@render item(issue, id, true)}{/each}
           {/each}
+        {:else if issue.key === 'similar'}
+          <!-- Each group together, so the ones that look alike are side by side. -->
+          {#each health?.similar ?? [] as group}
+            <p class="dim small" style="padding:8px 0 2px;font-weight:500">{group.length === 2 ? 'These two' : `These ${group.length}`} may be one account</p>
+            {#each group as id}{@render item(issue, id, true)}{/each}
+          {/each}
         {:else if issue.key === 'breached'}
-          <div style="padding:4px 0"><Segmented value={byCount ? 'count' : 'name'} options={[['count', 'Most seen'], ['name', 'Name']]} onchange={(v) => (byCount = v === 'count')} /></div>
+          <div style="padding:4px 0"><Segmented label="Sort by" value={byCount ? 'count' : 'name'} options={[['count', 'Most seen'], ['name', 'Name']]} onchange={(v) => (byCount = v === 'count')} /></div>
           {#each breachedOrder(issue.ids) as id}{@render item(issue, id)}{/each}
         {:else}
           {#each ids as id}{@render item(issue, id)}{/each}
         {/if}
         {#if issue.key === 'duplicates'}
           {#each health?.duplicates ?? [] as group}
-            <div style="padding-top:6px"><Btn label="Merge {group.length} copies of {entry(group[0])?.title ?? 'this item'}" icon="layers" onclick={() => (merging = group)} /></div>
+            <div style="padding-top:6px"><Btn label="Merge {group.length} copies of {entry(group[0])?.title || 'this item'}" icon="layers" onclick={() => (merging = group)} /></div>
           {/each}
         {/if}
       </Fold>
@@ -230,7 +259,7 @@
         </button>
         <button type="button" class="set-row" onclick={() => act('ignore')}>
           <Icon name="visibility_off" />
-          <span class="text">Ignore for this check<span class="sub" style="display:block">It stops counting against your score. Health lists what you ignored</span></span>
+          <span class="text">Ignore for this check<span class="sub" style="display:block">It stops counting against your score. Health lists what you ignored.</span></span>
         </button>
       </div>
     </div>
@@ -244,16 +273,18 @@
       <p class="dim">Click one to count it again.</p>
       <div style="border:1px solid var(--hair);border-radius:var(--r-m);overflow:hidden">
         {#each ignored as { check, id } (`${check}:${id}`)}
+          {@const e = entry(id)}
           <button
             type="button"
             class="set-row"
             onclick={() => {
               ignoreHealth(check, id, false);
-              if (ignored.length <= 1) reviewing = false;
+              // Read after the change: the list has already lost this one.
+              if (ignored.length === 0) reviewing = false;
             }}
           >
             <Icon name="visibility" />
-            <span class="text">{entry(id)?.title ?? 'A deleted item'}<span class="sub" style="display:block">{CHECK_NAMES[check] ?? check}</span></span>
+            <span class="text">{e ? e.title || 'Untitled' : 'A deleted item'}<span class="sub" style="display:block">{CHECK_NAMES[check] ?? check}</span></span>
           </button>
         {/each}
       </div>
@@ -271,7 +302,7 @@
           {@const e = entry(id)}
           {#if e}
             <button type="button" class="set-row" onclick={() => merge(id)}>
-              <span class="text">{e.title}{#if e.subtitle}<span class="sub" style="display:block">{e.subtitle}</span>{/if}</span>
+              <span class="text">{e.title || 'Untitled'}{#if e.subtitle}<span class="sub" style="display:block">{e.subtitle}</span>{/if}</span>
             </button>
           {/if}
         {/each}

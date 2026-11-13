@@ -8,12 +8,14 @@ import { setHost, type Host } from './engine/host';
 import { pass } from './engine/pass.svelte';
 import { prefs } from './engine/prefs.svelte';
 import { settingsSync } from './engine/settingsSync.svelte';
+import { learnKeyboardLayout } from './engine/text';
 import { accounts } from './settings/accounts.svelte';
 import { places } from './settings/places.svelte';
 
 export async function boot(host: Host) {
   setHost(host);
-  await prefs.load();
+  // Before the first shortcut is drawn, so its keys read as this keyboard prints them.
+  await Promise.all([prefs.load(), learnKeyboardLayout()]);
   settingsSync.start();
   await pass.init();
   await Promise.all([accounts.load(), places.load()]);

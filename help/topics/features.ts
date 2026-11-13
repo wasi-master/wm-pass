@@ -6,9 +6,10 @@ import type { Topic } from '../schema.ts';
 
 const SEARCH_WORDS = [
   'Type part of a name. Words of four letters or more also match with a letter or two missing, so "gthub" still finds GitHub.',
-  'Search looks at names, websites, tags, usernames, the holder and issuer of cards, names and emails on identities, database hosts and users, Wi-Fi names, products, providers, and the names of fields you added. It never looks inside a password or another secret.',
+  'Search looks at names, websites, tags, usernames, the holder and issuer of cards, names and emails on identities, database names, hosts and users, Wi-Fi names, products, providers, the issuer and account of a code, a document\'s type, SSH key fingerprints, and the names of fields you added. It never looks inside a password or another secret.',
   'These words narrow a search, and can be combined:',
   '- "tag:work", "kind:card", "site:github" and "folder:bank" keep to one tag, kind, website or folder. "kind:" takes login, otp, note, card, identity, recovery, wifi, ssh, api, database, license or document.',
+  '- "site:" also takes an address pasted from the browser, and leaves out a leading "www.". An address pasted on its own, such as https://www.github.com/login, finds the logins for that site.',
   '- "has:otp", "has:passkey", "has:attachment", "has:alias", "has:notes", "has:link", "has:history" and "has:reminder" keep the items that have one.',
   '- "weak", "reused", "breached", "old" and "duplicate" keep the items the health check flags, and "pinned" and "favorite" keep those.',
   '- "modified<30d" keeps items changed in the last 30 days, and "modified>1y" those not changed for a year. "created<" and "created>" work the same way. Use d, w, m or y.',
@@ -21,14 +22,16 @@ const LOCK_SAVES = 'Before it locks, WM Pass saves any change still waiting and 
 
 const NETWORK_SENDS = [
   'What each feature sends:',
-  '- Breach checks: the first five characters of each password\'s SHA-1 hash to Have I Been Pwned, and an email address to the service you pick.',
+  '- Breach checks: the first five characters of each password\'s SHA-1 hash to Have I Been Pwned, or ten of its Keccak-512 hash to XposedOrNot, and an email address to the service you pick.',
+  '- Website icons, if you add them under Settings, Icons: each site\'s name, to that site or to DuckDuckGo.',
   '- Email aliases: your API key and the note you write, to the forwarding service.',
   '- Disposable inbox: a request for a throwaway address, to a public mail service.',
   '- Username checker: the name, to each site it asks.',
   '- Backups and sync: the encrypted vault file, to the place you chose.',
   '- Accounts: sign-in and sync with Bitwarden, Vaultwarden or your own server. Your password itself is never sent.',
-  '- Sync on your own network: encrypted traffic to your paired devices, with nothing in between.',
 ];
+
+const NETWORK_LAN = '- Sync on your own network: encrypted traffic to your paired devices, with nothing in between.';
 
 const PLACE_GROUPS = [
   '- Accounts. With Google Drive, Dropbox, OneDrive and Box you sign in on the service\'s own page in your browser, and WM Pass never sees that password. With pCloud, MEGA, iCloud Drive and Proton Drive you sign in inside WM Pass.',
@@ -47,7 +50,10 @@ const PLACE_CAVEATS = [
 
 const SYNC_MERGE = [
   'Merging goes field by field, and the newest value of each field wins. If two devices changed the same password, the value that loses goes into that item\'s history, so a conflict never destroys a password.',
-  'File sync runs about 20 seconds after you change something, so a burst of edits makes one trip, and whenever you choose **Sync now**. Attachments are carried across once each, already encrypted.',
+  'An item put back from the trash on one device stays, whole, even if another device emptied its trash before it heard of that, or its trash emptied itself. Emptying the trash deletes items only as that device last saw them.',
+  'Which edit is newest comes from each device\'s clock. A device whose clock runs more than a day ahead does not drag the others\' clocks along, and an edit you make after its change arrives still wins over it. When a device\'s clock looks wrong by an hour or more, the vault says so, naming the other device when it can. Fix the time in that device\'s system settings.',
+  'If the master password is changed on two devices before they sync, both new passwords open the vault afterwards, each with any key file or security key it needed, and WM Pass says so when you unlock. Remove the one you don\'t want under Settings, Security, [[group.security.methods|Unlock methods]]. When the vault has no free slot for both, only the later change stays, and you are told.',
+  'File sync runs about 20 seconds after you change something, so a burst of edits makes one trip. It also runs on its own to bring in what other devices changed: just after you unlock, when you come back to WM Pass after a minute or more, and every five minutes while the vault is open. **Sync now** runs one at once. Attachments are carried across once each, already encrypted.',
 ];
 
 const ACCOUNT_KDBX = 'A KeePass file stays where it is, and WM Pass writes back to it on each save, keeping one earlier copy beside its own files. Syncthing or a cloud app can carry the file. If the database uses a key file, choose **Add key file** at the door; one locked by its key file alone needs no password. If KeePassXC also locks it with a YubiKey (its YubiKey challenge-response option), choose **Use security key** and the key\'s slot, which is slot 2 unless you set it up otherwise, then plug the key in or hold it to the phone. The key is asked once, when the database opens. Saves keep the challenge it answered, so they need no second touch and KeePassXC still opens the file with the same key. Field references such as a password shared from another entry are followed, and deleting an item moves it to the database\'s recycle bin, as KeePass does. A file in the older KDBX 3 format is rewritten as KDBX 4 on its first save, which KeePass 2.35 or later, KeePassXC 2.3 or later, KeePassDX and Strongbox open. A KeePass 1 file (.kdb) can be imported but not opened in place.';
@@ -75,13 +81,14 @@ const VAULTS_CAVEATS = [
 
 const CODES_HOW = [
   'A code can live in a login, under **One-time code** in the editor, or on its own as a **Code** item. Give it the setup key a site shows, or the otpauth link behind its QR code.',
-  'Time-based codes change on a fixed period, usually 30 seconds, and the ring beside each one shows how long it has left. In its last ten seconds the next code shows too, so a late copy still works.',
+  'Time-based codes change on a fixed period, usually 30 seconds, and the ring beside each one shows how long it has left. With [[setting.code_next]] on, the next code shows too in the last ten seconds, so a late copy still works.',
   'Counter-based codes are not shown until you ask, since showing one uses it up. Steam Guard codes work as well.',
 ];
 
 const AUTOFILL_ANDROID_CAVEATS = [
   'Items in the trash or on the hidden shelf are never offered.',
   'A password typed by WM Keyboard passes through the keyboard\'s process, as anything you type does. The autofill service keeps it out of there.',
+  'A master password typed into the keyboard\'s own box goes through the keyboard too, as it does at the door, and meets the same wrong-try waits and duress passwords. A vault that also needs a key file or a security key opens only at the door.',
 ];
 
 const BRIDGE_TALK = [
@@ -97,6 +104,20 @@ const BRIDGE_CAVEATS = [
   'With the app\'s vault open in the tab, attachments, backups, exports, the master password and security settings stay in the app. Do those there.',
   'Allowing the vault tab lets the extension read every entry while the app is unlocked. Forget the extension under **Connected extensions** to take that back.',
 ];
+
+const HEALTH_CHECKS = [
+  'All of it is worked out on your device, over every item not in the trash:',
+  '- *In a known breach* lists passwords a [[feature.breaches|breach check]] found in published leaks.',
+  '- *Used more than once* lists shared passwords, since one leak opens every site that uses it.',
+  '- *Easy to guess* lists passwords an attacker with a password list would find quickly. A password built from the site\'s name or your username scores lower.',
+  '- *Unencrypted sites* lists logins saved with a plain http address.',
+  '- *Expiring soon* lists items whose reminder or expiry date is close.',
+  '- *Not changed in a year* lists passwords older than that, or older than the item\'s own reminder allows.',
+  '- *No second factor* lists sites known to offer one-time codes where you have no code or passkey saved. The list of sites comes with the app.',
+  '- *Duplicate items* finds the same site, username and password saved more than once. Merging them keeps both histories.',
+];
+
+const HEALTH_SCORE = 'The score is the share of logins with a password that are none of weak, reused, leaked or old.';
 
 export const features = [
   // ---- the vault ----
@@ -128,7 +149,7 @@ export const features = [
       extension: {
         caveats: [
           'Anyone with a copy of the file and any of its ways in can read the whole vault. [[action.rekey|Rekeying]] protects what you write afterwards, not copies made before.',
-          'The extension\'s own vault cannot use a security key. Connect to the desktop app to use one.',
+          'The extension\'s own vault can use a security key through the browser, where the browser supports it. A YubiKey\'s challenge-response slot, and a key added before browsers could reach it, need the desktop app connected.',
           'A vault saved by a newer version of WM Pass may open read-only in an older one, so that saving cannot drop fields the older version does not know.',
           'The format is published on the WM Pass website. No outside audit of the core has been done yet.',
         ],
@@ -192,7 +213,7 @@ export const features = [
       ...SEARCH_WORDS,
       'Results are in the list\'s order: by name, or newest first when the list is sorted by last changed. Pinned items come first. Arrow keys move through them, Enter opens the chosen one, and Escape clears the search.',
     ],
-    when: 'Press {{key:search}} from anywhere in the window to jump to the box. If nothing matches, **Add it as a login** starts a new login with that name.',
+    when: 'Press {{key:search}} from anywhere in the window to jump to the box. If nothing matches, **Add it as a login** starts a new login with that name. While you look at one kind of item, the button adds that kind instead.',
     caveats: [
       'The word "breached" finds only what a breach check found since the vault was last unlocked. See [[feature.breaches]].',
       'Search leaves passwords and other secrets alone on purpose: a search box must not become a way to test what a password is.',
@@ -229,11 +250,12 @@ export const features = [
     caveats: [
       'Locking does not protect a vault from a program that was already running on the computer while it was open.',
       'Locking does not empty the clipboard. A secret copied before the lock keeps its own timer. See [[feature.clipboard]].',
+      'If WM Pass hits an internal error, it locks the vault by itself rather than close, and says so over the screen. Anything you were typing stays there for you to copy before you unlock again. Saved items are not affected, since a save replaces the file in one step.',
     ],
     figure: 'fig.lock',
     related: ['setting.lock_after', 'setting.lock_on_sleep', 'setting.lock_on_hide', 'action.keyring_unlock', 'action.panic_now', 'page.security'],
     docs: '/security/threat-model/',
-    words: 'lock auto-lock timeout sleep idle',
+    words: 'lock auto-lock timeout sleep idle internal error crash',
     on: {
       extension: {
         how: [
@@ -264,7 +286,7 @@ export const features = [
       'The message that says something was copied shows how long it stays, with a **Clear now** button.',
       'When the time set under [[setting.clipboard_seconds]] is up, WM Pass empties the clipboard only if your secret is still on it. Anything you copied since is left alone.',
       'Usernames, websites and other plain fields are copied as they are, and not cleared.',
-      'On Android, a password just made with the generator, its widget or **Set a new password** is not cleared. It is saved nowhere yet and is usually on its way into a sign-up or change-password form, so clearing it there would lose it. It is still marked sensitive, and goes when you copy something else.',
+      'Quitting WM Pass clears a secret whose time is not up yet, if it is still on the clipboard.',
     ],
     when: 'Where you can, fill instead of copying: the browser extension and auto-type do not use the clipboard.',
     caveats: [
@@ -292,6 +314,7 @@ export const features = [
           'When the time set under [[setting.clipboard_seconds]] is up, WM Pass empties the clipboard, unless you have copied something else since.',
           'If WM Keyboard is your keyboard, its clipboard history keeps the copy only until then: when WM Pass empties the clipboard, the keyboard drops it from its history too.',
           'Usernames, websites and other plain fields are copied as they are, and not cleared.',
+          'A password just made with the generator, its widget or **Set a new password** is not cleared. It is saved nowhere yet and is usually on its way into a sign-up or change-password form, so clearing it there would lose it. It is still marked sensitive, and goes when you copy something else.',
         ],
         when: 'Where you can, fill instead of copying: the autofill service does not use the clipboard.',
       },
@@ -323,7 +346,7 @@ export const features = [
     on: {
       android: {
         how: [
-          'Open an item and, under **More** at the bottom, choose **Move to hidden shelf**.',
+          'Open an item, tap **More options** at the bottom, and choose **Move to hidden shelf**. Several selected items go at once with **Put on the hidden shelf**.',
           'To see them, open Settings, Hidden shelf, and type your master password. It is asked even though the vault is already open.',
           'While the shelf is open, its items open and edit as usual. Tap **Close the shelf**, or lock the vault, and they go out of sight again.',
           'Open or closed, shelf items are never offered for autofill and never shown on the Codes tab.',
@@ -364,7 +387,7 @@ export const features = [
           '- A [[action.lockout_password]] refuses every password for an hour, the right one included. Nothing is lost.',
           '- A [[action.decoy_vault]] is a separate vault with its own password. Fill it with a few believable logins, so it holds up to a look.',
           '- A panic app such as Ripple can tell WM Pass to lock, or to wipe, as set under [[setting.panic_action]].',
-          'Two more things help: the [[feature.shelf|hidden shelf]] keeps chosen items out of sight, and **Self-destruct**, under **More** on an item, removes it at a time you choose.',
+          'Two more things help: the [[feature.shelf|hidden shelf]] keeps chosen items out of sight, and **Self-destruct**, under **More options** on an item, removes it at a time you choose.',
         ],
         related: ['action.wipe_password', 'action.lockout_password', 'action.decoy_vault', 'setting.panic_action', 'feature.shelf', 'page.security'],
       },
@@ -403,10 +426,11 @@ export const features = [
     how: [
       'One switch, [[setting.network_allowed]], stands in front of every feature that reaches the internet. While it is off, a page that needs it says what it would send and offers to turn it on.',
       'Setting up a backup place on a server, or adding a Bitwarden or server account, turns it on, since that is your yes to reaching it.',
-      'With it on, network features run when you use them. In the background, only what you set up runs: scheduled backups, file sync after a change, and the update check when the app starts, if you turned it on.',
+      'With it on, network features run when you use them. In the background, only what you set up runs: scheduled backups, file sync while the vault is open, and the update check when the app starts, if you turned it on.',
       'Web requests go over https. Plain http is refused, except to this device and to Tailscale addresses, where nothing readable crosses a network. SFTP, FTP, SMB, NFS and IMAP connections encrypt or not as the server and the place\'s settings decide.',
-      'Site icons come with the app, so showing them never tells anyone which sites are in your vault.',
+      'Brand marks for well-known sites come with the app, so showing them tells nobody which sites are in your vault. Website icons are fetched only if you add them under [[page.icons]].',
       ...NETWORK_SENDS,
+      NETWORK_LAN,
       '- Updates: a request to GitHub for the latest release.',
     ],
     when: 'Leave it off if you use WM Pass on one device and keep backups in a folder. Turn it on when you want one of the features above.',
@@ -419,13 +443,14 @@ export const features = [
       extension: {
         how: [
           'One switch, [[setting.network_allowed]], stands in front of everything that reaches the internet. While it is off, a page that needs it says what it would send and offers to turn it on.',
-          'Setting up a backup place on a server turns it on, since that is your yes to reaching it.',
+          'Setting up a backup place on a server, or adding a Bitwarden or server account, turns it on, since that is your yes to reaching it.',
           'Web requests go over https. Plain http is refused, except to this device and to Tailscale addresses, where nothing readable crosses a network.',
-          'Site icons come with the extension, so showing them never tells anyone which sites are in your vault.',
+          'Brand marks for well-known sites come with the extension, so showing them tells nobody which sites are in your vault. Website icons are fetched only if you add them under [[page.icons]].',
+          ...NETWORK_SENDS,
         ],
         caveats: [
           'The extension makes these calls from its background, where its permission to reach any site lets it talk to services a web page cannot. The vault page only sees the answers.',
-          'The extension\'s backups and sync go to places on servers, so they need this on.',
+          'Backups and sync to a place on a server need this on. A folder on this computer, in browsers that let the extension reach one, does not.',
         ],
       },
       android: {
@@ -434,8 +459,9 @@ export const features = [
           'Setting up a backup place on a server, or adding a Bitwarden or server account, turns it on, since that is your yes to reaching it.',
           'With it on, network features run when you use them. In the background, only what you set up runs, such as scheduled backups.',
           'Web requests go over https. Plain http is refused, except to this device and to Tailscale addresses, where nothing readable crosses a network. SFTP, FTP, SMB, NFS and IMAP connections encrypt or not as the server and the place\'s settings decide.',
-          'Site icons come with the app, so showing them never tells anyone which sites are in your vault.',
+          'Brand marks for well-known sites come with the app, so showing them tells nobody which sites are in your vault. Website icons are fetched only if you add them under [[page.icons]].',
           ...NETWORK_SENDS,
+          NETWORK_LAN,
         ],
         caveats: [
           'Backups to a folder and opening a KeePass file need no network, so they work with this off.',
@@ -456,7 +482,7 @@ export const features = [
       'Passwords it finds lead the list on the [[screen.health]], with how many times each was seen.',
       'Under **Your email addresses**, each address used in your items can be checked with one of three services:',
       '- **LeakCheck** names the services an address appeared in. The address goes to LeakCheck.',
-      '- **Have I Been Pwned** needs an API key of your own. The address and the key go to Have I Been Pwned.',
+      '- **Have I Been Pwned** needs an API key of your own. The address and the key go to Have I Been Pwned. After the first check the key is kept in the vault as an API key item, so your other devices have it too.',
       '- **Passwords in COMB** asks Proxynova about the address, then compares the passwords it lists with your own, on your device. Only yes or no comes out: the leaked text is never shown or kept.',
     ],
     when: 'After you import a vault, and again from time to time.',
@@ -467,15 +493,7 @@ export const features = [
     ],
     figure: 'fig.breach',
     related: ['page.breaches', 'screen.health', 'feature.health', 'setting.network_allowed'],
-    words: 'breach leak pwned hibp have i been pwned leakcheck comb',
-    on: {
-      extension: {
-        caveats: [
-          'Results are kept in memory only, so they are gone once the vault locks.',
-          'A check finds only leaks the service knows about. A password it does not find can still be weak or reused.',
-        ],
-      },
-    },
+    words: 'breach leak pwned hibp have i been pwned leakcheck comb xposedornot',
   },
 
   // ---- copies and other devices ----
@@ -506,6 +524,7 @@ export const features = [
       extension: {
         how: [
           'Add one under Settings, Backups or Settings, Sync and accounts, with **Add a place**. The extension offers:',
+          '- A folder on this computer, in Chrome, Edge and other browsers that let a page reach folders; Firefox does not. The browser asks once more in each new session before the folder can be used.',
           '- Accounts. With Google Drive, Dropbox, OneDrive and Box you sign in on the service\'s own page, and WM Pass never sees that password. With pCloud, MEGA and Proton Drive you sign in inside WM Pass.',
           '- Servers and storage, which covers WebDAV, S3, and Synology or QNAP NAS boxes. WebDAV and S3 fill in the address for many services.',
           '- Somewhere else, which here means a Git repository on GitHub, GitLab or Gitea.',
@@ -513,7 +532,7 @@ export const features = [
           PLACE_VERIFY,
         ],
         caveats: [
-          'Every place here is on a server, so it needs [[setting.network_allowed]], and adding one turns it on.',
+          'A place on a server needs [[setting.network_allowed]], and adding one turns it on.',
           'A NAS needs a certificate from a known authority here: the extension cannot accept the NAS\'s own.',
           'A public Git repository lets anyone download the encrypted file, so WM Pass refuses one unless you allow it.',
           'Google Drive, Dropbox, OneDrive and Box appear only in builds that were registered with each service.',
@@ -524,7 +543,7 @@ export const features = [
           'Add one under Settings, Backups or Settings, Sync and accounts, with **Add a place**. Places come in four groups:',
           '- A folder on this phone, which can be one that a cloud app or Syncthing carries on from there.',
           ...PLACE_GROUPS,
-          'What WM Pass needs to reach a place is kept on this phone under a key in its secure hardware, not in the vault, so scheduled backups can run while the vault is locked. For pCloud, MEGA and Proton Drive it keeps only the session the sign-in hands back.',
+          'What WM Pass needs to reach a place is kept on this phone under a key in its secure hardware, not in the vault, so scheduled backups can run while the vault is locked. For pCloud, MEGA and Proton Drive it keeps only the session the sign-in hands back. iCloud Drive keeps your password too, and asks for a code from one of your devices about once a month.',
           PLACE_VERIFY,
         ],
       },
@@ -556,8 +575,9 @@ export const features = [
     on: {
       extension: {
         how: [
-          'There are two ways here:',
-          '- Through a server. Turn on sync for any [[feature.places|place]] under Settings, Sync and accounts. Each device leaves its own encrypted copy there and merges everyone else\'s. A device only ever writes its own file, so two syncing at once cannot undo each other.',
+          'There are three ways here:',
+          '- Through a folder or server. Turn on sync for any [[feature.places|place]] under Settings, Sync and accounts. Each device leaves its own encrypted copy there and merges everyone else\'s. A device only ever writes its own file, so two syncing at once cannot undo each other.',
+          '- Through an account, when a Bitwarden, Vaultwarden or WM Pass server account syncs with its server. See [[feature.accounts]].',
           '- Through the desktop app. Connected to it, the extension uses the vault open there and has nothing of its own to sync. See [[feature.bridge]].',
           ...SYNC_MERGE,
         ],
@@ -572,7 +592,7 @@ export const features = [
     what: 'Two of your devices on the same network can sync directly, with no server or cloud in between. You pair them once, and after that they keep each other up to date on their own.',
     why: 'Some people want their vault on a phone and a computer without it ever touching someone else\'s server.',
     how: [
-      'Pair under Settings, Sync and accounts, with **Pair a device**. Either show a code on one device and paste its text on the other, or compare six digits on both screens and accept on both.',
+      'Pair under Settings, Sync and accounts, with **Pair a device**. Either show a code on one device and scan it, or paste its text, on the other, or compare six digits on both screens and choose **They match** on both. **Add a new device** sends this vault to a phone or computer that has none yet, and pairs the two.',
       'A shown code holds a one-off secret and stops working after two minutes. Six digits work without a camera: each side commits to its part before seeing the other\'s, so someone in the middle gets one chance in a million, and a failed try shows on both screens.',
       'Pairing stores the other device\'s public key, and later connections from any other key are refused.',
       'Paired devices on the same network sync on their own while the vault is unlocked on both: a computer whenever its vault is open, a phone while WM Pass is on screen. They look for each other after unlocking, after a change and every five minutes, and **Sync now** does it at once. Before anything is sent, each side proves it holds the vault\'s key, so a paired device with another vault, or one still on the key from before a [[action.rekey|rekey]], gets nothing.',
@@ -592,7 +612,7 @@ export const features = [
     on: {
       android: {
         how: [
-          'Pair under Settings, Sync and accounts, with **Add a device**. It asks whether the other device already has this vault: one with none gets a copy and is paired, one that has it is only paired. Either scan a code that the other device shows, or compare six digits on both screens and accept on both.',
+          'Pair under Settings, Sync and accounts, with **Add a device**. It asks whether the other device already has this vault: one with none gets a copy and is paired, one that has it is only paired. Either show a code for the other device to scan, scan the one it shows, or compare six digits on both screens and tap **They match** on both.',
           'A shown code holds a one-off secret and stops working after two minutes. Six digits work without a camera: each side commits to its part before seeing the other\'s, so someone in the middle gets one chance in a million, and a failed try shows on both screens.',
           'Pairing stores the other device\'s public key, and later connections from any other key are refused.',
           'Paired devices on the same network sync on their own while the vault is unlocked on both: a computer whenever its vault is open, this phone while WM Pass is on screen. They look for each other after unlocking, after a change and every five minutes, and **Sync now** does it at once. Before anything is sent, each side proves it holds the vault\'s key, so a paired device with another vault, or one still on the key from before a [[action.rekey|rekey]], gets nothing.',
@@ -623,16 +643,18 @@ export const features = [
     on: {
       extension: {
         how: [
-          'Add one under Settings, Sync and accounts, with **Add an account**, or at the door with **Add another vault or account**. The extension can open a **KeePass file** only: signing in to a server is in the desktop and phone apps.',
-          'Added under Settings, it offers **Sign in now**, which locks the vault and opens the door with the file chosen. Added at the door, it comes chosen there. Later, it appears at the door beside your own vault; choose it and type its own password.',
-          'The extension keeps its own copy of the file you choose, since a browser cannot reach the original again. Changes stay in that copy, not in the original file.',
+          'Add one under Settings, Sync and accounts, with **Add an account**, or at the door with **Add another vault or account**. Choose **Bitwarden**, **Bitwarden EU**, **Own server** or **KeePass file**.',
+          'An account opens in place of your vault, so adding one under Settings offers **Sign in now**: the vault locks and the door opens with the account chosen and its password asked for. Added at the door, it comes chosen there. Later, it appears at the door beside your own vault; choose it and type its own password.',
+          'For a server account, your password is never sent: a key made from it proves who you are, as with any Bitwarden app. The first sign-in from a new device may need a code Bitwarden emails you, or a two-step code, typed beside the password.',
+          'Changes go up to the server after each edit. If it cannot be reached they wait, and WM Pass keeps an offline copy, encrypted as the server\'s is.',
+          'The extension keeps its own copy of a KeePass file you choose, since a browser cannot reach the original again. Changes stay in that copy, not in the original file.',
         ],
-        caveats: ACCOUNT_CAVEATS,
+        caveats: ['Bitwarden does not publish its API, so a change on its side can stop this working.', ...ACCOUNT_CAVEATS],
       },
       android: {
         how: [
-          'Add one under Settings, Sync and accounts, with **Add an account**, or at the door. Choose Bitwarden, a server of your own, or a KeePass file.',
-          'It then appears at the door beside your own vault. Choose it there and type its own password.',
+          'Add one under Settings, Sync and accounts, with **Add an account**, or at the door. Choose **Bitwarden**, **Bitwarden EU**, **Own server** or **KeePass file**.',
+          'An account opens in place of your vault, so adding one under Settings offers **Sign in now**: the vault locks and the door asks for the account\'s password. Later, it appears at the door beside your own vault; choose it and type its own password.',
           'For a server account, your password is never sent: a key made from it proves who you are, as with any Bitwarden app. The first sign-in from a new device may need a code Bitwarden emails you, or a two-step code, typed beside the password.',
           'Changes go up to the server after each edit. If it cannot be reached they wait, and WM Pass keeps an offline copy, encrypted as the server\'s is.',
           ACCOUNT_KDBX,
@@ -669,7 +691,7 @@ export const features = [
       'Under Settings, Import, choose your old app\'s export file. WM Pass shows how many items it found, a few of their names, and any it could not read, before anything is added.',
       'Password managers: 1Password, Apple Passwords, Avast, Avira, Bitwarden, Buttercup, Chrome and other Chromium browsers, Dashlane, Enpass, Firefox, Kaspersky, KeePass and KeePassXC, Keeper, LastPass, mSecure, NordPass, Password Safe, Proton Pass, Psono, RoboForm, SafeInCloud, Sticky Password and Zoho Vault. Authenticators: Aegis, 2FAS, andOTP, Authenticator Pro, Bitwarden Authenticator, Ente Auth, FreeOTP+, LastPass Authenticator, Proton Authenticator, Raivo, and Google Authenticator, whose export QR code you can choose as a screenshot.',
       'A file with a password, such as a KeePass or SafeInCloud database, asks for it first. A KeePass database can also take its key file and a YubiKey set up for challenge-response (**Use security key**), with or without a password, and KeePass 1 files (.kdb) import as well. Items already in the vault are skipped, and the result says how many.',
-      'Under Settings, Export, a **WM Pass vault** or a **KeePass database** stays encrypted. **Bitwarden JSON**, **CSV** and a **Printable page** are plain text that anyone who opens them can read.',
+      'Under Settings, Export, a **WM Pass vault** or a **KeePass database** stays encrypted. **Bitwarden JSON**, **CSV**, a **Printable page** and **PDF or printer** are plain text that anyone who opens or sees them can read.',
     ],
     when: 'Import once when you move to WM Pass, then compare the count with your old app. Export when you leave, or for a printed copy kept somewhere safe.',
     caveats: [
@@ -687,7 +709,7 @@ export const features = [
           'Under Settings, Import, choose your old app\'s export file. WM Pass shows how many items it found, a few of their names, and any it could not read, before anything is added.',
           'Password managers: 1Password, Apple Passwords, Avast, Avira, Bitwarden, Buttercup, Chrome and other Chromium browsers, Dashlane, Enpass, Firefox, Kaspersky, KeePass and KeePassXC, Keeper, LastPass, mSecure, NordPass, Password Safe, Proton Pass, Psono, RoboForm, SafeInCloud, Sticky Password and Zoho Vault. Authenticators: Aegis, 2FAS, andOTP, Authenticator Pro, Bitwarden Authenticator, Ente Auth, FreeOTP+, LastPass Authenticator, Proton Authenticator and Raivo. For Google Authenticator, tap **Scan Google Authenticator\'s code** and scan each of its export codes in turn.',
           'A file with a password, such as a KeePass or SafeInCloud database, asks for it first. A KeePass database can also take its key file and a YubiKey set up for challenge-response (**Use security key**), with or without a password, and KeePass 1 files (.kdb) import as well. Items already in the vault are skipped, and the result says how many.',
-          'Under Settings, Export, a **WM Pass vault** or a **KeePass database** stays encrypted. **Bitwarden JSON**, **CSV** and a **Printable page** are plain text that anyone who opens them can read.',
+          'Under Settings, Export, a **WM Pass vault** or a **KeePass database** stays encrypted. **Bitwarden JSON**, **CSV**, a **Printable page** and **PDF or printer** are plain text that anyone who opens or sees them can read.',
         ],
       },
     },
@@ -703,7 +725,7 @@ export const features = [
     why: 'A code beside its password means one app to open when you sign in, and one backup that covers both.',
     how: [
       ...CODES_HOW,
-      'The [[screen.codes]] lists them all. Click one to copy it; the copy clears from the clipboard as a password does.',
+      'The [[screen.codes]] lists them all, each under its item\'s name. Click one to copy it, and double-click it to open its item. The copy clears from the clipboard as a password does.',
       'Bring codes over from Aegis, 2FAS, andOTP, Ente Auth, FreeOTP+, Raivo or Google Authenticator under Settings, Import.',
     ],
     when: 'Whenever a site offers two-step sign-in with an authenticator app. The [[screen.health]] lists logins for sites that offer it where you have no code saved.',
@@ -756,26 +778,24 @@ export const features = [
     title: 'Password health',
     what: 'The health check looks through your vault for passwords that are weak, reused, old or leaked, and other things worth fixing, and sums it up as a score out of 100.',
     why: 'One weak or reused password can undo the rest. Seeing them in one list tells you where to start.',
-    how: [
-      'All of it is worked out on your device, over every item not in the trash:',
-      '- *In a known breach* lists passwords a [[feature.breaches|breach check]] found in published leaks.',
-      '- *Used more than once* lists shared passwords, since one leak opens every site that uses it.',
-      '- *Easy to guess* lists passwords an attacker with a password list would find quickly. A password built from the site\'s name or your username scores lower.',
-      '- *Unencrypted sites* lists logins saved with a plain http address.',
-      '- *Expiring soon* lists items whose reminder or expiry date is close.',
-      '- *Not changed in a year* lists passwords older than that, or older than the item\'s own reminder allows.',
-      '- *No second factor* lists sites known to offer one-time codes where you have no code or passkey saved. The list of sites comes with the app.',
-      '- *Duplicate items* finds the same site, username and password saved more than once. Merging them keeps both histories.',
-      'The score is the share of logins with a password that are none of weak, reused, leaked or old.',
-    ],
+    how: [...HEALTH_CHECKS, HEALTH_SCORE],
     when: 'After an import, and whenever the score drops. The screen lists the most serious problems first.',
     caveats: [
       'Breach results last only until the vault locks, so that group is empty until you run a check again.',
       'Items on the hidden shelf count towards the score.',
-      'Only logins with a password count towards the score.',
+      'Only logins with a password count towards the score. A login you tell one check to leave out no longer counts against the score for it, and logins left out by [[setting.health_skip_local]] are not counted at all.',
     ],
     related: ['screen.health', 'page.health', 'feature.breaches', 'setting.health_score', 'page.compare'],
     words: 'health score weak reused old breached audit check',
+    on: {
+      android: {
+        how: [
+          ...HEALTH_CHECKS,
+          '- *Maybe the same account* finds logins that share a password and look like one account saved twice: another spelling of the name, an email in place of a username or phone number, or another address for the same site.',
+          HEALTH_SCORE,
+        ],
+      },
+    },
   },
   {
     id: 'feature.aliases',
@@ -798,13 +818,6 @@ export const features = [
     figure: 'fig.alias',
     related: ['page.aliases', 'page.inbox', 'screen.editor', 'setting.network_allowed'],
     words: 'alias masked email forward hide simplelogin addy relay duckduckgo plus',
-    on: {
-      extension: {
-        caveats: [
-          'A site can strip a plus tag or the dots and reach your real address. Only a forwarding service hides it.',
-        ],
-      },
-    },
   },
   {
     id: 'feature.usernames',
@@ -814,6 +827,7 @@ export const features = [
     how: [
       'Type a name on the [[page.usernames]] page and choose **Check**. Every site is asked at once and answers **Free**, **Taken** or **No clear answer**.',
       'Sites that refuse anonymous lookups, or give the same answer for every name, get no answer, because a guess is worse than none. X, Threads and Reddit are among them, and the page links their profiles for you to open yourself.',
+      'TikTok and Instagram only answer a browser, so their pages load in a hidden, private window that runs their scripts and keeps nothing afterwards.',
     ],
     caveats: [
       'Every site checked learns the name you looked up.',
@@ -823,7 +837,11 @@ export const features = [
     words: 'username handle availability taken free',
     on: {
       extension: {
-        caveats: 'TikTok and Instagram only answer a browser that runs their scripts. The extension asks the desktop app to check those two, while it is connected.',
+        caveats: [
+          'Every site checked learns the name you looked up.',
+          'It needs network features to be allowed.',
+          'TikTok and Instagram only answer a browser that runs their scripts. The extension asks the desktop app to check those two, while it is connected.',
+        ],
       },
     },
   },
@@ -858,10 +876,10 @@ export const features = [
       android: {
         how: [
           'Set WM Pass as the phone\'s autofill service, from **Autofill service** under Settings, Security. A login field in another app or a browser then offers your saved logins.',
-          'Apps are matched by their package name and signing certificate, never by name alone. Browsers are matched by web address, but only browsers WM Pass knows.',
+          'Apps are matched by their package name and signing certificate, never by name alone. Browsers are matched by web address, but only browsers WM Pass knows. A browser that does not give Android the page\'s fields is filled in Android\'s compatibility mode, which reads the address from the browser\'s address bar.',
           'A suggestion fills only when you tap it. A locked vault asks you to unlock first, and a web page shown inside another app asks before filling and names what it is filling.',
-          '[[setting.autofill_inline]] shows logins in the keyboard\'s suggestion row, and [[setting.autofill_save]] offers to save after you sign in with a new or changed password.',
-          'WM Keyboard\'s WM Pass tool is another way to fill, once you allow it under [[setting.keyboard_access]].',
+          '[[setting.autofill_inline]] shows logins in the keyboard\'s suggestion row, and [[setting.autofill_save]] offers to save after you sign in with a new or changed password. A sign-in that asks for the username on one screen and the password on the next is saved as one login.',
+          'WM Keyboard\'s WM Pass tool is another way to fill, once you allow it under [[setting.keyboard_access]]. While the vault is locked, the tool can open it with your fingerprint, if you turned that on, or with the master password typed into the keyboard\'s own box.',
         ],
         caveats: AUTOFILL_ANDROID_CAVEATS,
         related: ['setting.autofill_inline', 'setting.autofill_save', 'setting.keyboard_access', 'feature.passkeys', 'feature.clipboard'],
@@ -879,7 +897,8 @@ export const features = [
     how: [
       'When a site asks to create or use a passkey, a WM Pass window asks you first, naming the site. Choose the account, then **Sign in** or **Save passkey**.',
       'If you type your master password in that window, the site is told you were verified. Some sites require it.',
-      'If you have no passkey for that site, the browser\'s own handling carries on as usual.',
+      'If you have no passkey for that site, or the extension\'s vault is locked, the browser\'s own handling carries on as usual.',
+      'When a site asks to create a passkey for an account that already has one in WM Pass, the window says **Passkey already saved** and makes no second one. **Continue** tells the site so.',
       'Passkeys are kept in a login item, which lists each one with its site and when it was made.',
     ],
     caveats: [
@@ -896,6 +915,7 @@ export const features = [
           'A locked vault offers only a way to unlock it, since the keys stay in the vault.',
           'An app other than a browser WM Pass knows gets a confirmation that names it, in place of a check against the site\'s published list of apps.',
           'The site is told you were verified only after a real fingerprint or device check.',
+          'When a site asks to create a passkey for an account that already has one in WM Pass, WM Pass says so and makes no second one.',
           'Passkeys are kept in a login item, which lists each one with its site and when it was made.',
         ],
         caveats: 'Passkeys from WM Pass need Android 14 or later.',
@@ -928,9 +948,9 @@ export const features = [
           'In the desktop app, open Settings, Browser extension. Turn on **Let the extension connect**, then choose **Set up browsers**.',
           'Here, open Settings, Desktop app, and choose **Connect**. Both show a six-digit code. If they match, say so on both.',
           ...BRIDGE_TALK,
-          'Unless you turned it off in the app, the app asks once for each site before the first fill there.',
+          'With **Ask before the first fill on each site** on in the app, the app asks once for each site before the first fill there.',
         ],
-        caveats: [...BRIDGE_CAVEATS, '**Disconnect** on the Desktop app page ends the connection from this side.'],
+        caveats: [...BRIDGE_CAVEATS, '**Disconnect** on the Desktop app page asks first, then ends the connection from this side. Connecting again means comparing codes with the app again.'],
       },
     },
   },

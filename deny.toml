@@ -31,6 +31,10 @@ ignore = [
     "RUSTSEC-2024-0370",
     # Unmaintained, not vulnerable. D-Bus types behind the Linux keyring and file dialogs.
     "RUSTSEC-2026-0370", "RUSTSEC-2026-0371", "RUSTSEC-2026-0372",
+    # SQLite in libsqlite3-sys 0.37, via sqlx-sqlite 0.9, in wmpass-server only. Exploiting it
+    # needs write access to the server's own data folder. The fix is in libsqlite3-sys 0.39,
+    # which no sqlx release accepts yet. Accepted 2026-11-10: remove once sqlx moves to it.
+    "RUSTSEC-2026-0459",
 ]
 
 [sources]

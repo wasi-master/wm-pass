@@ -1,3 +1,19 @@
+<script lang="ts" module>
+  /**
+   * The theme's colours a tile is drawn from, read once for each theme rather than five style
+   * lookups for every tile in a list of thousands.
+   */
+  let palette: { applied: number; colors: { ground: string; neutral: string; second: string; text: string; text2: string } } | null = null;
+  function themeColors(applied: number) {
+    if (palette?.applied === applied) return palette.colors;
+    const style = getComputedStyle(document.documentElement);
+    const token = (name: string) => style.getPropertyValue(name).trim() || '#808080';
+    const colors = { ground: token('--bg'), neutral: token('--s3'), second: token('--second-c'), text: token('--text'), text2: token('--text2') };
+    palette = { applied, colors };
+    return colors;
+  }
+</script>
+
 <script lang="ts">
   import { brands } from '../engine/brands.svelte';
   import { faceOf, type Face } from '../engine/face';
@@ -25,20 +41,9 @@
     shape?: string;
   } = $props();
 
-  function token(name: string) {
-    return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#808080';
-  }
-
   const face: Face = $derived.by(() => {
     void brands.ready;
-    void prefs.themeApplied;
-    return faceOf(title, site, kind, label, icon, forcedStyle ?? prefs.v.site_icon_style, forcedShape ?? prefs.v.site_icon_shape, {
-      ground: token('--bg'),
-      neutral: token('--s3'),
-      second: token('--second-c'),
-      text: token('--text'),
-      text2: token('--text2'),
-    });
+    return faceOf(title, site, kind, label, icon, forcedStyle ?? prefs.v.site_icon_style, forcedShape ?? prefs.v.site_icon_shape, themeColors(prefs.themeApplied));
   });
 
   const shapeName = $derived(forcedShape ?? prefs.v.site_icon_shape);
@@ -63,13 +68,16 @@
 </script>
 
 {#if picture}
+  <!-- A picture of the item beside its name: a screen reader hears the name, not a letter first. -->
   <span
+    aria-hidden="true"
     style="display:inline-flex;align-items:center;justify-content:center;flex:none;width:{size}px;height:{size}px;border-radius:{radius}px;background:#F6F6F7"
   >
     <img src={picture} alt="" width={size * 0.6} height={size * 0.6} style="object-fit:contain" />
   </span>
 {:else}
 <span
+  aria-hidden="true"
   style="display:inline-flex;align-items:center;justify-content:center;flex:none;width:{size}px;height:{size}px;border-radius:{radius}px;background:{face.fill};color:{face.ink}"
 >
   {#if drawing}

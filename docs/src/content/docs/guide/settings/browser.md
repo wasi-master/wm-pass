@@ -49,7 +49,11 @@ Lets a connected browser extension ask this app for the logins that match the pa
 
 WM Pass listens on a local socket on this computer. Any program could connect to it, so everything through it runs inside an encrypted session, and a new extension is accepted only after you compare a code on both screens.
 
-An extension can ask whether the vault is open, ask for the items that match a page, fill one of those, and lock the vault. The list it sees has names and sites, never passwords or notes, and a fill for an item that does not match the page is refused.
+For filling, an extension can ask whether the vault is open, ask for the items that match a page, fill one of those, and lock the vault. That list has names and sites, never passwords or notes, and a fill for an item that does not match the page is refused.
+
+An extension can also show the vault open here in its own screens, every item and password included, and add, change or delete items there. The first time, this app asks in a window of its own whether to allow that, and remembers the answer for that extension.
+
+It can also run the username checker's TikTok and Instagram checks, reach backup places a browser cannot, such as SFTP or SMB, and use a security key plugged into this computer. Each place, and the security keys, are asked about once.
 
 #### What each choice does
 
@@ -139,7 +143,7 @@ The extensions that have compared a code with this app and may connect.
 
 #### How it works
 
-Each shows the browser it says it runs in. The remove button beside one forgets it at once, ends any connection it has open, and drops the sites you approved for it. To connect again, it has to compare a code again.
+Each shows the browser it says it runs in. The bin button beside one asks first, then forgets it, ends any connection it has open, and drops the sites and everything else you allowed it. To connect again, it has to compare a code again.
 
 #### Limits
 

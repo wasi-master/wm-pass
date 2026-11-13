@@ -7,7 +7,7 @@ use serde_json::Value;
 use super::json_formats::{list, parse, text};
 use super::{Draft, Format, Imported, ImportedEntry, base_entry, non_empty};
 use crate::clock::Hlc;
-use crate::model::{Card, Identity, Kind, Lww, Note, SshKey};
+use crate::model::{Card, Database, Identity, Kind, Lww, Note, SshKey, Wifi, WifiSecurity};
 use crate::{Error, Result, Secret};
 
 const MAX_MEMBER: u64 = super::MAX_INFLATED;
@@ -37,6 +37,9 @@ pub(super) fn detect_zip(data: &[u8]) -> Option<Format> {
     if names.iter().any(|name| name == "export.data") {
         return Some(Format::OnePux);
     }
+    if names.iter().any(|name| name.ends_with("credentials.csv") || name.ends_with("securenotes.csv")) {
+        return Some(Format::DashlaneCsv);
+    }
     names
         .iter()
         .any(|name| name.ends_with("data.json"))
@@ -56,6 +59,37 @@ pub(super) fn import_proton_zip(data: &[u8], at: Hlc) -> Result<Imported> {
     let json =
         String::from_utf8(bytes).map_err(|_| Error::Import("the file is not text".into()))?;
     super::json_formats::proton(&json, at)
+}
+
+/// The fields a kind has no place of its own for, by their ids.
+fn unmapped(custom: Vec<(String, String, bool)>, ids: &[String], mapped: &[&str]) -> Vec<(String, String, bool)> {
+    custom.into_iter().zip(ids).filter(|(_, id)| !mapped.contains(&id.as_str())).map(|(field, _)| field).collect()
+}
+
+/// Dashlane's export: a zip of CSVs, one for each kind of item.
+pub(super) fn import_dashlane_zip(data: &[u8], at: Hlc) -> Result<Imported> {
+    let archive = zip::ZipArchive::new(Cursor::new(data))
+        .map_err(|_| Error::Import("the archive could not be read".into()))?;
+    let names: Vec<String> = archive
+        .file_names()
+        .filter_map(|name| name.ok().map(|n| n.into_owned()))
+        .filter(|name| name.to_ascii_lowercase().ends_with(".csv"))
+        .collect();
+    let mut out = Imported::default();
+    for name in names {
+        let Some(bytes) = member(data, &name)? else {
+            continue;
+        };
+        let text = String::from_utf8(bytes).map_err(|_| Error::Import(format!("{name} is not UTF-8 text")))?;
+        let text = text.trim_start_matches('\u{feff}');
+        if text.trim().is_empty() || super::csv_formats::detect(text) != Some(Format::DashlaneCsv) {
+            continue;
+        }
+        let part = super::csv_formats::import(Format::DashlaneCsv, text, at)?;
+        out.entries.extend(part.entries);
+        out.skipped.extend(part.skipped);
+    }
+    Ok(out)
 }
 
 /// A section field's value as text, and whether it is secret. Most values are a
@@ -143,13 +177,20 @@ pub(super) fn import_1pux(data: &[u8], at: Hlc) -> Result<Imported> {
                 .get("attrs")
                 .map_or_else(String::new, |attrs| text(attrs, "name"));
             for item in list(vault, "items") {
-                if text(item, "state") == "archived" {
-                    continue;
-                }
                 let overview = item.get("overview").cloned().unwrap_or(Value::Null);
                 let details = item.get("details").cloned().unwrap_or(Value::Null);
                 let before = out.entries.len();
                 read_item(item, &overview, &details, &vault_name, at, &mut out);
+                // There is no archive here: an archived item comes in tagged so, to be found
+                // and cleared out, as 1Password's CSV brings it.
+                if text(item, "state") == "archived"
+                    && let Some(added) = out.entries.get_mut(before)
+                    && !added.entry.common.tags.v.iter().any(|t| t.eq_ignore_ascii_case("archived"))
+                {
+                    let mut tags = added.entry.common.tags.v.clone();
+                    tags.push("Archived".to_owned());
+                    added.entry.common.tags = Lww::new(tags, at);
+                }
                 // Files hang off fields, or off the item itself for a document.
                 let mut files: Vec<Value> = list(&details, "sections")
                     .iter()
@@ -187,21 +228,64 @@ fn read_item(
     let notes = text(details, "notesPlain");
     let mut totp = String::new();
     let mut custom = Vec::new();
+    // Each custom field's id beside it, so a kind can leave out the ones it maps to fields.
+    let mut custom_ids = Vec::new();
     let mut section_values: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
     for section in list(details, "sections") {
         for field in list(section, "fields") {
             let value = field.get("value").cloned().unwrap_or(Value::Null);
+            // The first code fills a login's; any more are kept as hidden fields.
             if let Some(code) = value.get("totp").and_then(Value::as_str) {
-                totp = code.to_owned();
+                if totp.is_empty() {
+                    totp = code.to_owned();
+                } else {
+                    custom_ids.push(text(field, "id"));
+                    custom.push((text(field, "title"), code.to_owned(), true));
+                }
                 continue;
             }
             let (shown, hidden) = field_value(&value);
             section_values.insert(text(field, "id"), shown.clone());
+            custom_ids.push(text(field, "id"));
             custom.push((text(field, "title"), shown, hidden));
         }
     }
-    match text(item, "categoryUuid").as_str() {
+    let category = text(item, "categoryUuid");
+    // Only a login has a place for a code: on anything else it is kept as a field.
+    if !matches!(category.as_str(), "001" | "005") && !totp.is_empty() {
+        custom_ids.push(String::new());
+        custom.push(("One-time code".to_owned(), std::mem::take(&mut totp), true));
+    }
+    let favourite = item.get("favIndex").and_then(Value::as_i64).unwrap_or(0) > 0;
+    let tags: Vec<String> = list(overview, "tags").iter().filter_map(|t| t.as_str().map(str::to_owned)).collect();
+    let before = out.entries.len();
+    read_kind(&category, &title, &notes, totp, custom, &custom_ids, &section_values, details, overview, vault, at, out);
+    // Every kind is a favourite or tagged as it was in 1Password.
+    if let Some(added) = out.entries.get_mut(before) {
+        added.entry.common.favourite = Lww::new(favourite, at);
+        added.entry.common.tags = Lww::new(tags, at);
+        added.entry.created_ms = super::json_formats::seconds(item.get("createdAt"));
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn read_kind(
+    category: &str,
+    title: &str,
+    notes: &str,
+    totp: String,
+    custom: Vec<(String, String, bool)>,
+    custom_ids: &[String],
+    section_values: &std::collections::HashMap<String, String>,
+    details: &Value,
+    overview: &Value,
+    vault: &str,
+    at: Hlc,
+    out: &mut Imported,
+) {
+    let (title, notes) = (title.to_owned(), notes.to_owned());
+    match category {
         "001" | "005" => {
             let mut draft = Draft {
                 title,
@@ -209,11 +293,6 @@ fn read_item(
                 otp: totp,
                 fields: custom,
                 folder: vault.to_owned(),
-                favourite: item.get("favIndex").and_then(Value::as_i64).unwrap_or(0) > 0,
-                tags: list(overview, "tags")
-                    .iter()
-                    .filter_map(|t| t.as_str().map(str::to_owned))
-                    .collect(),
                 ..Draft::default()
             };
             draft.urls.push(text(overview, "url"));
@@ -244,7 +323,7 @@ fn read_item(
                 .map(|h| {
                     (
                         text(h, "value"),
-                        h.get("time").and_then(Value::as_u64).unwrap_or(0) * 1000,
+                        h.get("time").and_then(Value::as_u64).unwrap_or(0).saturating_mul(1000),
                     )
                 })
                 .collect();
@@ -315,6 +394,53 @@ fn read_item(
                 files: Vec::new(),
             });
         }
+        // A wireless router: its network, and the base station's own password beside it.
+        "109" => {
+            let cell = |key: &str| section_values.get(key).cloned().unwrap_or_default();
+            let security = match cell("wireless_security").trim().to_ascii_lowercase().as_str() {
+                "none" => Some(WifiSecurity::Open),
+                "wep" => Some(WifiSecurity::Wep),
+                "wpa" | "wpa2p" => Some(WifiSecurity::Wpa),
+                "wpa3p" => Some(WifiSecurity::Sae),
+                "wpa2e" | "wpa3e" => Some(WifiSecurity::Eap),
+                _ => None,
+            };
+            // A security setting not known here stays as the field it came in.
+            let mut mapped = vec!["network_name", "wireless_password"];
+            if security.is_some() {
+                mapped.push("wireless_security");
+            }
+            let mut entry = base_entry(&title, &notes, at);
+            entry.kind = Kind::Wifi(Wifi {
+                ssid: Lww::new(cell("network_name"), at),
+                password: Lww::new(Secret::from(cell("wireless_password")), at),
+                security: Lww::new(security.unwrap_or_default(), at),
+                ..Wifi::default()
+            });
+            entry.common.custom_fields = Lww::new(super::fields(unmapped(custom, custom_ids, &mapped)), at);
+            out.entries.push(ImportedEntry { entry, folder: non_empty(vault.to_owned()), files: Vec::new() });
+        }
+        "102" => {
+            let cell = |key: &str| section_values.get(key).cloned().unwrap_or_default();
+            let port = cell("port").trim().parse::<u16>().ok();
+            // A port that is no number stays as the field it came in.
+            let mut mapped = vec!["database_type", "hostname", "database", "username", "password"];
+            if port.is_some() {
+                mapped.push("port");
+            }
+            let mut entry = base_entry(&title, &notes, at);
+            entry.kind = Kind::Database(Database {
+                engine: Lww::new(cell("database_type"), at),
+                host: Lww::new(cell("hostname"), at),
+                port: Lww::new(port, at),
+                name: Lww::new(cell("database"), at),
+                user: Lww::new(cell("username"), at),
+                password: Lww::new(Secret::from(cell("password")), at),
+                ..Database::default()
+            });
+            entry.common.custom_fields = Lww::new(super::fields(unmapped(custom, custom_ids, &mapped)), at);
+            out.entries.push(ImportedEntry { entry, folder: non_empty(vault.to_owned()), files: Vec::new() });
+        }
         "006" => {
             let mut entry = base_entry(&title, "", at);
             entry.kind = Kind::Note(Note {
@@ -336,8 +462,19 @@ fn read_item(
                 cvv: Lww::new(Secret::from(cell("cvv")), at),
                 expiry: Lww::new(cell("expiry"), at),
                 pin: Lww::new(Secret::from(cell("pin")), at),
+                issuer: Lww::new(cell("type"), at),
                 ..Card::default()
             });
+            // The card's other fields, such as the issuing bank and its phone numbers, are kept
+            // as fields rather than dropped.
+            const MAPPED: [&str; 6] = ["cardholder", "ccnum", "cvv", "expiry", "pin", "type"];
+            let rest = custom
+                .into_iter()
+                .zip(custom_ids)
+                .filter(|(_, id)| !MAPPED.contains(&id.as_str()))
+                .map(|(field, _)| field)
+                .collect();
+            entry.common.custom_fields = Lww::new(super::fields(rest), at);
             out.entries.push(ImportedEntry {
                 entry,
                 folder: non_empty(vault.to_owned()),

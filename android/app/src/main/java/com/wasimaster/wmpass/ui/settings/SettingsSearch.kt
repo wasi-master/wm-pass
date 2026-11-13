@@ -4,7 +4,9 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -86,6 +88,10 @@ private fun routeIcon(route: String): ImageVector = when (route) {
     "settings/tools" -> PassIcons.Widgets
     "settings/trash" -> PassIcons.Delete
     "settings/usernames" -> PassIcons.PersonSearch
+    "settings/widgets" -> PassIcons.Widgets
+    "settings/themes" -> PassIcons.Palette
+    "settings/hardware" -> PassIcons.SecurityKey
+    "settings/vaults" -> PassIcons.Layers
     else -> PassIcons.Search
 }
 
@@ -174,7 +180,8 @@ internal fun SettingsSearchPane(onClose: () -> Unit) {
             )
         },
     ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize()) {
+        // Above the keyboard, so the last results can still be scrolled to while it is up.
+        Column(Modifier.padding(padding).consumeWindowInsets(padding).imePadding().fillMaxSize()) {
             if (text.isNotEmpty() && hits.isEmpty()) {
                 Text(
                     "No settings match “${query.trim()}”.",

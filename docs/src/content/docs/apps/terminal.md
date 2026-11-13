@@ -61,7 +61,7 @@ Going the other way, `wmpass add-device` sends a vault to a new device that is w
 wmpass add-device ~/vaults/personal.wmvault
 ```
 
-It lists the devices waiting on this network; pick one and compare six digits, since a terminal cannot scan a code. Or paste the text under the new device's QR code into the box on the same screen. With `--code` and that text, it sends without the full screen. From the full-screen app, it is **Add a new device** in the `:` palette. Both devices need to be on the same network.
+It lists the devices waiting on this network; pick one and compare six digits, since a terminal cannot scan a code. Or paste the text under the new device's QR code into the box on the same screen. With `--code` and that text, it sends without the full screen. From the full-screen app, it is **Add a new device: send this vault to it** in the `:` palette. Both devices need to be on the same network.
 
 ## Restoring from a backup location
 
@@ -111,7 +111,7 @@ Press `?` for every key, or `:` for a list of commands you can search by name. T
 
 On a tag in the sidebar, `R` renames it on every item that has it and `D` deletes it from all of them; the items stay. A login saved for an Android app lists the app by its name when WM Pass knows it, such as Messenger for `com.facebook.orca`.
 
-Arrows and `h` `j` `k` `l` both move. The mouse works everywhere too. Click a tab, a row, a field or a command in the `:` list. Double-click a row to open it, or a line in an item to copy it. The key hints along the bottom are buttons. The wheel scrolls whatever is under the pointer, and over a generator setting it changes the value.
+Arrows and `h` `j` `k` `l` both move. `q` quits. Pasted text goes only into a text box, such as search or a field in the editor; anywhere else it is ignored, so pasted letters never run as keys. The mouse works everywhere too. Click a tab, a row, a field or a command in the `:` list. Double-click a row to open it, or a line in an item to copy it. The key hints along the bottom are buttons. The wheel scrolls whatever is under the pointer, and over a generator setting it changes the value.
 
 ## Health
 
@@ -154,7 +154,7 @@ A shown password hides itself after 20 seconds. The vault locks after 5 minutes 
 
 The default theme follows the WM Pass shield on a dark background. `Ctrl+T` cycles through a light theme, a softer dark one, one that uses only the terminal's own sixteen colors, and one with no color at all. Terminals without 24-bit color start on the sixteen-color theme, and setting `NO_COLOR` turns color off. An item's color from the apps shows as the nearest of the terminal's own.
 
-If your terminal uses a [Nerd Font](https://www.nerdfonts.com), WM Pass can draw proper icons for each kind of item, the sidebar and the tabs. Turn them on with `:` then Nerd Font icons, or set `WMPASS_ICONS=nerd`. They are off at first because without such a font every icon shows as an empty box.
+If your terminal uses a [Nerd Font](https://www.nerdfonts.com), WM Pass can draw proper icons for each kind of item, the sidebar and the tabs. Turn them on with `:` then **Nerd Font icons on or off**, or set `WMPASS_ICONS=nerd`. They are off at first because without such a font every icon shows as an empty box.
 
 ## Settings
 
@@ -166,11 +166,13 @@ The theme, the icons, how long a shown secret stays on screen and the Health cho
 
 ## In scripts
 
-Every subcommand reads the password from the terminal. For scripts and tests, `WMPASS_PASSWORD` can supply it, though any other program running as you can read a process's environment. `WMPASS_KEY_FILE` names a key file. `WMPASS_IMPORT_PASSWORD` supplies the password of a file being imported, such as a KeePass database, when it differs from the vault's; `wmpass import --key-file` names that database's key file, and a database locked by its key file alone takes an empty password.
+Every subcommand reads the password from the terminal. For scripts and tests, `WMPASS_PASSWORD` can supply it, though any other program running as you can read a process's environment. `WMPASS_PASSWORD` answers only for the vault itself, and `create` uses it for the new vault. A new password anywhere else, such as a duress password or a KeePass export's, comes from `WMPASS_NEW_PASSWORD` or is asked for. With no terminal and no variable set, the command stops and names the variable it needs. `WMPASS_KEY_FILE` names a key file. `WMPASS_IMPORT_PASSWORD` supplies the password of a file being imported, such as a KeePass database, when it differs from the vault's; `wmpass import --key-file` names that database's key file, and a database locked by its key file alone takes an empty password.
 
 ```bash
 wmpass ls Personal.wmvault "tag:work has:otp"
 ```
+
+`ls` takes the same search words as the apps, including `folder:Work`, `site:` with a pasted address, and the Health ones such as `weak` or `-reused`.
 
 ```bash
 wmpass otp Personal.wmvault GitHub
@@ -180,7 +182,7 @@ wmpass otp Personal.wmvault GitHub
 wmpass gen --words
 ```
 
-`wmpass --help` lists the rest: `create`, `restore`, `show`, `add`, `rm`, `health`, `import`, `export`, `merge`, `duress`, `shares` and `recover`. When no terminal is attached, `wmpass` on its own prints that list and exits with an error, so a script never waits on a screen nobody sees.
+`wmpass --help` lists the rest: `create`, `restore`, `show`, `add`, `rm`, `strength`, `health`, `import`, `export`, `merge`, `duress`, `shares` and `recover`. When no terminal is attached, `wmpass` on its own prints that list and exits with an error, so a script never waits on a screen nobody sees.
 
 ## What it cannot do
 

@@ -195,7 +195,7 @@ class Accounts {
       await pass.reload();
       this.syncProblem = null;
     } catch (failure: any) {
-      this.syncProblem = failure.message ?? 'The server could not be reached.';
+      this.syncProblem = failure?.message ?? 'The server could not be reached.';
     }
   }
 

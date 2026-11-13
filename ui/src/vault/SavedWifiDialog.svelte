@@ -192,7 +192,7 @@
     {/if}
     <div class="list">
       {#each networks as network (network.id)}
-        {@const sub = SECURITY[network.security] + (inVault.has(network.ssid) ? ', in your vault' : '')}
+        {@const sub = (SECURITY[network.security] ?? network.security) + (inVault.has(network.ssid) ? ', in your vault' : '')}
         {#if onpick}
           <Row title={network.ssid} {sub} icon="wifi" onclick={() => busy === null && void pick(network)}>
             {#if busy === network.ssid}<Spinner />{/if}
@@ -205,7 +205,7 @@
       {/each}
     </div>
   {/if}
-  {#if problem}<p class="danger-text">{problem}</p>{/if}
+  {#if problem}<p class="danger-text" role="alert">{problem}</p>{/if}
   {#snippet foot()}
     {#if outcomes}
       <Btn label="Done" variant="primary" onclick={finish} />

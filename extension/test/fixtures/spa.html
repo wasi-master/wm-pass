@@ -1,0 +1,13 @@
+<!doctype html><title>Single-page fixture</title>
+<div id="app">
+<input id="user" type="email" autocomplete="username" style="width:280px;height:32px;margin:40px">
+<input id="pass" type="password" style="width:280px;height:32px;margin:40px">
+<button id="go" type="button" style="margin:40px">Sign in</button>
+</div>
+<script>
+// Signs in without loading a page, as a single-page app does.
+document.getElementById('go').addEventListener('click', () => setTimeout(() => {
+  history.pushState({}, '', '/spa.html#home');
+  document.getElementById('app').textContent = 'Welcome back.';
+}, 200));
+</script>

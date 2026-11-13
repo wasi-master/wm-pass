@@ -1,5 +1,6 @@
 package com.wasimaster.wmpass.ui.settings
 
+import androidx.compose.foundation.selection.toggleable
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Context
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
@@ -60,6 +62,7 @@ import com.wasimaster.wmpass.system.Destination
 import com.wasimaster.wmpass.system.Destinations
 import com.wasimaster.wmpass.system.KeyboardProvider
 import com.wasimaster.wmpass.system.PlaceWire
+import com.wasimaster.wmpass.ui.parts.announced
 import com.wasimaster.wmpass.ui.door.PasswordPill
 import com.wasimaster.wmpass.ui.icons.PassIcons
 import com.wasimaster.wmpass.ui.parts.Brands
@@ -152,15 +155,16 @@ fun DestinationSheet(existing: Destination?, onDismiss: () -> Unit, onSaved: (De
     val prefs = remember { Prefs.of(context) }
     val id = remember { existing?.id ?: java.util.UUID.randomUUID().toString() }
     var kind by remember { mutableStateOf(existing?.kind ?: "folder") }
+    // The secrets among these are not saved with the activity's state, so they never land in a Bundle.
     val label = rememberTextFieldState(existing?.label.orEmpty())
     val url = rememberTextFieldState(existing?.url.orEmpty())
     val user = rememberTextFieldState(existing?.user.orEmpty())
-    val password = rememberTextFieldState(existing?.password.orEmpty())
+    val password = remember { TextFieldState(existing?.password.orEmpty()) }
     val endpoint = rememberTextFieldState(existing?.endpoint.orEmpty())
     val region = rememberTextFieldState(existing?.region ?: "us-east-1")
     val bucket = rememberTextFieldState(existing?.bucket.orEmpty())
     val keyId = rememberTextFieldState(existing?.accessKeyId.orEmpty())
-    val keySecret = rememberTextFieldState(existing?.secretAccessKey.orEmpty())
+    val keySecret = remember { TextFieldState(existing?.secretAccessKey.orEmpty()) }
     val prefix = rememberTextFieldState(existing?.prefix.orEmpty())
     val host = rememberTextFieldState(existing?.host.orEmpty())
     val port = rememberTextFieldState(existing?.port?.toString().orEmpty())
@@ -170,7 +174,7 @@ fun DestinationSheet(existing: Destination?, onDismiss: () -> Unit, onSaved: (De
     val domain = rememberTextFieldState(existing?.domain.orEmpty())
     val repository = rememberTextFieldState(existing?.repository.orEmpty())
     val branch = rememberTextFieldState(existing?.branch.orEmpty())
-    val token = rememberTextFieldState(existing?.token.orEmpty())
+    val token = remember { TextFieldState(existing?.token.orEmpty()) }
     // An NFS place keeps its host in nfs; its nas.server is empty, not null.
     val server = rememberTextFieldState(existing?.takeIf { it.kind == "nfs" }?.nfs?.host ?: existing?.nas?.server.orEmpty())
     val export = rememberTextFieldState(existing?.nfs?.export.orEmpty())
@@ -179,7 +183,7 @@ fun DestinationSheet(existing: Destination?, onDismiss: () -> Unit, onSaved: (De
     val account = rememberTextFieldState("")
     val presetServer = rememberTextFieldState("")
     val code = rememberTextFieldState("")
-    val mailboxPassword = rememberTextFieldState("")
+    val mailboxPassword = remember { TextFieldState() }
     var preset by remember { mutableStateOf(existing?.preset.orEmpty()) }
     var pathStyle by remember { mutableStateOf(existing?.pathStyle ?: false) }
     var secure by remember { mutableStateOf(existing?.secure ?: true) }
@@ -205,7 +209,15 @@ fun DestinationSheet(existing: Destination?, onDismiss: () -> Unit, onSaved: (De
     var keyboardProblem by remember { mutableStateOf<String?>(null) }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
-            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            // A provider that will not let the folder be kept throws here: said, not a crash, and
+            // not saved either, since the first scheduled backup could not reach it.
+            val kept = runCatching {
+                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            }.isSuccess
+            if (!kept) {
+                problem = "That folder's app will not let WM Pass keep it. Choose another folder."
+                return@rememberLauncherForActivityResult
+            }
             folderUri = uri.toString()
             folderName = uri.lastPathSegment?.substringAfterLast(':')?.ifEmpty { null } ?: "Chosen"
         }
@@ -392,7 +404,7 @@ fun DestinationSheet(existing: Destination?, onDismiss: () -> Unit, onSaved: (De
         waitingForBrowser = false
         when (result.outcome) {
             CloudSignIn.Outcome.SIGNED_IN -> Destinations.list.value.firstOrNull { it.id == id }?.let(onSaved)
-            CloudSignIn.Outcome.CANCELLED -> problem = "The sign-in was cancelled."
+            CloudSignIn.Outcome.CANCELLED -> problem = "The sign-in was canceled."
             CloudSignIn.Outcome.FAILED -> problem = "The service did not accept that sign-in. Try again."
         }
         // A new place that did not sign in is not kept; the sheet still holds what was typed.
@@ -417,6 +429,8 @@ fun DestinationSheet(existing: Destination?, onDismiss: () -> Unit, onSaved: (De
         }
         busy = true
         scope.launch {
+            // This sheet's scope has no handler of its own: a dropped connection is said here, not a crash.
+            try {
             when (kind) {
                 "pcloud" -> {
                     val waiting = pcloudToken
@@ -507,7 +521,12 @@ fun DestinationSheet(existing: Destination?, onDismiss: () -> Unit, onSaved: (De
                     }
                 }
             }
-            busy = false
+            } catch (failure: Exception) {
+                if (failure is kotlinx.coroutines.CancellationException) throw failure
+                problem = refusal(com.wasimaster.wmkeyboard.core.settings.sink.sinkErrorOf(failure))
+            } finally {
+                busy = false
+            }
         }
     }
 
@@ -526,7 +545,7 @@ fun DestinationSheet(existing: Destination?, onDismiss: () -> Unit, onSaved: (De
                         keyboardProblem = "Update WM Keyboard to share its places."
                     }
                 }
-                keyboardProblem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 6.dp)) }
+                keyboardProblem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced().padding(horizontal = 6.dp)) }
             }
             if (existing == null) {
                 shownKinds.groupBy { it.group }.forEach { (group, kinds) ->
@@ -687,7 +706,7 @@ fun DestinationSheet(existing: Destination?, onDismiss: () -> Unit, onSaved: (De
                 }
             }
             if (askCode) SheetField(code, "Code")
-            problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 6.dp)) }
+            problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced().padding(horizontal = 6.dp)) }
             val place = draft()
             val signsIn = kind in setOf("drive", "dropbox", "onedrive", "box", "pcloud", "mega", "proton", "icloud", "synology", "qnap")
             val ready = when (kind) {
@@ -699,7 +718,7 @@ fun DestinationSheet(existing: Destination?, onDismiss: () -> Unit, onSaved: (De
             Spacer(Modifier.height(6.dp))
             when {
                 waitingForBrowser || exchanging == id -> Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    androidx.compose.material3.CircularProgressIndicator(Modifier.padding(end = 12.dp).height(20.dp), color = colors.primary, strokeWidth = 2.dp)
+                    androidx.compose.material3.CircularProgressIndicator(Modifier.padding(end = 12.dp).size(20.dp), color = colors.primary, strokeWidth = 2.dp)
                     Text(if (exchanging == id) "Finishing the sign-in…" else "Waiting for the browser…", color = colors.textMid, style = MaterialTheme.typography.bodyLarge)
                 }
                 signsIn -> PrimaryButton(
@@ -739,11 +758,18 @@ private fun Hint(text: String) {
 @Composable
 private fun SwitchLine(title: String, detail: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     val colors = palette
-    Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+    // One switch to a screen reader, named by its title: the row toggles, and the switch only shows it.
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .toggleable(checked, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = onChange)
+            .padding(horizontal = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
             Text(title, color = colors.text, style = MaterialTheme.typography.bodyLarge)
             Text(detail, color = colors.textLow, style = MaterialTheme.typography.bodySmall)
         }
-        PassSwitch(checked, onChange)
+        PassSwitch(checked, null)
     }
 }

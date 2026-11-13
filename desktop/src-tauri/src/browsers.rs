@@ -85,7 +85,7 @@ fn browsers(home: &Path) -> Vec<Browser> {
 }
 
 #[cfg(windows)]
-fn register(browser: &Browser, manifest: &Path) -> Result<(), String> {
+fn registry_key(browser: &Browser) -> String {
     let key = match browser.name {
         "Chrome" => r"Software\Google\Chrome\NativeMessagingHosts",
         "Chromium" => r"Software\Chromium\NativeMessagingHosts",
@@ -94,8 +94,13 @@ fn register(browser: &Browser, manifest: &Path) -> Result<(), String> {
         "Vivaldi" => r"Software\Vivaldi\NativeMessagingHosts",
         _ => r"Software\Mozilla\NativeMessagingHosts",
     };
+    format!(r"HKCU\{key}\{HOST_NAME}")
+}
+
+#[cfg(windows)]
+fn register(browser: &Browser, manifest: &Path) -> Result<(), String> {
     let status = std::process::Command::new("reg")
-        .args(["add", &format!(r"HKCU\{key}\{HOST_NAME}"), "/ve", "/t", "REG_SZ", "/d"])
+        .args(["add", &registry_key(browser), "/ve", "/t", "REG_SZ", "/d"])
         .arg(manifest)
         .arg("/f")
         .status()
@@ -107,6 +112,15 @@ fn register(browser: &Browser, manifest: &Path) -> Result<(), String> {
 fn register(_browser: &Browser, _manifest: &Path) -> Result<(), String> {
     Ok(())
 }
+
+/// Takes the browser's pointer to the manifest away, which on Windows outlives the file.
+#[cfg(windows)]
+fn unregister(browser: &Browser) {
+    let _ = std::process::Command::new("reg").args(["delete", &registry_key(browser), "/f"]).output();
+}
+
+#[cfg(not(windows))]
+fn unregister(_browser: &Browser) {}
 
 fn home() -> Result<PathBuf, String> {
     std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from).ok_or_else(|| "this account has no home folder".to_owned())
@@ -120,24 +134,33 @@ fn host_path() -> Result<PathBuf, String> {
     if path.exists() { Ok(path) } else { Err("the browser host program is missing from this build".to_owned()) }
 }
 
-/// Writes a manifest for each browser found, and says which.
+/// Writes a manifest for each browser found, and says which. One browser that cannot be set up
+/// leaves the others still set up; only when none could be is the reason given.
 pub fn install() -> Result<Vec<String>, String> {
     let host = host_path()?;
     let mut done = Vec::new();
+    let mut failed = None;
     for browser in browsers(&home()?) {
         if !browser.marker.exists() {
             continue;
         }
-        fs::create_dir_all(&browser.folder).map_err(|e| e.to_string())?;
         let suffix = if browser.firefox { "-firefox" } else { "" };
         let file = if cfg!(windows) { format!("{HOST_NAME}{suffix}.json") } else { format!("{HOST_NAME}.json") };
         let manifest = browser.folder.join(file);
         let text = if browser.firefox { firefox_manifest(&host) } else { chromium_manifest(&host) };
-        fs::write(&manifest, text).map_err(|e| e.to_string())?;
-        register(&browser, &manifest)?;
-        done.push(browser.name.to_owned());
+        let written = fs::create_dir_all(&browser.folder)
+            .and_then(|()| fs::write(&manifest, text))
+            .map_err(|e| e.to_string())
+            .and_then(|()| register(&browser, &manifest));
+        match written {
+            Ok(()) => done.push(browser.name.to_owned()),
+            Err(reason) => failed = Some(format!("{}: {reason}", browser.name)),
+        }
     }
-    Ok(done)
+    match failed {
+        Some(reason) if done.is_empty() => Err(reason),
+        _ => Ok(done),
+    }
 }
 
 pub fn remove() -> Result<(), String> {
@@ -145,6 +168,7 @@ pub fn remove() -> Result<(), String> {
         for file in [format!("{HOST_NAME}.json"), format!("{HOST_NAME}-firefox.json")] {
             let _ = fs::remove_file(browser.folder.join(file));
         }
+        unregister(&browser);
     }
     Ok(())
 }

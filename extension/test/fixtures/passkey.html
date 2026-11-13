@@ -1,5 +1,5 @@
 <!doctype html><title>Passkey fixture</title>
-<button id="create">Create</button><button id="get">Sign in</button><pre id="out"></pre>
+<button id="create">Create</button><button id="get">Sign in</button><button id="again">Create again</button><button id="abort">Sign in, then give up</button><pre id="out"></pre>
 <script>
 const b = (n) => crypto.getRandomValues(new Uint8Array(n));
 let made = null, publicKey = null;
@@ -34,5 +34,21 @@ document.querySelector('#get').onclick = async () => {
     const rpHash = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(location.hostname)));
     out.textContent = JSON.stringify({ signed: good, challenge: parsed.challenge === expected, origin: parsed.origin === location.origin, rp: rpHash.every((v, i) => v === auth[i]), uv: (auth[32] & 4) !== 0 });
   } catch (e) { out.textContent = JSON.stringify({ error: e.name, message: e.message }); }
+};
+// A second passkey for an account the site already has one for, as excludeCredentials says.
+document.querySelector('#again').onclick = async () => {
+  try {
+    await navigator.credentials.create({ publicKey: { challenge: b(32), rp: { name: 'Fixture' }, user: { id: b(16), name: 'sample@example.com', displayName: 'Sample' }, pubKeyCredParams: [{ type: 'public-key', alg: -7 }], excludeCredentials: [{ type: 'public-key', id: made }] } });
+    out.textContent = JSON.stringify({ created: true });
+  } catch (e) { out.textContent = JSON.stringify({ error: e.name }); }
+};
+// A site that gives up waiting, as when the person picks another way to sign in.
+document.querySelector('#abort').onclick = async () => {
+  const stop = new AbortController();
+  setTimeout(() => stop.abort(), 1500);
+  try {
+    await navigator.credentials.get({ publicKey: { challenge: b(32), allowCredentials: [{ type: 'public-key', id: made }] }, signal: stop.signal });
+    out.textContent = JSON.stringify({ signed: true });
+  } catch (e) { out.textContent = JSON.stringify({ error: e.name }); }
 };
 </script>

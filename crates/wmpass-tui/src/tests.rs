@@ -820,6 +820,65 @@ fn the_vault_password_is_changed_from_settings() {
 }
 
 #[test]
+fn a_second_password_changes_itself_not_the_first() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    {
+        let Screen::Vault(ui) = &mut app.screen else { panic!("locked") };
+        ui.engine.add_password("Second", b"second-pw").expect("slot");
+    }
+    press(&mut app, KeyCode::Char('5'));
+    {
+        let Screen::Vault(ui) = &mut app.screen else { panic!("locked") };
+        ui.settings_at = crate::settings::all().iter().position(|s| *s == crate::settings::Setting::Password).expect("setting");
+    }
+    press(&mut app, KeyCode::Enter);
+    typed(&mut app, "second-pw");
+    press(&mut app, KeyCode::Enter);
+    typed(&mut app, "a renewed second");
+    press(&mut app, KeyCode::Enter);
+    typed(&mut app, "a renewed second");
+    press(&mut app, KeyCode::Enter);
+    let Screen::Vault(ui) = &mut app.screen else { panic!("locked") };
+    assert!(ui.engine.verify(b"master-pw").expect("verify"), "the first password still opens");
+    assert!(ui.engine.verify(b"a renewed second").expect("verify"));
+    assert!(!ui.engine.verify(b"second-pw").expect("verify"));
+}
+
+#[test]
+fn a_password_with_a_key_file_keeps_needing_it_after_a_change() {
+    let dir = tempfile::tempdir().expect("dir");
+    let key_path = dir.path().join("vault.key");
+    std::fs::write(&key_path, b"key file contents").expect("key file");
+    let mut app = App::over(vault(dir.path()));
+    {
+        let Screen::Vault(ui) = &mut app.screen else { panic!("locked") };
+        ui.engine.add_password_with_key_file("With file", b"second-pw", b"key file contents").expect("slot");
+    }
+    press(&mut app, KeyCode::Char('5'));
+    {
+        let Screen::Vault(ui) = &mut app.screen else { panic!("locked") };
+        ui.settings_at = crate::settings::all().iter().position(|s| *s == crate::settings::Setting::Password).expect("setting");
+    }
+    press(&mut app, KeyCode::Enter);
+    typed(&mut app, "second-pw");
+    press(&mut app, KeyCode::Enter);
+    assert!(app.overlay.is_some(), "asks for the key file rather than calling the password wrong");
+    typed(&mut app, key_path.to_str().expect("path"));
+    press(&mut app, KeyCode::Enter);
+    typed(&mut app, "a renewed second");
+    press(&mut app, KeyCode::Enter);
+    typed(&mut app, "a renewed second");
+    press(&mut app, KeyCode::Enter);
+    let Screen::Vault(ui) = &mut app.screen else { panic!("locked") };
+    let path = ui.engine.path().to_owned();
+    ctrl(&mut app, 'l');
+    assert!(matches!(engine::unlock(&path, b"a renewed second", None, 3), Ok(engine::Unlock::NeedsKeyFile)), "the new password alone does not open it");
+    assert!(matches!(engine::unlock(&path, b"a renewed second", Some(b"key file contents"), 3), Ok(engine::Unlock::Opened(..))));
+    assert!(matches!(engine::unlock(&path, b"master-pw", None, 3), Ok(engine::Unlock::Opened(..))), "the first password still opens");
+}
+
+#[test]
 fn the_editor_files_colors_and_favors_an_item() {
     use crate::editor::Slot;
     let dir = tempfile::tempdir().expect("dir");
@@ -965,4 +1024,391 @@ fn a_vault_comes_back_from_a_backup_location_and_opens() {
     press(&mut app, KeyCode::Enter);
     settle(&mut app);
     assert!(screen(&mut app, 100, 30).contains("already a vault"));
+}
+
+#[test]
+fn a_folder_lists_only_its_own_items() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut engine = vault(dir.path());
+    let work = engine.add_folder("Work").expect("folder");
+    let workshop = engine.add_folder("Workshop").expect("folder");
+    let rows = engine.list("", "title").expect("list");
+    let id = |title: &str| rows.iter().find(|r| r.title == title).expect("row").id.clone();
+    engine.bulk(&[id("GitHub")], "folder", json!({"folder": workshop})).expect("move");
+    engine.bulk(&[id("Wi-Fi at home")], "folder", json!({"folder": work})).expect("move");
+    let mut app = App::over(engine);
+    let Screen::Vault(ui) = &mut app.screen else { panic!("locked") };
+    ui.reload();
+    // `folder:work` alone would find Workshop too.
+    ui.section = ui.sections.iter().position(|s| s.label == "Work").expect("section");
+    ui.refresh_list(None);
+    let titles: Vec<&str> = ui.rows.iter().map(|r| r.title.as_str()).collect();
+    assert_eq!(titles, vec!["Wi-Fi at home"]);
+    // A reload keeps the same folder picked.
+    ui.reload();
+    assert_eq!(ui.sections[ui.section].label, "Work");
+}
+
+#[test]
+fn pasted_text_goes_only_into_a_box_and_never_runs_as_keys() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    // On the list, with no box open, a paste of "dq" must neither trash nor quit.
+    app.paste_for_test("dq");
+    assert!(app.overlay.is_none(), "nothing asked to trash");
+    assert!(matches!(app.screen, Screen::Vault(_)), "still open");
+    assert!(app.toast.as_ref().is_some_and(|t| t.text.contains("Nothing to paste")));
+
+    // A confirmation is not a box either: a pasted y must not answer it.
+    press(&mut app, KeyCode::Char('d'));
+    assert!(matches!(app.overlay, Some(Overlay::Confirm { .. })));
+    app.paste_for_test("y");
+    assert!(matches!(app.overlay, Some(Overlay::Confirm { .. })), "still asking");
+    press(&mut app, KeyCode::Esc);
+
+    // The search box takes it.
+    press(&mut app, KeyCode::Char('/'));
+    app.paste_for_test("wi-fi");
+    let Screen::Vault(ui) = &app.screen else { panic!("locked") };
+    assert_eq!(ui.search.text(), "wi-fi");
+    assert_eq!(ui.rows.len(), 1);
+}
+
+#[test]
+fn a_new_folder_from_the_commands_starts_empty() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    app.command(crate::app::Command::NewFolder);
+    typed(&mut app, "Work");
+    press(&mut app, KeyCode::Enter);
+    let Screen::Vault(ui) = &app.screen else { panic!("locked") };
+    assert_eq!(ui.folders.len(), 1);
+    assert!(ui.rows.iter().all(|r| r.folder.is_none()), "the picked item stayed where it was");
+}
+
+#[test]
+fn opening_an_item_that_is_gone_says_so() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    let Screen::Vault(ui) = &mut app.screen else { panic!("locked") };
+    assert!(!ui.show_entry("no-such-item"), "nothing else stands in for it");
+    let id = ui.rows.iter().find(|r| r.title == "GitHub").map(|r| r.id.clone()).expect("github");
+    ui.engine.bulk(std::slice::from_ref(&id), "trash", json!({})).expect("trash");
+    ui.reload();
+    assert!(ui.show_entry(&id), "a trashed item opens in the trash");
+    assert_eq!(ui.current_id().as_deref(), Some(id.as_str()));
+    assert!(ui.in_trash());
+}
+
+#[test]
+fn every_overlay_draws_in_the_smallest_window() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    let sizes = [(40, 12), (41, 13), (47, 12), (40, 31), (220, 12), (75, 12), (76, 12), (109, 13), (110, 12)];
+    let draw_all = |app: &mut App, what: &str| {
+        for (w, h) in sizes {
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| screen(app, w, h)))
+                .unwrap_or_else(|_| panic!("{what} at {w}x{h}"));
+        }
+    };
+    for tab in ['1', '2', '3', '4', '5'] {
+        press(&mut app, KeyCode::Char(tab));
+        draw_all(&mut app, "tab");
+    }
+    press(&mut app, KeyCode::Char('1'));
+    press(&mut app, KeyCode::Enter);
+    draw_all(&mut app, "detail");
+    press(&mut app, KeyCode::Char('h'));
+    press(&mut app, KeyCode::Char('h'));
+    draw_all(&mut app, "sidebar");
+    press(&mut app, KeyCode::Char('l'));
+    press(&mut app, KeyCode::Char('/'));
+    typed(&mut app, &"漢字".repeat(40));
+    draw_all(&mut app, "a long search");
+    press(&mut app, KeyCode::Esc);
+    for key in ['?', ':', 'd', '+', 'm', 'e', 'n'] {
+        press(&mut app, KeyCode::Char(key));
+        draw_all(&mut app, &format!("overlay {key}"));
+        press(&mut app, KeyCode::Esc);
+        press(&mut app, KeyCode::Esc);
+        app.overlay = None;
+    }
+    app.overlay = Some(Overlay::Restore(Box::new(crate::restore::RestoreUi::new(None))));
+    draw_all(&mut app, "restore");
+    app.overlay = Some(Overlay::Link(Box::new(LinkUi::at_stage(Role::Send, Stage::Searching))));
+    draw_all(&mut app, "link");
+    app.overlay = Some(Overlay::Link(Box::new(LinkUi::at_stage(Role::Receive, Stage::Digits { code: "123456".into(), peer: "x".into() }))));
+    draw_all(&mut app, "digits");
+    app.overlay = None;
+    ctrl(&mut app, 'l');
+    draw_all(&mut app, "door");
+    ctrl(&mut app, 'n');
+    draw_all(&mut app, "new vault");
+}
+
+#[test]
+fn locking_clears_the_message_and_the_door_hints_stay_whole() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    press(&mut app, KeyCode::Char('c'));
+    assert!(app.toast.as_ref().is_some_and(|t| t.text.contains("copied")));
+    ctrl(&mut app, 'l');
+    let door = screen(&mut app, 100, 30);
+    assert!(!door.contains("copied"), "the copy is gone, and so is the word of it:\n{door}");
+    assert!(door.contains("Esc quit") && !door.contains("Esc qui\n"), "{door}");
+    // A narrow door drops whole hints rather than cutting one off part way.
+    let narrow = screen(&mut app, 64, 30);
+    let hints = narrow.lines().find(|l| l.contains("Enter unlock")).expect("hints");
+    assert!(hints.trim_end().ends_with("quit") || hints.trim_end().ends_with("vault"), "{hints}");
+    // "Locked" was about the vault left, not one being made.
+    ctrl(&mut app, 'n');
+    assert!(!screen(&mut app, 100, 30).contains("Locked"));
+}
+
+#[test]
+fn a_message_in_the_bottom_bar_is_never_run_into_by_the_hints() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    app.say(crate::app::Level::Bad, "/nonexistent/file.csv: no such file or folder");
+    let shown = screen(&mut app, 100, 20);
+    let bottom = shown.lines().last().expect("bottom");
+    assert!(bottom.contains("/nonexistent/file.csv: no such file or folder  "), "{bottom}");
+}
+
+#[test]
+fn the_keys_list_fits_80_by_24_and_scrolls() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    press(&mut app, KeyCode::Char('?'));
+    let top = screen(&mut app, 80, 24);
+    assert!(top.contains("go to a tab") && top.contains("↓ more"), "{top}");
+    for _ in 0..80 {
+        press(&mut app, KeyCode::Down);
+    }
+    let end = screen(&mut app, 80, 24);
+    assert!(end.contains("Settings: change, open") && end.contains("trash: restore, delete for good"), "{end}");
+    assert!(matches!(app.overlay, Some(Overlay::Help { .. })), "moving keeps it open");
+    press(&mut app, KeyCode::Esc);
+    assert!(app.overlay.is_none());
+    // Wide enough, both columns show whole, the sort key among them.
+    press(&mut app, KeyCode::Char('?'));
+    let wide = screen(&mut app, 120, 40);
+    assert!(wide.contains("Items, Codes") || wide.contains("go to a tab"));
+    assert!(wide.contains("sort the list") && wide.contains("a sidebar tag: rename, delete"), "{wide}");
+}
+
+#[test]
+fn a_new_item_that_fails_to_save_leaves_nothing_behind() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    press(&mut app, KeyCode::Char('n'));
+    let Some(Overlay::Pick { items, at, .. }) = &mut app.overlay else { panic!("no pick") };
+    *at = items.iter().position(|(kind, _)| kind == "otp").expect("authenticator");
+    press(&mut app, KeyCode::Enter);
+    typed(&mut app, "Thing");
+    press(&mut app, KeyCode::Tab);
+    typed(&mut app, "not base32!!");
+    ctrl(&mut app, 's');
+    let shown = screen(&mut app, 100, 30);
+    assert!(shown.contains("New authenticator") && !shown.contains("Edit GitHub"), "{shown}");
+    assert!(matches!(app.overlay, Some(Overlay::Editor(_))), "the error keeps it open");
+    app.overlay = None;
+    let Screen::Vault(ui) = &mut app.screen else { panic!("locked") };
+    assert!(ui.engine.list("thing", "title").expect("list").is_empty(), "no half-made item");
+}
+
+#[test]
+fn new_item_titles_keep_their_capitals() {
+    assert_eq!(crate::vault::kind_in_text("ssh"), "SSH key");
+    assert_eq!(crate::vault::kind_in_text("wifi"), "Wi-Fi");
+    assert_eq!(crate::vault::kind_in_text("recovery"), "recovery codes");
+    assert_eq!(crate::vault::kind_in_text("login"), "login");
+}
+
+#[test]
+fn enter_never_says_yes_to_what_cannot_be_undone() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    press(&mut app, KeyCode::Char('d'));
+    press(&mut app, KeyCode::Enter);
+    let Screen::Vault(ui) = &mut app.screen else { panic!("locked") };
+    let trash = ui.sections.iter().position(|s| s.query == "trashed").expect("trash");
+    ui.section = trash;
+    ui.refresh_list(None);
+    assert_eq!(ui.rows.len(), 1, "Enter moves to the trash, which can be undone");
+    press(&mut app, KeyCode::Char('D'));
+    assert!(matches!(app.overlay, Some(Overlay::Confirm { danger: true, .. })));
+    press(&mut app, KeyCode::Enter);
+    assert!(app.overlay.is_some(), "still asking");
+    press(&mut app, KeyCode::Char('y'));
+    let Screen::Vault(ui) = &mut app.screen else { panic!("locked") };
+    assert!(ui.rows.is_empty());
+    assert!(screen(&mut app, 100, 20).contains("The trash is empty"));
+}
+
+#[test]
+fn ctrl_c_in_an_edited_item_asks_before_quitting() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    press(&mut app, KeyCode::Char('e'));
+    typed(&mut app, "x");
+    ctrl(&mut app, 'c');
+    assert!(matches!(&app.overlay, Some(Overlay::Editor(editor)) if editor.confirm_discard), "asked");
+    assert!(app.toast.as_ref().is_some_and(|t| t.text.contains("^C again")));
+    ctrl(&mut app, 'c');
+    assert!(app.quitting());
+    // Nothing typed: one ^C quits.
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    press(&mut app, KeyCode::Char('e'));
+    ctrl(&mut app, 'c');
+    assert!(app.quitting());
+}
+
+#[test]
+fn a_codes_filter_that_finds_nothing_says_so() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    press(&mut app, KeyCode::Char('2'));
+    press(&mut app, KeyCode::Char('/'));
+    typed(&mut app, "zzz");
+    let shown = screen(&mut app, 100, 20);
+    assert!(shown.contains("No codes match") && !shown.contains("No one-time codes yet"), "{shown}");
+}
+
+#[test]
+fn a_keepass_export_asks_for_its_password_twice() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    let out = dir.path().join("out.kdbx");
+    app.command(crate::app::Command::Export);
+    press(&mut app, KeyCode::Enter);
+    let Some(Overlay::Prompt { input, .. }) = &mut app.overlay else { panic!("no path prompt") };
+    input.set(&out.to_string_lossy());
+    press(&mut app, KeyCode::Enter);
+    typed(&mut app, "correct horse");
+    press(&mut app, KeyCode::Enter);
+    typed(&mut app, "correct hrose");
+    press(&mut app, KeyCode::Enter);
+    assert!(!out.exists(), "a typo writes nothing");
+    assert!(app.toast.as_ref().is_some_and(|t| t.text.contains("do not match")));
+    typed(&mut app, "correct horse");
+    press(&mut app, KeyCode::Enter);
+    typed(&mut app, "correct horse");
+    press(&mut app, KeyCode::Enter);
+    assert!(out.exists(), "{:?}", app.toast);
+}
+
+#[test]
+fn a_long_list_draws_only_what_shows_and_follows_the_pick() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut engine = vault(dir.path());
+    let mut csv = String::from("name,url,username,password\n");
+    for n in 0..300 {
+        csv.push_str(&format!("Site {n:03},https://s{n}.example.com,user{n},pw-{n}\n"));
+    }
+    engine.import_read(csv.as_bytes(), &[], None).expect("read");
+    engine.import_apply().expect("apply");
+    let mut app = App::over(engine);
+    let Screen::Vault(ui) = &mut app.screen else { panic!("locked") };
+    ui.reload();
+    press(&mut app, KeyCode::End);
+    let bottom = screen(&mut app, 120, 30);
+    assert!(bottom.contains("Wi-Fi at home") && !bottom.contains("Site 000"), "{bottom}");
+    press(&mut app, KeyCode::Home);
+    let top = screen(&mut app, 120, 30);
+    assert!(top.contains("GitHub") && !top.contains("Wi-Fi at home"), "{top}");
+    // Walking down past the window scrolls it, and a click lands on the row drawn there.
+    for _ in 0..40 {
+        press(&mut app, KeyCode::Down);
+    }
+    let moved = screen(&mut app, 120, 30);
+    let Screen::Vault(ui) = &app.screen else { panic!("locked") };
+    let picked = ui.current().expect("row").title.clone();
+    assert!(moved.contains(&picked), "{picked} in sight:\n{moved}");
+    let (x, y) = find(&moved, "Site 030");
+    click(&mut app, x, y);
+    let Screen::Vault(ui) = &app.screen else { panic!("locked") };
+    assert_eq!(ui.current().expect("row").title, "Site 030");
+}
+
+#[cfg(unix)]
+#[test]
+fn ctrl_z_hands_the_terminal_back_from_anywhere() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    press(&mut app, KeyCode::Char('e'));
+    app.key_for_test(KeyEvent::new(KeyCode::Char('z'), KeyModifiers::CONTROL));
+    assert!(app.suspending(), "even with the editor open");
+    assert!(matches!(app.overlay, Some(Overlay::Editor(_))), "and the editor is kept for after");
+    let Some(Overlay::Editor(editor)) = &app.overlay else { panic!("no editor") };
+    assert!(!editor.dirty(), "no z was typed into it");
+}
+
+#[test]
+fn earlier_values_keep_their_whole_date_and_messages_start_with_a_capital() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    press(&mut app, KeyCode::Char('e'));
+    {
+        let Some(Overlay::Editor(editor)) = &mut app.overlay else { panic!("no editor") };
+        editor.at = editor.rows.iter().position(|r| r.key == "password").expect("password");
+    }
+    typed(&mut app, "x");
+    ctrl(&mut app, 's');
+    let shown = screen(&mut app, 150, 30);
+    let today = shown.lines().find(|l| l.contains("Made ")).expect("made line");
+    let date = today.split("Made ").nth(1).expect("date").get(..10).expect("ten").to_owned();
+    assert!(shown.lines().any(|l| l.contains("Password") && l.contains(&date) && !l.contains("Made")), "{shown}");
+    // A narrow pane leaves the date off rather than cutting it.
+    let narrow = screen(&mut app, 120, 30);
+    let year = &date[..4];
+    for line in narrow.lines().filter(|l| l.contains("Password") && l.contains(year)) {
+        assert!(line.contains(&date), "a date cut short: {line}");
+    }
+    app.say(crate::app::Level::Bad, "that password is not right");
+    assert_eq!(app.toast.as_ref().map(|t| t.text.as_str()), Some("That password is not right"));
+}
+
+#[test]
+fn adding_a_device_wraps_its_words_in_a_narrow_window() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut app = App::over(vault(dir.path()));
+    app.overlay = Some(Overlay::Link(Box::new(LinkUi::at_stage(Role::Send, Stage::Searching))));
+    let shown = screen(&mut app, 80, 24);
+    // Every word shows, the last of each sentence included.
+    assert!(shown.contains("another") && shown.contains("device.") && shown.contains("code."), "{shown}");
+}
+
+/// A master password changed on two devices at once is said on the status line once unlocked.
+#[test]
+fn a_password_changed_on_two_devices_at_once_is_said_on_the_status_line() {
+    use wmpass_session::{Call, Service};
+    let dir = tempfile::tempdir().expect("dir");
+    let fast = r#"{"name":"Shared","kdf":{"m_kib":65536,"t":3,"p":1}}"#;
+    let json = |reply: wmpass_session::Reply| serde_json::from_str::<serde_json::Value>(&reply.json).expect("json");
+    let mut a = Service::new(1);
+    let h = json(a.call("vault.create", Call { args: fast, secret: b"master", now_ms: 1000, ..Call::default() }).expect("create"))["handle"].as_u64().expect("handle");
+    let file = a.call("vault.save", Call { handle: h, args: "{}", now_ms: 1000, ..Call::default() }).expect("save").blobs.remove(0);
+    let mut b = Service::new(2);
+    let blobs: [&[u8]; 1] = [&file];
+    let hb = json(b.call("vault.open", Call { args: "{}", secret: b"master", blobs: &blobs, now_ms: 1500, ..Call::default() }).expect("open"))["handle"].as_u64().expect("handle");
+    for (service, handle, new, now) in [(&mut a, h, &b"from-a"[..], 2000), (&mut b, hb, b"from-b", 3000)] {
+        let found = json(service.call("vault.verify", Call { handle, args: "{}", secret: b"master", now_ms: now, ..Call::default() }).expect("verify"));
+        let index = json!({"index": found["slot"]}).to_string();
+        service.call("vault.change_password", Call { handle, args: &index, secret: new, now_ms: now, ..Call::default() }).expect("change");
+    }
+    let from_b = b.call("vault.save", Call { handle: hb, args: "{}", now_ms: 3000, ..Call::default() }).expect("save").blobs.remove(0);
+    let blobs: [&[u8]; 1] = [&from_b];
+    a.call("vault.merge", Call { handle: h, args: "{}", blobs: &blobs, now_ms: 4000, ..Call::default() }).expect("merge");
+    let merged = a.call("vault.save", Call { handle: h, args: "{}", now_ms: 4000, ..Call::default() }).expect("save").blobs.remove(0);
+    let path = dir.path().join("shared.wmvault");
+    std::fs::write(&path, &merged).expect("write");
+
+    let engine::Unlock::Opened(engine, _) = engine::unlock(&path, b"from-b", None, 3).expect("unlock") else {
+        panic!("B's new password opens the merged vault");
+    };
+    let mut app = App::over(engine);
+    let shown = screen(&mut app, 220, 30);
+    assert!(shown.contains("Your master password was changed on two devices"), "{shown}");
 }

@@ -8,14 +8,14 @@ source:
   kind: manager
   logo: keeper
   exportOn: ["Computer"]
-  choose: "JSON or CSV"
+  choose: "JSON"
 ---
 
 import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
 import Shot from '../../../../components/Shot.astro';
 
 <Aside type="tip" title="Which file">
-Choose **JSON**, which keeps shared folders and records as Keeper writes them. CSV also works but is flatter.
+Choose **JSON**, which keeps shared folders and records as Keeper writes them. WM Pass doesn't read Keeper's CSV.
 </Aside>
 
 <Tabs syncKey="device">

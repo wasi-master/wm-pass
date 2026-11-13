@@ -1,9 +1,9 @@
 // What the window is showing, and what a click on any of it does.
 
 import { host } from '../engine/host';
-import { pass } from '../engine/pass.svelte';
+import { consumeText, pass } from '../engine/pass.svelte';
 import { prefs } from '../engine/prefs.svelte';
-import { siteLine } from '../engine/text';
+import { secondsText, siteLine } from '../engine/text';
 import type { Summary } from '../engine/types';
 import { overlays } from '../parts/floating.svelte';
 
@@ -14,6 +14,9 @@ export interface Editing {
   presetNote?: string;
   presetOtp?: string;
   presetTitle?: string;
+  /** A new item made while a folder or a tag is on show starts in it, so it is in the list it was added from. */
+  presetFolder?: string;
+  presetTags?: string[];
 }
 
 class Ui {
@@ -31,6 +34,8 @@ class Ui {
   renamingFolder = $state<{ id: string; name: string } | null>(null);
   /** A tag being renamed, deleted or given a symbol on every item. */
   managingTag = $state<string | null>(null);
+  /** The last tag renamed or deleted, for a form open with it to follow: `to` is null when deleted. */
+  tagChanged = $state<{ from: string; to: string | null } | null>(null);
   /** Asked to stop by anything that would lose an edit. */
   editorDirty = false;
 
@@ -38,8 +43,36 @@ class Ui {
     return this.width < 720;
   }
 
+  /**
+   * Forgets what the vault that just locked had on show. The next vault to open, which may be
+   * another one, would otherwise find the old search with its results, an item chosen, or the
+   * editor open on a form whose edits went with the lock.
+   */
+  reset() {
+    this.selected = null;
+    this.multi = [];
+    this.editing = null;
+    this.editorDirty = false;
+    this.query = '';
+    this.searchResults = null;
+    this.showDetail = false;
+    this.renamingFolder = null;
+    this.managingTag = null;
+    this.tagChanged = null;
+    // A folder or a tag belongs to the vault that had it.
+    if (/^(folder|tag):/.test(this.section)) this.section = 'all';
+  }
+
+  /** True when an edit is in the way: the person is asked first, and `then` runs if they let it go. */
+  private blocked(then: () => void) {
+    if (!this.editing || !this.editorDirty) return false;
+    void this.guard(then);
+    return true;
+  }
+
   go(section: string) {
     if (this.section === section) return;
+    if (this.blocked(() => this.go(section))) return;
     this.section = section;
     this.multi = [];
     this.editing = null;
@@ -48,6 +81,7 @@ class Ui {
   }
 
   open(id: string) {
+    if (this.blocked(() => this.open(id))) return;
     if (this.section !== 'all' && !this.isListSection(this.section)) this.section = 'all';
     this.selected = id;
     this.multi = [];
@@ -60,15 +94,25 @@ class Ui {
   }
 
   add(kind: string, preset: Partial<Editing> = {}) {
+    if (this.blocked(() => this.add(kind, preset))) return;
     if (!this.isListSection(this.section)) this.section = 'all';
+    const place: Partial<Editing> = this.section.startsWith('folder:')
+      ? { presetFolder: this.section.slice(7) }
+      : this.section.startsWith('tag:')
+        ? { presetTags: [this.section.slice(4)] }
+        : {};
     this.selected = null;
     this.multi = [];
-    this.editing = { id: null, kind, ...preset };
+    this.editing = { id: null, kind, ...place, ...preset };
     this.showDetail = true;
   }
 
   edit(id: string, kind: string) {
+    if (this.editing?.id === id) return;
+    if (this.blocked(() => this.edit(id, kind))) return;
     this.selected = id;
+    // The editor is for the one item; the choice of several would come back when it closed.
+    this.multi = [];
     this.editing = { id, kind };
     this.showDetail = true;
   }
@@ -78,6 +122,9 @@ class Ui {
       const yes = await overlays.ask({ title: 'Discard changes?', body: 'Your edits to this item will be lost.', action: 'Discard', danger: true });
       if (!yes) return;
       this.editorDirty = false;
+      // Let go of the edit itself too: run() may be a step to where the person already is, which
+      // changes nothing and would leave the editor open with the edits it was told to drop.
+      this.editing = null;
     }
     run();
   }
@@ -90,10 +137,12 @@ class Ui {
 
   private copied(what: string) {
     const seconds = this.clearAfter;
-    overlays.toast(seconds > 0 ? `${what} copied. Clears in ${seconds} seconds.` : `${what} copied.`, {
+    overlays.toast(seconds > 0 ? `${what} copied. Clears in ${secondsText(seconds)}.` : `${what} copied.`, {
       action: 'Clear now',
       run: () => void host().clearClipboard(),
       ms: 3200,
+      // Clearing the clipboard needs no vault, so the button still works after a lock.
+      keep: true,
     });
   }
 
@@ -102,51 +151,90 @@ class Ui {
       await pass.copySecret(method, args, this.clearAfter);
       this.copied(what);
     } catch (failure: any) {
-      overlays.toast(failure.message ?? 'That could not be copied.');
+      overlays.toast(failure?.message ?? 'That could not be copied.');
     }
   }
 
   async copyPlain(what: string, value: string) {
-    await host().copyText(value, false, 0);
-    overlays.toast(`${what} copied.`);
+    try {
+      await host().copyText(value, false, 0);
+      overlays.toast(`${what} copied.`);
+    } catch (failure: any) {
+      overlays.toast(failure?.message ?? 'That could not be copied.');
+    }
+  }
+
+  /** A code already on screen, such as a counter-based one: what is shown is what is copied. */
+  async copyShownCode(code: string) {
+    try {
+      await host().copyText(code, true, this.clearAfter);
+      this.copied('Code');
+    } catch (failure: any) {
+      overlays.toast(failure?.message ?? 'That could not be copied.');
+    }
   }
 
   copyPassword(id: string) {
     return this.copySecret('Password', 'entry.reveal', { id, field: 'password' });
   }
 
-  copyCode(id: string) {
+  async copyCode(id: string) {
+    // A counter-based code is used up once given out: each copy moves the counter on, as the
+    // item page's New code button does, or the second copy would be refused by the site.
+    const detail = await pass.detail(id).catch(() => null);
+    if (detail?.otp && detail.otp.period === null) {
+      try {
+        const reply = await pass.change('otp.hotp_next', { id });
+        return this.copyShownCode(consumeText(reply.secret));
+      } catch (failure: any) {
+        overlays.toast(failure?.message ?? 'That could not be copied.');
+        return;
+      }
+    }
     return this.copySecret('Code', 'otp.code', { id });
   }
 
   async copyUsername(id: string) {
-    const detail = await pass.detail(id);
+    const detail = await pass.detail(id).catch((failure: any) => {
+      overlays.toast(failure?.message ?? 'That could not be copied.');
+      return null;
+    });
+    if (!detail) return;
     const field = detail.fields.find((f) => f.key === 'username' || f.key === 'user');
     if (field?.value) await this.copyPlain('Username', String(field.value));
     else overlays.toast('This item has no username.');
   }
 
   async openSite(id: string) {
-    const detail = await pass.detail(id);
-    for (const site of detail.sites) {
-      const line = siteLine(site);
-      if (line?.openable) {
-        const url = line.openable.includes('://') ? line.openable : `https://${line.openable}`;
-        await host().openUrl(url);
-        return;
+    try {
+      const detail = await pass.detail(id);
+      for (const site of detail.sites) {
+        const line = siteLine(site);
+        if (line?.openable) {
+          const url = line.openable.includes('://') ? line.openable : `https://${line.openable}`;
+          await host().openUrl(url);
+          return;
+        }
       }
+    } catch (failure: any) {
+      overlays.toast(failure?.message ?? 'That site could not be opened.');
+      return;
     }
     overlays.toast('This item has no website.');
   }
 
   canDo(action: string, entry: Summary) {
+    // An item in the trash is only looked at, from its page: a double-click set to Edit would
+    // otherwise open the editor on it, which the page itself does not offer.
+    if (entry.trashed && action !== 'open') return false;
     switch (action) {
       case 'password':
         return entry.has_password;
       case 'code':
         return entry.has_otp;
       case 'username':
-        return entry.kind === 'login' || entry.kind === 'database';
+        // A login's line under its title is its username, so one with none offers no copy of it.
+        return (entry.kind === 'login' && entry.subtitle !== '') || entry.kind === 'database';
       case 'open_site':
         return !!entry.site;
       case 'none':
@@ -182,7 +270,9 @@ class Ui {
       case 'open':
         return this.open(entry.id);
       case 'favourite':
-        return pass.change('entry.common', { id: entry.id, favourite: !entry.favourite });
+        return pass.change('entry.common', { id: entry.id, favourite: !entry.favourite }).catch((failure: any) => {
+          overlays.toast(failure?.message ?? 'That could not be changed.');
+        });
       case 'trash':
         return this.trash(entry.id, entry.title);
       default:
@@ -190,12 +280,24 @@ class Ui {
     }
   }
 
+  /** Lets go of an item that has gone from the list. A narrow window goes back to the list too. */
+  deselect(id: string) {
+    if (this.selected !== id) return;
+    this.selected = null;
+    if (!this.editing) this.showDetail = false;
+  }
+
   async trash(id: string, title: string) {
-    await pass.change('entry.trash', { id });
-    if (this.selected === id) this.selected = null;
-    overlays.toast(`“${title}” moved to the trash.`, {
+    try {
+      await pass.change('entry.trash', { id });
+    } catch (failure: any) {
+      overlays.toast(failure?.message ?? 'That could not be moved to the trash.');
+      return;
+    }
+    this.deselect(id);
+    overlays.toast(`“${title || 'Untitled'}” moved to the trash.`, {
       action: 'Undo',
-      run: () => void pass.change('entry.restore', { id }),
+      run: () => void pass.change('entry.restore', { id }).catch((failure: any) => overlays.toast(failure?.message ?? 'It could not be restored.')),
     });
   }
 

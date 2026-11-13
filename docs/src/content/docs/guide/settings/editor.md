@@ -50,7 +50,7 @@ On the phone it is called Shown and open at the start.
 
 Which sections of the editor are on show, and open, when it starts. The rest wait behind one **Add more** line.
 
-A section that already holds something is always shown, but it starts folded like the rest, its line saying what is inside, unless its switch here is on. One you add under **Add more** opens straight away.
+A section that already holds something is always shown, but it starts folded like the rest, its line saying what is inside, unless its switch here is on. One you add under **Add more** opens straight away. Websites and apps, Other details and Organize are always shown, so their switches only open them.
 
 - Websites and apps, for logins.
 - One-time code, for logins and codes.
@@ -98,6 +98,15 @@ Cards, identities, SSH keys, API keys, databases, licenses, recovery items and W
 | On | Those types show their everyday fields first, with **More details** below. It opens by itself when one of its fields has something in it. |
 | Off | Every field of the type shows at once. |
 
+#### On Android
+
+Keeps a type's everyday fields on show and puts the rest under **Other details**, such as a card's PIN or a database's connection string.
+
+| Choice | What it does |
+| --- | --- |
+| On | Those types show their everyday fields first, with **Other details** below. It starts folded, its line naming the fields inside, unless its switch under **Shown and open at the start** is on. |
+| Off | Every field of the type shows at once. |
+
 See also [Sections open at the start](/guide/settings/editor/#setting-editor-open), [Kinds of item](/guide/how-it-works/#concept-item-kinds).
 
 <a id="setting-editor-generate"></a>
@@ -124,17 +133,17 @@ See also [Generator](/guide/settings/generator/), [Type](/guide/settings/generat
 
 ## Tag new items
 
-Gives a new item the tag its site suggests, such as Banking or Social, when you save it without any.
+Gives a new item the tag its site suggests, such as Banking or Social, when you save it without tags of your own.
 
 #### How it works
 
-The tag comes from WM Pass's list of known sites, or from an item's name when that is a known site's, such as PyPI. The offline model's guesses do not tag a new item. An item you tag yourself keeps only your tags.
+The tag comes from WM Pass's list of known sites, or from an item's name when that is a known site's, such as PyPI. The offline model's guesses do not tag a new item. An item you tag yourself keeps only your tags. One added while a tag's list is open still gets its site's tag, beside that one.
 
 #### What each choice does
 
 | Choice | What it does |
 | --- | --- |
-| On | A new item saved with no tags gets its site's suggestions. |
+| On | A new item saved with no tags of your own gets its site's tag. |
 | Off | A new item has only the tags you give it. |
 
 #### Limits
@@ -189,7 +198,7 @@ Each suggestion says where it came from, and you pick which sources count:
 
 Suggestions are grouped by tag. Open a group to leave out any item, or clear its box to leave out the whole tag. **Only items with no tags yet** skips anything you have tagged already.
 
-**Add** tags what is left, and the message after it offers **Undo**, which takes every one of those tags back off.
+The button at the foot, such as **Add 3 tags to 2 items**, tags what is left, and the message after it offers **Undo**, which takes every one of those tags back off.
 
 See also [Tag new items](/guide/settings/editor/#setting-auto-tag), [Use guesses too](/guide/settings/editor/#setting-auto-tag-guess).
 

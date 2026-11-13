@@ -22,7 +22,7 @@ mod wifi;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -48,9 +48,13 @@ use widgets::Widgets;
 struct Shell {
     close_to_tray: Mutex<bool>,
     shortcuts: Mutex<HashMap<String, String>>,
+    /// The quick search chord registered with the system, or empty.
+    global_chord: Mutex<String>,
     update: Mutex<Option<tauri_plugin_updater::Update>>,
     /// Places outside the app's folder the person chose in a dialog. Nothing else can be reached.
     outside: Mutex<Vec<String>>,
+    /// Whether the tray icon is there to bring a hidden window back.
+    has_tray: AtomicBool,
 }
 
 fn fail<E: ToString>(error: E) -> String {
@@ -116,6 +120,7 @@ async fn call_to_clipboard(request: Request<'_>, engine: State<'_, Engine>) -> R
 
 #[tauri::command]
 fn copy_text(text: String, sensitive: bool, clear_after_seconds: u64) -> Result<(), String> {
+    let text = Zeroizing::new(text);
     clip::copy(&text, sensitive, clear_after_seconds)
 }
 
@@ -124,10 +129,13 @@ fn clear_clipboard() -> Result<(), String> {
     clip::clear()
 }
 
+/// Off the main thread: a long call, such as an unlock, holds the session until it is done.
 #[tauri::command]
-fn lock_all(engine: State<'_, Engine>, widgets: State<'_, Arc<Widgets>>) {
-    engine.lock_all();
+async fn lock_all(engine: State<'_, Engine>, widgets: State<'_, Arc<Widgets>>) -> Result<(), String> {
+    let engine = engine.inner().clone();
+    blocking(move || engine.lock_all()).await?;
     widgets.nudge();
+    Ok(())
 }
 
 #[tauri::command]
@@ -135,8 +143,25 @@ fn state_changed(app: AppHandle, engine: State<'_, Engine>, shell: State<'_, She
     engine.current.store(if unlocked { handle } else { 0 }, Ordering::SeqCst);
     engine.guard.active();
     widgets.nudge();
+    // The quick search, hidden, still holds the titles it last showed: a lock from the main
+    // window takes them out of it too.
+    if !unlocked {
+        let _ = app.emit_to("palette", "command", "lock");
+    }
     let shortcuts = shell.shortcuts.lock().map_err(fail)?.clone();
-    app.set_menu(menu::build(&app, &shortcuts, unlocked).map_err(fail)?).map_err(fail)?;
+    set_app_menu(&app, menu::build(&app, &shortcuts, unlocked).map_err(fail)?).map_err(fail)?;
+    tray_follows(&app, unlocked);
+    Ok(())
+}
+
+/// Sets the menu bar. Off a Mac, Tauri gives the app's menu to every window that has none of its
+/// own, and the quick search, a bare box with no frame, would grow a menu bar across its top.
+fn set_app_menu(app: &AppHandle, menu: Menu<tauri::Wry>) -> tauri::Result<()> {
+    app.set_menu(menu)?;
+    #[cfg(not(target_os = "macos"))]
+    if let Some(palette) = app.get_webview_window("palette") {
+        palette.remove_menu()?;
+    }
     Ok(())
 }
 
@@ -158,7 +183,7 @@ fn current_handle(engine: State<'_, Engine>) -> u64 {
 #[tauri::command]
 fn set_shortcuts(app: AppHandle, engine: State<'_, Engine>, shell: State<'_, Shell>, shortcuts: HashMap<String, String>) -> Result<(), String> {
     let unlocked = engine.current.load(Ordering::SeqCst) != 0;
-    app.set_menu(menu::build(&app, &shortcuts, unlocked).map_err(fail)?).map_err(fail)?;
+    set_app_menu(&app, menu::build(&app, &shortcuts, unlocked).map_err(fail)?).map_err(fail)?;
     *shell.shortcuts.lock().map_err(fail)? = shortcuts;
     Ok(())
 }
@@ -391,7 +416,9 @@ pub fn open_in_browser(url: &str) {
 /// may hold anything.
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
-    if !(url.starts_with("https://") || url.starts_with("http://") || url.starts_with("mailto:")) || url.chars().any(char::is_control) {
+    // Saved addresses are sometimes written in capitals: `HTTPS://Example.com`.
+    let lower = url.to_ascii_lowercase();
+    if !(lower.starts_with("https://") || lower.starts_with("http://") || lower.starts_with("mailto:")) || url.chars().any(char::is_control) {
         return Err("that is not a web address".to_owned());
     }
     open_in_browser(&url);
@@ -556,26 +583,31 @@ fn blob_dir(store: State<'_, Store>, folder: String) -> Result<String, String> {
 
 // ---- quick unlock ----
 
+// The keyring answers over D-Bus, and the session may be busy, so none of these runs on the main thread.
 #[tauri::command]
-fn quick_available() -> bool {
-    sealed::quick_available()
+async fn quick_available() -> Result<bool, String> {
+    blocking(sealed::quick_available).await
 }
 
 #[tauri::command]
-fn quick_enrolled(file: String) -> bool {
-    sealed::quick_enrolled(&file)
+async fn quick_enrolled(file: String) -> Result<bool, String> {
+    blocking(move || sealed::quick_enrolled(&file)).await
 }
 
 #[tauri::command]
-fn quick_enroll(engine: State<'_, Engine>, handle: u64, file: String) -> Result<(), String> {
-    let reply = engine.call("vault.key_for_wrapping", handle, "{}", &[], &[], now_ms()).map_err(|e| e.message)?;
-    let key = reply.secret.ok_or("no key")?;
-    sealed::quick_store(&file, &key)
+async fn quick_enroll(engine: State<'_, Engine>, handle: u64, file: String) -> Result<(), String> {
+    let engine = engine.inner().clone();
+    blocking(move || {
+        let reply = engine.call("vault.key_for_wrapping", handle, "{}", &[], &[], now_ms()).map_err(|e| e.message)?;
+        let key = reply.secret.ok_or("the vault gave no key to keep in the keyring")?;
+        sealed::quick_store(&file, &key)
+    })
+    .await?
 }
 
 #[tauri::command]
-fn quick_forget(file: String) -> Result<(), String> {
-    sealed::quick_forget(&file)
+async fn quick_forget(file: String) -> Result<(), String> {
+    blocking(move || sealed::quick_forget(&file)).await?
 }
 
 /// Opens a vault with the key from the system's store, which never reaches the page.
@@ -632,21 +664,23 @@ fn set_autostart(app: AppHandle, on: bool) -> Result<(), String> {
 
 /// `Mod+Shift+Space` in the form the system wants.
 fn global_chord(chord: &str) -> String {
-    chord
-        .split('+')
-        .map(|part| match part {
-            "Mod" => "CommandOrControl",
-            other => other,
-        })
-        .collect::<Vec<_>>()
-        .join("+")
+    menu::system_chord(chord, "CommandOrControl")
 }
 
+/// A chord something else holds is refused, and the one that worked before stays.
 #[tauri::command]
-fn set_global_shortcut(app: AppHandle, chord: String) -> bool {
+fn set_global_shortcut(app: AppHandle, shell: State<'_, Shell>, chord: String) -> bool {
+    let Ok(mut current) = shell.global_chord.lock() else { return false };
     let shortcuts = app.global_shortcut();
     let _ = shortcuts.unregister_all();
-    chord.is_empty() || shortcuts.register(global_chord(&chord).as_str()).is_ok()
+    if chord.is_empty() || shortcuts.register(global_chord(&chord).as_str()).is_ok() {
+        *current = chord;
+        return true;
+    }
+    if !current.is_empty() && shortcuts.register(global_chord(&current).as_str()).is_err() {
+        current.clear();
+    }
+    false
 }
 
 #[tauri::command]
@@ -707,13 +741,15 @@ fn remove_browser_host() -> Result<(), String> {
 
 #[tauri::command]
 fn ssh_state(agent: State<'_, Agent>) -> Result<Value, String> {
-    let state = agent.state.lock().map_err(fail)?;
-    Ok(json!({"running": state.running, "socket": state.socket, "last": state.last}))
+    let state = agent.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    Ok(json!({"running": state.running, "socket": state.socket, "last": state.last, "stopped": state.stopped}))
 }
 
+// The bridge's key is sealed by the system's keychain, which may answer slowly or ask the
+// person, so reading it runs off the main thread.
 #[tauri::command]
-fn bridge_fingerprint(bridge: State<'_, Bridge>) -> Result<String, String> {
-    bridge.fingerprint()
+async fn bridge_fingerprint(app: AppHandle) -> Result<String, String> {
+    blocking(move || app.state::<Bridge>().fingerprint()).await?
 }
 
 #[tauri::command]
@@ -722,14 +758,14 @@ fn bridge_state(bridge: State<'_, Bridge>) -> bridge::Shown {
 }
 
 #[tauri::command]
-fn bridge_set_enabled(bridge: State<'_, Bridge>, engine: State<'_, Engine>, on: bool, ask_sites: bool) -> Result<(), String> {
+async fn bridge_set_enabled(app: AppHandle, bridge: State<'_, Bridge>, engine: State<'_, Engine>, on: bool, ask_sites: bool) -> Result<(), String> {
     bridge.ask_sites.store(ask_sites, Ordering::SeqCst);
-    if on {
-        bridge.start(engine.inner().clone(), &agent::socket_folder()?)
-    } else {
-        bridge.stop();
-        Ok(())
+    bridge.want(on);
+    if !on {
+        return Ok(());
     }
+    let engine = engine.inner().clone();
+    blocking(move || app.state::<Bridge>().start(engine, &agent::socket_folder()?)).await?
 }
 
 #[tauri::command]
@@ -755,33 +791,56 @@ fn ssh_set_enabled(agent: State<'_, Agent>, engine: State<'_, Engine>, on: bool,
 async fn auto_type(app: AppHandle, engine: State<'_, Engine>, id: String) -> Result<(), String> {
     let engine = engine.inner().clone();
     let handle = engine.current.load(Ordering::SeqCst);
-    for window in app.webview_windows().values() {
-        let _ = window.hide();
-    }
-    #[cfg(target_os = "macos")]
-    let _ = app.hide();
-    blocking(move || -> Result<(), String> {
+    // Read before any window goes: a locked vault or a deleted entry is said in the page, rather
+    // than in a dialog over an app that then has no window to show.
+    let (username, password) = blocking(move || -> Result<(String, Zeroizing<String>), String> {
         let args = json!({"id": id}).to_string();
         let detail = engine.call("entry.get", handle, &args, &[], &[], now_ms()).map_err(|e| e.message)?;
-        let detail: Value = serde_json::from_str(&detail.json).map_err(fail)?;
+        let detail: Value = serde_json::from_str(&detail.json).map_err(|e| e.to_string())?;
+        // A database item calls it user. Without it the password would go into the first box.
         let username = detail["fields"]
             .as_array()
-            .and_then(|fields| fields.iter().find(|field| field["key"] == "username"))
+            .and_then(|fields| fields.iter().find(|field| field["key"] == "username" || field["key"] == "user"))
             .and_then(|field| field["value"].as_str())
             .unwrap_or("")
             .to_owned();
         let args = json!({"id": id, "field": "password"}).to_string();
         let secret = engine.call("entry.reveal", handle, &args, &[], &[], now_ms()).map_err(|e| e.message)?.secret.unwrap_or_default();
-        let password = Zeroizing::new(String::from_utf8_lossy(&secret).into_owned());
-        autotype::type_login(&username, &password)
+        Ok((username, Zeroizing::new(String::from_utf8_lossy(&secret).into_owned())))
     })
-    .await?
+    .await??;
+    for window in app.webview_windows().values() {
+        let _ = window.hide();
+    }
+    #[cfg(target_os = "macos")]
+    let _ = app.hide();
+    let typed = blocking(move || autotype::type_login(&username, &password)).await?;
+    // Every window is hidden by now, so an error sent back to the page would go unseen.
+    if let Err(reason) = &typed {
+        let hint = if cfg!(target_os = "macos") {
+            "\n\nOn a Mac, WM Pass needs to be allowed under System Settings, Privacy & Security, Accessibility."
+        } else {
+            ""
+        };
+        rfd::AsyncMessageDialog::new()
+            .set_title("WM Pass")
+            .set_description(format!("WM Pass could not type into the app in front: {reason}{hint}"))
+            .set_level(rfd::MessageLevel::Warning)
+            .show()
+            .await;
+    }
+    typed
 }
 
 // ---- updates ----
 
+/// `online` is the network setting, as on every other call that reaches a network: with it off,
+/// not even the check for a release leaves this computer.
 #[tauri::command]
-async fn check_update(app: AppHandle, shell: State<'_, Shell>) -> Result<Option<Value>, String> {
+async fn check_update(app: AppHandle, shell: State<'_, Shell>, online: bool) -> Result<Option<Value>, String> {
+    if !online {
+        return Err(wmpass_net::NetError::Blocked.to_string());
+    }
     let found = app.updater().map_err(fail)?.check().await.map_err(fail)?;
     let answer = found.as_ref().map(|update| json!({"version": update.version, "notes": update.body.clone().unwrap_or_default()}));
     *shell.update.lock().map_err(fail)? = found;
@@ -791,7 +850,9 @@ async fn check_update(app: AppHandle, shell: State<'_, Shell>) -> Result<Option<
 /// The plugin refuses anything whose minisign signature does not match the key in this build.
 #[tauri::command]
 async fn install_update(app: AppHandle, shell: State<'_, Shell>) -> Result<(), String> {
-    let update = shell.update.lock().map_err(fail)?.take().ok_or("there is no update to install")?;
+    // Kept until it is installed: a download that fails, on a dropped connection say, can be tried
+    // again without checking for the update afresh.
+    let update = shell.update.lock().map_err(fail)?.clone().ok_or("there is no update to install")?;
     update.download_and_install(|_, _| {}, || {}).await.map_err(fail)?;
     app.restart()
 }
@@ -818,16 +879,27 @@ fn toggle_palette(app: &AppHandle) {
     }
 }
 
-fn tray(app: &AppHandle) -> tauri::Result<()> {
+/// The tray's menu. Lock is there only while there is something to lock.
+fn tray_menu(app: &AppHandle, unlocked: bool) -> tauri::Result<Menu<tauri::Wry>> {
     let open = MenuItem::with_id(app, "open", "Open WM Pass", true, None::<&str>)?;
     let quick = MenuItem::with_id(app, "quick", "Quick Search", true, None::<&str>)?;
-    let lock = MenuItem::with_id(app, "cmd:lock", "Lock", true, None::<&str>)?;
+    let lock = MenuItem::with_id(app, "cmd:lock", "Lock", unlocked, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit WM Pass", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open, &quick, &lock, &PredefinedMenuItem::separator(app)?, &quit])?;
+    Menu::with_items(app, &[&open, &quick, &lock, &PredefinedMenuItem::separator(app)?, &quit])
+}
+
+/// After a lock or an unlock, from the page or from the timer here.
+fn tray_follows(app: &AppHandle, unlocked: bool) {
+    if let (Some(tray), Ok(menu)) = (app.tray_by_id("main"), tray_menu(app, unlocked)) {
+        let _ = tray.set_menu(Some(menu));
+    }
+}
+
+fn tray(app: &AppHandle) -> tauri::Result<()> {
     TrayIconBuilder::with_id("main")
         .icon(Image::from_bytes(include_bytes!("../icons/32x32.png"))?)
         .tooltip("WM Pass")
-        .menu(&menu)
+        .menu(&tray_menu(app, false)?)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "open" => show(app, "main"),
@@ -843,14 +915,30 @@ fn tray(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// A core dump would hold whatever was in memory.
+/// A dump of this process holds whatever an open vault has in memory, so none is written
+/// where the system lets the app say so. Someone with administrator rights can still read it.
 #[cfg(unix)]
 fn no_core_dumps() {
     use rustix::process::{Resource, Rlimit, setrlimit};
     let _ = setrlimit(Resource::Core, Rlimit { current: Some(0), maximum: Some(0) });
+    // On Linux a crash file is only half of it: any program running as the same person could
+    // read the memory through ptrace, gcore or /proc/<pid>/mem. A process that is not dumpable
+    // is closed to all of those short of root. It ends at exec, so the web view's own
+    // processes and anything the app starts are as they were.
+    #[cfg(target_os = "linux")]
+    let _ = rustix::process::set_dumpable_behavior(rustix::process::DumpableBehavior::NotDumpable);
 }
 
-#[cfg(not(unix))]
+/// Windows Error Reporting puts the heap in the report it makes of a crash, and with it the
+/// open vault. Reports are still made, without it.
+#[cfg(windows)]
+fn no_core_dumps() {
+    use windows_sys::Win32::System::ErrorReporting::{WER_FAULT_REPORTING_FLAG_NOHEAP, WerSetFlags};
+    // SAFETY: takes a flag and touches nothing of ours.
+    let _ = unsafe { WerSetFlags(WER_FAULT_REPORTING_FLAG_NOHEAP) };
+}
+
+#[cfg(not(any(unix, windows)))]
 fn no_core_dumps() {}
 
 /// Debug builds can be pointed elsewhere, so a test never touches a real vault.
@@ -866,7 +954,8 @@ fn device_number(store: &Store) -> u32 {
     if let Ok(raw) = store.read("settings/device.bin")
         && let Ok(found) = <[u8; 4]>::try_from(raw.as_slice())
     {
-        return u32::from_le_bytes(found);
+        // The same floor as when it was made, or a zero drawn then would read back as another device.
+        return u32::from_le_bytes(found).max(1);
     }
     let made: [u8; 4] = wmpass_core::crypto::random_array().unwrap_or([1, 0, 0, 0]);
     let _ = store.write("settings/device.bin", &made);
@@ -967,12 +1056,25 @@ fn main() {
             let app = window.app_handle();
             match event {
                 tauri::WindowEvent::CloseRequested { api, .. } if window.label() == "main" => {
-                    let keep = app.state::<Shell>().close_to_tray.lock().is_ok_and(|on| *on);
+                    let shell = app.state::<Shell>();
+                    // With no tray icon, off a Mac, a hidden window could not be found again.
+                    let reachable = cfg!(target_os = "macos") || shell.has_tray.load(Ordering::SeqCst);
+                    let keep = reachable && shell.close_to_tray.lock().is_ok_and(|on| *on);
                     if keep {
                         api.prevent_close();
                         let _ = window.hide();
                         let _ = app.emit("command", "window-hidden");
+                    } else {
+                        // The hidden palette is a window too, so closing this one alone would leave
+                        // the app running with the vault open and no window for the tray to show.
+                        app.exit(0);
                     }
+                }
+                // Closed, as Close Window on a Mac or Alt+F4 does to whatever is in front, the
+                // quick search would be gone and its shortcut would open nothing until a restart.
+                tauri::WindowEvent::CloseRequested { api, .. } if window.label() == "palette" => {
+                    api.prevent_close();
+                    let _ = window.hide();
                 }
                 tauri::WindowEvent::Focused(false) if window.label() == "palette" => {
                     let _ = window.hide();
@@ -998,7 +1100,18 @@ fn main() {
             let locked = Arc::clone(&widgets);
             engine.watch(move || {
                 let _ = watcher.emit("command", "lock");
+                tray_follows(&watcher, false);
                 locked.nudge();
+            });
+            // A bug in the session, met by the page, the extension's bridge, the SSH agent or the
+            // widgets: the session was replaced, locked. The main window says so over whatever it
+            // shows and then goes to its door; the quick search empties as for a lock.
+            let told = handle.clone();
+            let nudged = Arc::clone(&widgets);
+            engine.on_internal(move || {
+                let _ = told.emit("command", "internal");
+                tray_follows(&told, false);
+                nudged.nudge();
             });
             widgets.start(engine.clone());
             app.manage(widgets);
@@ -1009,15 +1122,30 @@ fn main() {
             app.manage(Shell {
                 close_to_tray: Mutex::new(true),
                 shortcuts: Mutex::new(HashMap::new()),
+                global_chord: Mutex::new(String::new()),
                 update: Mutex::new(None),
                 outside: Mutex::new(outside),
+                has_tray: AtomicBool::new(false),
             });
-            handle.set_menu(menu::build(&handle, &HashMap::new(), false)?)?;
-            tray(&handle)?;
+            set_app_menu(&handle, menu::build(&handle, &HashMap::new(), false)?)?;
+            // A Linux desktop without the indicator library has no tray to put the icon in. The
+            // app runs without one rather than not at all; opening it again shows the window.
+            match tray(&handle) {
+                Ok(()) => app.state::<Shell>().has_tray.store(true, Ordering::SeqCst),
+                Err(error) => eprintln!("WM Pass has no tray icon: {error}"),
+            }
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("WM Pass could not start")
+        .unwrap_or_else(|error| {
+            // A release build has no console, so a failure to start would otherwise be silent.
+            rfd::MessageDialog::new()
+                .set_title("WM Pass")
+                .set_description(format!("WM Pass could not start: {error}"))
+                .set_level(rfd::MessageLevel::Error)
+                .show();
+            std::process::exit(1);
+        })
         .run(|app, event| {
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = &event {
@@ -1032,6 +1160,8 @@ fn main() {
             // Quitting is a lock too: the widgets are left with nothing from the vault.
             if let tauri::RunEvent::Exit = &event {
                 app.state::<Arc<Widgets>>().write_locked_now();
+                // A copied secret's timer dies with the app, so it is cleared now rather than never.
+                clip::clear_pending();
             }
         });
 }

@@ -32,7 +32,10 @@
   type PreviewTable = Record<string, Component<{ value?: unknown; pref?: string }>>;
   let previews = $state.raw<PreviewTable | null>(null);
   $effect(() => {
-    if (topic?.preview && !previews && !simple) void import('./previews/index').then((m) => (previews = m.PREVIEWS));
+    if (topic?.preview && !previews && !simple) void import('./previews/index').then(
+        (m) => (previews = m.PREVIEWS),
+        () => undefined,
+      );
   });
   const Preview = $derived(topic?.preview && previews ? previews[topic.preview] : null);
 
@@ -59,6 +62,19 @@
       event.preventDefault();
       help.back();
     }
+  }
+
+  /** The arrow keys move through the choices as through any group of radio buttons, and choose. */
+  function radioKey(event: KeyboardEvent) {
+    const step = event.key === 'ArrowDown' || event.key === 'ArrowRight' ? 1 : event.key === 'ArrowUp' || event.key === 'ArrowLeft' ? -1 : 0;
+    if (!step || event.altKey) return;
+    const radios = [...(event.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>('[role="radio"]')];
+    const at = radios.indexOf(document.activeElement as HTMLButtonElement);
+    if (at < 0) return;
+    event.preventDefault();
+    const next = radios[(at + step + radios.length) % radios.length];
+    next.focus();
+    next.click();
   }
 
   /** Related topics here, one per title: a page and its row can share a name. */
@@ -107,8 +123,9 @@
             {#if Preview}
               <div class="preview"><Preview value={showing} pref={topic.pref} /></div>
             {/if}
-            <div class="help-choices" role={pref ? 'radiogroup' : undefined} aria-label={pref ? topic.title : undefined}>
-              {#each topic.effects as effect (String(effect.value))}
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div class="help-choices" role={pref ? 'radiogroup' : undefined} aria-label={pref ? topic.title : undefined} onkeydown={pref ? radioKey : undefined}>
+              {#each topic.effects as effect, index (String(effect.value))}
                 {@const current = pref !== null && same(effect.value, now)}
                 {@const usual = pref !== null && same(effect.value, fallback)}
                 {#if pref}
@@ -117,9 +134,10 @@
                     class="help-choice"
                     role="radio"
                     aria-checked={same(effect.value, showing)}
+                    tabindex={(topic.effects.some((e) => same(e.value, showing)) ? same(effect.value, showing) : index === 0) ? 0 : -1}
                     onclick={() => (picked = effect.value)}
                   >
-                    <span class="mark">{#if current}<Icon name="check" size={16} />{/if}</span>
+                    <span class="mark">{#if current}<Icon name="check" size={16} /><span class="sr-only">In use. </span>{/if}</span>
                     <span class="grow">
                       <span class="name">{effect.label}{#if usual}<span class="dimmer small"> · usual</span>{/if}</span>
                       <Rich text={effect.text} />
@@ -164,7 +182,7 @@
         {/if}
 
         {#if topic.docs && !simple}
-          <p class="small"><button type="button" class="link" onclick={() => host().openUrl(`https://wmpass.pages.dev${topic.docs}`)}>More on the WM Pass website</button></p>
+          <p class="small"><button type="button" class="link" onclick={() => void host().openUrl(`https://wmpass.pages.dev${topic.docs}`).catch(() => undefined)}>More on the WM Pass website</button></p>
         {/if}
       </div>
     {/key}

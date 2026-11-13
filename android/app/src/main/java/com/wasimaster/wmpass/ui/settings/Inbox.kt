@@ -1,5 +1,8 @@
 package com.wasimaster.wmpass.ui.settings
 
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.draw.alpha
 import android.net.Uri
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -49,9 +52,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
-import com.wasimaster.wmpass.core.NativeFailure
 import com.wasimaster.wmpass.core.Pass
 import com.wasimaster.wmpass.system.NetAccess
+import com.wasimaster.wmpass.ui.parts.announced
 import com.wasimaster.wmpass.ui.fx.rim
 import com.wasimaster.wmpass.ui.icons.PassIcons
 import com.wasimaster.wmpass.ui.parts.Eyebrow
@@ -145,7 +148,14 @@ fun InboxScreen() {
     val shell = LocalShell.current
     var kept by remember { mutableStateOf<List<KeptInbox>?>(null) }
     var making by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { kept = runCatching { keptInboxes() }.getOrDefault(emptyList()) }
+    // A list that could not be read says so, rather than claiming there are no addresses.
+    var listProblem by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        kept = runCatching { keptInboxes() }.onFailure {
+            if (it is kotlinx.coroutines.CancellationException) throw it
+            listProblem = it.message ?: "The addresses could not be read."
+        }.getOrDefault(emptyList())
+    }
     Page("Disposable inbox") {
         NetGate(InboxWarning) {
             Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -160,8 +170,8 @@ fun InboxScreen() {
                 when {
                     list == null -> Unit
                     list.isEmpty() -> Text(
-                        "No addresses yet.",
-                        color = colors.textLow,
+                        listProblem ?: "No addresses yet.",
+                        color = if (listProblem != null) colors.danger else colors.textLow,
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
                     )
@@ -223,7 +233,7 @@ private fun NewInboxSheet(onDismiss: () -> Unit, onMade: (String) -> Unit) {
                 problem = null
             }
             if (!choice.own && provider == choice.id) {
-                problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 60.dp, bottom = 6.dp)) }
+                problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced().padding(start = 60.dp, bottom = 6.dp)) }
             }
         }
         val own = Providers.first { it.id == provider }.own
@@ -231,7 +241,7 @@ private fun NewInboxSheet(onDismiss: () -> Unit, onMade: (String) -> Unit) {
             Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 SheetField(base, "Server, like https://mail.example.com")
                 if (provider == "inbucket") SheetField(domain, "The domain it takes mail for")
-                problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 4.dp)) }
+                problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced().padding(horizontal = 4.dp)) }
                 Text(
                     "Plain http works only for this phone and Tailscale addresses.",
                     color = colors.textLow,
@@ -257,8 +267,10 @@ private fun NewInboxSheet(onDismiss: () -> Unit, onMade: (String) -> Unit) {
                     }
                     Pass.flush()
                     onMade(reply.obj.text("id"))
-                } catch (failure: NativeFailure) {
-                    problem = failure.message
+                } catch (failure: Exception) {
+                    // This sheet's scope has no handler: a save that fails is said here, not a crash.
+                    if (failure is kotlinx.coroutines.CancellationException) throw failure
+                    problem = failure.message ?: "The address could not be made."
                 } finally {
                     busy = false
                 }
@@ -319,6 +331,8 @@ private fun Mailbox(inbox: KeptInbox) {
     var looking by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
     var again by remember { mutableIntStateOf(0) }
+    // Only a look someone asked for shows the spinner; the quiet one every 8 seconds does not.
+    var asked by remember { mutableStateOf(false) }
     LaunchedEffect(inbox.id, again) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
@@ -331,10 +345,13 @@ private fun Mailbox(inbox: KeptInbox) {
                     if (seen == null) seen = rows.map { it.id }.toSet()
                     mail = rows
                     problem = null
-                } catch (failure: NativeFailure) {
-                    problem = failure.message
+                } catch (failure: Exception) {
+                    // A look that fails says so and tries again on the next round, rather than closing the app.
+                    if (failure is kotlinx.coroutines.CancellationException) throw failure
+                    problem = failure.message ?: "The mail could not be fetched."
                 }
                 looking = false
+                asked = false
                 delay(8000)
             }
         }
@@ -352,15 +369,26 @@ private fun Mailbox(inbox: KeptInbox) {
         }
         Eyebrow("Arrived") {
             com.wasimaster.wmpass.ui.help.HelpMark("group.inbox.arrived", "mail that arrived")
+            // The button stays put while it looks, so a screen reader's focus on it is not lost:
+            // it fades under the spinner and says it is looking.
+            val spinning = looking && asked
             Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
-                if (looking) {
-                    CircularProgressIndicator(Modifier.size(18.dp), color = colors.primary, strokeWidth = 2.dp)
-                } else {
-                    RowIconButton(PassIcons.Refresh, "Look for new mail") { again++ }
+                RowIconButton(
+                    PassIcons.Refresh,
+                    "Look for new mail",
+                    Modifier
+                        .alpha(if (spinning) 0f else 1f)
+                        .semantics { if (looking) stateDescription = "Looking" },
+                ) {
+                    if (!looking) {
+                        asked = true
+                        again++
+                    }
                 }
+                if (spinning) CircularProgressIndicator(Modifier.size(18.dp), color = colors.primary, strokeWidth = 2.dp)
             }
         }
-        problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 6.dp)) }
+        problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced().padding(horizontal = 6.dp)) }
         val rows = mail
         when {
             rows == null -> Unit
@@ -405,19 +433,27 @@ private fun RenameInboxSheet(inbox: KeptInbox, onDismiss: () -> Unit, onDone: ()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val label = rememberTextFieldState(inbox.label)
+    var busy by remember { mutableStateOf(false) }
+    var problem by remember { mutableStateOf<String?>(null) }
     PassSheet(onDismiss, "Name this address") {
         SheetField(label, "What it is for")
+        // A name that did not take is said here, with the sheet still open, rather than closing as if saved.
+        problem?.let { Text(it, color = palette.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced().padding(start = 4.dp, top = 8.dp)) }
         Spacer(Modifier.height(14.dp))
-        PrimaryButton("Save", Modifier.fillMaxWidth()) {
+        PrimaryButton("Save", Modifier.fillMaxWidth(), enabled = !busy) {
+            if (busy) return@PrimaryButton
+            busy = true
+            problem = null
             scope.launch {
-                runCatching {
+                val failure = runCatching {
                     Pass.net("inbox.rename", online = NetAccess.allowed(context)) {
                         put("id", inbox.id)
                         put("label", label.text.toString().trim())
                     }
                     Pass.flush()
-                }
-                onDone()
+                }.exceptionOrNull()
+                busy = false
+                if (failure == null) onDone() else problem = failure.message ?: "The name could not be saved."
             }
         }
     }
@@ -429,18 +465,22 @@ private fun CloseInboxSheet(inbox: KeptInbox, onDismiss: () -> Unit, onClosed: (
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
+    var problem by remember { mutableStateOf<String?>(null) }
     fun close(delete: Boolean) {
         busy = true
+        problem = null
         scope.launch {
-            runCatching {
+            val failure = runCatching {
                 Pass.net("inbox.close", online = NetAccess.allowed(context)) {
                     put("id", inbox.id)
                     put("delete", delete)
                 }
                 Pass.flush()
-            }
+            }.exceptionOrNull()
             busy = false
-            onClosed()
+            // A close that did not happen, as with no network for the delete, is said here, with
+            // the address still kept, rather than leaving the page as if it were gone.
+            if (failure == null) onClosed() else problem = failure.message ?: "The address could not be closed."
         }
     }
     PassSheet(onDismiss, "Close this address?") {
@@ -458,9 +498,13 @@ private fun CloseInboxSheet(inbox: KeptInbox, onDismiss: () -> Unit, onClosed: (
         if (deletes) {
             PrimaryButton("Close and delete it on ${providerName(inbox.provider)}", Modifier.fillMaxWidth(), enabled = !busy, icon = PassIcons.Delete) { close(true) }
             Spacer(Modifier.height(10.dp))
-            QuietButton("Only forget it here", Modifier.fillMaxWidth()) { if (!busy) close(false) }
+            QuietButton("Only forget it here", Modifier.fillMaxWidth(), enabled = !busy) { if (!busy) close(false) }
         } else {
             PrimaryButton("Close", Modifier.fillMaxWidth(), enabled = !busy, icon = PassIcons.Delete) { close(false) }
+        }
+        problem?.let {
+            Spacer(Modifier.height(10.dp))
+            Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced().padding(horizontal = 4.dp))
         }
     }
 }
@@ -480,10 +524,15 @@ fun MailScreen(id: String, message: String) {
     val saveFile = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.CreateDocument("*/*")) { uri ->
         val mail = mail
         if (uri != null && mail != null) {
-            runCatching {
-                context.contentResolver.openOutputStream(uri)?.use { out -> out.write(mailFile(mail).toByteArray()) }
-                shell.notice("Saved")
-            }.onFailure { shell.notice("That file could not be written") }
+            // Off the main thread: the place may be a cloud drive. A place that hands back no
+            // stream is a failure too, not "Saved".
+            val text = mailFile(mail)
+            shell.launch {
+                val written = runCatching {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { context.contentResolver.openOutputStream(uri)?.use { out -> out.write(text.toByteArray()) } != null }
+                }.getOrDefault(false)
+                shell.notice(if (written) "Saved" else "That file could not be written")
+            }
         }
     }
     LaunchedEffect(id, message) {
@@ -493,8 +542,9 @@ fun MailScreen(id: String, message: String) {
                 put("message", message)
             }.obj
             mail = Mail(body.text("from"), body.text("to"), body.text("subject"), body.text("text"), body["html"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }, body.number("at_ms"))
-        } catch (failure: NativeFailure) {
-            problem = failure.message
+        } catch (failure: Exception) {
+            if (failure is kotlinx.coroutines.CancellationException) throw failure
+            problem = failure.message ?: "This mail could not be opened."
         }
     }
     val open = mail
@@ -544,7 +594,7 @@ fun MailScreen(id: String, message: String) {
         },
     ) {
         Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 6.dp)) }
+            problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced().padding(horizontal = 6.dp)) }
             if (open == null) {
                 if (problem == null) CircularProgressIndicator(Modifier.padding(24.dp).size(24.dp), color = colors.primary, strokeWidth = 2.dp)
                 return@Column
@@ -560,7 +610,10 @@ fun MailScreen(id: String, message: String) {
             if (codes.isNotEmpty()) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     codes.forEach { code ->
-                        QuietButton("Copy $code", icon = PassIcons.ContentCopy) { shell.copyPlain("Code", code) }
+                        QuietButton("Copy $code", icon = PassIcons.ContentCopy) {
+                            // A sign-in code like any other: marked sensitive and wiped on the usual timer.
+                            shell.copySecret("Code") { com.wasimaster.wmpass.core.SecretBytes(code.toByteArray()) }
+                        }
                     }
                 }
             }
@@ -689,7 +742,9 @@ private class MailClient(private val open: (String) -> Unit) : WebViewClient() {
 
     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
         val url = request.url
-        if (url.scheme in setOf("https", "http", "mailto")) open(url.toString())
+        // Only a tap: a mail can move the page by itself, with a refresh in its head, and that
+        // would open the browser at the sender's address the moment the mail is read, saying so.
+        if (request.hasGesture() && request.isForMainFrame && url.scheme in setOf("https", "http", "mailto")) open(url.toString())
         return true
     }
 

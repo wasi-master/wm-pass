@@ -58,13 +58,13 @@ Writes a new KeePass database (KDBX 4) protected by a password you choose. KeePa
 
 The database uses Argon2id to protect its password. Before it is saved, WM Pass reads it back and checks that every login came through intact.
 
-Items of other kinds keep their fields, with a WM Pass kind field saying what they were.
+Folders become KeePass groups, nested as they are here. Items of other kinds keep their fields, with a WM Pass kind field saying what they were.
 
 #### Limits
 
 Items on the hidden shelf are left out.
 
-Folders are not kept: every item goes into one group. Each login keeps one web address, and attachments and passkeys are not included.
+Each login keeps one web address, and attachments and passkeys are not included.
 
 Anyone with the file can try passwords against it for as long as they like, so give it a long one.
 

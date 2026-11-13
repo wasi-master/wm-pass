@@ -3,7 +3,7 @@
 // script, though anyone who can run code as the extension, or on the web vault's site, could ask
 // it to decrypt, so this guards against copied files.
 
-import { database, request } from './web';
+import { committed, database, request } from './web';
 
 const STORE = 'settings';
 const KEY_NAME = 'sealing-key';
@@ -13,8 +13,16 @@ async function sealingKey(): Promise<CryptoKey> {
   const found = await request(db.transaction(STORE, 'readonly').objectStore(STORE).get(KEY_NAME));
   if (found) return found as CryptoKey;
   const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
-  await request(db.transaction(STORE, 'readwrite').objectStore(STORE).put(key, KEY_NAME));
-  return key;
+  // Two pages sealing at once on first use would each make a key, and the second written would
+  // leave what the first sealed unreadable. Only the first is kept; the other uses it.
+  try {
+    await request(db.transaction(STORE, 'readwrite').objectStore(STORE).add(key, KEY_NAME));
+    return key;
+  } catch {
+    const kept = await request(db.transaction(STORE, 'readonly').objectStore(STORE).get(KEY_NAME));
+    if (!kept) throw new Error('The sealing key could not be kept.');
+    return kept as CryptoKey;
+  }
 }
 
 export async function seal(name: string, text: string) {
@@ -25,8 +33,9 @@ export async function seal(name: string, text: string) {
   const out = new Uint8Array(iv.length + sealed.length);
   out.set(iv);
   out.set(sealed, iv.length);
-  const db = await database();
-  await request(db.transaction(STORE, 'readwrite').objectStore(STORE).put(out, `sealed/${name}`));
+  const tx = (await database()).transaction(STORE, 'readwrite');
+  tx.objectStore(STORE).put(out, `sealed/${name}`);
+  await committed(tx);
 }
 
 export async function unseal(name: string): Promise<string | null> {

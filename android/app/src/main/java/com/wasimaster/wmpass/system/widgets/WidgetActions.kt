@@ -74,7 +74,10 @@ class GenerateAction : ActionCallback {
 class CopyCodeAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         val id = parameters[Id] ?: return
-        if (Pass.state.value !is LockState.Unlocked || !Prefs.of(context).widgetAccess.value) {
+        // The background time may have run out while the phone slept, the widget still drawn open.
+        // A lock that fails copies nothing, as autofill offers nothing then: the vault was meant to be shut.
+        val locked = runCatching { withContext(Dispatchers.Main) { com.wasimaster.wmpass.app.AutoLock.lockIfOverdue() } }.isSuccess
+        if (!locked || Pass.state.value !is LockState.Unlocked || !Prefs.of(context).widgetAccess.value) {
             WidgetFeed.redraw(context)
             return
         }

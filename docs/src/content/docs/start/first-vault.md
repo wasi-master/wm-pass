@@ -19,8 +19,8 @@ Three things take a few minutes now and matter a lot later.
 
 ## Unlocking faster
 
-On Android, fingerprint unlock wraps the vault key in the phone's secure hardware, and a new fingerprint on the phone invalidates it. On Linux, the keyring can hold it, though any program in your session could ask for it too, so it is off until you choose it. macOS builds have no biometric unlock, because the Secure Enclave needs a signed app and these builds are unsigned.
+On Android, fingerprint unlock wraps the vault key in the phone's secure hardware, and a new fingerprint on the phone invalidates it. On Linux, the keyring can hold it, though any program in your session could ask for it too, so it is off until you choose it. The macOS and Windows builds have no biometric unlock; on a Mac, the Secure Enclave needs a signed app and these builds are unsigned. In the browser extension and the web vault, **Unlock with a passkey** under Settings, Security opens the vault with Touch ID, Windows Hello or your phone.
 
 ## Automatic locking
 
-The vault locks after five minutes by default and when the device sleeps. Both are under Settings, Security.
+On a computer the vault locks after five minutes without use, and on a phone a minute after you leave the app. It also locks when the computer sleeps or the phone's screen goes off. Both are under Settings, Security.

@@ -61,6 +61,8 @@ When the vault locks, the agent has nothing to offer. It answers again once you 
 
 It does not take keys from ssh-add. Add keys as items in the vault.
 
+It signs only with Ed25519 keys. An RSA or ECDSA key kept in the vault is listed to programs, but a request to sign with it fails.
+
 Any program running as you can ask for the list of public keys. With [Ask before each use](/guide/settings/ssh/#setting-ssh-confirm) off, it can also have them sign without asking.
 
 See also [Ask before each use](/guide/settings/ssh/#setting-ssh-confirm), [Point your shell at it](/guide/settings/ssh/#action-ssh-shell), [Keys in this vault](/guide/settings/ssh/#group-ssh-keys).
@@ -125,5 +127,7 @@ Make a new key from the New item menu. Only Ed25519 keys are generated here; oth
 #### Limits
 
 Being listed here is not the same as being offered. A key reaches the agent only with **Offer to the SSH agent** on in its item.
+
+The agent can sign only with an Ed25519 key. Other keys can be kept here, for copying, but not used through the agent.
 
 See also [Run the SSH agent](/guide/settings/ssh/#setting-ssh-agent), [Kinds of item](/guide/how-it-works/#concept-item-kinds).

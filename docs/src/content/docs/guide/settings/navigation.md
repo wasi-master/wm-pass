@@ -16,7 +16,7 @@ Which places the sidebar lists and in what order, what else it shows, and where 
 
 #### How it works
 
-The first group is the list of places at the top of the sidebar. **Also in the sidebar** adds your types, folders and tags below them. **Starting** covers the first page after you unlock, and the lock button.
+**Sidebar** is the list of places at the top of the sidebar. **Also in the sidebar** adds your types, folders and tags below them. **Starting** covers the first page after you unlock, and the lock button.
 
 #### On Android
 
@@ -36,7 +36,7 @@ The places listed at the top of the sidebar, in order.
 
 #### How it works
 
-Drag a place to move it, or use its arrow to move it down one. The minus button takes it out, and its **Add** row below puts it back.
+Drag a place to move it, or use its arrows to move it up or down one. The minus button takes it out, and its **Add** row below puts it back.
 
 **Hidden shelf** is not in the sidebar at the start. Add it here if you use the shelf.
 
@@ -239,9 +239,9 @@ What the add button on the Vault page does: open the add menu, or start one type
 | New card | Starts a card. |
 | New identity | Starts an identity. |
 | New recovery | Starts a recovery item. |
-| New wi-fi | Starts a Wi-Fi network. |
-| New ssh key | Starts an SSH key. |
-| New api key | Starts an API key. |
+| New Wi-Fi | Starts a Wi-Fi network. |
+| New SSH key | Starts an SSH key. |
+| New API key | Starts an API key. |
 | New database | Starts a database. |
 | New license | Starts a license. |
 | New document | Starts a document. |

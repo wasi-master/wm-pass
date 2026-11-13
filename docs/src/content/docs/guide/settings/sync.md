@@ -42,8 +42,6 @@ See also [Keeping devices in sync](/guide/how-it-works/#feature-sync), [Syncing 
 
 ## This account
 
-*Only in the desktop app and Android.*
-
 The server account that is open now, and how its changes reach the server.
 
 #### How it works
@@ -160,9 +158,10 @@ Introduces another device to this one, once, so the two can sync over this netwo
 
 #### How it works
 
-Choose one of four ways. Each ends with both devices holding the other's key.
+Choose one of five ways. Each ends with both devices holding the other's key.
 
 - With **Show a code**, this computer shows a QR code for the other device to scan, and the same code as text for a computer that cannot scan. It works once and stops in two minutes.
+- With **Scan a code**, the other device shows its code, and this computer's camera reads it.
 - With **Paste a code**, the other device shows its code, and you paste its text here.
 - With **Compare six digits**, this side waits and the other connects. Both screens show six digits, and if they match you choose **They match** on both.
 - **Compare six digits, finding the other** does the same from the side that connects to a device already waiting.
@@ -200,6 +199,7 @@ Sends this vault to a phone or computer that has none yet, and pairs the two for
 
 First, on the new device, choose **I already have a vault**, then Get it from another device. It shows a code and waits.
 
+- **Scan its code** reads the QR code on the new device's screen with this computer's camera, or from a picture of it.
 - **Find it on this network** looks for it, then both screens show six digits. If they match, choose **They match** on both.
 - **Paste its code** takes the text under the new device's QR code, for a computer or the terminal app.
 
@@ -220,6 +220,7 @@ Sends this vault to a phone or computer that has none yet, and pairs the two for
 First, on the new device, choose **I already have a vault**, then Get it from another device. It shows a code and waits.
 
 - **Scan its code** reads the QR code on the new device's screen, from a computer, a phone or the terminal app.
+- **Paste its code** takes the text under the code, for a computer or the terminal app.
 - **Find it on this network** looks for it, then both screens show six digits. If they match, tap **They match** on both.
 
 The new device then asks for this vault's master password.
@@ -368,7 +369,7 @@ A KeePass file stays where it is, and WM Pass writes back to it on each save. It
 
 A server account keeps an offline copy here, encrypted as the server's is, so it opens without the network and catches up when it can.
 
-Click an account to remove it. WM Pass forgets it on this device, with its offline copy. Nothing on the server or in the file changes.
+The delete button beside an account removes it. WM Pass forgets it on this device, with its offline copy. Nothing on the server or in the file changes.
 
 #### Limits
 
@@ -380,11 +381,13 @@ See also [Add an account](/guide/settings/sync/#action-add-account), [This accou
 
 ## Add an account
 
-Adds a KeePass file or a server account to the door. Tap one in the list to open it, change its details or remove it.
+Adds a KeePass file or a server account to the door. The delete button beside it in the list removes it again.
 
 #### How it works
 
 Signing in to a server sends your email address, a name and an id for this device, and a key derived from your password that proves who you are, as any Bitwarden client does. Your password itself is never sent. After that, your items travel encrypted.
+
+Once it is added, **Sign in now** locks this vault and takes you to the door with the account chosen. **Later** leaves it there for next time.
 
 #### What each choice does
 
@@ -399,7 +402,7 @@ Signing in to a server sends your email address, a name and an id for this devic
 
 Adding a server account turns on [Allow network features](/guide/settings/security/#setting-network-allowed).
 
-Before an account is added, WM Pass checks that the address answers as a Bitwarden server does. Whether the email and password are right shows only at the first sign-in; until then the door offers **Change the details** and **Remove this account** when it fails.
+Nothing is checked when you add it. Whether the address, email and password are right shows at the first sign-in, at the door.
 
 WM Pass refuses a server that asks for weaker password protection than it accepts.
 
@@ -407,11 +410,15 @@ The first sign-in from a new device can be held back until you confirm it: Bitwa
 
 #### On Android
 
+Adds a KeePass file or a server account to the door. Tap one in the list to open it, change its details or remove it.
+
 Signing in to a server sends your email address, a name and an id for this phone, and a key derived from your password that proves who you are, as any Bitwarden client does. Your password itself is never sent. After that, your items travel encrypted.
 
 Once it is added, **Sign in now** locks this vault and takes you to the door with the account chosen. **Later** leaves it there for next time.
 
-A server account needs [Allow network features](/guide/settings/security/#setting-network-allowed).
+Adding a server account turns on [Allow network features](/guide/settings/security/#setting-network-allowed).
+
+Before a server account is added, WM Pass checks that the address answers as a Bitwarden server does. Whether the email and password are right shows only at the first sign-in; until then the door offers **Change the details** and **Remove this account** when it fails.
 
 WM Pass refuses a server that asks for weaker password protection than it accepts.
 

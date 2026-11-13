@@ -394,7 +394,7 @@ fn native_otp(
 /// `key=…&step=…`.
 fn otp_link(value: &str, title: &str) -> Option<OtpConfig> {
     let value = value.trim();
-    if value.starts_with("otpauth://") {
+    if value.get(..10).is_some_and(|head| head.eq_ignore_ascii_case("otpauth://")) {
         return OtpConfig::from_uri(value).ok();
     }
     if !value.contains("key=") {
@@ -633,17 +633,31 @@ fn walk(
             matchers.push(crate::matching::matcher_from_address(&url));
         }
         let (otp, used) = otp_from_fields(&read, &title, &mut out.skipped);
+        let all: Vec<(String, String)> =
+            item.fields.iter().map(|(name, value)| (name.clone(), resolve(database, value.get(), 0))).collect();
+        let (urls, passkey, read_too) = keepassxc_extras(&all, &get(kp::USERNAME));
+        for url in &urls {
+            let matcher = crate::matching::matcher_from_address(url);
+            if !matchers.contains(&matcher) {
+                matchers.push(matcher);
+            }
+        }
         entry.kind = Kind::Login(Login {
             site_matchers: Lww::new(matchers, at),
             username: Lww::new(get(kp::USERNAME), at),
             password: Lww::new(Secret::from(get(kp::PASSWORD)), at),
             otp: Lww::new(otp, at),
+            passkeys: Lww::new(passkey.into_iter().collect(), at),
             ..Login::default()
         });
         entry.common.tags = Lww::new(item.tags.clone(), at);
+        entry.created_ms = item
+            .times
+            .creation
+            .map_or(0, |time| u64::try_from(time.and_utc().timestamp_millis()).unwrap_or(0));
         let mut custom = Vec::new();
         for (name, value) in &item.fields {
-            let read_as_code = used.contains(&name.as_str());
+            let read_as_code = used.contains(&name.as_str()) || read_too.contains(name);
             if !STANDARD.contains(&name.as_str()) && !read_as_code {
                 custom.push((
                     name.clone(),
@@ -673,6 +687,13 @@ fn walk(
                 }
             }
             entry.history.sort_by_key(|r| r.at);
+            // KeePass keeps a copy of the whole entry on every edit, so most copies hold the
+            // password unchanged: only a change of password is an earlier value.
+            entry.history.dedup_by(|later, earlier| later.value == earlier.value);
+            let current = entry.login().map(|login| login.password.v.clone());
+            if entry.history.last().map(|r| &r.value) == current.as_ref() {
+                entry.history.pop();
+            }
         }
         // KeePass 1 writes an empty, nameless attachment on every entry, and keeps its
         // own settings in a "bin-stream" one.
@@ -735,7 +756,30 @@ pub fn import_with(data: &[u8], credentials: &Credentials<'_>, at: Hlc) -> Resul
     Ok(out)
 }
 
-fn set_common(target: &mut keepass::db::EntryMut<'_>, entry: &Entry) {
+/// Field names a KeePass entry uses for itself, which a field of the person's own must not
+/// take: it would be written over, or write over the title or password.
+fn reserved(name: &str) -> bool {
+    STANDARD.contains(&name)
+        || OTP_FIELDS.contains(&name)
+        || name == KIND_FIELD
+        || name.starts_with(EXTRA_URL)
+        || name.starts_with(PASSKEY)
+}
+
+/// A name for a field that no other field on the entry has, `Name (2)` when taken.
+fn unique_name(taken: &mut std::collections::HashSet<String>, name: &str) -> String {
+    let name = if name.trim().is_empty() { "Field" } else { name };
+    let mut candidate = name.to_owned();
+    let mut n = 2;
+    while reserved(&candidate) || taken.contains(&candidate) {
+        candidate = format!("{name} ({n})");
+        n += 1;
+    }
+    taken.insert(candidate.clone());
+    candidate
+}
+
+fn set_common(target: &mut keepass::db::EntryMut<'_>, entry: &Entry, taken: &mut std::collections::HashSet<String>) {
     target.set_unprotected(kp::TITLE, entry.common.title.v.as_str());
     let notes = entry.common.notes.v.expose();
     if !notes.is_empty() {
@@ -743,8 +787,124 @@ fn set_common(target: &mut keepass::db::EntryMut<'_>, entry: &Entry) {
     }
     target.tags.clone_from(&entry.common.tags.v);
     for field in &entry.common.custom_fields.v {
-        target.set_protected(field.name.as_str(), field.value.expose());
+        let name = unique_name(taken, &field.name);
+        if field.kind == crate::model::FieldKind::Hidden {
+            target.set_protected(name, field.value.expose());
+        } else {
+            target.set_unprotected(name, field.value.expose());
+        }
     }
+}
+
+/// A login's earlier passwords as KeePass keeps them: whole past versions of the entry in its
+/// `<History>`, oldest first, each with the password it then had and when that was written.
+fn set_history(target: &mut keepass::db::EntryMut<'_>, entry: &Entry) {
+    if entry.login().is_none() {
+        return;
+    }
+    let mut old: Vec<&Revision> = entry.history_of("password").collect();
+    if old.is_empty() {
+        return;
+    }
+    old.sort_by_key(|r| r.at);
+    let base: keepass::db::Entry = (**target).clone();
+    let mut history = keepass::db::History::default();
+    // Each version added goes in front, so the newest goes in first.
+    for revision in old.iter().rev() {
+        let mut version = base.clone();
+        version.set_protected(kp::PASSWORD, revision.value.expose());
+        if let Some(time) = i64::try_from(revision.at.ms)
+            .ok()
+            .filter(|ms| *ms > 0)
+            .and_then(chrono::DateTime::from_timestamp_millis)
+        {
+            version.times.last_modification = Some(time.naive_utc());
+        }
+        history.add_entry(version);
+    }
+    target.history = Some(history);
+}
+
+/// The field naming what kind of WM Pass entry a non-login was.
+const KIND_FIELD: &str = "WM Pass kind";
+/// KeePassXC and KeePass2Android keep more addresses in `KP2A_URL`, `KP2A_URL_1`, and so on.
+const EXTRA_URL: &str = "KP2A_URL";
+/// KeePassXC keeps a passkey in fields named so.
+const PASSKEY: &str = "KPEX_PASSKEY_";
+
+/// A login's addresses as KeePass writes them: an Android app as KeePass2Android names one.
+fn addresses(login: &Login) -> Vec<String> {
+    login
+        .site_matchers
+        .v
+        .iter()
+        .filter_map(|m| match m {
+            SiteMatcher::Url(url) | SiteMatcher::Domain(url) | SiteMatcher::Host(url) => Some(url.clone()),
+            SiteMatcher::AndroidApp { package, .. } => Some(format!("androidapp://{package}")),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A passkey as KeePassXC keeps one, its key as PEM. KeePassXC holds one per entry.
+fn passkey_fields(passkey: &crate::model::Passkey) -> Option<Vec<(String, String, bool)>> {
+    use base64::Engine;
+    let der = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(passkey.private_key.expose()).ok()?;
+    let body = base64::engine::general_purpose::STANDARD.encode(&der);
+    let lines: Vec<&str> = body.as_bytes().chunks(64).filter_map(|c| std::str::from_utf8(c).ok()).collect();
+    let pem = format!("-----BEGIN PRIVATE KEY-----\n{}\n-----END PRIVATE KEY-----", lines.join("\n"));
+    Some(vec![
+        (format!("{PASSKEY}CREDENTIAL_ID"), passkey.credential_id.clone(), true),
+        (format!("{PASSKEY}PRIVATE_KEY_PEM"), pem, true),
+        (format!("{PASSKEY}RELYING_PARTY"), passkey.rp_id.clone(), false),
+        (format!("{PASSKEY}USERNAME"), passkey.user_name.clone(), false),
+        (format!("{PASSKEY}USER_HANDLE"), passkey.user_handle.clone(), true),
+    ])
+}
+
+/// What KeePassXC keeps in fields of its own on an entry: more addresses, and a passkey.
+/// Also returns the names of the fields read, which are then no custom fields.
+pub(super) fn keepassxc_extras(
+    fields: &[(String, String)],
+    username: &str,
+) -> (Vec<String>, Option<crate::model::Passkey>, Vec<String>) {
+    let mut extra: Vec<&(String, String)> = fields.iter().filter(|(name, _)| name.starts_with(EXTRA_URL)).collect();
+    // `KP2A_URL` before `KP2A_URL_1`, `KP2A_URL_2` before `KP2A_URL_10`.
+    extra.sort_by_key(|(name, _)| {
+        let n: u64 = name.trim_start_matches(EXTRA_URL).trim_start_matches('_').parse().unwrap_or(0);
+        (n, name.clone())
+    });
+    let mut used: Vec<String> = extra.iter().map(|(name, _)| name.clone()).collect();
+    let urls = extra.into_iter().map(|(_, value)| value.clone()).filter(|v| !v.trim().is_empty()).collect();
+    let get = |suffix: &str| fields.iter().find(|(name, _)| *name == format!("{PASSKEY}{suffix}")).map(|(_, v)| v.clone());
+    let passkey = get("PRIVATE_KEY_PEM").and_then(|pem| {
+        use base64::Engine;
+        let body: String = pem.lines().filter(|line| !line.trim_start().starts_with("-----")).collect();
+        let der = super::xml_formats::base64_body(&body)?;
+        // The key's own type, by the object identifier in it: EC (P-256), Ed25519 or RSA.
+        let has = |oid: &[u8]| der.windows(oid.len()).any(|w| w == oid);
+        let algorithm = if has(&[0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01]) {
+            -7
+        } else if has(&[0x06, 0x03, 0x2b, 0x65, 0x70]) {
+            -8
+        } else {
+            -257
+        };
+        Some(crate::model::Passkey {
+            credential_id: get("CREDENTIAL_ID").unwrap_or_default(),
+            rp_id: get("RELYING_PARTY").unwrap_or_default(),
+            rp_name: get("RELYING_PARTY").unwrap_or_default(),
+            user_handle: get("USER_HANDLE").unwrap_or_default(),
+            user_name: get("USERNAME").unwrap_or_else(|| username.to_owned()),
+            private_key: Secret::from(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(der)),
+            algorithm,
+            ..crate::model::Passkey::default()
+        })
+    });
+    if passkey.is_some() {
+        used.extend(fields.iter().filter(|(name, _)| name.starts_with(PASSKEY)).map(|(name, _)| name.clone()));
+    }
+    (urls, passkey, used)
 }
 
 fn first_url(login: &Login) -> Option<&str> {
@@ -801,27 +961,43 @@ pub fn export_in_folders(entries: &[(&Entry, String)], password: &str) -> Result
         let group = group_for(&mut database, &mut made, folder);
         let mut parent = database.group_mut(group).ok_or(Error::Integrity)?;
         let mut target = parent.add_entry();
-        set_common(&mut target, entry);
+        let mut taken = std::collections::HashSet::new();
         match &entry.kind {
             Kind::Login(login) => {
                 target.set_unprotected(kp::USERNAME, login.username.v.as_str());
                 target.set_protected(kp::PASSWORD, login.password.v.expose());
-                if let Some(url) = first_url(login) {
+                let mut urls = addresses(login).into_iter();
+                if let Some(url) = urls.next() {
                     target.set_unprotected(kp::URL, url);
+                }
+                for (n, url) in urls.enumerate() {
+                    target.set_unprotected(format!("{EXTRA_URL}_{}", n + 1), url);
+                }
+                if let Some(fields) = login.passkeys.v.first().and_then(passkey_fields) {
+                    for (name, value, hidden) in fields {
+                        if hidden {
+                            target.set_protected(name, value);
+                        } else {
+                            target.set_unprotected(name, value);
+                        }
+                    }
                 }
                 set_otp(&mut target, login.otp.v.as_ref());
             }
             other => {
                 for (name, value, hidden) in super::export::kind_fields(other) {
+                    let name = unique_name(&mut taken, name);
                     if hidden {
                         target.set_protected(name, value.expose());
                     } else {
                         target.set_unprotected(name, value.expose());
                     }
                 }
-                target.set_unprotected("WM Pass kind", other.name());
+                target.set_unprotected(KIND_FIELD, other.name());
             }
         }
+        set_common(&mut target, entry, &mut taken);
+        set_history(&mut target, entry);
     }
     let mut out = Vec::new();
     database

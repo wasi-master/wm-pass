@@ -31,6 +31,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.wasimaster.wmpass.app.Prefs
 import com.wasimaster.wmpass.core.Pass
+import com.wasimaster.wmpass.ui.parts.announced
 import com.wasimaster.wmpass.ui.help.Guide
 import com.wasimaster.wmpass.ui.help.Help
 import com.wasimaster.wmpass.ui.icons.PassIcons
@@ -313,7 +314,7 @@ internal fun IconsScreen() {
             com.wasimaster.wmpass.app.IconSources.filter { it !in prefs.iconSources }.forEach { source ->
                 item {
                     NavRow(
-                        "Add ${names[source]!!.lowercase()}",
+                        "Add ${(names[source] ?: source).lowercase()}",
                         about[source],
                         icon = when (source) {
                             "app" -> PassIcons.Smartphone
@@ -466,7 +467,7 @@ internal fun NavigationSettingsScreen() {
                     "Add button opens",
                     prefs.fabAction,
                     PassIcons.TouchApp,
-                    options = listOf("menu" to "Add menu") + KindOrder.map { it to "New ${kindName(it).lowercase()}" },
+                    options = listOf("menu" to "Add menu") + KindOrder.map { it to "New ${com.wasimaster.wmpass.ui.parts.kindInSentence(it)}" },
                 )
             }
             item { SwitchRow("Lock button", "Show the padlock at the top of each page.", prefs.showLock, PassIcons.Lock) }
@@ -612,8 +613,11 @@ internal fun EntrySettingsScreen() {
                         selected = current,
                         icon = PassIcons.History,
                     ) { value ->
-                        limit = value
-                        shell.launch { Pass.change("vault.prefs") { put("history_limit", value) } }
+                        // Shown as chosen only once the vault took it: a refused change leaves the old choice showing.
+                        shell.launch {
+                            Pass.change("vault.prefs") { put("history_limit", value) }
+                            limit = value
+                        }
                     }
                 }
             }
@@ -659,7 +663,8 @@ internal fun GeneratorSettingsScreen() {
                 ChoiceSetting(
                     "Length",
                     info = infoFor("gen_length"),
-                    options = listOf(12, 16, 20, 24, 32, 48, 64).map { it to it.toString() },
+                    // A length set elsewhere, such as in an imported settings file, still shows as chosen.
+                    options = (listOf(12, 16, 20, 24, 32, 48, 64) + prefs.genLength.value).distinct().sorted().map { it to it.toString() },
                     selected = prefs.genLength.value,
                     icon = PassIcons.Numbers,
                     detail = choiceDetail("gen_length"),
@@ -669,7 +674,7 @@ internal fun GeneratorSettingsScreen() {
                 ChoiceSetting(
                     "Words",
                     info = infoFor("gen_words"),
-                    options = listOf(3, 4, 5, 6, 7, 8).map { it to it.toString() },
+                    options = (listOf(3, 4, 5, 6, 7, 8) + prefs.genWords.value).distinct().sorted().map { it to it.toString() },
                     selected = prefs.genWords.value,
                     icon = PassIcons.Abc,
                     detail = choiceDetail("gen_words"),
@@ -724,7 +729,19 @@ internal fun SettingsFileScreen() {
     var resetting by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<String?>(null) }
     val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        if (uri != null) context.contentResolver.openOutputStream(uri)?.use { it.write(prefs.exportText().toByteArray()) }
+        if (uri != null) {
+            // A place that cannot be written, such as a cloud drive gone offline, is said rather than closing the app.
+            // Off the main thread, since the place may be a cloud drive that takes a while.
+            val text = prefs.exportText()
+            shell.launch {
+                val written = runCatching {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        context.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) } != null
+                    }
+                }.getOrDefault(false)
+                result = if (written) "The settings file is saved." else "The settings file could not be saved there."
+            }
+        }
     }
     WmScreen("Settings file", route = "settings/file", onBack = back()) {
         Text(
@@ -735,14 +752,14 @@ internal fun SettingsFileScreen() {
         )
         result?.let { Text(it, color = colors.text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) }
         SettingsGroup {
-            item { NavRow("Save to a file", icon = PassIcons.Download, info = Help.info("action.settings_save_file")) { save.launch("wm-pass-settings.json") } }
+            item { NavRow("Save to a file", icon = PassIcons.Upload, info = Help.info("action.settings_save_file")) { save.launch("wm-pass-settings.json") } }
             item {
                 NavRow("Send to an app", icon = PassIcons.Share, info = Help.info("action.settings_copy_text")) {
                     val intent = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, prefs.exportText())
                     context.startActivity(Intent.createChooser(intent, "Share settings"))
                 }
             }
-            item { NavRow("Import", icon = PassIcons.Upload, info = Help.info("action.settings_import")) { importing = true } }
+            item { NavRow("Import", icon = PassIcons.Download, info = Help.info("action.settings_import")) { importing = true } }
             item { NavRow("Reset all customization", "Keeps your own themes and protection settings", icon = PassIcons.Refresh, info = Help.info("action.settings_reset")) { resetting = true } }
         }
     }
@@ -759,19 +776,24 @@ internal fun SettingsFileScreen() {
             }
         }
         val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            if (uri != null) context.contentResolver.openInputStream(uri)?.use { take(it.readBytes().decodeToString()) }
+            if (uri != null) {
+                shell.launch {
+                    val raw = runCatching { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { context.contentResolver.openInputStream(uri)?.use { it.readBytes().decodeToString() } } }.getOrNull()
+                    if (raw != null) take(raw) else problem = "That file could not be read."
+                }
+            }
         }
         PassSheet({ importing = false }, "Import settings") {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 SheetField(text, "Paste settings")
-                problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodySmall) }
+                problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodySmall, modifier = Modifier.announced()) }
                 QuietButton("Choose a file", Modifier.fillMaxWidth(), PassIcons.Folder) { pick.launch(arrayOf("*/*")) }
                 PrimaryButton("Import", Modifier.fillMaxWidth(), enabled = text.text.isNotBlank()) { take(text.text.toString()) }
             }
         }
     }
     if (resetting) {
-        ConfirmSheet("Reset all customization?", "Style, icons, layout and gestures go back to how they started.", "Reset", onDismiss = { resetting = false }) {
+        ConfirmSheet("Reset all customization?", "Style, icons, layout and gestures go back to how they started.", "Reset", icon = PassIcons.Refresh, onDismiss = { resetting = false }) {
             prefs.resetCustomisations()
             result = "Everything is back to how it started."
         }

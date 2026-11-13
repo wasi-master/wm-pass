@@ -31,6 +31,9 @@ pub enum HwError {
     /// It asks for its PIN, which WM Pass does not handle here.
     #[error("this security key requires its PIN for this operation")]
     PinRequired,
+    /// Too many wrong PINs, or failed fingerprints, and the key has locked itself.
+    #[error("this security key is blocked after too many wrong PINs: reset it or unblock it with its maker's tool")]
+    PinBlocked,
     /// The OTP slot is empty or not set up for challenge-response.
     #[error("that slot on the key is not set up for challenge-response")]
     SlotNotConfigured,

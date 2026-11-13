@@ -12,4 +12,4 @@ void desktopHost().then(async (host) => {
   await prefs.load();
   void brands.load();
   mount(Palette, { target: document.getElementById('app')! });
-});
+}).catch((failure) => console.error('The quick search did not finish starting', failure));

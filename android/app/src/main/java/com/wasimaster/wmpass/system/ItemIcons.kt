@@ -69,10 +69,14 @@ object ItemIcons {
                         }.blobs.firstOrNull()
                     }.getOrNull()
                     val image = bytes?.let(::decode)
-                    if (image != null) {
-                        Sealed.write(context, name, byteArrayOf(HIT) + bytes)
-                    } else {
-                        Sealed.write(context, name, java.nio.ByteBuffer.allocate(9).put(MISS).putLong(System.currentTimeMillis()).array())
+                    // The cache only saves fetching again: a keystore or disk that refuses it must
+                    // not take the list down with it, since every row's tile comes through here.
+                    runCatching {
+                        if (image != null) {
+                            Sealed.write(context, name, byteArrayOf(HIT) + bytes)
+                        } else {
+                            Sealed.write(context, name, java.nio.ByteBuffer.allocate(9).put(MISS).putLong(System.currentTimeMillis()).array())
+                        }
                     }
                     image
                 }

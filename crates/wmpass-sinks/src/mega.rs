@@ -82,12 +82,13 @@ impl MegaConfig {
 
 /// What a MEGA error number means to the user: -15 an expired session, -16 a blocked
 /// account, -11 a refused access, -26 a 2FA code wanted; -9 a missing node; -17 the
-/// account over its quota.
+/// account over its quota, -24 an upload that would put it over, -29 an account locked
+/// for being over it (MEGA's "paywall").
 fn error_of(code: i64) -> Fault {
     match code {
         -11 | -15 | -16 | -26 => Fault::PermissionLost,
         -9 => Fault::TargetMissing,
-        -17 => Fault::OutOfSpace,
+        -17 | -24 | -29 => Fault::OutOfSpace,
         _ => Fault::Io,
     }
 }
@@ -465,7 +466,12 @@ fn refusal_fault(refusal: Refusal) -> Fault {
 async fn command<H: AsyncHttp>(client: &Client<H>, sequence: &AtomicU64, session: Option<&str>, body: &Value) -> std::result::Result<Value, Refusal> {
     let payload = Value::Array(vec![body.clone()]);
     let mut wait = RETRY_START_MS;
-    for _ in 0..RETRIES {
+    for attempt in 0..RETRIES {
+        // Through the client, which knows how its executor waits. Not after the last try.
+        if attempt > 0 {
+            client.pause(wait).await;
+            wait *= 2;
+        }
         let mut url = format!("{API}/cs?id={}", sequence.fetch_add(1, Ordering::Relaxed));
         if let Some(sid) = session.filter(|sid| !sid.is_empty()) {
             url.push_str("&sid=");
@@ -489,23 +495,12 @@ async fn command<H: AsyncHttp>(client: &Client<H>, sequence: &AtomicU64, session
             other => other,
         };
         match answer.as_i64() {
-            Some(EAGAIN | ERATELIMIT) => {
-                pause(wait);
-                wait *= 2;
-            }
+            Some(EAGAIN | ERATELIMIT) => {}
             Some(code) if code < 0 => return Err(Refusal::Code(code)),
             _ => return Ok(answer),
         }
     }
     Err(Fault::Io.into())
-}
-
-/// Waits before a retry. A browser has no blocking sleep, so there it retries at once.
-fn pause(ms: u64) {
-    #[cfg(not(target_arch = "wasm32"))]
-    std::thread::sleep(std::time::Duration::from_millis(ms));
-    #[cfg(target_arch = "wasm32")]
-    let _ = ms;
 }
 
 fn starting_sequence() -> u64 {

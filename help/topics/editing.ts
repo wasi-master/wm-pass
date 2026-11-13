@@ -61,7 +61,7 @@ export const editing = [
         title: 'Shown and open at the start',
         what: 'Which sections of the editor are on show, and open, when it starts. The rest wait behind one **Add more** line.',
         how: [
-          'A section that already holds something is always shown, but it starts folded like the rest, its line saying what is inside, unless its switch here is on. One you add under **Add more** opens straight away.',
+          'A section that already holds something is always shown, but it starts folded like the rest, its line saying what is inside, unless its switch here is on. One you add under **Add more** opens straight away. Websites and apps, Other details and Organize are always shown, so their switches only open them.',
           '- Websites and apps, for logins.',
           '- One-time code, for logins and codes.',
           '- Notes, for every type except a note.',
@@ -101,6 +101,15 @@ export const editing = [
     ],
     related: ['setting.editor_open', 'concept.item_kinds'],
     words: 'details extra fields fold',
+    on: {
+      android: {
+        what: 'Keeps a type\'s everyday fields on show and puts the rest under **Other details**, such as a card\'s PIN or a database\'s connection string.',
+        effects: [
+          { value: true, label: 'On', text: 'Those types show their everyday fields first, with **Other details** below. It starts folded, its line naming the fields inside, unless its switch under **Shown and open at the start** is on.' },
+          { value: false, label: 'Off', text: 'Every field of the type shows at once.' },
+        ],
+      },
+    },
   },
   {
     id: 'setting.editor_generate',
@@ -121,10 +130,10 @@ export const editing = [
     title: 'Tag new items',
     page: 'editor',
     pref: 'auto_tag',
-    what: 'Gives a new item the tag its site suggests, such as Banking or Social, when you save it without any.',
-    how: 'The tag comes from WM Pass\'s list of known sites, or from an item\'s name when that is a known site\'s, such as PyPI. The offline model\'s guesses do not tag a new item. An item you tag yourself keeps only your tags.',
+    what: 'Gives a new item the tag its site suggests, such as Banking or Social, when you save it without tags of your own.',
+    how: 'The tag comes from WM Pass\'s list of known sites, or from an item\'s name when that is a known site\'s, such as PyPI. The offline model\'s guesses do not tag a new item. An item you tag yourself keeps only your tags. One added while a tag\'s list is open still gets its site\'s tag, beside that one.',
     effects: [
-      { value: true, label: 'On', text: 'A new item saved with no tags gets its site\'s suggestions.' },
+      { value: true, label: 'On', text: 'A new item saved with no tags of your own gets its site\'s tag.' },
       { value: false, label: 'Off', text: 'A new item has only the tags you give it.' },
     ],
     caveats: 'It applies when an item is first saved. Items already in the vault are left as they are.',
@@ -168,7 +177,7 @@ export const editing = [
       '- *Kind*: what the item is, such as Payment cards or SSH keys. Off to start with.',
       '- *Guesses*: the offline model\'s best guess from the name. Off to start with.',
       'Suggestions are grouped by tag. Open a group to leave out any item, or clear its box to leave out the whole tag. **Only items with no tags yet** skips anything you have tagged already.',
-      '**Add** tags what is left, and the message after it offers **Undo**, which takes every one of those tags back off.',
+      'The button at the foot, such as **Add 3 tags to 2 items**, tags what is left, and the message after it offers **Undo**, which takes every one of those tags back off.',
     ],
     related: ['setting.auto_tag', 'setting.auto_tag_guess'],
     words: 'bulk tags suggest categories review many at once',
@@ -182,7 +191,8 @@ export const editing = [
     how: [
       'Hold an item, choose the others, then **More** and **Merge into one**. Health offers the same for duplicates and for items that look like one account.',
       'First choose **Which one stays**. Then, for each field the items fill differently, choose the value to keep. A secret shows as dots until you tap **Show**.',
-      'Where a value could be kept as well, **Keep the other too** saves it as a field of its own, and for notes joins them one after the other. A password that loses always goes to the kept item\'s history.',
+      'Where a value could be kept as well, **Keep the other too, as a field of its own** does that, and for notes **Keep both, one after the other** joins them. A password that loses always goes to the kept item\'s history.',
+      'The button at the foot, **Merge into** and the name of the one that stays, merges them.',
       'Everything that adds up joins on its own: websites and apps, tags, attachments, passkeys, custom fields, security questions and history. A field one item leaves empty takes the other\'s value.',
       'The others go to the trash, where they can still be restored.',
     ],
@@ -224,6 +234,11 @@ export const editing = [
     how: '**Buttons at the top** are the copy and open buttons under the item\'s name. **Fields** changes how secrets are shown and copied. **History** is kept in the vault itself, so it applies on every device that opens it.',
     related: ['screen.item', 'page.codes', 'setting.clipboard_seconds'],
     words: 'detail entry view',
+    on: {
+      android: {
+        how: '**Buttons at the top**, shown only in the Standard style, are the copy and open buttons under the item\'s name. **Fields** changes how secrets are shown and copied. **History** is kept in the vault itself, so it applies on every device that opens it.',
+      },
+    },
   },
   {
     id: 'setting.entry_actions',
@@ -331,7 +346,7 @@ export const editing = [
     how: 'It applies to secrets on show on an item\'s page and to the generator\'s value.',
     preview: 'preview.secret',
     related: ['setting.gen_no_ambiguous'],
-    words: 'colors colors password digits read aloud',
+    words: 'colours colors password digits read aloud',
   },
   {
     id: 'action.history_keep',
@@ -345,10 +360,18 @@ export const editing = [
     ],
     caveats: [
       'This is stored in the vault, not on this device, so it applies on every device that opens the vault.',
-      'A new vault keeps every old value. That shows here as 0 until you choose a number.',
+      'A new vault keeps every old value, which shows here as **All**. Once you choose a number, **All** is no longer offered.',
     ],
     related: ['screen.item', 'feature.sync'],
     words: 'history previous old passwords revisions',
+    on: {
+      android: {
+        caveats: [
+          'This is stored in the vault, not on this device, so it applies on every device that opens the vault.',
+          'A new vault keeps every old value, which shows here as 0. Once you choose another number, 0 is no longer offered.',
+        ],
+      },
+    },
   },
 
   // ---- codes ----
@@ -377,6 +400,7 @@ export const editing = [
     ],
     preview: 'preview.code',
     words: 'big digits font',
+    on: { android: { what: 'How large codes are drawn on the Codes page and on an item\'s page.' } },
   },
   {
     id: 'setting.code_groups',
@@ -423,7 +447,7 @@ export const editing = [
     what: 'The order of the codes on the Codes page.',
     effects: [
       { value: 'default', label: 'As in the vault', text: 'The order the vault holds them in.' },
-      { value: 'name', label: 'By name', text: 'A to Z by the service that issued the code, or by the item\'s name when it does not say.' },
+      { value: 'name', label: 'By name', text: 'A to Z by the item\'s name, or by the service that issued the code when the item has no name.' },
     ],
     words: 'sort alphabetical',
   },
@@ -443,6 +467,7 @@ export const editing = [
       android: {
         title: 'Hide codes until tapped',
         what: 'Covers every code on the Codes page with dots. A tap shows that code for 15 seconds and copies it.',
+        caveats: 'An item\'s own page still shows its code. Codes on home screen widgets stay covered too.',
       },
     },
   },
@@ -457,10 +482,19 @@ export const editing = [
     what: 'What a new password looks like: the type and length the generator starts with, and what it shows about strength.',
     how: [
       'These are starting values. The generator opens with them each time, and changes you make on the generator itself last until you leave it.',
+      'Only the settings the chosen **Type** uses are shown: **Length**, **Symbols** and **Avoid look-alikes** for Random, and **Words** for Words.',
       'The same settings make the password that [[setting.editor_generate]] fills in for a new login.',
     ],
     related: ['screen.generator', 'feature.generator'],
     words: 'password generator default random',
+    on: {
+      android: {
+        how: [
+          'These are starting values. The generator opens with them each time, and changes you make on the generator itself last until you leave it.',
+          'The same settings make the password that [[setting.editor_generate]] fills in for a new login.',
+        ],
+      },
+    },
   },
   {
     id: 'setting.gen_mode',
@@ -479,6 +513,18 @@ export const editing = [
     preview: 'preview.generator',
     related: ['setting.gen_length', 'setting.gen_words'],
     words: 'passphrase words pin pattern random',
+    on: {
+      android: {
+        effects: [
+          { value: 'password', label: 'Random', text: 'Letters, digits and symbols chosen at random, with at least one of each kind you allow.' },
+          { value: 'passphrase', label: 'Words', text: 'Random words from a list of 7,776, joined by dashes, with a number. Easier to remember and to type.' },
+          { value: 'pronounceable', label: 'Pronounceable', text: 'Pairs of a consonant and a vowel, easy to say aloud and type.' },
+          { value: 'pin', label: 'PIN', text: 'Digits only.' },
+          { value: 'pattern', label: 'Pattern', text: 'Follows a template you type, for sites with fixed rules.' },
+          { value: 'lock', label: 'Lock pattern', text: 'A path through the dots of a phone\'s lock screen grid, drawn and written out for you to copy.' },
+        ],
+      },
+    },
   },
   {
     id: 'setting.gen_length',
@@ -552,7 +598,7 @@ export const editing = [
     page: 'shortcuts',
     what: 'Keys that work while the WM Pass window is in front. Choose one to change it.',
     how: [
-      '- {{key:search}} **Search**: puts the cursor in the search box, going back to the list first.',
+      '- {{key:search}} **Search** and {{key:palette}} **Quick search**: put the cursor in the search box of the list you are on, or of All items from any other page.',
       '- {{key:add}} **New item**: starts an item of the first type in the [[setting.add_kinds|add menu]].',
       '- {{key:edit}} **Edit item**: opens the item you are looking at in the editor.',
       '- {{key:lock}} **Lock**: locks the vault.',
@@ -560,9 +606,8 @@ export const editing = [
       '- {{key:copy_password}} **Copy password**, {{key:copy_username}} **Copy username** and {{key:copy_code}} **Copy code** copy from the item you are looking at.',
       '- {{key:open_site}} **Open site**: opens that item\'s website.',
       '- {{key:toggle_sidebar}} **Show or hide the sidebar**.',
-      '- {{key:palette}} **Quick search**: puts the cursor in the search box of the list you are on.',
       '- {{key:help}} **What is this page?**: opens the guide at the topic for what is on screen.',
-      'Some keys are fixed: the arrow keys move through the list, Enter in the search box opens the chosen item, Escape clears the search, and Ctrl+S or Cmd+S saves in the editor.',
+      'Some keys are fixed: the arrow keys move through the list, Enter in the search box opens the chosen item, Escape clears the search or closes the editor, asking first if there are changes, and Ctrl+S or Cmd+S saves in the editor.',
     ],
     caveats: 'In the desktop app, the shortcut that opens quick search from anywhere on the computer is set under Settings, Desktop.',
     related: ['setting.shortcuts_desktop', 'screen.window'],
@@ -595,7 +640,8 @@ export const editing = [
       '**Back to the usual keys** puts every shortcut back as it started.',
     ],
     caveats: [
-      'Shortcuts work even while you type in a field, so a key without Ctrl, Cmd or Alt, such as a plain letter, would fire each time you type it.',
+      'In a text box only keys with Ctrl, Cmd or Alt, and the F keys, work as shortcuts, so a shortcut on a plain key, such as a letter, does nothing while you type.',
+      'While a dialog or a menu is open over the window, only **Lock** and **What is this page?** work.',
       'They are saved with your other customizations, so a settings file carries them to another computer.',
     ],
     related: ['page.shortcuts', 'page.file'],
@@ -610,7 +656,7 @@ export const editing = [
     shells: ['android'],
     what: 'Your own keys for the actions on this page, for a keyboard plugged in or paired with your phone.',
     how: [
-      'Tap a shortcut, then press the keys you want. **No shortcut** leaves that action without one.',
+      'Tap a shortcut, then press the keys you want. **No shortcut** leaves that action without one, and Back or Escape keeps it as it was.',
       'One set of keys does one thing. Giving keys to an action takes them from whatever had them.',
       '**Back to the usual keys** puts every shortcut back as it started.',
     ],

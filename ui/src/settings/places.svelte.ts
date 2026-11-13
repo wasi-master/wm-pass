@@ -5,6 +5,7 @@ import { bundleLooksRight } from '../engine/bundle';
 import { host, type PlaceFile } from '../engine/host';
 import { pass } from '../engine/pass.svelte';
 import { prefs } from '../engine/prefs.svelte';
+import { byName } from '../engine/text';
 import { online } from './net.svelte';
 
 export interface Place {
@@ -236,7 +237,7 @@ class Places {
   }
 
   async put(place: Place) {
-    this.list = [...this.list.filter((p) => p.id !== place.id), place].sort((a, b) => a.label.localeCompare(b.label));
+    this.list = [...this.list.filter((p) => p.id !== place.id), place].sort((a, b) => byName(a.label, b.label));
     // Setting up a remote place is the owner's yes to reaching it.
     if (place.kind !== 'folder') prefs.set('network_allowed', true);
     await this.persist();
@@ -387,11 +388,20 @@ class Places {
     const listing = await shell.list(place);
     // A copy unchanged since it was last merged has nothing new, so a timed run reads only what moved.
     const merged = (this.merged[place.id] ??= {});
-    for (const other of listing.filter((f) => f.name.endsWith(SYNC_EXTENSION) && f.name !== `${mine}${SYNC_EXTENSION}`)) {
-      const stamp = `${other.size}:${other.modified_ms}`;
-      if (other.modified_ms && merged[other.name] === stamp) continue;
+    const listedAt = Date.now();
+    // This device's own copy is merged too, unless it is just what this device wrote there: after
+    // a restore from an older backup, or with two installs sharing a device number, it may hold
+    // changes found nowhere else, and writing over it unread would lose them.
+    for (const other of listing.filter((f) => f.name.endsWith(SYNC_EXTENSION))) {
+      // Copies are padded to fixed sizes and some disks keep times to the second or two, so a copy
+      // written again within that time can carry the same stamp: one that recent is read anyway.
+      const recent = !other.modified_ms || listedAt - other.modified_ms < 5000;
+      const stamp = recent ? '' : `${other.size}:${other.modified_ms}`;
+      if (stamp && merged[other.name] === stamp) continue;
       try {
-        await pass.mergeCopy(await shell.read(place, other));
+        const bytes = await shell.read(place, other);
+        const own = other.name === `${mine}${SYNC_EXTENSION}`;
+        if (!own || (await digest(bytes)) !== this.written[place.id]) await pass.mergeCopy(bytes);
       } catch {
         // Some other vault's file.
       }

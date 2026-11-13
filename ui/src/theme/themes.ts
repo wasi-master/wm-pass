@@ -70,10 +70,10 @@ export function mix(a: Rgb, b: Rgb, amount: number): Rgb {
   return [a[0] + (b[0] - a[0]) * amount, a[1] + (b[1] - a[1]) * amount, a[2] + (b[2] - a[2]) * amount];
 }
 
-function readable(color: Rgb, ground: Rgb, ratio: number): Rgb {
+function readable(color: Rgb, ground: Rgb, ratio: number, by = 0.1): Rgb {
   if (contrast(color, ground) >= ratio) return color;
   const target: Rgb = luminance(ground) > 0.18 ? [0, 0, 0] : [1, 1, 1];
-  for (let step = 0.1; step <= 1; step += 0.1) {
+  for (let step = by; step <= 1; step += by) {
     const tried = mix(color, target, step);
     if (contrast(tried, ground) >= ratio) return tried;
   }
@@ -86,13 +86,20 @@ function readable(color: Rgb, ground: Rgb, ratio: number): Rgb {
  */
 export function readableOn(c: ThemeColors): ThemeColors {
   const bg = rgb(c.background);
+  const low = rgb(c.surface);
   const high = rgb(c.surfaceHighest);
-  const worst = (color: string, ratio: number) => hexOf(readable(readable(rgb(color), bg, ratio), high, ratio - 0.5));
+  // On the background and on the first surface, where the sidebars and grouped settings sit, in
+  // full; on the highest surface a little less.
+  const worst = (color: string, ratio: number, by = 0.1) =>
+    hexOf(readable(readable(readable(rgb(color), bg, ratio, by), low, ratio, by), high, ratio - 0.5, by));
   return {
     ...c,
     text: worst(c.text, 7),
     textMid: worst(c.textMid, 4.5),
-    textLow: worst(c.textLow, 3),
+    // The faintest text still says things, such as when an item was changed, a count, or that an
+    // export holds passwords in plain text, so it is held to the bar for words, 4.5:1.
+    // In fine steps, so it goes only as far as it must and stays fainter than the middle text.
+    textLow: worst(c.textLow, 4.5, 0.02),
     primary: worst(c.primary, 3),
     danger: worst(c.danger, 3),
     warn: worst(c.warn, 3),
@@ -159,8 +166,13 @@ export function readTheme(text: string): ThemeFile {
   if (trimmed.length > LIMIT * 2) throw new Error('That is too long to be a theme.');
   let body = trimmed;
   if (trimmed.startsWith(PREFIX)) {
-    const raw = atob(trimmed.slice(PREFIX.length).replaceAll('-', '+').replaceAll('_', '/'));
-    body = new TextDecoder().decode(Uint8Array.from(raw, (c) => c.charCodeAt(0)));
+    // A code cut short when copied fails here, and the browser's own words for that say nothing useful.
+    try {
+      const raw = atob(trimmed.slice(PREFIX.length).replaceAll('-', '+').replaceAll('_', '/'));
+      body = new TextDecoder().decode(Uint8Array.from(raw, (c) => c.charCodeAt(0)));
+    } catch {
+      throw new Error('That theme code is incomplete. Copy all of it and try again.');
+    }
   }
   if (body.length > LIMIT) throw new Error('That is too long to be a theme.');
   let parsed: any;
@@ -220,6 +232,39 @@ export function applyTheme(theme: ThemeFile, dark: boolean, black: boolean, root
   const danger = rgb(c.danger);
   const on = onBrand(c, primary);
   const onDanger: Rgb = contrast([1, 1, 1], danger) >= contrast([0, 0, 0], danger) ? [1, 1, 1] : [0, 0, 0];
+  // Words in an accent colour, such as an error, a warning or a link, are held to 4.5:1 on the
+  // background and the raised surfaces they sit on. Fills, rings and icons keep the theme's own.
+  const words = (color: Rgb) => hexOf(readable(readable(color, bg, 4.5), s2, 4.5));
+  // The tint behind a chosen row or a page open in a list. A row's second line is in the middle
+  // text, so the accent goes in only as far as that still reads at 4.5:1 on it.
+  const textMid = rgb(c.textMid);
+  const tint = (amount: number) => {
+    let at = amount;
+    let fill = mix(s2, primary, at);
+    while (at > 0.04 && contrast(textMid, fill) < 4.5) {
+      at -= 0.02;
+      fill = mix(s2, primary, at);
+    }
+    return hexOf(fill);
+  };
+  const primaryC = c.primaryContainer || tint(isDark ? 0.28 : 0.2);
+  const onTint = rgb(primaryC);
+  // Marks and words that sit on that tint, in a chosen row: a star or a timer at 3:1, as any
+  // picture that says something, and a link at 4.5:1, as words.
+  // A little over the bar, so rounding to a hex colour does not land just under it.
+  const tinted = (color: Rgb, ratio: number) => hexOf(readable(color, onTint, ratio + 0.05, 0.02));
+  // The edge of a box, a button, a chip or a switch: what shows where a control is, so it is held to
+  // 3:1 on the background and on the first surface, the two they sit on. Lines that only divide
+  // keep the softer --line.
+  const controlBorder = (() => {
+    let at = isDark ? 0.26 : 0.28;
+    let edge = mix(bg, text, at);
+    while (at < 1 && (contrast(edge, bg) < 3.05 || contrast(edge, s1) < 3.05)) {
+      at = Math.min(1, at + 0.02);
+      edge = mix(bg, text, at);
+    }
+    return hexOf(edge);
+  })();
   const vars: Record<string, string> = {
     '--bg': hexOf(bg),
     '--s1': hexOf(s1),
@@ -230,15 +275,22 @@ export function applyTheme(theme: ThemeFile, dark: boolean, black: boolean, root
     '--text3': c.textLow,
     '--primary': c.primary,
     '--on-primary': hexOf(on),
-    '--primary-c': c.primaryContainer || hexOf(mix(s2, primary, isDark ? 0.28 : 0.2)),
-    '--second-c': c.secondaryContainer || hexOf(mix(s2, primary, isDark ? 0.18 : 0.14)),
+    '--primary-c': primaryC,
+    '--warn-on-tint': tinted(rgb(c.warn), 3),
+    '--danger-on-tint': tinted(danger, 3),
+    '--link-on-tint': tinted(primary, 4.5),
+    '--second-c': c.secondaryContainer || tint(isDark ? 0.18 : 0.14),
     '--outline': c.outline || c.textLow,
     '--hair': hexOf(mix(bg, text, isDark ? 0.14 : 0.13)),
     '--line': hexOf(mix(bg, text, isDark ? 0.26 : 0.28)),
+    '--control-border': controlBorder,
     '--danger': c.danger,
     '--on-danger': hexOf(onDanger),
     '--danger-c': hexOf(mix(s2, danger, 0.22)),
     '--warn': c.warn,
+    '--danger-text': words(danger),
+    '--warn-text': words(rgb(c.warn)),
+    '--link': words(primary),
     '--info': c.info,
     '--digit': c.digit || c.info,
     '--symbol': c.symbol || c.warn,

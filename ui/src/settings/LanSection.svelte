@@ -97,12 +97,13 @@
 
   async function showCode() {
     adding = false;
-    const address = await host().lan!.localAddress();
-    if (!address) {
-      message = 'This computer is not on a network.';
-      return;
-    }
+    message = null;
     try {
+      const address = await host().lan!.localAddress();
+      if (!address) {
+        message = 'This computer is not on a network.';
+        return;
+      }
       const port = (await pass.engine('lan.listen', {}, {})).json.port;
       qrText = consumeText((await pass.engine('lan.pair_show', { address: `${address}:${port}` }, {})).secret);
       mode = 'qr';
@@ -149,6 +150,8 @@
       mode = 'code_compare';
     } catch (failure) {
       failed(failure);
+      // Stop advertising, as Show a code does: nobody is coming for these digits now.
+      void lan.stop();
     }
   }
 
@@ -198,7 +201,20 @@
     }
   }
 
+  // An answer goes once: a second press while the first is on its way would answer again.
+  let finishing = $state(false);
+
   async function finish(accepted: boolean) {
+    if (finishing) return;
+    finishing = true;
+    try {
+      await finishOnce(accepted);
+    } finally {
+      finishing = false;
+    }
+  }
+
+  async function finishOnce(accepted: boolean) {
     if (sendingVault) {
       sendingVault = false;
       try {
@@ -233,8 +249,13 @@
 
   async function saveName() {
     if (!open) return;
-    await lan.rename(open.key, nickname === open.name ? '' : nickname);
-    open = null;
+    const name = nickname.trim();
+    try {
+      await lan.rename(open.key, name === open.name ? '' : name);
+      open = null;
+    } catch (failure: any) {
+      overlays.toast(failure?.message ?? 'The name could not be saved.');
+    }
   }
 
   async function syncOne(peer: LanPeer) {
@@ -275,12 +296,14 @@
   async function forget(peer: LanPeer) {
     open = null;
     const yes = await overlays.ask({ title: `Forget ${shown(peer)}?`, body: 'It will need pairing again before it can sync with this computer.', action: 'Forget', danger: true });
-    if (yes) await lan.removePeer(peer.key);
+    if (!yes) return;
+    await lan.removePeer(peer.key).catch((failure: any) => overlays.toast(failure?.message ?? 'It could not be forgotten.'));
   }
 </script>
 
 <Group title="Your devices, on this network" help="group.sync.lan" anchor="group:sync.lan">
-  <div class="set-body stack">
+  <!-- Waiting, comparing, merging and how it went are said as they change. -->
+  <div class="set-body stack" aria-live="polite">
     <NetGate what="Sync talks directly to your own devices on this network, encrypted end to end, with nothing in between. It still counts as network use, so it needs your yes like the rest.">
       {#if mode === 'waiting'}
         <p style="font-weight:500">Waiting for your other device</p>
@@ -300,8 +323,8 @@
         <p class="mono" style="font-size:36px;font-weight:600;line-height:1.2">{codeText}</p>
         <p class="dim">{codePeer}</p>
         <div class="gap">
-          <Btn label="They differ" variant="danger" onclick={() => finish(false)} />
-          <Btn label="They match" variant="primary" onclick={() => finish(true)} />
+          <Btn label="They differ" variant="danger" disabled={finishing} onclick={() => finish(false)} />
+          <Btn label="They match" variant="primary" disabled={finishing} onclick={() => finish(true)} />
         </div>
       {:else if lan.merging}
         <p style="font-weight:500">Merging with {lan.merging}</p>
@@ -395,7 +418,7 @@
 {/if}
 {#if pasting}
   <Dialog title="Paste a code" onclose={() => (pasting = false)}>
-    <Field bind:value={pasted} multiline rows={4} mono placeholder="The other device’s pairing code" autofocus />
+    <Field bind:value={pasted} multiline rows={4} mono placeholder={pasteFor === 'join' ? 'The new device’s code' : 'The other device’s pairing code'} autofocus />
     {#snippet foot()}
       <Btn label="Cancel" onclick={() => (pasting = false)} />
       <Btn label={pasteFor === 'join' ? 'Send the vault' : 'Pair'} variant="primary" disabled={!pasted.trim()} onclick={usePasted} />

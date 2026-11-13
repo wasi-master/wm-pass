@@ -59,7 +59,10 @@ pub async fn backup<S: Sink>(sink: &S, bytes: &[u8], now_ms: u64, device: u32, k
     if !mine.iter().any(|(_, file)| file.name == name) {
         return Err(Fault::NotVerified);
     }
-    mine.sort_by_key(|(stamp, _)| std::cmp::Reverse(*stamp));
+    // The copy just written and checked counts first, whatever its time stamp says. By stamp
+    // alone, a copy named while the clock ran ahead would outrank every later one, and each
+    // run would delete the copy it had just made and keep the stale one.
+    mine.sort_by_key(|(stamp, file)| (file.name != name, std::cmp::Reverse(*stamp)));
     let mut rotated = 0;
     for (_, old) in mine.iter().skip(keep.max(1)) {
         sink.delete(old).await?;
@@ -93,18 +96,32 @@ pub struct SyncReport {
     /// Files that went backwards since last seen, which a location replaying an old copy
     /// would cause. Merging old data is harmless, but the owner should hear about it.
     pub rollbacks: Vec<String>,
+    /// Files listed but not read: gone or replaced by their device since the listing, or the
+    /// location failed on them. Their changes come in on a later sync.
+    pub unread: Vec<String>,
 }
 
-/// One sync: merge every other device's file, then write and verify this device's.
+/// One sync: merge every device's file, then write and verify this device's. This device's own
+/// file is merged too before it is replaced: after this device's vault is restored from an older
+/// copy, or when a second install shares its device number, that file may hold changes no other
+/// file has, and writing over it unread would lose them.
 pub async fn sync<S: Sink>(sink: &S, vault: &mut Vault, seen: &mut SeenFiles) -> Result<SyncReport> {
     sink.readiness().await?;
     let mine = vault.sync_file_name().map_err(|_| Fault::Io)?;
     let mut report = SyncReport::default();
     for file in sink.list().await? {
-        if file.name == mine || parse_backup(&file.name).is_some() {
+        // Backup copies of either kind are not sync files: reading every one in, on every
+        // sync, would only fail to merge after downloading it.
+        if parse_backup(&file.name).is_some() || crate::backups::is_copy(&file.name) {
             continue;
         }
-        let bytes = sink.read(&file).await?;
+        // Another device may replace its file between the listing and this read, and on a
+        // store that names files by id the listed one is then gone. One such file must not stop
+        // every other device's changes coming in, nor this device's going out.
+        let Ok(bytes) = sink.read(&file).await else {
+            report.unread.push(file.name.clone());
+            continue;
+        };
         match vault.merge_file(&bytes) {
             Ok(generation) => {
                 let last = seen.get(&file.name).copied().unwrap_or(0);
@@ -112,7 +129,9 @@ pub async fn sync<S: Sink>(sink: &S, vault: &mut Vault, seen: &mut SeenFiles) ->
                     report.rollbacks.push(file.name.clone());
                 }
                 seen.insert(file.name.clone(), last.max(generation));
-                report.merged += 1;
+                if file.name != mine {
+                    report.merged += 1;
+                }
             }
             Err(_) => report.skipped += 1,
         }
@@ -180,9 +199,11 @@ mod tests {
         block_on(sink.write("someothervault", &other.save().unwrap())).unwrap();
         block_on(sink.write("chaff", &chaff_file(&config(), 500).unwrap())).unwrap();
         block_on(sink.write("rubbish", b"not a vault")).unwrap();
+        // A backup copy is not even read.
+        block_on(sink.write(&crate::backups::copy_name(1_700_000_000), b"zip")).unwrap();
         let report = block_on(sync(&sink, &mut a, &mut SeenFiles::new())).unwrap();
         assert_eq!((report.merged, report.skipped), (0, 3));
-        assert_eq!(block_on(sink.list()).unwrap().len(), 4);
+        assert_eq!(block_on(sink.list()).unwrap().len(), 5);
     }
 
     #[test]
@@ -222,6 +243,79 @@ mod tests {
         assert_eq!(mine, vec![14, 13, 12]);
         assert!(listed.iter().any(|(_, d, _)| *d == 99));
         assert!(dir.path().join("unrelated.txt").exists());
+    }
+
+    #[test]
+    fn a_copy_named_while_the_clock_ran_ahead_does_not_rotate_newer_ones_away() {
+        let dir = tempfile::tempdir().unwrap();
+        let sink = Folder::new(dir.path());
+        // Made while this device's clock was a year ahead.
+        let ahead = 1_000 + 365 * 86_400_000;
+        block_on(backup(&sink, b"stale", ahead, 1, 1)).unwrap();
+        let report = block_on(backup(&sink, b"fresh", 2_000, 1, 1)).unwrap();
+        assert_eq!(report.rotated, 1);
+        assert_eq!(block_on(sink.read(&report.stored)).unwrap(), b"fresh", "the copy just made stays");
+        let left: Vec<u64> = block_on(list_backups(&sink)).unwrap().iter().map(|(s, _, _)| *s).collect();
+        assert_eq!(left, vec![2_000]);
+    }
+
+    #[test]
+    fn a_device_restored_from_an_older_copy_keeps_what_its_own_file_held() {
+        let dir = tempfile::tempdir().unwrap();
+        let sink = Folder::new(dir.path());
+        let (_, mut b) = pair();
+        let older = b.save().unwrap();
+        let at = b.tick(2000);
+        let id = b.add(login_entry("Only in B's file", "u", "p", at), 2000).unwrap();
+        block_on(sync(&sink, &mut b, &mut SeenFiles::new())).unwrap();
+        // B's own vault goes back to the copy from before, as a restore would leave it.
+        let key = VaultKey::from_bytes(*b.key().expose_for_hardware_wrap());
+        let mut restored = Vault::from_file(&older, key, 2).unwrap();
+        let report = block_on(sync(&sink, &mut restored, &mut SeenFiles::new())).unwrap();
+        assert_eq!(report.merged, 0, "its own file is not another device's");
+        assert!(restored.get(&id).is_some(), "the sync file's changes come back rather than being written over");
+    }
+
+    /// Lists a file that is gone by the time it is read, as when its device replaces it.
+    struct Vanishing {
+        inner: Folder,
+    }
+
+    impl Sink for Vanishing {
+        async fn readiness(&self) -> Result<()> {
+            self.inner.readiness().await
+        }
+        async fn write(&self, name: &str, bytes: &[u8]) -> Result<Stored> {
+            self.inner.write(name, bytes).await
+        }
+        async fn list(&self) -> Result<Vec<Stored>> {
+            let mut out = self.inner.list().await?;
+            out.push(Stored { id: "replaced".into(), name: "replaced".into(), size: 1 });
+            Ok(out)
+        }
+        async fn read(&self, file: &Stored) -> Result<Vec<u8>> {
+            if file.name == "replaced" {
+                return Err(Fault::Io);
+            }
+            self.inner.read(file).await
+        }
+        async fn delete(&self, file: &Stored) -> Result<()> {
+            self.inner.delete(file).await
+        }
+    }
+
+    #[test]
+    fn a_file_replaced_mid_sync_does_not_stop_the_rest() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut a, mut b) = pair();
+        let at = a.tick(2000);
+        let id = a.add(login_entry("From A", "u", "pa", at), 2000).unwrap();
+        block_on(sync(&Folder::new(dir.path()), &mut a, &mut SeenFiles::new())).unwrap();
+        let sink = Vanishing { inner: Folder::new(dir.path()) };
+        let report = block_on(sync(&sink, &mut b, &mut SeenFiles::new())).unwrap();
+        assert_eq!((report.merged, report.unread), (1, vec!["replaced".to_owned()]));
+        assert!(b.get(&id).is_some());
+        assert!(dir.path().join(b.sync_file_name().unwrap()).exists(), "this device's copy still goes out");
     }
 
     /// Silently corrupts writes, and fails if rotation runs afterwards.

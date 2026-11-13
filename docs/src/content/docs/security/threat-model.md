@@ -24,7 +24,7 @@ sidebar:
 
 The vault key is random and sits in key slots. A password slot uses Argon2id with at least 64 MiB of memory, and readers refuse anything weaker, so a tampered header cannot downgrade it. Unused slots are random bytes, so a file does not reveal how many ways in it has, or whether one is a duress password.
 
-Keys stay in Rust and are wiped on lock. View data crossing into a user interface never includes secret fields. A secret you choose to see or type does become a string in the JVM or JavaScript, and those cannot be wiped. On desktop, core dumps are off, though keys are not locked out of swap.
+Keys stay in Rust and are wiped on lock. View data crossing into a user interface never includes secret fields. A secret you choose to see or type does become a string in the JVM or JavaScript, and those cannot be wiped. While the vault is open, anything that can read the app's memory can read the vault, so the desktop app keeps itself out of dumps where the system lets it. On macOS and Linux it writes no core dump. On Linux it is also closed to other programs running as you, such as a debugger or `gcore`. On macOS the hardened runtime does the same. On Windows, crash reports leave out the heap, but a program running as you can still dump the app on demand, for example from Task Manager. On every system, someone with administrator rights can read the memory, and keys are not locked out of swap.
 
 ## Quick unlock by platform
 
@@ -32,7 +32,7 @@ Keys stay in Rust and are wiped on lock. View data crossing into a user interfac
 |---|---|---|
 | Android 11 and up | A per-use key in the Keystore, or StrongBox where present, behind a biometric prompt, and invalidated by a new enrolment | Bound to hardware |
 | Android 8 to 10 | An older form of the same, biometric only | Bound to hardware |
-| Linux | A wrap key in the Secret Service, off by default | Convenience: any program in your session can ask for it |
+| Linux | The vault key itself in the Secret Service keyring, off by default. A rekey leaves the stored key stale until it is turned off and on again | Convenience: any program in your session can ask for it |
 | macOS | None. The builds are unsigned, and Secure Enclave items need a signed app | n/a |
 | Windows | None yet | n/a |
 | Extension | The key stays in browser session memory until you lock or close it | Memory only |

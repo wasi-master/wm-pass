@@ -9,7 +9,8 @@
   import Switch from '../parts/Switch.svelte';
   import { host } from '../engine/host';
   import { shownName } from '../hosts/folders';
-  import { blankPlace, placeReady, places, type Place } from './places.svelte';
+  import { blankPlace, placeProblem, placeReady, places, type Place } from './places.svelte';
+  import { prefs } from '../engine/prefs.svelte';
   import { DEFAULT_FOLDER, GROUPS, PLACE_KINDS, S3_PRESETS, WEBDAV_PRESETS, defaultPort, kindOf, s3Endpoint, webDavUrl } from './placeKinds';
 
   // Add or change a place to keep copies. Works at the door too, where no vault is open yet, so a
@@ -24,6 +25,8 @@
     Object.fromEntries(
       ['server', 'folder', 'account', 'host', 'port', 'share', 'domain', 'private_key', 'key_passphrase', 'export', 'uid', 'gid', 'repository', 'branch', 'token'].map((key) => [key, '']),
     ) as Record<string, any>;
+  // Made once for the place it opens on; a dialog for another place is a new dialog.
+  // svelte-ignore state_referenced_locally
   const start = existing ? { ...existing, extra: { ...(existing.extra ?? {}) } } : blankPlace(kinds[0]?.id ?? 'folder');
   let place = $state<Place>(start);
   let x = $state<Record<string, any>>({ ...blankExtra(), ...Object.fromEntries(Object.entries(start.extra ?? {}).map(([k, v]) => [k, typeof v === 'number' ? String(v) : v])) });
@@ -92,13 +95,50 @@
     onclose();
   }
 
-  async function save() {
+  let checking = $state(false);
+
+  /**
+   * A place out of this computer answers before it is kept, as on the phone: a wrong address or
+   * login is said here, with what was typed still in the sheet, rather than failing at the first
+   * backup. A folder there that is missing is fine, since the first copy makes it; a missing
+   * bucket is not. What the first connection learns, such as a server's key, is kept with it.
+   */
+  async function answers(saved: Place): Promise<Place | null> {
+    const shell = host().places!;
+    // Setting up a remote place is the owner's yes to reaching it.
+    prefs.set('network_allowed', true);
+    const learned: Record<string, unknown> = {};
+    const before = shell.onUpdate;
+    shell.onUpdate = (id, extra) => (id === saved.id ? Object.assign(learned, extra) : before?.(id, extra));
+    checking = true;
+    try {
+      await shell.list(saved);
+    } catch (failure) {
+      const words = placeProblem(failure);
+      if (!(/not there/i.test(words) && saved.kind !== 's3')) {
+        problem = words.charAt(0).toUpperCase() + words.slice(1);
+        return null;
+      }
+    } finally {
+      shell.onUpdate = before;
+      checking = false;
+    }
+    return { ...saved, extra: { ...(saved.extra ?? {}), ...learned } };
+  }
+
+  async function save(saved: Place = draft(), check = true) {
+    if (busy) return;
     busy = true;
     problem = null;
     try {
-      await finish(draft());
+      if (check && saved.kind !== 'folder') {
+        const checked = await answers(saved);
+        if (!checked) return;
+        saved = checked;
+      }
+      await finish(saved);
     } catch (failure: any) {
-      problem = failure.message;
+      problem = failure?.message ?? 'The place could not be saved.';
     } finally {
       busy = false;
     }
@@ -124,9 +164,17 @@
       if (answer.needs === 'approval') problem = 'Approve this sign-in on one of your devices, then try again.';
       if (answer.needs === 'captcha') problem = 'The service wants a CAPTCHA first. Sign in once on its website from this network, then try again here.';
     } catch (failure: any) {
-      problem = failure.message;
+      problem = failure?.message ?? 'The sign-in did not work.';
     } finally {
       busy = false;
+    }
+  }
+
+  async function chooseFolder() {
+    try {
+      place.path = (await host().places!.chooseFolder()) ?? place.path;
+    } catch (failure: any) {
+      problem = failure?.message ?? 'That folder could not be used.';
     }
   }
 </script>
@@ -155,7 +203,7 @@
     <Field bind:value={place.label} placeholder="A name for it" />
 
     {#if place.kind === 'folder'}
-      <Btn label={place.path ? shownName(place.path) : 'Choose a folder'} icon="folder" onclick={async () => (place.path = (await host().places!.chooseFolder()) ?? place.path)} wide />
+      <Btn label={place.path ? shownName(place.path) : 'Choose a folder'} icon="folder" onclick={chooseFolder} wide />
     {:else if place.kind === 'webdav'}
       <Select label="Service" value={x.preset ?? ''} options={[['', 'Type the address'], ...WEBDAV_PRESETS.map((p) => [p.id, p.label] as [string, string])]} onchange={(id) => (x.preset = id)} />
       {#if !webdav}
@@ -205,7 +253,7 @@
         <Field bind:value={x.domain} placeholder="Domain or workgroup, if any" />
       {/if}
       {#if place.kind === 'imap'}
-        <Segmented value={x.security ?? 'tls'} options={[['tls', 'TLS'], ['starttls', 'STARTTLS'], ['none', 'None']]} onchange={(v) => (x.security = v)} />
+        <Segmented label="Connection security" value={x.security ?? 'tls'} options={[['tls', 'TLS'], ['starttls', 'STARTTLS'], ['none', 'None']]} onchange={(v) => (x.security = v)} />
       {/if}
       <Field bind:value={place.user} placeholder={place.kind === 'imap' ? 'Email address or user name' : 'User name'} />
       <PasswordField bind:value={place.password} placeholder="Password" />
@@ -239,13 +287,17 @@
       <Field bind:value={place.user} placeholder="User name" />
       <PasswordField bind:value={place.password} placeholder="Password" />
       <Field bind:value={place.path} placeholder={place.kind === 'synology' ? 'Folder, such as /home/Drive/WM Pass' : 'Folder, such as /Public/WM Pass'} />
-      <label class="line">
-        <span>Accept the NAS’s own certificate. The first one seen is remembered; a different one later is refused.</span>
-        <Switch checked={!!x.own_certificate} label="Accept the NAS’s own certificate" onchange={(v) => { x.own_certificate = v; x.cert_pin = ''; }} />
-        <HelpButton id="action.place_nas_certificate" title="Accept the NAS’s own certificate" />
-      </label>
+      <!-- A browser checks certificates itself and cannot be told to trust one, so the switch is
+           only where it can work. -->
+      {#if host().kind === 'desktop'}
+        <label class="line">
+          <span>Accept the NAS’s own certificate. The first one seen is remembered; a different one later is refused.</span>
+          <Switch checked={!!x.own_certificate} label="Accept the NAS’s own certificate" onchange={(v) => { x.own_certificate = v; x.cert_pin = ''; }} />
+          <HelpButton id="action.place_nas_certificate" title="Accept the NAS’s own certificate" />
+        </label>
+      {/if}
     {:else if place.kind === 'git'}
-      <Segmented value={x.provider ?? 'github'} options={[['github', 'GitHub'], ['gitlab', 'GitLab'], ['gitea', 'Gitea']]} onchange={(v) => (x.provider = v)} />
+      <Segmented label="Provider" value={x.provider ?? 'github'} options={[['github', 'GitHub'], ['gitlab', 'GitLab'], ['gitea', 'Gitea']]} onchange={(v) => (x.provider = v)} />
       <Field bind:value={x.server} placeholder="Server, the provider’s own if empty" />
       <Field bind:value={x.repository} placeholder="owner/repository" />
       <Field bind:value={x.branch} placeholder="Branch, the default one if empty" />
@@ -253,13 +305,13 @@
       <PasswordField bind:value={x.token} placeholder="Access token" />
       <label class="line"><span>Allow a public repository. Anyone could download the encrypted file.</span><Switch checked={!!x.allow_public} label="Allow a public repository" onchange={(v) => (x.allow_public = v)} /><HelpButton id="action.place_git_public" title="Allow a public repository" /></label>
     {:else if place.kind === 'drive'}
-      <Segmented value={x.drive_space ?? 'appdata'} options={[['appdata', 'Hidden app folder'], ['folder', 'A folder you can see']]} onchange={(v) => (x.drive_space = v)} />
+      <Segmented label="Where in Google Drive" value={x.drive_space ?? 'appdata'} options={[['appdata', 'Hidden app folder'], ['folder', 'A folder you can see']]} onchange={(v) => (x.drive_space = v)} />
       {#if x.drive_space === 'folder'}<Field bind:value={x.folder} placeholder={`Folder in My Drive, ${DEFAULT_FOLDER} if empty`} />{/if}
     {:else if place.kind === 'dropbox' || place.kind === 'onedrive'}
       <p class="dim small">Copies go to WM Pass’s own app folder there.</p>
     {:else}
       {#if place.kind === 'pcloud'}
-        <Segmented value={x.region ?? 'us'} options={[['us', 'United States'], ['eu', 'Europe']]} onchange={(v) => (x.region = v)} />
+        <Segmented label="Region" value={x.region ?? 'us'} options={[['us', 'United States'], ['eu', 'Europe']]} onchange={(v) => (x.region = v)} />
       {/if}
       {#if place.kind !== 'box'}
         <Field bind:value={place.user} placeholder={place.kind === 'icloud' ? 'Apple Account email' : place.kind === 'proton' ? 'Proton address or user name' : 'Email'} />
@@ -270,12 +322,12 @@
       {#if place.kind === 'icloud'}<p class="dim small">Apple asks for a code from one of your devices. The sign-in lasts about a month, then WM Pass asks again.</p>{/if}
     {/if}
     {#if needs === 'code'}<Field bind:value={code} placeholder="Code" autofocus />{/if}
-    {#if problem}<p class="danger-text">{problem}</p>{/if}
+    {#if problem}<p class="danger-text" role="alert">{problem}</p>{/if}
   </div>
   {#snippet foot()}
     <Btn label="Cancel" onclick={onclose} />
     {#if existing && signsIn && placeReady(existing)}
-      <Btn label="Keep the sign-in" disabled={busy} onclick={() => finish({ ...draft(), password: existing.password, extra: { ...existing.extra, ...draft().extra } })} />
+      <Btn label="Keep the sign-in" disabled={busy} onclick={() => save({ ...draft(), password: existing.password, extra: { ...existing.extra, ...draft().extra } }, false)} />
     {/if}
     {#if signsIn}
       <Btn
@@ -285,7 +337,7 @@
         onclick={signIn}
       />
     {:else}
-      <Btn label="Save" variant="primary" disabled={!ready || busy} onclick={save} />
+      <Btn label={checking ? 'Checking it answers…' : 'Save'} variant="primary" disabled={!ready || busy} onclick={() => save()} />
     {/if}
   {/snippet}
 </Dialog>

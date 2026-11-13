@@ -69,6 +69,12 @@ pub enum Fault {
     /// Reachable but not safe to use: a server key that changed since the first
     /// connection, a repository anyone can read, a share that will not encrypt.
     Unsafe,
+    /// The server takes the password only over an encrypted connection, and this one is plain:
+    /// an IMAP server that advertises `LOGINDISABLED` or answers `[PRIVACYREQUIRED]`.
+    NeedsEncryption,
+    /// The service refused the request's time stamp: this device's clock is too far off, as
+    /// S3's `RequestTimeTooSkewed` says. Not a wrong key.
+    ClockWrong,
 }
 
 impl std::fmt::Display for Fault {
@@ -82,6 +88,8 @@ impl std::fmt::Display for Fault {
             Self::Io => "the location could not be reached",
             Self::NotVerified => "the file could not be read back correctly",
             Self::Unsafe => "the location is not safe to use: its identity changed, or it would expose the file",
+            Self::NeedsEncryption => "the server needs an encrypted connection: choose TLS or STARTTLS",
+            Self::ClockWrong => "this device's clock is wrong, so the location refused the request: set the date and time",
         })
     }
 }
@@ -111,6 +119,22 @@ pub(crate) fn status_fault(status: u16) -> Fault {
         404 | 409 => Fault::TargetMissing,
         413 | 507 => Fault::OutOfSpace,
         _ => Fault::Io,
+    }
+}
+
+/// The characters an XML text or reference event stands for. quick-xml reports `&amp;`,
+/// `&#39;` and the like as their own events between runs of text, so a value split by one
+/// is only whole once every piece is appended. Anything unreadable is dropped.
+pub(crate) fn xml_text(event: &quick_xml::events::Event<'_>) -> String {
+    use quick_xml::events::Event;
+    match event {
+        Event::Text(text) => quick_xml::escape::unescape(text).map(|v| v.into_owned()).unwrap_or_default(),
+        Event::GeneralRef(reference) => match reference.resolve_char_ref() {
+            Ok(Some(c)) => c.to_string(),
+            Ok(None) => quick_xml::escape::resolve_xml_entity(reference).unwrap_or_default().to_owned(),
+            Err(_) => String::new(),
+        },
+        _ => String::new(),
     }
 }
 

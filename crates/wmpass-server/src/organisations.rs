@@ -433,21 +433,51 @@ async fn confirm(Extract(state): Extract<State>, auth: Auth, Path((org, member))
 
 /// Removes a member. Their copy of the organisation key still works on anything they already
 /// downloaded, so the owner should rotate shared passwords. The app says so.
+///
+/// Two owners removing each other at once must not leave the organisation without one, so
+/// the checks and the delete run in one transaction that first locks the organisation's row.
+/// That serialises membership changes on Postgres and takes SQLite's write lock up front.
 async fn remove_member(Extract(state): Extract<State>, auth: Auth, Path((org, member)): Path<(String, String)>) -> ApiResult<Json<Value>> {
-    let actor = require_admin(&state, &auth.user.id, &org).await?;
-    let row = sqlx::query("SELECT kind, user_id FROM org_users WHERE id = $1 AND org_id = $2").bind(&member).bind(&org).fetch_optional(&state.db.pool).await?.ok_or(ApiError::NotFound)?;
+    require_admin(&state, &auth.user.id, &org).await?;
+    let mut tx = state.db.pool.begin().await?;
+    let locked = sqlx::query("UPDATE organisations SET name = name WHERE id = $1").bind(&org).execute(&mut *tx).await?;
+    if locked.rows_affected() == 0 {
+        return Err(ApiError::NotFound);
+    }
+    // Looked at again under the lock: the actor may have been demoted or removed meanwhile.
+    let actor = sqlx::query("SELECT kind FROM org_users WHERE org_id = $1 AND user_id = $2 AND status = $3")
+        .bind(&org)
+        .bind(&auth.user.id)
+        .bind(CONFIRMED)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let actor_kind: i64 = actor.try_get("kind")?;
+    if actor_kind > ADMIN {
+        return Err(ApiError::NotFound);
+    }
+    let row = sqlx::query("SELECT kind, user_id FROM org_users WHERE id = $1 AND org_id = $2").bind(&member).bind(&org).fetch_optional(&mut *tx).await?.ok_or(ApiError::NotFound)?;
     let kind: i64 = row.try_get("kind")?;
-    if kind < actor.kind {
+    if kind < actor_kind {
         return Err(ApiError::Bad("That member cannot be removed."));
     }
-    if kind == OWNER {
-        let owners = sqlx::query("SELECT id FROM org_users WHERE org_id = $1 AND kind = $2 AND status = $3").bind(&org).bind(OWNER).bind(CONFIRMED).fetch_all(&state.db.pool).await?;
-        if owners.len() <= 1 {
-            return Err(ApiError::Bad("An organisation needs an owner."));
-        }
+    // One statement, so even without the lock it never deletes the last confirmed owner.
+    let done = sqlx::query(
+        "DELETE FROM org_users WHERE id = $1 AND org_id = $2 AND (kind <> $3 OR EXISTS (
+            SELECT 1 FROM org_users other WHERE other.org_id = $2 AND other.kind = $3 AND other.status = $4 AND other.id <> $1
+        ))",
+    )
+    .bind(&member)
+    .bind(&org)
+    .bind(OWNER)
+    .bind(CONFIRMED)
+    .execute(&mut *tx)
+    .await?;
+    if done.rows_affected() == 0 {
+        return Err(ApiError::Bad("An organisation needs an owner."));
     }
-    sqlx::query("DELETE FROM collection_users WHERE org_user_id = $1").bind(&member).execute(&state.db.pool).await?;
-    sqlx::query("DELETE FROM org_users WHERE id = $1").bind(&member).execute(&state.db.pool).await?;
+    sqlx::query("DELETE FROM collection_users WHERE org_user_id = $1").bind(&member).execute(&mut *tx).await?;
+    tx.commit().await?;
     if let Ok(Some(user_id)) = row.try_get::<Option<String>, _>("user_id") {
         state.db.touch_user(&user_id, now_ms()).await?;
         state.hub.push(&user_id, UpdateKind::SyncVault, None);

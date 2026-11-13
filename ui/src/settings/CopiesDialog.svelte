@@ -41,7 +41,7 @@
 </script>
 
 <Dialog title="Copies at {place.label}" {onclose}>
-  {#if problem}<p class="danger-text">{problem}</p>{/if}
+  {#if problem}<p class="danger-text" role="alert">{problem}</p>{/if}
   {#if busy}<p class="dim">Reading the copy…</p>
   {:else if copies === null && !problem}<p class="dim">Looking…</p>{/if}
   {#if copies?.length === 0}<p class="dim">There are no copies here yet.</p>{/if}

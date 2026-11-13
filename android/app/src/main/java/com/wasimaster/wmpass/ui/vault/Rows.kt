@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -35,6 +36,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -142,6 +149,9 @@ fun SwipeRow(
     onTrash: (() -> Unit)? = null,
     rightIcon: ImageVector = PassIcons.ContentCopy,
     leftIcon: ImageVector = PassIcons.Delete,
+    // What each swipe does, in words; the icon's meaning when not given.
+    rightLabel: String? = null,
+    leftLabel: String? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val colors = palette
@@ -151,6 +161,17 @@ fun SwipeRow(
     var armed by remember { mutableStateOf(false) }
     val threshold = with(LocalDensity.current) { 92.dp.toPx() }
     val reach = with(LocalDensity.current) { 180.dp.toPx() }
+    // A screen reader cannot swipe a row, so it is offered the same two actions by name. They are
+    // handed to the row's own clickable surface through [LocalSwipeActions], so the row stays one
+    // focus stop: on this outer box they would make a second, unnamed stop around it.
+    val spoken = if (enabled) {
+        listOfNotNull(
+            onCopy?.let { act -> CustomAccessibilityAction(rightLabel ?: swipeLabel(rightIcon)) { act(); true } },
+            onTrash?.let { act -> CustomAccessibilityAction(leftLabel ?: swipeLabel(leftIcon)) { act(); true } },
+        )
+    } else {
+        emptyList()
+    }
     Box(modifier.fillMaxWidth().clip(shape)) {
         val value = offset.value
         if (value != 0f) {
@@ -161,7 +182,9 @@ fun SwipeRow(
                 Modifier
                     .matchParentSize()
                     .background(tint.copy(alpha = 0.10f + 0.20f * lit)),
-                contentAlignment = if (copying) Alignment.CenterStart else Alignment.CenterEnd,
+                // The drag is measured on the screen, left to right, so the icon is placed the same way,
+                // in a right-to-left language too.
+                contentAlignment = if (copying) androidx.compose.ui.AbsoluteAlignment.CenterLeft else androidx.compose.ui.AbsoluteAlignment.CenterRight,
             ) {
                 val pop by animateFloatAsState(if (armed) 1.25f else 1f, Springs.lively(), label = "pop")
                 Icon(
@@ -182,7 +205,8 @@ fun SwipeRow(
         Box(
             Modifier
                 .fillMaxWidth()
-                .offset { IntOffset(offset.value.roundToInt(), 0) }
+                // Not mirrored: offset would flip the row against the finger in a right-to-left layout.
+                .absoluteOffset { IntOffset(offset.value.roundToInt(), 0) }
                 .then(
                     if (enabled) {
                         Modifier.pointerInput(onCopy, onTrash) {
@@ -231,9 +255,33 @@ fun SwipeRow(
                         Modifier
                     },
                 ),
-            content = content,
-        )
+        ) {
+            androidx.compose.runtime.CompositionLocalProvider(LocalSwipeActions provides spoken) { content() }
+        }
     }
+}
+
+/** The swipe actions of the [SwipeRow] around, for the row's clickable surface to offer by name. */
+val LocalSwipeActions = androidx.compose.runtime.compositionLocalOf { emptyList<CustomAccessibilityAction>() }
+
+/** What [action], as a swipe, tap or row button, does to [entry], in words. */
+fun actionLabel(action: String, entry: Summary): String = when (action) {
+    "password" -> "Copy password"
+    "username" -> "Copy username"
+    "code" -> "Copy code"
+    "trash" -> "Move to trash"
+    "favourite" -> if (entry.favourite) "Remove from favorites" else "Add to favorites"
+    "edit" -> "Edit"
+    else -> "Open"
+}
+
+/** What a swipe that shows [icon] does, in words. */
+private fun swipeLabel(icon: ImageVector): String = when (icon) {
+    PassIcons.Delete -> "Move to trash"
+    PassIcons.Edit -> "Edit"
+    PassIcons.Star -> "Favorite"
+    PassIcons.Pin -> "Copy code"
+    else -> "Copy"
 }
 
 private fun swipeIcon(action: String): ImageVector = when (action) {
@@ -278,7 +326,29 @@ fun EntryRow(
         onTrash = left?.let { action -> { shell.perform(action, entry) } },
         rightIcon = swipeIcon(right.orEmpty()),
         leftIcon = swipeIcon(left.orEmpty()),
+        rightLabel = right?.let { actionLabel(it, entry) },
+        leftLabel = left?.let { actionLabel(it, entry) },
     ) {
+        val button = shell.effective(prefs.rowButton.value, entry)
+        val tapCopies = prefs.tapAction.value != "open"
+        val buttonShown = showCopy && !selecting && (tapCopies || button != null)
+        // One focus stop for the whole row: its button and its swipes are offered as actions on it,
+        // so a screen reader does not stop on the row and then again on the small button beside it.
+        val swipes = LocalSwipeActions.current
+        val spoken = buildList {
+            if (buttonShown) {
+                if (tapCopies) {
+                    add(CustomAccessibilityAction("Open") { shell.open(entry.id); true })
+                } else if (button != null) {
+                    add(CustomAccessibilityAction(actionLabel(button, entry)) { shell.perform(button, entry); true })
+                }
+            }
+            swipes.forEach { swipe -> if (none { it.label == swipe.label }) add(swipe) }
+        }
+        val tapLabel = when {
+            selecting -> if (selected) "Deselect" else "Select"
+            else -> shell.effective(prefs.tapAction.value, entry)?.takeIf { tapCopies }?.let { actionLabel(it, entry) } ?: "Open"
+        }
         Row(
             Modifier
                 .fillMaxWidth()
@@ -291,7 +361,18 @@ fun EntryRow(
                         else -> colors.surface1
                     },
                 )
-                .combinedClickable(source, androidx.compose.material3.ripple(), onClick = onClick, onLongClick = onLongClick)
+                .semantics {
+                    customActions = spoken
+                    if (selecting) this.selected = selected
+                }
+                .combinedClickable(
+                    source,
+                    androidx.compose.material3.ripple(),
+                    onClickLabel = tapLabel,
+                    onClick = onClick,
+                    onLongClick = onLongClick,
+                    onLongClickLabel = if (selected) "Deselect" else "Select",
+                )
                 .padding(
                     start = (if (colors.flat) 16.dp else 14.dp) + indent,
                     end = if (colors.flat) 4.dp else 10.dp,
@@ -337,15 +418,22 @@ fun EntryRow(
                     )
                 }
             }
-            val button = shell.effective(prefs.rowButton.value, entry)
             if (showCopy && !selecting) {
-                if (prefs.tapAction.value != "open") {
+                // Kept out of the screen reader's way: the row offers what it does as an action.
+                val quiet = Modifier.clearAndSetSemantics { }
+                if (tapCopies) {
                     // A tap copies, so this is now the way to the entry's page.
                     Spacer(Modifier.width(8.dp))
-                    RowIconButton(PassIcons.ChevronRight, "Open ${entry.title}") { shell.open(entry.id) }
+                    RowIconButton(PassIcons.ChevronRight, "Open ${entry.title}", quiet) { shell.open(entry.id) }
                 } else if (button != null) {
                     Spacer(Modifier.width(8.dp))
-                    RowIconButton(PassIcons.ContentCopy, "Copy for ${entry.title}") { shell.perform(button, entry) }
+                    // Says what it copies, since a row set to copy passwords falls back to the code or username.
+                    val what = when (button) {
+                        "username" -> "username"
+                        "code" -> "code"
+                        else -> "password"
+                    }
+                    RowIconButton(PassIcons.ContentCopy, "Copy $what for ${entry.title}", quiet) { shell.perform(button, entry) }
                 }
             }
         }
@@ -355,18 +443,19 @@ fun EntryRow(
 @Composable
 private fun Badges(entry: Summary) {
     val colors = palette
-    val icons = buildList<Pair<ImageVector, Color>> {
+    // Named, so a screen reader reading the row hears what the marks show.
+    val icons = buildList<Triple<ImageVector, Color, String>> {
         // Pinned rows sit under their own heading in the standard look, so the mark says nothing new.
-        if (entry.pinned && !colors.flat) add(PassIcons.KeepFilled to colors.textLow)
-        if (entry.favourite) add(PassIcons.StarFilled to colors.warn)
-        if (entry.hasOtp) add(PassIcons.Pin to colors.textLow)
-        if (entry.hasPasskey) add(PassIcons.KeyVertical to colors.textLow)
-        if (entry.attachments > 0) add(PassIcons.AttachFile to colors.textLow)
-        if (entry.destroyAtMs != null) add(PassIcons.Timer to colors.danger)
+        if (entry.pinned && !colors.flat) add(Triple(PassIcons.KeepFilled, colors.textLow, "Pinned"))
+        if (entry.favourite) add(Triple(PassIcons.StarFilled, colors.warn, "Favorite"))
+        if (entry.hasOtp) add(Triple(PassIcons.Pin, colors.textLow, "One-time code"))
+        if (entry.hasPasskey) add(Triple(PassIcons.KeyVertical, colors.textLow, "Passkey"))
+        if (entry.attachments > 0) add(Triple(PassIcons.AttachFile, colors.textLow, "Attachments"))
+        if (entry.destroyAtMs != null) add(Triple(PassIcons.Timer, colors.danger, "Deletes itself"))
     }
-    icons.forEach { (icon, tint) ->
+    icons.forEach { (icon, tint, name) ->
         Spacer(Modifier.width(5.dp))
-        Icon(icon, null, tint = tint, modifier = Modifier.size(14.dp))
+        Icon(icon, name, tint = tint, modifier = Modifier.size(14.dp))
     }
 }
 
@@ -418,7 +507,9 @@ fun SiteStackRow(
             .fillMaxWidth()
             .clip(shape)
             .background(if (colors.flat) colors.ground else colors.surface1)
-            .clickable(source, androidx.compose.material3.ripple()) {
+            // Read as open or closed, and what a tap will do, rather than as a chevron's name.
+            .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
+            .clickable(source, androidx.compose.material3.ripple(), onClickLabel = if (expanded) "Collapse" else "Expand") {
                 shell.haptics.tick()
                 onToggle()
             }
@@ -441,7 +532,7 @@ fun SiteStackRow(
             Text(name, color = colors.text, style = if (colors.flat) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("${entries.size} accounts", color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
         }
-        Icon(PassIcons.ExpandMore, if (expanded) "Collapse" else "Expand", tint = colors.textLow, modifier = Modifier.graphicsLayer { rotationZ = turn })
+        Icon(PassIcons.ExpandMore, null, tint = colors.textLow, modifier = Modifier.graphicsLayer { rotationZ = turn })
     }
 }
 
@@ -469,7 +560,8 @@ fun FolderRow(
             .fillMaxWidth()
             .clip(shape)
             .background(if (colors.flat) colors.ground else colors.surface1)
-            .clickable(source, androidx.compose.material3.ripple()) {
+            .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
+            .clickable(source, androidx.compose.material3.ripple(), onClickLabel = if (expanded) "Close" else "Open") {
                 shell.haptics.tick()
                 onToggle()
             }
@@ -490,7 +582,7 @@ fun FolderRow(
             )
             Text(if (count == 1) "1 item" else "$count items", color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
         }
-        Icon(PassIcons.ExpandMore, if (expanded) "Close $name" else "Open $name", tint = colors.textLow, modifier = Modifier.graphicsLayer { rotationZ = turn })
+        Icon(PassIcons.ExpandMore, null, tint = colors.textLow, modifier = Modifier.graphicsLayer { rotationZ = turn })
     }
 }
 
@@ -509,22 +601,41 @@ fun EntryCard(
     val shell = LocalShell.current
     val source = remember { MutableInteractionSource() }
     val shape = com.wasimaster.wmpass.ui.theme.Shapes.cardSmall
+    val copies = entry.hasPassword && !selecting
+    val tapCopies = shell.prefs.tapAction.value != "open"
     Column(
         modifier
             .pressScale(source)
             .fillMaxWidth()
-            .height(136.dp)
+            // A floor: at a large font size the card grows to hold its title rather than clipping it.
+            .heightIn(min = 136.dp)
             .clip(shape)
             .background(if (selected) colors.surface3 else colors.surface1)
-            .combinedClickable(source, androidx.compose.material3.ripple(), onClick = onClick, onLongClick = onLongClick)
+            // One focus stop: the copy button is offered as an action on the card.
+            .semantics {
+                if (copies) customActions = listOf(CustomAccessibilityAction("Copy password") { shell.copyPassword(entry.id); true })
+                if (selecting) this.selected = selected
+            }
+            .combinedClickable(
+                source,
+                androidx.compose.material3.ripple(),
+                onClickLabel = when {
+                    selecting -> if (selected) "Deselect" else "Select"
+                    tapCopies -> shell.effective(shell.prefs.tapAction.value, entry)?.let { actionLabel(it, entry) } ?: "Open"
+                    else -> "Open"
+                },
+                onClick = onClick,
+                onLongClick = onLongClick,
+                onLongClickLabel = if (selected) "Deselect" else "Select",
+            )
             .padding(14.dp),
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Row(verticalAlignment = Alignment.Top) {
             FlipTile(entry, selected, 44.dp)
             Spacer(Modifier.weight(1f))
-            if (entry.hasPassword && !selecting) {
-                RowIconButton(PassIcons.ContentCopy, "Copy password for ${entry.title}", Modifier.offset(x = 4.dp, y = (-4).dp)) {
+            if (copies) {
+                RowIconButton(PassIcons.ContentCopy, "Copy password for ${entry.title}", Modifier.offset(x = 4.dp, y = (-4).dp).clearAndSetSemantics { }) {
                     shell.copyPassword(entry.id)
                 }
             }

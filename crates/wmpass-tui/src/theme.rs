@@ -120,7 +120,9 @@ pub const ANSI: Theme = Theme {
     raised: Color::Reset,
     line: Color::DarkGray,
     text: Color::Reset,
-    mid: Color::Gray,
+    // Gray is ANSI white, near invisible on a light terminal such as macOS Terminal's own,
+    // which gets this theme. The terminal's own text colour reads on any ground.
+    mid: Color::Reset,
     low: Color::DarkGray,
     primary: Color::Green,
     accent: Color::Cyan,
@@ -213,8 +215,11 @@ impl Theme {
 
     /// The selected row.
     pub fn selected(&self, focused: bool) -> Style {
-        if self.colourless() || matches!(self.select, Color::DarkGray) && !focused {
-            return Style::new().add_modifier(Modifier::REVERSED);
+        // Sixteen colours cannot know the ground: dark gray behind the terminal's text is
+        // dark on dark on a light terminal. Reverse video reads on either.
+        if self.colourless() || matches!(self.select, Color::DarkGray) {
+            let style = Style::new().add_modifier(Modifier::REVERSED);
+            return if focused { style.add_modifier(Modifier::BOLD) } else { style };
         }
         let style = Style::new().bg(self.select).fg(self.text);
         if focused { style.add_modifier(Modifier::BOLD) } else { style }
@@ -336,5 +341,13 @@ mod tests {
         assert_eq!(NIGHT.gradient(0.0), NIGHT.primary);
         assert_eq!(NIGHT.gradient(1.0), NIGHT.accent);
         assert_eq!(ANSI.gradient(0.9), ANSI.accent);
+    }
+
+    #[test]
+    fn sixteen_colours_read_on_a_light_terminal_too() {
+        // Neither ANSI white nor a dark gray ground for the terminal's own text.
+        assert!(!matches!(ANSI.mid, Color::Gray | Color::White));
+        assert!(ANSI.selected(true).add_modifier.contains(Modifier::REVERSED));
+        assert_eq!(ANSI.selected(true).bg, None);
     }
 }

@@ -26,15 +26,30 @@ pub fn parse(text: &str) -> Option<Network> {
     let mut value = Zeroizing::new(String::new());
     let mut in_value = false;
     let mut escaped = false;
-    for c in text[5..].chars() {
+    // Whether the value opened, and so far ends, with a `"` that was not escaped.
+    let (mut opens_quoted, mut ends_quoted) = (false, false);
+    // The closing `;;` is often left off; a last field without its `;` still counts.
+    for c in text[5..].chars().chain(std::iter::once(';')) {
         if escaped {
-            if in_value { value.push(c) } else { key.push(c) }
+            if in_value {
+                value.push(c);
+                ends_quoted = false;
+            } else {
+                key.push(c);
+            }
             escaped = false;
         } else if c == '\\' {
             escaped = true;
         } else if c == ':' && !in_value {
             in_value = true;
         } else if c == ';' {
+            // A value may be written in double quotes, as Android writes a password; the
+            // quotes are not part of it. A quote meant literally is escaped.
+            if opens_quoted && ends_quoted && value.chars().count() >= 2 {
+                value.pop();
+                value.remove(0);
+            }
+            (opens_quoted, ends_quoted) = (false, false);
             match key.to_ascii_uppercase().as_str() {
                 "S" => ssid = value.to_string(),
                 "T" => kind = value.to_string(),
@@ -46,6 +61,10 @@ pub fn parse(text: &str) -> Option<Network> {
             value.clear();
             in_value = false;
         } else if in_value {
+            if value.is_empty() {
+                opens_quoted = c == '"';
+            }
+            ends_quoted = c == '"';
             value.push(c);
         } else {
             key.push(c);
@@ -114,6 +133,25 @@ mod tests {
         assert_eq!(parse("WIFI:T:WPA3;S:a;P:b;;").unwrap().security, "sae");
         assert_eq!(parse("WIFI:T:WPA2-EAP;S:a;;").unwrap().security, "eap");
         assert!(parse("otpauth://totp/x").is_none());
+        let open_ended = parse("WIFI:T:WPA;S:Home;P:secret").unwrap();
+        assert_eq!((open_ended.ssid.as_str(), open_ended.password.as_str()), ("Home", "secret"));
+    }
+
+    #[test]
+    fn quotes_around_a_value_are_not_part_of_it() {
+        // As Android shares a network.
+        let n = parse(r#"WIFI:S:"Home";T:WPA;P:"secret";H:false;;"#).unwrap();
+        assert_eq!((n.ssid.as_str(), n.password.as_str()), ("Home", "secret"));
+        // An escaped quote is the character itself.
+        let n = parse(r#"WIFI:T:WPA;S:a;P:\"pw\";;"#).unwrap();
+        assert_eq!(n.password.as_str(), "\"pw\"");
+        let n = parse(r#"WIFI:T:WPA;S:a;P:"pw\";;"#).unwrap();
+        assert_eq!(n.password.as_str(), "\"pw\"", "one quote escaped, so they are not a pair");
+        assert_eq!(parse(r#"WIFI:T:WPA;S:a;P:";;"#).unwrap().password.as_str(), "\"");
+        // What this builds still reads back whole.
+        let text = code("\"Cafe\"", "wpa", "\"pw\"", false).unwrap();
+        let back = parse(&text).unwrap();
+        assert_eq!((back.ssid.as_str(), back.password.as_str()), ("\"Cafe\"", "\"pw\""));
     }
 
     #[test]

@@ -23,17 +23,36 @@
       text = '';
       problem = null;
     } catch (failure: any) {
-      problem = failure.message;
+      problem = failure?.message ?? 'Those are not settings WM Pass can read.';
     }
   }
 
   async function fromFile() {
-    const file = await host().pickFile('Choose a settings file', ['json']);
-    if (file) take(new TextDecoder().decode(file.bytes));
+    try {
+      const file = await host().pickFile('Choose a settings file', ['json']);
+      if (file) take(new TextDecoder().decode(file.bytes));
+    } catch (failure: any) {
+      problem = failure?.message ?? 'That file could not be read.';
+    }
+  }
+
+  async function saveFile() {
+    try {
+      if (await host().saveFile('Save settings', 'wm-pass-settings.json', bytesOf(prefs.exportText()))) result = 'Settings saved to a file.';
+    } catch (failure: any) {
+      overlays.toast(failure?.message ?? 'The settings file could not be saved.');
+    }
+  }
+
+  function startImport() {
+    // What went wrong with the last try is no help with the next one.
+    problem = null;
+    text = '';
+    importing = true;
   }
 
   async function reset() {
-    const yes = await overlays.ask({ title: 'Reset all customization?', body: 'Look, icons, layout and clicks go back to how they started.', action: 'Reset' });
+    const yes = await overlays.ask({ title: 'Reset all customization?', body: 'Look, icons, layout and clicks go back to how they started.', action: 'Reset', danger: true });
     if (yes) {
       prefs.resetCustomisations();
       result = 'Everything is back to how it started.';
@@ -44,9 +63,9 @@
 <p class="dim" style="padding-bottom:10px">Carry your look and layout to another device, or share them. Nothing from your vault is in this file, and neither are lock timers, screenshot blocking or other protection settings.</p>
 {#if result}<p style="padding-bottom:10px">{result}</p>{/if}
 <Group>
-  <Row title="Save to a file" help="action.settings_save_file" icon="download" chevron onclick={() => host().saveFile('Save settings', 'wm-pass-settings.json', bytesOf(prefs.exportText()))} />
+  <Row title="Save to a file" help="action.settings_save_file" icon="download" chevron onclick={saveFile} />
   <Row title="Copy as text" help="action.settings_copy_text" icon="content_copy" chevron onclick={() => copyPlainLine('Settings', prefs.exportText())} />
-  <Row title="Import" help="action.settings_import" icon="upload" chevron onclick={() => (importing = true)} />
+  <Row title="Import" help="action.settings_import" icon="upload" chevron onclick={startImport} />
   <Row title="Reset all customization" help="action.settings_reset" sub="Keeps your own themes and protection settings" icon="refresh" chevron onclick={reset} />
 </Group>
 
@@ -54,7 +73,7 @@
   <Dialog title="Import settings" onclose={() => (importing = false)}>
     <div class="stack">
       <Field bind:value={text} multiline rows={6} mono placeholder="Paste settings" autofocus />
-      {#if problem}<p class="danger-text small">{problem}</p>{/if}
+      {#if problem}<p class="danger-text small" role="alert">{problem}</p>{/if}
     </div>
     {#snippet foot()}
       <Btn label="Cancel" onclick={() => (importing = false)} />

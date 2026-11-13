@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <bool name="passkeys_supported">false</bool>
+    <!-- Dark status bar icons on the light first frame; light ones on the dark, in values-night. -->
+    <bool name="launch_light_bars">true</bool>
 </resources>

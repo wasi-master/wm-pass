@@ -104,14 +104,14 @@ export const FIGURES: readonly Figure[] = [
   },
   {
     id: 'fig.shelf',
-    caption: 'Items on the shelf stay out of sight until you open it with your password. It closes when the vault locks.',
+    caption: 'Items on the shelf stay out of sight until you open it with your password. It closes again when you leave it or the vault locks.',
     rows: [
       [{ id: 'vault', label: 'Your vault' }],
       [
         { id: 'lists', label: 'Lists, search, autofill', sub: 'everything else' },
         { id: 'shelf', label: 'Hidden shelf', sub: 'closed', icon: 'visibility_lock', tone: 'muted' },
       ],
-      [{ id: 'password', label: 'Master password', sub: 'opens it until you lock' }],
+      [{ id: 'password', label: 'Master password', sub: 'opens it until you leave or lock' }],
     ],
     edges: [
       { from: 'vault', to: 'lists' },

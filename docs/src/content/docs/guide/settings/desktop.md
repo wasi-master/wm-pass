@@ -36,11 +36,13 @@ Scheduled backups, quick search, the browser extension link and the SSH agent al
 
 #### How it works
 
-Click the tray icon to bring the window back. Its menu also has **Quick Search**, **Lock** and **Quit WM Pass**.
+Click the tray icon to bring the window back. Its menu also has **Open WM Pass**, **Quick Search**, **Lock** and **Quit WM Pass**. **Lock** works only while the vault is open.
 
 #### Limits
 
 With [Lock when the window is hidden](/guide/settings/security/#setting-lock-on-hide) also on, closing the window locks the vault, so quick search, auto-type, the extension and the SSH agent have nothing to offer until you unlock again.
+
+On a Linux desktop with no tray, closing the window quits WM Pass whatever this says, since a hidden window could not be found again.
 
 See also [Start hidden](/guide/settings/desktop/#setting-start-hidden), [Lock when the window is hidden](/guide/settings/security/#setting-lock-on-hide), [How often](/guide/settings/backup/#action-backup-schedule).
 
@@ -86,11 +88,11 @@ The keys that open a small search box over whatever you are doing, from any prog
 
 #### How it works
 
-Click the row and press the keys you want. **No shortcut** turns it off.
+Click the row and press the keys you want. They need Ctrl or Alt, or ⌘, ⌥ or ⌃ on a Mac, unless it is a function key on its own. **No shortcut** turns it off.
 
-In quick search, Enter copies the password, or the code for an item that has only a code. Ctrl+Enter, or Command+Enter on a Mac, copies the username. With [Auto-type](/guide/settings/desktop/#setting-auto-type-enabled) on, Shift+Enter types the login.
+In quick search, Enter copies the password, or the code for an item that has only a code. Ctrl+Enter, or Command+Enter on a Mac, copies the username. With [Auto-type](/guide/settings/desktop/#setting-auto-type-enabled) on, Shift+Enter types the login of an item that has a password.
 
-The box closes when you click away from it.
+The box closes when you click away from it, or press Escape. While the vault is locked it shows nothing but **Open WM Pass**.
 
 #### Limits
 
@@ -119,7 +121,7 @@ Lets quick search type a login into the program behind WM Pass, so the password 
 
 #### How it works
 
-Open quick search over a sign-in form, pick the item and press Shift+Enter. WM Pass hides, waits a moment for the other program to take the focus back, then types the username, Tab and the password. An item with no username gets the password alone.
+Open quick search over a sign-in form, pick the item and press Shift+Enter. WM Pass hides, waits a moment for the other program to take the focus back, then types the username, Tab and the password. An item with no username gets the password alone, and an item with no password cannot be typed.
 
 It types into whatever has the focus at that moment, and does not press Enter.
 

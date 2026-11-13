@@ -1,5 +1,8 @@
 package com.wasimaster.wmpass.ui.settings
 
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.foundation.selection.toggleable
 import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
@@ -63,6 +66,7 @@ import com.wasimaster.wmpass.system.LanPeer
 import com.wasimaster.wmpass.system.LanResult
 import com.wasimaster.wmpass.system.LanServed
 import com.wasimaster.wmpass.app.Prefs
+import com.wasimaster.wmpass.ui.parts.announced
 import com.wasimaster.wmpass.ui.help.Help
 import com.wasimaster.wmpass.ui.help.HelpMark
 import com.wasimaster.wmpass.ui.help.helpAnchor
@@ -146,8 +150,9 @@ fun LanMergeAsk() {
                     is LanMerged.Replaced -> null
                     is LanMerged.Failed -> "$who: ${outcome.text.trimEnd('.')}"
                 }
-            } catch (failure: NativeFailure) {
-                failure.message?.trimEnd('.')
+            } catch (failure: Exception) {
+                // MainScope has no handler: anything that goes wrong is said, rather than closing the app.
+                failure.message?.trimEnd('.') ?: "The merge did not work"
             }
             answering = false
             Lan.mergeAsk.value = null
@@ -215,7 +220,7 @@ fun SyncScreen() {
                             Spacer(Modifier.width(14.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(current?.label ?: "Server", color = colors.text, style = MaterialTheme.typography.bodyLarge)
-                                Text(problem ?: "Changes go up after each edit. If the server cannot be reached they wait here.", color = if (problem != null) colors.danger else colors.textMid, style = MaterialTheme.typography.bodySmall)
+                                Text(problem ?: "Changes go up after each edit. If the server cannot be reached they wait here.", color = if (problem != null) colors.danger else colors.textMid, style = MaterialTheme.typography.bodySmall, modifier = Modifier.announced())
                             }
                             Spacer(Modifier.width(8.dp))
                             if (refreshing) {
@@ -264,7 +269,8 @@ fun SyncScreen() {
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
-                        PassSwitch(place.sync) { on -> Destinations.put(context, place.copy(sync = on)) }
+                        // Named, as the row around it opens the place rather than turning sync on and off.
+                        PassSwitch(place.sync, { on -> Destinations.put(context, place.copy(sync = on)) }, Modifier.semantics { contentDescription = "Sync through ${place.label}" })
                     }
                 }
                 if (places.isNotEmpty()) Hairline()
@@ -276,9 +282,16 @@ fun SyncScreen() {
                 QuietButton(if (fileSyncing) "Syncing…" else "Sync now", Modifier.fillMaxWidth(), PassIcons.Sync, colors.primary, enabled = !fileSyncing, height = 50.dp) {
                     fileSyncing = true
                     scope.launch {
-                        FileSync.now(context)
-                        // A failure shows on the row of the place that failed, so here only success is said.
-                        fileMessage = if (FileSync.problem.value == null) "Up to date." else null
+                        val trips = FileSync.now(context)
+                        // A failure shows on the row of the place that failed. A run that skipped
+                        // every place says why, rather than claiming all is up to date.
+                        fileMessage = when {
+                            Pass.account.value != null -> "Nothing was synced. Sync places carry the vault kept on this phone, and an account held elsewhere is open."
+                            Pass.child.value != null -> "Nothing was synced. Sync places carry the main vault, and a vault inside it is open."
+                            FileSync.problem.value != null -> null
+                            trips == 0 -> "Nothing was synced. No place could be reached."
+                            else -> "Up to date."
+                        }
                         placeTick++
                         fileSyncing = false
                     }
@@ -355,6 +368,7 @@ fun SyncScreen() {
             "Stop using ${place.label}?",
             "WM Pass forgets this place and its login, for backups and for sync. Copies already there stay where they are.",
             "Stop using it",
+            icon = PassIcons.Close,
             onDismiss = { placeGone = null },
         ) { Destinations.remove(context, place.id) }
     }
@@ -411,8 +425,16 @@ fun AddAccountSheet(existing: AccountRef? = null, onDismiss: () -> Unit) {
     var problem by remember { mutableStateOf<String?>(null) }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { picked ->
         if (picked != null) {
-            context.contentResolver.takePersistableUriPermission(picked, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-            uri = picked
+            // A provider that will not let the file be kept, or written, throws here: said, not a crash.
+            val kept = runCatching {
+                context.contentResolver.takePersistableUriPermission(picked, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            }.isSuccess
+            if (kept) {
+                uri = picked
+                problem = null
+            } else {
+                problem = "That file's app will not let WM Pass keep it or write to it. Choose it from another place."
+            }
         }
     }
     PassSheet(onDismiss, if (existing == null) "Add an account" else "Change ${existing.label}") {
@@ -449,8 +471,10 @@ fun AddAccountSheet(existing: AccountRef? = null, onDismiss: () -> Unit) {
                     QuietButton(if (uri == null) "Choose the file" else "File chosen. Tap for another", Modifier.fillMaxWidth(), PassIcons.Folder, colors.primary) { pick.launch(arrayOf("*/*")) }
                 }
                 else -> {
-                    if (kind == "server") SheetField(server, "https://vault.example.com")
-                    SheetField(email, "Email")
+                    if (kind == "server") {
+                        SheetField(server, "https://vault.example.com", keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Uri, autoCorrectEnabled = false))
+                    }
+                    SheetField(email, "Email", keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Email, autoCorrectEnabled = false))
                     Text(
                         "This needs the network. Your password is never sent: a key derived from it proves who you are, as with any Bitwarden client.",
                         color = colors.textMid,
@@ -460,7 +484,7 @@ fun AddAccountSheet(existing: AccountRef? = null, onDismiss: () -> Unit) {
                 }
             }
             SheetField(label, "A name for the door, such as Work")
-            problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 6.dp)) }
+            problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced().padding(horizontal = 6.dp)) }
             Spacer(Modifier.height(4.dp))
             val ready = if (kind == "kdbx") uri != null else email.text.isNotBlank() && (kind != "server" || server.text.isNotBlank())
             PrimaryButton(
@@ -528,7 +552,7 @@ private fun SettingsSyncSection() {
     var choosing by remember { mutableStateOf(false) }
     Eyebrow("Settings") { HelpMark("setting.sync_settings", "syncing settings") }
     GroupCard {
-        SyncSwitchRow("Sync settings with the vault", "Your customisations follow this vault to your other devices. Protection settings stay here.", prefs.syncSettings.value) {
+        SyncSwitchRow("Sync settings with the vault", "Your customizations follow this vault to your other devices. Protection settings stay here.", prefs.syncSettings.value) {
             prefs.syncSettings.set(it)
         }
         if (prefs.syncSettings.value) {
@@ -559,13 +583,20 @@ private fun SettingsSyncSection() {
 @Composable
 private fun SyncSwitchRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     val colors = palette
-    Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 12.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+    // One switch to a screen reader, named by its title: the row toggles, and the switch only shows it.
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .toggleable(checked, role = androidx.compose.ui.semantics.Role.Switch) { onChange(it) }
+            .padding(start = 18.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Column(Modifier.weight(1f)) {
             Text(title, color = colors.text, style = MaterialTheme.typography.bodyLarge)
             Text(subtitle, color = colors.textMid, style = MaterialTheme.typography.bodySmall)
         }
         Spacer(Modifier.width(8.dp))
-        PassSwitch(checked) { onChange(it) }
+        PassSwitch(checked, null)
     }
 }
 
@@ -592,6 +623,8 @@ private fun LanSection() {
     var pastingJoin by remember { mutableStateOf(false) }
     /** Set while the digits on show are for sending this vault, not for pairing. */
     var sendingVault by remember { mutableStateOf(false) }
+    // Set once the digits are answered, so a second tap cannot answer them again.
+    var finishing by remember { mutableStateOf(false) }
     // A paired device's sheet, by key, so it shows the latest status.
     var openKey by remember { mutableStateOf<String?>(null) }
     var renaming by remember { mutableStateOf<LanPeer?>(null) }
@@ -613,7 +646,10 @@ private fun LanSection() {
         shell.haptics.confirm()
     }
 
+    // Any failure, not only the core's: this page's scope has no handler, so a dropped socket or a
+    // keystore that refuses would otherwise close the app. Leaving the page still cancels.
     fun failed(failure: Throwable) {
+        if (failure is kotlinx.coroutines.CancellationException) throw failure
         mode = LanMode.IDLE
         if (failure is NativeFailure && failure.code == "cancelled") return
         say(failure.message ?: "That did not work.", bad = true)
@@ -631,7 +667,7 @@ private fun LanSection() {
         scope.launch {
             try {
                 reported(if (peer == null) Lan.sync(context) else listOf(Lan.syncWith(context, peer.key)))
-            } catch (failure: NativeFailure) {
+            } catch (failure: Exception) {
                 failed(failure)
             }
             syncing = null
@@ -662,7 +698,7 @@ private fun LanSection() {
         scope.launch {
             try {
                 merged(Lan.merge(context, peer.key, keepMine))
-            } catch (failure: NativeFailure) {
+            } catch (failure: Exception) {
                 failed(failure)
             }
             mode = LanMode.IDLE
@@ -677,7 +713,7 @@ private fun LanSection() {
         scope.launch {
             try {
                 merged(Lan.mergeAnswer(context, ask.peer, accepted))
-            } catch (failure: NativeFailure) {
+            } catch (failure: Exception) {
                 failed(failure)
             }
             mode = LanMode.IDLE
@@ -734,7 +770,7 @@ private fun LanSection() {
                                                 is LanServed.Done -> reported(listOf(served.result))
                                                 is LanServed.MergeAsked -> asked = served
                                             }
-                                        } catch (failure: NativeFailure) {
+                                        } catch (failure: Exception) {
                                             failed(failure)
                                         }
                                         if (mode == LanMode.WAITING) mode = LanMode.IDLE
@@ -795,15 +831,18 @@ private fun LanSection() {
                         Spacer(Modifier.height(18.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             fun finish(accepted: Boolean) {
+                                if (finishing) return
+                                finishing = true
                                 if (sendingVault) {
                                     sendingVault = false
                                     scope.launch {
                                         try {
                                             sentTo(Lan.joinSend(context, accepted))
-                                        } catch (failure: NativeFailure) {
+                                        } catch (failure: Exception) {
                                             failed(failure)
                                         }
                                         mode = LanMode.IDLE
+                                        finishing = false
                                         scopeStop()
                                     }
                                     return
@@ -816,20 +855,21 @@ private fun LanSection() {
                                             say("Paired. Tap Sync now to bring them together.")
                                             shell.haptics.confirm()
                                         }
-                                    } catch (failure: NativeFailure) {
+                                    } catch (failure: Exception) {
                                         failed(failure)
                                     }
                                     mode = LanMode.IDLE
+                                    finishing = false
                                     scopeStop()
                                 }
                             }
-                            QuietButton("They differ", Modifier.weight(1f), tint = colors.danger) { finish(false) }
-                            PrimaryButton("They match", Modifier.weight(1f)) { finish(true) }
+                            QuietButton("They differ", Modifier.weight(1f), tint = colors.danger, enabled = !finishing) { finish(false) }
+                            PrimaryButton("They match", Modifier.weight(1f), enabled = !finishing) { finish(true) }
                         }
                     }
                 }
             }
-            message?.let { Text(it, color = if (messageBad) colors.danger else colors.textMid, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 6.dp)) }
+            message?.let { Text(it, color = if (messageBad) colors.danger else colors.textMid, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced().padding(horizontal = 6.dp)) }
         }
     }
     }
@@ -882,7 +922,7 @@ private fun LanSection() {
                         Lan.addPeer(context, LanPeer(reply.obj["key"]!!.jsonPrimitive.content, reply.obj["name"]!!.jsonPrimitive.content))
                         say("Paired. Tap Sync now to bring them together.")
                         shell.haptics.confirm()
-                    } catch (failure: NativeFailure) {
+                    } catch (failure: Exception) {
                         failed(failure)
                     }
                     mode = LanMode.IDLE
@@ -904,7 +944,7 @@ private fun LanSection() {
                             Lan.addPeer(context, LanPeer(peer["key"]!!.jsonPrimitive.content, peer["name"]!!.jsonPrimitive.content))
                             say("Paired. Tap Sync now to bring them together.")
                             shell.haptics.confirm()
-                        } catch (failure: NativeFailure) {
+                        } catch (failure: Exception) {
                             failed(failure)
                         }
                     }
@@ -923,7 +963,7 @@ private fun LanSection() {
                         codeText = reply.obj["code"]!!.jsonPrimitive.content
                         codePeer = reply.obj["peer"]!!.jsonObject["name"]!!.jsonPrimitive.content
                         mode = LanMode.CODE_COMPARE
-                    } catch (failure: NativeFailure) {
+                    } catch (failure: Exception) {
                         failed(failure)
                     }
                 }
@@ -943,7 +983,7 @@ private fun LanSection() {
                         codeText = reply.obj["code"]!!.jsonPrimitive.content
                         codePeer = reply.obj["peer"]!!.jsonObject["name"]!!.jsonPrimitive.content
                         mode = LanMode.CODE_COMPARE
-                    } catch (failure: NativeFailure) {
+                    } catch (failure: Exception) {
                         failed(failure)
                     }
                 }
@@ -964,7 +1004,7 @@ private fun LanSection() {
                     scope.launch {
                         try {
                             sentTo(Lan.joinScan(context, text, name))
-                        } catch (failure: NativeFailure) {
+                        } catch (failure: Exception) {
                             failed(failure)
                         }
                     }
@@ -987,7 +1027,7 @@ private fun LanSection() {
                         codePeer = reply.obj["peer"]!!.jsonObject["name"]!!.jsonPrimitive.content
                         sendingVault = true
                         mode = LanMode.CODE_COMPARE
-                    } catch (failure: NativeFailure) {
+                    } catch (failure: Exception) {
                         failed(failure)
                     }
                 }
@@ -1012,7 +1052,7 @@ private fun LanSection() {
                 scope.launch {
                     try {
                         sentTo(Lan.joinScan(context, text, name))
-                    } catch (failure: NativeFailure) {
+                    } catch (failure: Exception) {
                         failed(failure)
                     }
                 }
@@ -1149,6 +1189,7 @@ private fun LanSection() {
             "Forget ${peer.shown}?",
             "It will need pairing again before it can sync with this phone.",
             "Forget",
+            icon = PassIcons.Close,
             onDismiss = { forgetting = null },
         ) {
             Lan.removePeer(context, peer.key)
@@ -1209,7 +1250,7 @@ fun ReceiveScreen() {
             )
             problem?.let {
                 Spacer(Modifier.height(10.dp))
-                Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+                Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, modifier = Modifier.announced())
             }
             Spacer(Modifier.height(20.dp))
             PrimaryButton("Scan its answer", Modifier.fillMaxWidth(), icon = PassIcons.QrCodeScanner, enabled = offer != null) {
@@ -1225,8 +1266,10 @@ fun ReceiveScreen() {
                             shell.haptics.confirm()
                             shell.nav.popBackStack()
                             shell.open(id)
-                        } catch (failure: NativeFailure) {
-                            problem = failure.message
+                        } catch (failure: Exception) {
+                            // This page's scope has no handler: a save that fails is said, not a crash.
+                            if (failure is kotlinx.coroutines.CancellationException) throw failure
+                            problem = failure.message ?: "The item could not be received."
                             shell.haptics.reject()
                             tries++
                         }

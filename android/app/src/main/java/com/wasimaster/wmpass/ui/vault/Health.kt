@@ -1,5 +1,10 @@
 package com.wasimaster.wmpass.ui.vault
 
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -88,12 +93,21 @@ object BreachCounts {
 
 /** The last report, so coming back to Health finds the list where it was instead of empty. */
 private object HealthMemory {
-    var last: HealthView? = null
+    private var last: Pair<List<Any?>, HealthView>? = null
+
+    /** What is open now. A report is shown only for it: a decoy opened next never shows the real vault's score. */
+    private fun openNow(): List<Any?> = listOf(Pass.state.value, Pass.child.value, Pass.account.value)
+
+    fun remember(view: HealthView) {
+        last = openNow() to view
+    }
+
+    val current: HealthView? get() = last?.takeIf { it.first == openNow() }?.second
 }
 
 /** The report with the owner's choices: items ignored per check, and local addresses left out. */
 internal suspend fun healthNow(prefs: com.wasimaster.wmpass.app.Prefs, breached: Map<String, Long> = BreachCounts.counts.value): HealthView =
-    Pass.health(breached, prefs.healthIgnored, prefs.healthSkipLocal.value).also { HealthMemory.last = it }
+    Pass.health(breached, prefs.healthIgnored, prefs.healthSkipLocal.value).also { HealthMemory.remember(it) }
 
 private data class Issue(
     val key: String,
@@ -146,7 +160,7 @@ fun HealthTab() {
     val shell = LocalShell.current
     val revision by Pass.revision.collectAsStateWithLifecycle()
     val entries by Pass.entries.collectAsStateWithLifecycle()
-    var health by remember { mutableStateOf(HealthMemory.last) }
+    var health by remember { mutableStateOf(HealthMemory.current) }
     val breachCounts by BreachCounts.counts.collectAsStateWithLifecycle()
     val ignored = shell.prefs.healthIgnored
     val skipLocal = shell.prefs.healthSkipLocal.value
@@ -182,7 +196,8 @@ fun HealthTab() {
                 if (colors.flat && shell.prefs.healthScore.value) {
                     item("score") {
                         Column(Modifier.fillMaxWidth().padding(bottom = 12.dp).helpAnchor("health.score")) {
-                            Row(verticalAlignment = Alignment.Bottom) {
+                            // Read as one line, "82 out of 100", not as a bare number and then the rest.
+                            Row(Modifier.semantics(mergeDescendants = true) { }, verticalAlignment = Alignment.Bottom) {
                                 Text(h?.score?.toString() ?: "-", color = colors.text, style = MaterialTheme.typography.displaySmall.merge(PassType.numeric))
                                 Spacer(Modifier.width(8.dp))
                                 Text("out of 100", color = colors.textMid, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(bottom = 6.dp))
@@ -209,7 +224,7 @@ fun HealthTab() {
                                 "Health",
                                 color = colors.text,
                                 style = MaterialTheme.typography.headlineLarge.copy(fontSize = 32.sp),
-                                modifier = Modifier.weight(1f).padding(start = 6.dp, top = 12.dp),
+                                modifier = Modifier.semantics { heading() }.weight(1f).padding(start = 6.dp, top = 12.dp),
                             )
                             HelpAction("screen.health", "Health", tint = colors.text)
                         }
@@ -310,7 +325,15 @@ private fun ScoreRing(score: Int?, modifier: Modifier = Modifier) {
         else -> colors.danger
     }
     val end by androidx.compose.animation.animateColorAsState(tone, tween(400), label = "tone")
-    Box(modifier, contentAlignment = Alignment.Center) {
+    // The number grows with the font size, but only so far: at the largest sizes it would spill
+    // out of the ring it sits in.
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val numberSize = with(density) { (62.dp * fontScale.coerceAtMost(1.3f)).toSp() }
+    // Said once as the score it lands on, not as the numbers it counts through.
+    Box(
+        modifier.clearAndSetSemantics { contentDescription = if (score == null) "Health score not ready" else "Health score: $score out of 100" },
+        contentAlignment = Alignment.Center,
+    ) {
         Canvas(Modifier.size(196.dp)) {
             val stroke = 13.dp.toPx()
             val box = Size(size.width - stroke, size.height - stroke)
@@ -338,7 +361,7 @@ private fun ScoreRing(score: Int?, modifier: Modifier = Modifier) {
             Text(
                 shown.value.roundToInt().toString(),
                 color = colors.text,
-                style = MaterialTheme.typography.displayLarge.merge(PassType.numeric).copy(fontSize = 62.sp, fontWeight = FontWeight.Bold),
+                style = MaterialTheme.typography.displayLarge.merge(PassType.numeric).copy(fontSize = numberSize, lineHeight = numberSize * 1.1f, fontWeight = FontWeight.Bold),
             )
             Text("out of 100", color = colors.textLow, style = MaterialTheme.typography.labelMedium)
         }
@@ -385,7 +408,9 @@ private fun IssueCard(
         Row(
             Modifier
                 .fillMaxWidth()
-                .clickable {
+                // Read as open or closed, and what a tap will do, rather than through the chevron's name.
+                .semantics { stateDescription = if (open) "Expanded" else "Collapsed" }
+                .clickable(onClickLabel = if (open) "Collapse" else "Expand") {
                     shell.haptics.tick()
                     open = !open
                 }
@@ -401,7 +426,7 @@ private fun IssueCard(
             Spacer(Modifier.width(10.dp))
             Text(issue.ids.distinct().size.toString(), color = tint, style = (if (colors.flat) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge).merge(PassType.numeric))
             Spacer(Modifier.width(6.dp))
-            Icon(PassIcons.ExpandMore, if (open) "Collapse" else "Expand", tint = colors.textLow, modifier = Modifier.graphicsLayer { rotationZ = turn })
+            Icon(PassIcons.ExpandMore, null, tint = colors.textLow, modifier = Modifier.graphicsLayer { rotationZ = turn })
         }
         AnimatedVisibility(open) {
             Column {
@@ -487,6 +512,14 @@ private fun SharedPasswordHeader(set: List<String>) {
     val colors = palette
     val shell = LocalShell.current
     var shown by remember(set) { mutableStateOf<String?>(null) }
+    // Covered again after the same while as on an item's page: this tab can stay open a long time.
+    LaunchedEffect(shown) {
+        val seconds = shell.prefs.revealSeconds.value
+        if (shown != null && seconds > 0) {
+            kotlinx.coroutines.delay(seconds * 1000L)
+            shown = null
+        }
+    }
     Row(
         Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -551,6 +584,14 @@ private fun HealthItemSheet(issue: Issue, entry: Summary, onDismiss: () -> Unit)
         if (issue.key == "insecure") value = runCatching { Pass.detail(entry.id).sites }.getOrDefault(emptyList())
     }
     var shown by remember(entry.id) { mutableStateOf<String?>(null) }
+    // Covered again after the same while as on an item's page.
+    LaunchedEffect(shown) {
+        val seconds = shell.prefs.revealSeconds.value
+        if (shown != null && seconds > 0) {
+            kotlinx.coroutines.delay(seconds * 1000L)
+            shown = null
+        }
+    }
     PassSheet(onDismiss, entry.title.ifEmpty { "Untitled" }) {
         Text(issue.why, color = colors.textMid, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 8.dp))
         if (entry.hasPassword) {

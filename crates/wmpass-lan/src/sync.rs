@@ -18,6 +18,11 @@ const VERSION: u32 = 2;
 pub trait BlobStore {
     /// Reads a blob, if present.
     fn get(&self, name: &str) -> Option<Vec<u8>>;
+    /// Whether a blob is present. Asked of every attachment on every sync, so a store that
+    /// can answer without reading the blob should.
+    fn has(&self, name: &str) -> bool {
+        self.get(name).is_some()
+    }
     /// Stores a blob.
     fn put(&mut self, name: &str, bytes: &[u8]) -> Result<()>;
 }
@@ -29,6 +34,9 @@ pub struct NoBlobs;
 impl BlobStore for NoBlobs {
     fn get(&self, _: &str) -> Option<Vec<u8>> {
         None
+    }
+    fn has(&self, _: &str) -> bool {
+        false
     }
     fn put(&mut self, _: &str, _: &[u8]) -> Result<()> {
         Ok(())
@@ -121,7 +129,12 @@ pub(crate) fn open<S: Read + Write>(stream: S, identity: &Identity, trusted: &[P
     let key = opened.peer.key;
     let at = |error| Failure { error, key: Some(key) };
     opened.channel.send_value(&Intent { version: VERSION, merge }).map_err(at)?;
-    match opened.channel.recv_value().map_err(at)? {
+    // An answer that does not read as one comes from a device that speaks differently.
+    let answer = opened.channel.recv_value().map_err(|error| match error {
+        LanError::Decode => at(LanError::Version),
+        other => at(other),
+    })?;
+    match answer {
         Answer::Go => Ok(opened),
         Answer::Declined => Err(at(LanError::Declined)),
         Answer::Version => Err(at(LanError::Version)),
@@ -346,7 +359,7 @@ fn swap_blobs<S: Read + Write, B: BlobStore>(
     report: &mut LanReport,
 ) -> Result<()> {
     let referenced = vault.referenced_blobs();
-    let wanted: Vec<String> = referenced.iter().filter(|name| blobs.get(name).is_none()).cloned().collect();
+    let wanted: Vec<String> = referenced.iter().filter(|name| !blobs.has(name)).cloned().collect();
     let asked: Vec<String> = match role {
         Role::Initiator => {
             channel.send_value(&wanted)?;
@@ -378,17 +391,20 @@ pub(crate) fn send_blobs<S: Read + Write, B: BlobStore>(
     report: &mut LanReport,
 ) -> Result<()> {
     // Only blobs this vault refers to, so a peer cannot read anything else by naming it.
+    // Counted without reading, then read and sent one at a time: a new device asks for every
+    // attachment, and holding them all at once could run a phone out of memory.
     let available: Vec<&String> = asked
         .iter()
         .filter(|name| referenced.contains(name))
-        .filter(|name| blobs.get(name).is_some())
+        .filter(|name| blobs.has(name))
         .collect();
     channel.send_value(&available.len())?;
     for name in available {
-        if let Some(bytes) = blobs.get(name) {
-            channel.send_value(&Blob { name: name.clone(), bytes })?;
-            report.blobs_sent += 1;
-        }
+        // The count is already sent, so skipping a blob would leave the other end waiting for
+        // one that never comes until its socket times out. Stopping now says why at once.
+        let bytes = blobs.get(name).ok_or(LanError::Core)?;
+        channel.send_value(&Blob { name: name.clone(), bytes })?;
+        report.blobs_sent += 1;
     }
     Ok(())
 }
@@ -401,6 +417,10 @@ pub(crate) fn recv_blobs<S: Read + Write, B: BlobStore>(
 ) -> Result<()> {
     let count: usize = channel.recv_value()?;
     let wanted: BTreeSet<&String> = wanted.iter().collect();
+    // No more than were asked for, so a peer cannot keep this end writing for ever.
+    if count > wanted.len() {
+        return Err(LanError::Decode);
+    }
     for _ in 0..count {
         let blob: Blob = channel.recv_value()?;
         // Only names this end asked for, so a peer cannot write anywhere else.
@@ -411,4 +431,50 @@ pub(crate) fn recv_blobs<S: Read + Write, B: BlobStore>(
         report.blobs_received += 1;
     }
     Ok(())
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::net::{TcpListener, TcpStream};
+
+    use super::*;
+
+    fn channels() -> (Channel<TcpStream>, Channel<TcpStream>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (server, _) = listener.accept().unwrap();
+        crate::prepare(&client).unwrap();
+        crate::prepare(&server).unwrap();
+        let other = std::thread::spawn(move || Channel::handshake(server, &Identity::generate().unwrap(), Role::Responder, None).unwrap());
+        let mine = Channel::handshake(client, &Identity::generate().unwrap(), Role::Initiator, None).unwrap();
+        (mine, other.join().unwrap())
+    }
+
+    #[derive(Default)]
+    struct Written(Vec<String>);
+
+    impl BlobStore for Written {
+        fn get(&self, _: &str) -> Option<Vec<u8>> {
+            None
+        }
+        fn put(&mut self, name: &str, _: &[u8]) -> Result<()> {
+            self.0.push(name.to_owned());
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn more_blobs_than_were_asked_for_are_refused_before_any_is_written() {
+        let (mut peer, mut mine) = channels();
+        peer.send_value(&2usize).unwrap();
+        for _ in 0..2 {
+            peer.send_value(&Blob { name: "a".into(), bytes: vec![1] }).unwrap();
+        }
+        let mut store = Written::default();
+        let mut report = LanReport::default();
+        assert_eq!(recv_blobs(&mut mine, &["a".to_owned()], &mut store, &mut report), Err(LanError::Decode));
+        assert!(store.0.is_empty());
+        assert_eq!(report.blobs_received, 0);
+    }
 }

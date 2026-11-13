@@ -23,12 +23,34 @@
   let addingPlace = $state(false);
   let fileSyncing = $state(false);
   let fileMessage = $state<string | null>(null);
+  /** The vault's revision when the message was written: a later change makes it out of date. */
+  let messageRevision = 0;
+
+  function say(text: string | null) {
+    fileMessage = text;
+    messageRevision = pass.revision;
+  }
+
+  // "Up to date." stops being true with the next change, and is gone after a few seconds anyway.
+  $effect(() => {
+    if (!fileMessage) return;
+    if (pass.revision !== messageRevision) {
+      fileMessage = null;
+      return;
+    }
+    const timer = setTimeout(() => (fileMessage = null), 8000);
+    return () => clearTimeout(timer);
+  });
 
   const current = $derived(accounts.list.find((a) => a.id === pass.account));
 
   let choosing = $state(false);
   let guideReady = $state(false);
-  void help.load().then(() => (guideReady = true));
+  // Without the guide's words, each setting still shows by its key.
+  void help.load().then(
+    () => (guideReady = true),
+    () => undefined,
+  );
 
   /** What can sync, named as the guide names it and grouped by the page it is on. */
   const syncable = $derived.by(() => {
@@ -46,20 +68,52 @@
 
   async function syncAccount() {
     refreshing = true;
-    await accounts.syncNow();
-    refreshing = false;
+    try {
+      await accounts.syncNow();
+    } finally {
+      refreshing = false;
+    }
   }
 
   async function syncFiles() {
+    // These places carry only this device's own vault: a sync started from elsewhere leaves it.
+    const elsewhere = pass.account
+      ? 'An account syncs with its own server, not through these places.'
+      : pass.child
+        ? 'A vault opened inside another is not synced through these places. Your own vault is.'
+        : pass.desktop
+          ? 'The desktop app syncs this vault.'
+          : null;
+    if (elsewhere) {
+      say(elsewhere);
+      return;
+    }
     fileSyncing = true;
-    await places.syncNow();
-    fileMessage = places.syncProblem ?? 'Up to date.';
-    fileSyncing = false;
+    say(null);
+    try {
+      await places.syncNow();
+      // A problem shows from places.syncProblem below, so a later timed run can replace it.
+      say(places.syncProblem ? null : 'Up to date.');
+    } catch (failure: any) {
+      say(failure?.message ?? 'The sync did not finish.');
+    } finally {
+      fileSyncing = false;
+    }
   }
 
   async function remove(item: AccountRef) {
-    const yes = await overlays.ask({ title: `Remove ${item.label}?`, body: 'WM Pass forgets this account on this computer, with its offline copy. Nothing on the server or in the file changes.', action: 'Remove', danger: true });
-    if (yes) await accounts.remove(item.id);
+    // The open account would write its offline copy again on its next save, for an account gone
+    // from the list, so it locks first.
+    const open = pass.account === item.id;
+    const body = `WM Pass forgets this account on this computer, with its offline copy.${open ? ' It is open now, so it locks first.' : ''} Nothing on the server or in the file changes.`;
+    const yes = await overlays.ask({ title: `Remove ${item.label}?`, body, action: 'Remove', danger: true });
+    if (!yes) return;
+    try {
+      if (pass.account === item.id) await pass.lock();
+      await accounts.remove(item.id);
+    } catch (failure: any) {
+      overlays.toast(failure?.message ?? 'The account could not be removed.');
+    }
   }
 </script>
 
@@ -82,14 +136,14 @@
     <div class="set-body"><p class="dim">Each device leaves its own encrypted copy there and merges the others. Pick any place you set up for backups.</p></div>
     {#each places.list as place (place.id)}
       <Row title={place.label} icon={place.kind === 'folder' ? 'folder' : 'cloud_sync'}>
-        <Switch checked={place.sync} label="Sync through {place.label}" onchange={(on) => places.put({ ...place, sync: on })} />
+        <Switch checked={place.sync} label="Sync through {place.label}" onchange={(on) => { say(null); void places.put({ ...place, sync: on }).catch((failure) => overlays.toast(failure?.message ?? 'That place could not be changed.')); }} />
       </Row>
     {/each}
     <Row title="Add a place" icon="add" chevron onclick={() => (addingPlace = true)} />
     {#if places.list.some((p) => p.sync)}
       <div class="set-body stack">
         <div><Btn label={fileSyncing ? 'Syncing…' : 'Sync now'} icon="sync" disabled={fileSyncing} onclick={syncFiles} /></div>
-        {#if fileMessage}<p class="dim">{fileMessage}</p>{/if}
+        {#if places.syncProblem}<p class="danger-text" role="alert">{places.syncProblem}</p>{:else if fileMessage}<p class="dim">{fileMessage}</p>{/if}
       </div>
     {/if}
   </Group>
@@ -112,7 +166,9 @@
 <Group title="Accounts held elsewhere" help="group.sync.accounts" anchor="group:sync.accounts">
   <div class="set-body"><p class="dim">Open a KeePass file where it is, or sign in to Bitwarden, Vaultwarden or a WM Pass server. They appear on the door beside this vault.</p></div>
   {#each accounts.list as item (item.id)}
-    <Row title={item.label} sub={item.kind === 'kdbx' ? 'KeePass file' : item.server || 'bitwarden.com'} icon={item.kind === 'kdbx' ? 'key' : 'sync'} onclick={() => remove(item)} />
+    <Row title={item.label} sub={item.kind === 'kdbx' ? 'KeePass file' : item.server || 'bitwarden.com'} icon={item.kind === 'kdbx' ? 'key' : 'sync'}>
+      <IconBtn icon="delete" label="Remove {item.label}" size={16} onclick={() => remove(item)} />
+    </Row>
   {/each}
   <Row title="Add an account" help="action.add_account" icon="add" chevron onclick={() => (addingAccount = true)} />
 </Group>

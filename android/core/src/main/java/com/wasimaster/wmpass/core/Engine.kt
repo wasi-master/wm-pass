@@ -3,6 +3,9 @@ package com.wasimaster.wmpass.core
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.json.Json
@@ -64,6 +67,39 @@ object Engine {
 
     fun start(device: Int) = Native.load(device)
 
+    private val mutableStopped = MutableStateFlow(false)
+
+    /**
+     * True from an internal error until something moves on from it ([resume]): the app's message
+     * about it, or a new unlock. Every call fails at once with [InternalFailure] meanwhile, rather
+     * than each screen meeting the locked core and saying so in a message of its own.
+     */
+    val stopped: StateFlow<Boolean> = mutableStopped.asStateFlow()
+
+    /**
+     * Told once for each internal error, on the thread that met it, however the call's caller
+     * then deals with the failure: a catch that swallows it does not keep the app from knowing.
+     */
+    @Volatile
+    var onInternal: (() -> Unit)? = null
+
+    /** Lets calls through again after an internal error. */
+    fun resume() {
+        mutableStopped.value = false
+    }
+
+    /** Runs one call into the core. An internal error is noted centrally and rethrown as one. */
+    private inline fun <T> native(run: () -> T): T {
+        if (mutableStopped.value) throw InternalFailure()
+        try {
+            return run()
+        } catch (failure: NativeFailure) {
+            if (!failure.isInternal) throw failure
+            if (mutableStopped.compareAndSet(false, true)) runCatching { onInternal?.invoke() }
+            throw if (failure is InternalFailure) failure else InternalFailure()
+        }
+    }
+
     suspend fun call(
         method: String,
         handle: Long = 0,
@@ -73,14 +109,16 @@ object Engine {
     ): EngineReply {
         val text = buildJsonObject(args).toString()
         return withContext(thread) {
-            val reply = Native.call(
-                method,
-                handle,
-                text,
-                secret,
-                blobs.takeIf { it.isNotEmpty() }?.toTypedArray(),
-                System.currentTimeMillis(),
-            )
+            val reply = native {
+                Native.call(
+                    method,
+                    handle,
+                    text,
+                    secret,
+                    blobs.takeIf { it.isNotEmpty() }?.toTypedArray(),
+                    System.currentTimeMillis(),
+                )
+            }
             val parsed = json.parseToJsonElement(reply[0] as String)
             val out = reply[1] as ByteArray?
             @Suppress("UNCHECKED_CAST")
@@ -107,13 +145,13 @@ object Engine {
     ): EngineReply {
         val text = buildJsonObject(args).toString()
         return withContext(Dispatchers.IO) {
-            unpack(Native.net(method, handle, text, secret, online, System.currentTimeMillis()))
+            unpack(native { Native.net(method, handle, text, secret, online, System.currentTimeMillis()) })
         }
     }
 
     /** A hardware key operation. Blocks its thread until the key answers or gives up. */
     suspend fun hardware(method: String, factor: String, device: HwDevice): EngineReply =
-        withContext(Dispatchers.IO) { unpack(Native.hardware(method, factor, device)) }
+        withContext(Dispatchers.IO) { unpack(native { Native.hardware(method, factor, device) }) }
 
     suspend fun <T> view(
         method: String,
@@ -124,5 +162,6 @@ object Engine {
         blobs: List<ByteArray> = emptyList(),
     ): T = json.decodeFromJsonElement(serializer, call(method, handle, args, secret, blobs).json)
 
+    // Not held back after an internal error: a lock is always safe, and the core is fresh anyway.
     suspend fun lockAll() = withContext(thread) { Native.lockAll() }
 }

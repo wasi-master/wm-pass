@@ -18,7 +18,7 @@ Items you deleted wait here before they are gone for good. Open one to restore i
 
 An item in the trash is left out of lists, search, autofill and the Health page, and out of every export except the WM Pass vault. It keeps its history and attachments until it is deleted for good.
 
-Open an item here and choose **Restore** to put it back as it was, or **Delete for good** to remove it now.
+Open an item here and choose **Restore** to put it back as it was, or **Delete for good** to remove it now. In the [Trash screen](/guide/screens/#screen-trash), Ctrl-click, or Cmd-click on a Mac, chooses several items to restore or delete for good at once.
 
 Items that have been here longer than [Keep deleted items for](/guide/settings/trash/#action-trash-keep) are deleted for good on their own.
 
@@ -48,6 +48,8 @@ The choice is saved in the vault itself, not in this app's settings. It goes whe
 
 Items past this age are deleted the next time the vault is opened.
 
+The terminal app can also set it to keep items until the trash is emptied. That shows here as **Until emptied**.
+
 #### What each choice does
 
 | Choice | What it does |
@@ -72,5 +74,7 @@ Deletes every item in the trash for good, with their attachments, once you confi
 #### Limits
 
 There is no undo. Only a backup made before you emptied it still holds the items.
+
+With sync, an item that another device put back from the trash before it heard of the emptying comes back, whole, on every device.
 
 See also [Trash](/guide/settings/trash/), [Backups](/guide/settings/backup/).

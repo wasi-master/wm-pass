@@ -49,13 +49,17 @@ A clean result means the password or address is not in the leaks that service kn
 
 Results are kept in memory only. Locking the vault forgets them.
 
+#### On Android
+
+A clean result means the password or address is not in the leaks that service knows about. It says nothing about leaks that have not been published.
+
+Results are kept in memory only, and are gone when WM Pass closes.
+
 See also [Breach checks](/guide/how-it-works/#feature-breaches), [Allow network features](/guide/settings/security/#setting-network-allowed), [Health screen](/guide/screens/#screen-health), [Working offline](/guide/how-it-works/#feature-network).
 
 <a id="action-check-every-password"></a>
 
 ## Check every password
-
-*Only in the desktop app and Android.*
 
 Looks up each password in this vault in Have I Been Pwned's or XposedOrNot's list of leaked passwords, and lists the items whose password has been seen, with how many times.
 
@@ -83,21 +87,25 @@ A vault with no passwords has nothing to check, and the page says so.
 
 #### On Android
 
-Pick the service first. **Have I Been Pwned** gets the first five characters of each password's SHA-1 hash from api.pwnedpasswords.com and checks the answer here. **XposedOrNot** gets the first ten characters of its Keccak-512 hash from passwords.xposedornot.com and answers with a count.
+Pick the service first. For **Have I Been Pwned**, WM Pass sends only the first five characters of each password's SHA-1 hash to api.pwnedpasswords.com and looks for the rest in the answer here. For **XposedOrNot** it sends the first ten characters of the Keccak-512 hash to passwords.xposedornot.com, which answers with a count.
 
 Neither service gets your passwords or their full hashes, so neither can tell which password you asked about.
 
 The check keeps going after you leave the page, with a notification that counts the passwords and has a **Stop** button. Android 13 and later ask once whether WM Pass may post it.
 
-The page then says when the last check ran, with which service, and how many of how many were found. Found items sort by **Most seen** or by **Name**, and lead the Health page under [In a known breach](/guide/settings/health/#action-health-check-breached) until the vault locks.
+The page then says when the last check ran, with which service, and how many of how many were found. Found items sort by **Most seen** or by **Name**, and lead the Health page under [In a known breach](/guide/settings/health/#action-health-check-breached) until WM Pass closes.
+
+Items in the trash and on the hidden shelf are not checked.
+
+The results are kept in memory only. Once WM Pass has closed, run the check again to see them on the Health page.
+
+A vault with no passwords has nothing to check, and the page says so.
 
 See also [Health screen](/guide/screens/#screen-health), [In a known breach](/guide/settings/health/#action-health-check-breached), [Allow network features](/guide/settings/security/#setting-network-allowed).
 
 <a id="group-breaches-emails"></a>
 
 ## Your email addresses
-
-*Only in the desktop app and Android.*
 
 Asks a breach service whether one of your email addresses appears in a leak. Choose the service, then the search button beside an address.
 
@@ -106,7 +114,7 @@ Asks a breach service whether one of your email addresses appears in a leak. Cho
 The list holds the email addresses in this vault, such as the usernames of your logins. Nothing is sent until you choose an address, and then only that address goes to the service you chose.
 
 - **LeakCheck** gets the address and answers with the names of the services it appeared in. It needs no account.
-- **Have I Been Pwned** gets the address and the API key you type, and answers with the breaches the address was in. It needs an API key of your own, which is not saved: type it each time.
+- **Have I Been Pwned** gets the address and your API key, and answers with the breaches the address was in. It needs an API key of your own. After the first check the key is kept in the vault as an item named "Have I Been Pwned API key", so your other devices have it too.
 - **Passwords in COMB** sends the address to Proxynova, which searches a large published collection of leaked addresses and passwords known as COMB. Its answer holds leaked passwords, so WM Pass reads only the lines for exactly your address, compares each one with the passwords of your logins that use that address, and wipes it.
 
 With Passwords in COMB you see only a verdict: some of your passwords for the address are in the leak, the address is listed with passwords you no longer use, or it is not listed. The leaked text is never shown or kept.

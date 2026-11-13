@@ -26,7 +26,7 @@
 </script>
 
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import HelpButton from '../help/HelpButton.svelte';
   import Btn from '../parts/Btn.svelte';
   import Dialog from '../parts/Dialog.svelte';
@@ -40,9 +40,10 @@
   import Tile from '../parts/Tile.svelte';
   import { bytesOf, consumeText, pass } from '../engine/pass.svelte';
   import { prefs } from '../engine/prefs.svelte';
-  import { host } from '../engine/host';
+  import { host, type PickedFile } from '../engine/host';
   import { kindName } from '../engine/face';
-  import { grouped, siteLine, sizeText, whenText } from '../engine/text';
+  import { everySecond } from '../engine/clock';
+  import { grouped, plural, siteLine, sizeText, whenText } from '../engine/text';
   import type { AttachmentView, Detail, OtpRow, StrengthView } from '../engine/types';
   import { overlays } from '../parts/floating.svelte';
   import { ui } from './ui.svelte';
@@ -85,7 +86,7 @@
       .catch(() => {
         if (current === id) {
           detail = null;
-          ui.selected = null;
+          ui.deselect(current);
         }
       });
   });
@@ -99,6 +100,7 @@
     hotp = null;
     holds = null;
     historyOpen = false;
+    historyLimit = HISTORY_PAGE;
     suggested = [];
     wifiCode = false;
   });
@@ -117,20 +119,16 @@
       row = null;
       return;
     }
-    let stop = false;
-    const tick = async () => {
-      if (stop) return;
+    const current = id;
+    return everySecond(async () => {
       try {
-        row = (await pass.codes([id]))[0] ?? null;
+        const found = (await pass.codes([current]))[0] ?? null;
+        // A reply for the item just left does not land on the next one's page.
+        if (current === id) row = found;
       } catch {
-        row = null;
+        if (current === id) row = null;
       }
-      setTimeout(tick, 1000 - (Date.now() % 1000) + 10);
-    };
-    void tick();
-    return () => {
-      stop = true;
-    };
+    });
   });
 
   $effect(() => {
@@ -151,8 +149,30 @@
     }
   });
 
+  // The tags as the last click left them, until the item comes back with them: a second quick
+  // click builds on the first, rather than on tags that have not changed yet and so undoing it.
+  let tagsNow = $state<string[] | null>(null);
+  let tagChanges = 0;
+  const itemTags = $derived(tagsNow ?? detail?.tags ?? []);
+  $effect(() => {
+    const saved = detail?.tags;
+    const now = untrack(() => tagsNow);
+    if (!now || !saved) return;
+    // Caught up, or nothing of ours still on its way (a tag picker may have changed them since).
+    if (tagChanges === 0 || (saved.length === now.length && saved.every((t) => now.includes(t)))) tagsNow = null;
+  });
+
   function setTags(next: string[]) {
-    void pass.change('entry.common', { id, tags: [...new Set(next)] });
+    const tags = [...new Set(next)];
+    tagsNow = tags;
+    tagChanges += 1;
+    void pass
+      .change('entry.common', { id, tags })
+      .catch((failure: any) => {
+        tagsNow = null;
+        overlays.toast(failure?.message ?? 'The tags could not be changed.');
+      })
+      .finally(() => (tagChanges -= 1));
   }
 
   async function toggle(key: string, method: string, args: unknown) {
@@ -162,12 +182,25 @@
       if (key === 'field:password') holds = null;
       return;
     }
-    const text = await pass.reveal(method, args);
+    let text: string;
+    try {
+      text = await pass.reveal(method, args);
+    } catch (failure: any) {
+      overlays.toast(failure?.message ?? 'That could not be shown.');
+      return;
+    }
     revealed = { ...revealed, [key]: text };
     if (key === 'field:password') {
       const bytes = bytesOf(text);
-      holds = await pass.strength(bytes);
-      bytes.fill(0);
+      try {
+        const rated = await pass.strength(bytes);
+        // Hidden again while it was rated: the rating goes with the password.
+        if (revealed[key] !== undefined) holds = rated;
+      } catch {
+        holds = null;
+      } finally {
+        bytes.fill(0);
+      }
     }
   }
 
@@ -185,10 +218,14 @@
   // Only a site that has such a page gets the line: the list says at once, and any other site is
   // asked once whether its standard address leads anywhere.
   let changeAt = $state<string | null>(null);
+  let changeSite: string | null = null;
   $effect(() => {
     const listed = detail?.change_password ?? null;
     const site = detail?.kind === 'login' ? url : null;
-    changeAt = listed;
+    // The page reloads on every change to the vault: the line stays while its site does, rather
+    // than going and coming back each time.
+    if (listed || site !== changeSite) changeAt = listed;
+    changeSite = site;
     if (listed || !site) return;
     void pass
       .changePasswordUrl(site)
@@ -199,7 +236,9 @@
   });
 
   function openUrl(target: string) {
-    void host().openUrl(target.includes('://') ? target : `https://${target}`);
+    void host()
+      .openUrl(target.includes('://') ? target : `https://${target}`)
+      .catch((failure: Error) => overlays.toast(failure?.message || 'That address could not be opened.'));
   }
 
   async function moreMenu(event: MouseEvent) {
@@ -230,10 +269,21 @@
   }
 
   async function attach() {
-    const file = await host().pickFile('Attach a file');
-    if (!file || !detail) return;
-    await pass.addAttachment(detail.id, file.name, '', file.bytes);
-    file.bytes.fill(0);
+    let file: PickedFile | null = null;
+    try {
+      file = await host().pickFile('Attach a file');
+      if (!file || !detail) return;
+      await pass.addAttachment(detail.id, file.name, '', file.bytes);
+    } catch (failure: any) {
+      overlays.toast(failure?.message ?? 'The file could not be attached.');
+    } finally {
+      file?.bytes.fill(0);
+    }
+  }
+
+  /** A change from the page's own buttons, said out loud if the vault refuses it. */
+  function setCommon(args: Record<string, unknown>) {
+    void pass.change('entry.common', { id, ...args }).catch((failure: any) => overlays.toast(failure?.message ?? 'That could not be changed.'));
   }
 
   async function attachmentMenu(event: MouseEvent, file: AttachmentView) {
@@ -249,20 +299,31 @@
       box.left,
       box.bottom + 2,
     );
-    if (choice === 'view') {
-      const plain = await pass.openAttachment(id, file.blob);
-      const blob = new Blob([plain.slice()], { type: file.mime || 'image/png' });
-      plain.fill(0);
-      image = { name: file.name, url: URL.createObjectURL(blob) };
-    } else if (choice === 'save') {
-      const yes = await overlays.ask({ title: 'Save a copy?', body: 'The copy will not be encrypted.', action: 'Save' });
-      if (!yes) return;
-      const plain = await pass.openAttachment(id, file.blob);
-      await host().saveFile('Save a copy', file.name, plain);
-      plain.fill(0);
-    } else if (choice === 'remove') {
-      const yes = await overlays.ask({ title: `Remove “${file.name}”?`, body: 'The file is deleted from this vault.', action: 'Remove', danger: true });
-      if (yes) await pass.change('attachment.remove', { id, blob: file.blob });
+    try {
+      if (choice === 'view') {
+        const plain = await pass.openAttachment(id, file.blob);
+        // Only a picture's type: a file named .png that says it is HTML would open as a page in
+        // this one's name when its picture is opened in a tab of its own.
+        const type = file.mime.toLowerCase().startsWith('image/') ? file.mime : 'image/png';
+        const blob = new Blob([plain.slice()], { type });
+        plain.fill(0);
+        closeImage();
+        image = { name: file.name, url: URL.createObjectURL(blob) };
+      } else if (choice === 'save') {
+        const yes = await overlays.ask({ title: 'Save a copy?', body: 'The copy will not be encrypted.', action: 'Save' });
+        if (!yes) return;
+        const plain = await pass.openAttachment(id, file.blob);
+        try {
+          await host().saveFile('Save a copy', file.name, plain);
+        } finally {
+          plain.fill(0);
+        }
+      } else if (choice === 'remove') {
+        const yes = await overlays.ask({ title: `Remove “${file.name}”?`, body: 'The file is deleted from this vault.', action: 'Remove', danger: true });
+        if (yes) await pass.change('attachment.remove', { id, blob: file.blob });
+      }
+    } catch (failure: any) {
+      overlays.toast(failure?.message ?? 'That could not be done with the file.');
     }
   }
 
@@ -271,13 +332,20 @@
     image = null;
   }
 
+  // The decrypted picture goes with the page, when the vault locks or another item opens too.
+  onDestroy(closeImage);
+
   async function nextHotp() {
-    const reply = await pass.change('otp.hotp_next', { id });
-    hotp = consumeText(reply.secret);
+    try {
+      const reply = await pass.change('otp.hotp_next', { id });
+      hotp = consumeText(reply.secret);
+    } catch (failure: any) {
+      overlays.toast(failure?.message ?? 'A new code could not be made.');
+    }
   }
 
   function fieldText(value: unknown, input: string) {
-    if (input === 'date' && typeof value === 'number') return new Date(value).toLocaleDateString(undefined, { dateStyle: 'medium' });
+    if (input === 'date' && typeof value === 'number') return new Date(value).toLocaleDateString(undefined, { dateStyle: 'medium', timeZone: 'UTC' });
     return String(value ?? '');
   }
 
@@ -285,12 +353,22 @@
   const folderName = $derived(pass.folders.find((f) => f.id === detail?.folder)?.name);
   const reminderText = $derived.by(() => {
     const r = detail?.reminders;
-    if (r?.change_every_days) return `Every ${r.change_every_days} days`;
-    if (r?.expires_ms) return `Expires ${whenText(r.expires_ms)}`;
+    if (r?.change_every_days) return r.change_every_days === 1 ? 'Every day' : `Every ${r.change_every_days} days`;
+    // One already past reads as such: not "Expires 3 days ago".
+    if (r?.expires_ms) return `${r.expires_ms < Date.now() ? 'Expired' : 'Expires'} ${whenText(r.expires_ms)}`;
     return null;
   });
   const copyOnClick = $derived(prefs.v.tap_copies);
+  // The newest first, a page at a time: an item changed a thousand times has a thousand rows.
+  const HISTORY_PAGE = 50;
+  let historyLimit = $state(HISTORY_PAGE);
+  const history = $derived(detail && historyOpen ? [...detail.history].sort((a, b) => b.at_ms - a.at_ms) : []);
   const currentCode = $derived(row?.code ?? hotp);
+  // A counter-based code moves on once shown, so asking the engine again would copy the next one.
+  function copyCurrentCode() {
+    if (!row?.code && hotp) void ui.copyShownCode(hotp);
+    else void ui.copyCode(id);
+  }
 </script>
 
 {#snippet textField(label: string, value: string, copyAs: string = label, multiline = false)}
@@ -302,21 +380,21 @@
   </div>
 {/snippet}
 
-{#snippet secretField(label: string, key: string, method: string, args: unknown, multiline = false)}
+{#snippet secretField(label: string, key: string, method: string, args: unknown, multiline = false, copyAs: string = label)}
   {@const shown = revealed[key]}
   <div class="field">
     <span class="label">{label}</span>
     <!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
-    <span class="value" class:click={copyOnClick && shown === undefined} style={multiline ? 'white-space:pre-wrap' : ''} title={copyOnClick && shown === undefined ? 'Click to copy' : undefined} onclick={() => copyOnClick && shown === undefined && ui.copySecret(label, method, args)}>
+    <span class="value" class:click={copyOnClick && shown === undefined} style={multiline ? 'white-space:pre-wrap' : ''} title={copyOnClick && shown === undefined ? 'Click to copy' : undefined} onclick={() => copyOnClick && shown === undefined && ui.copySecret(copyAs, method, args)}>
       {#if shown !== undefined}
         {#if multiline}<span class="selectable">{shown}</span>{:else}<SecretText value={shown} />{/if}
       {:else}
-        <span class="secret-dots mono">••••••••••••</span>
+        <span class="secret-dots mono" aria-hidden="true">••••••••••••</span><span class="sr-only">Hidden</span>
       {/if}
     </span>
     <span class="tools" class:keep={shown !== undefined}>
       <IconBtn icon={shown !== undefined ? 'visibility_off' : 'visibility'} size={16} label="{shown !== undefined ? 'Hide' : 'Show'} {label}" onclick={() => toggle(key, method, args)} />
-      <IconBtn icon="content_copy" size={16} label="Copy {label}" onclick={() => ui.copySecret(label, method, args)} />
+      <IconBtn icon="content_copy" size={16} label="Copy {label}" onclick={() => ui.copySecret(copyAs, method, args)} />
     </span>
   </div>
 {/snippet}
@@ -331,10 +409,10 @@
         icon={detail.favourite ? 'star_fill' : 'star'}
         label={detail.favourite ? 'Remove from favorites' : 'Add to favorites'}
         class={detail.favourite ? 'star-on' : ''}
-        onclick={() => pass.change('entry.common', { id, favourite: !detail!.favourite })}
+        onclick={() => setCommon({ favourite: !detail!.favourite })}
       />
       <IconBtn icon="edit" label="Edit" onclick={() => ui.edit(id, detail!.kind)} />
-      <span data-help-anchor="detail.more" style="display:flex"><IconBtn icon="more_horiz" label="More" onclick={moreMenu} /></span>
+      <span data-help-anchor="detail.more" style="display:flex"><IconBtn icon="more_horiz" label="More" menu onclick={moreMenu} /></span>
     {/if}
   </div>
   <div class="detail-body scroll">
@@ -342,7 +420,7 @@
       <div class="detail-head">
         <Tile title={detail.title} site={detail.site} kind={detail.kind} label={detail.color} icon={detail.icon} size={48} />
         <div class="grow">
-          <div class="name selectable">{detail.title || 'Untitled'}</div>
+          <h1 class="name selectable" style="overflow-wrap:anywhere" tabindex="-1">{detail.title || 'Untitled'}</h1>
           <div class="dim ell">
             {kindName(detail.kind)}{folderName ? `, in ${folderName}` : ''}
           </div>
@@ -354,7 +432,7 @@
           <Btn label="Restore" variant="primary" icon="restore_from_trash" onclick={() => runEntryMenu('restore', detail!)} />
           <Btn label="Delete for good" variant="danger" icon="delete" onclick={() => runEntryMenu('purge', detail!)} />
         </div>
-      {:else if prefs.v.entry_actions && (detail.has_password || username || url || wifiShareable)}
+      {:else if prefs.v.entry_actions && (detail.has_password || (username && prefs.v.entry_action_username) || (url && prefs.v.entry_action_open) || wifiShareable)}
         <div class="actions" data-help-anchor="detail.actions">
           {#if detail.has_password}<Btn label="Copy password" variant="primary" icon="content_copy" onclick={() => ui.copyPassword(id)} />{/if}
           {#if username && prefs.v.entry_action_username}<Btn label="Copy username" icon="person" variant={detail.has_password ? '' : 'primary'} onclick={() => ui.copyPlain('Username', username!)} />{/if}
@@ -367,7 +445,7 @@
         <div class="banner">
           <Icon name="timer" size={18} />
           <span class="grow">Deletes itself on {new Date(detail.destroy_at_ms).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</span>
-          <Btn label="Keep it" variant="quiet" onclick={() => pass.change('entry.common', { id, destroy_at_ms: null })} />
+          <Btn label="Keep it" variant="quiet" onclick={() => setCommon({ destroy_at_ms: null })} />
         </div>
       {/if}
 
@@ -389,21 +467,21 @@
           <div class="field">
             <span class="label">One-time code</span>
             <!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
-            <span class="value" class:click={!!currentCode} onclick={() => currentCode && ui.copyCode(id)}>
+            <span class="value" class:click={!!currentCode} onclick={() => currentCode && copyCurrentCode()}>
               {#if currentCode}
                 <span class="code-value small">{prefs.v.code_groups ? grouped(currentCode) : currentCode}</span>
                 {#if row?.next_code && prefs.v.code_next}<span class="dim small mono" style="display:block">Next {grouped(row.next_code)}</span>{/if}
               {:else}
-                <span class="dim">Counter-based</span>
+                <span class="dim">{detail.otp.period ? '…' : 'Counter-based'}</span>
               {/if}
             </span>
             <span class="tools keep gap">
-              {#if detail.otp.period && row?.seconds_left != null}
-                {#if prefs.v.code_ring}<Ring period={detail.otp.period} left={row.seconds_left} />{/if}
+              {#if detail.otp.period}
+                {#if prefs.v.code_ring && row?.seconds_left != null}<Ring period={detail.otp.period} left={row.seconds_left} />{/if}
               {:else}
                 <Btn label="New code" variant="quiet" onclick={nextHotp} />
               {/if}
-              {#if currentCode}<IconBtn icon="content_copy" size={16} label="Copy code" onclick={() => ui.copyCode(id)} />{/if}
+              {#if currentCode}<IconBtn icon="content_copy" size={16} label="Copy code" onclick={copyCurrentCode} />{/if}
             </span>
           </div>
         {/if}
@@ -460,7 +538,7 @@
         {/each}
 
         {#each detail.questions as question, index}
-          {@render secretField(question, `question:${index}`, 'entry.reveal_question', { id, index })}
+          {@render secretField(question, `question:${index}`, 'entry.reveal_question', { id, index }, false, 'Answer')}
         {/each}
 
         {#if detail.has_notes}
@@ -482,7 +560,7 @@
         {#each others as other (other.id)}
           <div class="field">
             <span class="label">Linked</span>
-            <span class="value"><button type="button" class="link ell" style="max-width:100%;text-align:left" onclick={() => ui.open(other.id)}>{other.title}</button></span>
+            <span class="value"><button type="button" class="link ell" style="max-width:100%;text-align:left" onclick={() => ui.open(other.id)}>{other.title || 'Untitled'}</button></span>
             <span></span>
           </div>
         {/each}
@@ -490,35 +568,36 @@
         {#if reminderText}
           <div class="field">
             <span class="label">Reminder</span>
-            <span class="value"><button type="button" class="link" onclick={() => (picker = 'reminder')}>{reminderText}</button></span>
+            <!-- An item in the trash is only looked at, as its other buttons have it. -->
+            <span class="value">{#if detail.trashed}{reminderText}{:else}<button type="button" class="link" onclick={() => (picker = 'reminder')}>{reminderText}</button>{/if}</span>
             <span></span>
           </div>
         {/if}
 
-        {#if !detail.trashed || detail.tags.length > 0}
-          {@const offered = detail.trashed ? [] : suggested.filter((t) => !detail!.tags.includes(t))}
+        {#if !detail.trashed || itemTags.length > 0}
+          {@const offered = detail.trashed ? [] : suggested.filter((t) => !itemTags.includes(t))}
           <div class="field">
             <span class="label">Tags</span>
             <span class="value stack" style="gap:8px">
               <span class="gap wrap">
-                {#each detail.tags as tag (tag)}
+                {#each itemTags as tag (tag)}
                   <TagChip
                     {tag}
                     selected
                     onclick={() => void ui.guard(() => ui.go(`tag:${tag}`))}
-                    onremove={detail.trashed ? undefined : () => setTags(detail!.tags.filter((t) => t !== tag))}
+                    onremove={detail.trashed ? undefined : () => setTags(itemTags.filter((t) => t !== tag))}
                     onmanage={() => (ui.managingTag = tag)}
                   />
                 {/each}
                 {#if !detail.trashed}
-                  <button type="button" class="chip" onclick={() => (picker = 'tags')}><Icon name="add" size={14} />{detail.tags.length ? 'Add' : 'Add a tag'}</button>
+                  <button type="button" class="chip" onclick={() => (picker = 'tags')}><Icon name="add" size={14} />{itemTags.length ? 'Add' : 'Add a tag'}</button>
                 {/if}
               </span>
               {#if offered.length}
                 <span class="dim small gap" style="gap:6px"><Icon name="auto_awesome" size={14} />Suggested</span>
                 <span class="gap wrap">
                   {#each offered as tag (tag)}
-                    <button type="button" class="chip" onclick={() => setTags([...detail!.tags, tag])}><Icon name="add" size={14} />{tag}</button>
+                    <button type="button" class="chip" title={tag} onclick={() => setTags([...itemTags, tag])}><Icon name="add" size={14} /><span class="ell">{tag}</span></button>
                   {/each}
                 </span>
               {/if}
@@ -531,15 +610,18 @@
       {#if detail.history.length > 0}
         <div style="padding-top:14px">
           <button type="button" class="link" onclick={() => (historyOpen = !historyOpen)}>
-            {historyOpen ? 'Hide history' : `History, ${detail.history.length} earlier`}
+            {historyOpen ? 'Hide history' : `Show history, ${plural(detail.history.length, 'earlier value')}`}
           </button>
         </div>
         {#if historyOpen}
           <div class="fields" style="margin-top:8px">
-            {#each [...detail.history].sort((a, b) => b.at_ms - a.at_ms) as revision (revision.index)}
-              {@render secretField(`${revision.field[0].toUpperCase()}${revision.field.slice(1)}, ${whenText(revision.at_ms)}`, `history:${revision.index}`, 'entry.reveal_history', { id, index: revision.index })}
+            {#each history.slice(0, historyLimit) as revision (revision.index)}
+              {@render secretField(`${revision.field[0].toUpperCase()}${revision.field.slice(1)}, ${whenText(revision.at_ms)}`, `history:${revision.index}`, 'entry.reveal_history', { id, index: revision.index }, false, `Old ${revision.field}`)}
             {/each}
           </div>
+          {#if history.length > historyLimit}
+            <div style="padding-top:8px"><button type="button" class="link" onclick={() => (historyLimit += HISTORY_PAGE)}>Show {Math.min(HISTORY_PAGE, history.length - historyLimit)} older</button></div>
+          {/if}
         {/if}
       {/if}
 
@@ -564,8 +646,10 @@
   </Dialog>
 {/if}
 {#if image}
-  <!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
-  <div style="position:fixed;inset:0;z-index:40;background:rgb(0 0 0 / 0.7);display:flex;align-items:center;justify-content:center;padding:32px" onclick={closeImage}>
-    <img src={image.url} alt={image.name} style="max-width:100%;max-height:100%;object-fit:contain" />
-  </div>
+  <!-- A sheet like any other: it takes the focus, keeps Tab inside, closes on Escape or a click
+       outside, and hands the focus back to the attachment it was opened from. -->
+  <Dialog title={image.name} class="image-sheet" onclose={closeImage}>
+    <img src={image.url} alt={image.name} style="display:block;max-width:100%;max-height:70vh;margin:0 auto;object-fit:contain" />
+    {#snippet foot()}<Btn label="Close" variant="primary" onclick={closeImage} />{/snippet}
+  </Dialog>
 {/if}

@@ -1,5 +1,14 @@
 package com.wasimaster.wmpass.ui.vault
 
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import kotlinx.coroutines.launch
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.semantics.heading
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -48,6 +57,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -73,17 +85,36 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 
-/** The app's bottom sheet: dragged away, or dismissed by tapping outside it. */
+/**
+ * The app's bottom sheet: dragged away, or dismissed by tapping outside it or going back. While
+ * [canDismiss] says no, none of those closes it and [onRefused] is told instead, for a sheet that
+ * holds something that would be lost.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PassSheet(
     onDismiss: () -> Unit,
     title: String? = null,
     scroll: androidx.compose.foundation.ScrollState = rememberScrollState(),
+    canDismiss: () -> Boolean = { true },
+    onRefused: () -> Unit = {},
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val colors = palette
-    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val allowed by androidx.compose.runtime.rememberUpdatedState(canDismiss)
+    val refused by androidx.compose.runtime.rememberUpdatedState(onRefused)
+    val state = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+        confirmValueChange = { value ->
+            if (value == androidx.compose.material3.SheetValue.Hidden && !allowed()) {
+                refused()
+                false
+            } else {
+                true
+            }
+        },
+    )
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = state,
@@ -101,13 +132,26 @@ fun PassSheet(
         Column(
             Modifier
                 .fillMaxWidth()
+                // Escape on a hardware keyboard closes the sheet, as going back does, and asks
+                // first in the same way when the sheet holds something that would be lost.
+                .onPreviewKeyEvent { event ->
+                    if (event.key != androidx.compose.ui.input.key.Key.Escape) return@onPreviewKeyEvent false
+                    if (event.type == androidx.compose.ui.input.key.KeyEventType.KeyUp) {
+                        if (allowed()) {
+                            scope.launch { state.hide() }.invokeOnCompletion { onDismiss() }
+                        } else {
+                            refused()
+                        }
+                    }
+                    true
+                }
                 .imePadding()
                 .navigationBarsPadding()
                 .verticalScroll(scroll)
                 .padding(start = 18.dp, end = 18.dp, bottom = 16.dp),
         ) {
             if (title != null) {
-                Text(title, color = colors.text, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 2.dp, top = 6.dp, bottom = 14.dp))
+                Text(title, color = colors.text, style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() }.padding(start = 2.dp, top = 6.dp, bottom = 14.dp))
             }
             content()
         }
@@ -137,6 +181,8 @@ fun SheetRow(
             .fillMaxWidth()
             .clip(Shapes.tile)
             .then(if (enabled) Modifier else Modifier.alpha(0.45f))
+            // The chosen one of a list of choices says so, once, rather than through its tick's name.
+            .semantics { if (selected) this.selected = true }
             .clickable(source, androidx.compose.material3.ripple(), enabled = enabled) {
                 shell.haptics.tick()
                 onClick()
@@ -150,7 +196,7 @@ fun SheetRow(
             Text(title, color = colors.text, style = MaterialTheme.typography.bodyLarge)
             if (subtitle != null) Text(subtitle, color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
         }
-        if (selected) Icon(PassIcons.Check, "Selected", tint = colors.primary, modifier = Modifier.size(22.dp))
+        if (selected) Icon(PassIcons.Check, null, tint = colors.primary, modifier = Modifier.size(22.dp))
     }
 }
 
@@ -161,6 +207,8 @@ fun ConfirmSheet(
     body: String,
     action: String,
     danger: Boolean = true,
+    // What the action does, on the glass look's button: a bin only for what is deleted.
+    icon: ImageVector = PassIcons.Delete,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
@@ -187,7 +235,7 @@ fun ConfirmSheet(
         Text(body, color = colors.textMid, style = MaterialTheme.typography.bodyLarge)
         Spacer(Modifier.height(20.dp))
         if (danger) {
-            QuietButton(action, Modifier.fillMaxWidth(), PassIcons.Delete, colors.danger) {
+            QuietButton(action, Modifier.fillMaxWidth(), icon, colors.danger) {
                 onDismiss()
                 onConfirm()
             }
@@ -204,13 +252,24 @@ fun ConfirmSheet(
 
 /** A short line of text typed into a sheet. */
 @Composable
-fun SheetField(state: androidx.compose.foundation.text.input.TextFieldState, placeholder: String, modifier: Modifier = Modifier) {
+fun SheetField(
+    state: androidx.compose.foundation.text.input.TextFieldState,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+    keyboardOptions: androidx.compose.foundation.text.KeyboardOptions = androidx.compose.foundation.text.KeyboardOptions.Default,
+    // What the keyboard's Done does, for a field with its own button beside it: the same as that button.
+    onSubmit: (() -> Unit)? = null,
+) {
     val colors = palette
+    val options = if (onSubmit != null) keyboardOptions.copy(imeAction = androidx.compose.ui.text.input.ImeAction.Done) else keyboardOptions
+    val action = onSubmit?.let { submit -> androidx.compose.foundation.text.input.KeyboardActionHandler { submit() } }
     if (colors.flat) {
         androidx.compose.material3.OutlinedTextField(
             state = state,
             modifier = modifier.fillMaxWidth(),
             label = { Text(placeholder) },
+            keyboardOptions = options,
+            onKeyboardAction = action,
             lineLimits = androidx.compose.foundation.text.input.TextFieldLineLimits.SingleLine,
         )
         return
@@ -218,18 +277,21 @@ fun SheetField(state: androidx.compose.foundation.text.input.TextFieldState, pla
     Box(
         modifier
             .fillMaxWidth()
-            .height(54.dp)
+            // A floor, so that at a large font size what is typed is not clipped.
+            .heightIn(min = 54.dp)
             .clip(CircleShape)
             .background(colors.surface2)
-            .padding(horizontal = 20.dp),
+            .padding(horizontal = 20.dp, vertical = 4.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
-        if (state.text.isEmpty()) Text(placeholder, color = colors.textLow, style = MaterialTheme.typography.bodyLarge)
         BasicTextField(
             state,
             Modifier.fillMaxWidth(),
+            decorator = com.wasimaster.wmpass.ui.parts.placeholderDecorator(state) { Text(placeholder, color = colors.textLow, style = MaterialTheme.typography.bodyLarge) },
             textStyle = TextStyle(color = colors.text, fontSize = 16.sp),
             cursorBrush = SolidColor(colors.primary),
+            keyboardOptions = options,
+            onKeyboardAction = action,
             lineLimits = TextFieldLineLimits.SingleLine,
         )
     }
@@ -241,6 +303,8 @@ fun FolderSheet(current: String?, onDismiss: () -> Unit, onPick: (String?) -> Un
     val folders by Pass.folders.collectAsStateWithLifecycle()
     val shell = LocalShell.current
     val name = rememberTextFieldState()
+    // Set while the new folder is made, so a second tap on Add does not make a second one.
+    var adding by remember { mutableStateOf(false) }
     PassSheet(onDismiss, "Move to") {
         SheetRow(PassIcons.Inventory2, "No folder", selected = current == null) {
             onPick(null)
@@ -253,17 +317,24 @@ fun FolderSheet(current: String?, onDismiss: () -> Unit, onPick: (String?) -> Un
             }
         }
         Spacer(Modifier.height(12.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            SheetField(name, "New folder", Modifier.weight(1f))
-            Spacer(Modifier.width(10.dp))
-            QuietButton("Add", tint = palette.primary, enabled = name.text.isNotBlank()) {
-                val typed = name.text.toString().trim()
-                shell.launch {
+        fun addFolder() {
+            val typed = name.text.toString().trim()
+            if (typed.isEmpty() || adding) return
+            adding = true
+            shell.launch {
+                try {
                     val reply = Pass.change("folder.add") { put("name", typed) }
                     onPick(reply.obj["id"]?.let { (it as? JsonPrimitive)?.content })
                     onDismiss()
+                } finally {
+                    adding = false
                 }
             }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SheetField(name, "New folder", Modifier.weight(1f)) { addFolder() }
+            Spacer(Modifier.width(10.dp))
+            QuietButton("Add", tint = palette.primary, enabled = name.text.isNotBlank() && !adding) { addFolder() }
         }
     }
 }
@@ -283,7 +354,7 @@ fun ColourSheet(current: String?, onDismiss: () -> Unit, natural: com.wasimaster
             maxItemsInEachRow = 6,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            LabelHues.forEach { hue ->
+            LabelHues.forEachIndexed { index, hue ->
                 val selected = current == hue.toString()
                 val source = remember { MutableInteractionSource() }
                 Box(
@@ -293,10 +364,15 @@ fun ColourSheet(current: String?, onDismiss: () -> Unit, natural: com.wasimaster
                         .clip(CircleShape)
                         .background(Brush.linearGradient(listOf(oklch(0.70f, 0.14f, hue.toFloat()), oklch(0.52f, 0.15f, hue + 28f))))
                         .then(if (selected) Modifier.border(3.dp, colors.text, CircleShape) else Modifier)
-                        .clickable(source, androidx.compose.material3.ripple(), onClickLabel = "Color") {
+                        .clickable(source, androidx.compose.material3.ripple(), onClickLabel = "Use this color") {
                             shell.haptics.tick()
                             onPick(hue.toString())
                             onDismiss()
+                        }
+                        // Twelve round swatches with no words: a screen reader tells them apart by number.
+                        .semantics {
+                            contentDescription = "Color ${index + 1} of ${LabelHues.size}"
+                            this.selected = selected
                         },
                 )
             }
@@ -362,20 +438,23 @@ fun TagSheet(present: List<String>, onDismiss: () -> Unit, suggested: List<Strin
             ) {
                 com.wasimaster.wmpass.ui.parts.AppearingEach(shown) { tag ->
                     val on = tag in present
-                    TagChip(tag, on, onRemove = if (on) ({ onToggle(tag, false) }) else null, onLongClick = { managing = tag }) { onToggle(tag, !on) }
+                    TagChip(tag, on, onRemove = if (on) ({ onToggle(tag, false) }) else null, onLongClick = { managing = tag }, toggles = true) { onToggle(tag, !on) }
                 }
                 val hidden = matching.size - shown.size
                 if (hidden > 0) Pill("$hidden more", false, icon = PassIcons.ExpandMore) { everything = true }
             }
             Spacer(Modifier.height(14.dp))
         }
+        fun addTag() {
+            val tag = typed.text.toString().trim()
+            if (tag.isEmpty()) return
+            onToggle(tag, true)
+            onDismiss()
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            SheetField(typed, "New tag", Modifier.weight(1f))
+            SheetField(typed, "New tag", Modifier.weight(1f)) { addTag() }
             Spacer(Modifier.width(10.dp))
-            QuietButton("Add", tint = palette.primary, enabled = typed.text.isNotBlank()) {
-                onToggle(typed.text.toString().trim(), true)
-                onDismiss()
-            }
+            QuietButton("Add", tint = palette.primary, enabled = typed.text.isNotBlank()) { addTag() }
         }
     }
     managing?.let { tag -> TagManageSheet(tag) { managing = null } }
@@ -390,7 +469,16 @@ private const val TagsAtFirst = 12
  */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-fun TagChip(tag: String, selected: Boolean, onRemove: (() -> Unit)?, onLongClick: () -> Unit, onClick: () -> Unit) {
+fun TagChip(
+    tag: String,
+    selected: Boolean,
+    onRemove: (() -> Unit)?,
+    onLongClick: () -> Unit,
+    // True where a tap puts the tag on or takes it off: read as a checkbox, on or off.
+    toggles: Boolean = false,
+    onClickLabel: String? = null,
+    onClick: () -> Unit,
+) {
     val colors = palette
     val shell = LocalShell.current
     // The standard look follows Material's input chip: 32dp, small corners, outlined until chosen.
@@ -398,7 +486,8 @@ fun TagChip(tag: String, selected: Boolean, onRemove: (() -> Unit)?, onLongClick
     val scheme = MaterialTheme.colorScheme
     Row(
         Modifier
-            .height(if (colors.flat) 32.dp else 36.dp)
+            // A floor: at a large font size the chip grows rather than clipping the tag's name.
+            .heightIn(min = if (colors.flat) 32.dp else 36.dp)
             .clip(shape)
             .then(
                 when {
@@ -408,11 +497,18 @@ fun TagChip(tag: String, selected: Boolean, onRemove: (() -> Unit)?, onLongClick
                     else -> Modifier.background(colors.surface2)
                 },
             )
+            // One stop for the chip: its cross is offered as an action rather than a second, tiny stop.
+            .semantics {
+                if (toggles) toggleableState = androidx.compose.ui.state.ToggleableState(selected)
+                if (onRemove != null) customActions = listOf(CustomAccessibilityAction("Take off $tag") { onRemove(); true })
+            }
             .combinedClickable(
                 onClick = {
                     shell.haptics.tick()
                     onClick()
                 },
+                onClickLabel = onClickLabel,
+                role = if (toggles) androidx.compose.ui.semantics.Role.Checkbox else null,
                 onLongClick = {
                     shell.haptics.click()
                     onLongClick()
@@ -442,7 +538,8 @@ fun TagChip(tag: String, selected: Boolean, onRemove: (() -> Unit)?, onLongClick
                 Modifier
                     .size(28.dp)
                     .clip(CircleShape)
-                    .clickable(onClickLabel = "Take off $tag") {
+                    .clearAndSetSemantics { }
+                    .clickable {
                         shell.haptics.tick()
                         onRemove()
                     },
@@ -690,6 +787,9 @@ fun BulkActions() {
                         put("op", undoOp)
                     }
                 }
+            } else if (undoLabel != null) {
+                // Nothing to undo with, as for the hidden shelf: still said, so the items leaving the list are explained.
+                shell.notice(undoLabel)
             }
         }
     }

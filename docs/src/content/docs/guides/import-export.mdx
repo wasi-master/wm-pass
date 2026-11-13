@@ -34,7 +34,7 @@ Most exports are plain text. Anyone who opens the file can read every password i
 1. Open **Settings**, then **Import**.
 2. Tap **Choose a file** and pick the export. For Google Authenticator, tap **Scan Google Authenticator's code** instead, or pick a screenshot of the code.
 3. If the file has a password, as a KeePass database does, enter it and tap **Open**.
-4. Check the count and the first few names, then tap **Import**.
+4. Check the count and the first few names, then tap the button that imports them, such as **Import 12 items**.
 5. Delete the export file from your phone's Downloads.
 
 </Steps>
@@ -45,7 +45,7 @@ Most exports are plain text. Anyone who opens the file can read every password i
 1. Open **Settings**, then **Import**, under Your vault.
 2. Choose **Choose a file** and pick the export. For Google Authenticator, choose **Scan Google Authenticator's code** instead and hold each code up to the camera, or pick a screenshot of it.
 3. If the file has a password, enter it and choose **Open**.
-4. Check the count and the first few names, then choose **Import**.
+4. Check the count and the first few names, then choose the button that imports them, such as **Import 12 items**.
 5. Delete the export file.
 
 </Steps>
@@ -56,7 +56,7 @@ Most exports are plain text. Anyone who opens the file can read every password i
 1. Open the extension, then **Settings**, then **Import**, under Your vault.
 2. Choose **Choose a file** and pick the export. For Google Authenticator, choose **Scan Google Authenticator's code** instead and hold each code up to the camera, or pick a screenshot of it.
 3. If the file has a password, enter it and choose **Open**.
-4. Check the count and the first few names, then choose **Import**.
+4. Check the count and the first few names, then choose the button that imports them, such as **Import 12 items**.
 5. Delete the export file.
 
 </Steps>
@@ -70,7 +70,7 @@ Most exports are plain text. Anyone who opens the file can read every password i
    wmpass import ~/Passwords.wmvault ~/Downloads/bitwarden_export.json
    ```
 
-   It asks for the vault's password, and for the database password when the file is a KeePass database.
+   It asks for the vault's password, and for the file's own password when it has one, as a KeePass database does. Add `--key-file` and its path for a KeePass database that uses a key file.
 
 2. Delete the export file.
 
@@ -80,7 +80,7 @@ In the full-screen app, press `:` and choose **Import from another app**.
 </TabItem>
 </Tabs>
 
-A login with the same site, username and password as one already in your vault is skipped, so importing the same file twice adds nothing.
+A login with the same site, username and password as one already in your vault is skipped, and so is a one-time code with the same key and settings, so importing the same file twice adds no login or code again. Notes, cards and other items are not compared, and come in again.
 
 ## Every app at a glance
 
@@ -90,4 +90,4 @@ These importers were tested against sample files written by hand from each forma
 
 ## Exporting from WM Pass
 
-Under Settings, Export, WM Pass writes `.wmvault`, KDBX, Bitwarden JSON, CSV or a printable HTML page. **PDF or printer** hands the same page to the system's print dialog (Android's print screen on a phone), which saves it as a PDF or sends it to a printer, without writing a file first. CSV, HTML and PDF are not encrypted, so delete them once you are done.
+Under Settings, Export, WM Pass writes `.wmvault`, KDBX, Bitwarden JSON, CSV or a printable HTML page. The KDBX file keeps your folders as KeePass groups, and leaves out items on the hidden shelf. **PDF or printer** hands the same page to the system's print dialog (Android's print screen on a phone), which saves it as a PDF or sends it to a printer, without writing a file first. CSV, HTML and PDF are not encrypted, so delete them once you are done.

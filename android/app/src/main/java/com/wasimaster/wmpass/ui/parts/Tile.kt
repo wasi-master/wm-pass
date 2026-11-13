@@ -225,7 +225,8 @@ val GlyphChoices: Map<String, ImageVector>
         "contract" to PassIcons.Contract,
         "badge" to PassIcons.Badge,
         "sparkle" to PassIcons.AutoAwesomeFilled,
-        "home" to PassIcons.HomeStorage,
+        // The house, as on the web: one entry, since a second key of the same name replaces the first.
+        "home" to PassIcons.Home,
         "hub" to PassIcons.Hub,
         "shopping_cart" to PassIcons.ShoppingCart,
         "storefront" to PassIcons.Storefront,
@@ -270,7 +271,6 @@ val GlyphChoices: Map<String, ImageVector>
         "public" to PassIcons.Public,
         "map" to PassIcons.Map,
         "location_on" to PassIcons.LocationOn,
-        "home" to PassIcons.Home,
         "apartment" to PassIcons.Apartment,
         "local_hospital" to PassIcons.LocalHospital,
         "medication" to PassIcons.Medication,
@@ -471,6 +471,13 @@ fun kindName(kind: String): String = when (kind) {
     "wifi" -> "Wi-Fi"
     "otp" -> "Code"
     else -> kind
+}
+
+/** The kind's name inside a sentence, as in "New login", keeping SSH, API and Wi-Fi as they are. */
+fun kindInSentence(kind: String): String {
+    val name = kindName(kind)
+    val first = name.substringBefore(' ')
+    return if (first.drop(1).any { it.isUpperCase() }) name else name.replaceFirstChar { it.lowercaseChar() }
 }
 
 /**

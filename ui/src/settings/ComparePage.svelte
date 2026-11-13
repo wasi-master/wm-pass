@@ -8,7 +8,10 @@
   let second = $state('');
   let result = $state<CompareView | null>(null);
 
+  // Typed on while one was compared: only the newest answer is shown.
+  let asked = 0;
   $effect(() => {
+    const turn = ++asked;
     const a = first;
     const b = second;
     if (!a || !b) {
@@ -19,8 +22,8 @@
     const right = bytesOf(b);
     void pass
       .compare(left, right)
-      .then((r) => (result = r))
-      .catch(() => (result = null))
+      .then((r) => turn === asked && (result = r))
+      .catch(() => turn === asked && (result = null))
       .finally(() => {
         left.fill(0);
         right.fill(0);

@@ -45,6 +45,18 @@ fn chrome() {
 }
 
 #[test]
+fn chrome_columns_with_a_code_and_an_email_keep_both() {
+    // Proton Pass writes Chrome's columns and more.
+    let csv = "type,name,url,email,username,password,note,totp,createTime,modifyTime,vault\nlogin,Mail,https://mail.example,me@example.com,,pw,,otpauth://totp/x?secret=JBSWY3DPEHPK3PXP,1,2,Personal\n";
+    let (format, imported) = run("p.csv", csv.as_bytes());
+    assert_eq!(format, Format::ChromeCsv);
+    let (item, login) = only_login(&imported);
+    assert_eq!(login.username.v, "me@example.com");
+    assert!(login.otp.v.is_some());
+    assert_eq!(item.folder.as_deref(), Some("Personal"));
+}
+
+#[test]
 fn firefox_names_entries_after_their_host() {
     let csv = "\"url\",\"username\",\"password\",\"httpRealm\",\"formActionOrigin\",\"guid\",\"timeCreated\",\"timeLastUsed\",\"timePasswordChanged\"\n\"https://www.example.com\",\"me\",\"pw\",,\"https://www.example.com\",\"{x}\",\"1\",\"2\",\"3\"\n";
     let (format, imported) = run("f.csv", csv.as_bytes());
@@ -97,6 +109,23 @@ fn bitwarden_csv() {
         "1234"
     );
     assert!(matches!(imported.entries[1].entry.kind, Kind::Note(_)));
+}
+
+#[test]
+fn onepassword_csv_keeps_favourites_tags_and_archived_items() {
+    let csv = "Title,Url,Username,Password,OTPAuth,Favorite,Archived,Tags,Notes\n\
+Mail,https://m.example,me,pw,otpauth://totp/x?secret=JBSWY3DPEHPK3PXP,true,false,\"work,mail\",n\n\
+Old,https://o.example,me,pw-old,,false,true,,\n";
+    let (format, imported) = run("1p.csv", csv.as_bytes());
+    assert_eq!(format, Format::OnePasswordCsv);
+    let mail = &imported.entries[0].entry;
+    assert!(mail.common.favourite.v);
+    assert_eq!(mail.common.tags.v, vec!["work".to_owned(), "mail".to_owned()]);
+    assert!(mail.login().unwrap().otp.v.is_some());
+    assert_eq!(mail.common.notes.v.expose(), "n");
+    let old = &imported.entries[1].entry;
+    assert!(!old.common.favourite.v);
+    assert_eq!(old.common.tags.v, vec!["Archived".to_owned()]);
 }
 
 #[test]
@@ -230,6 +259,9 @@ fn enpass_keeper_proton() {
     let (item, login) = only_login(&imported);
     assert!(login.otp.v.is_some());
     assert_eq!(item.entry.common.custom_fields.v.len(), 1);
+    let shared = r#"{"records":[{"title":"Wiki","login":"me","password":"pw2","folders":[{"shared_folder":"Team","can_edit":true}]}]}"#;
+    let (_, imported) = run("k.json", shared.as_bytes());
+    assert_eq!(only_login(&imported).0.folder.as_deref(), Some("Team"));
 
     let proton = r#"{"encrypted":false,"vaults":{"v":{"name":"Personal","items":[
       {"state":1,"data":{"type":"login","metadata":{"name":"Mail","note":"n"},"extraFields":[{"fieldName":"pin","type":"hidden","data":{"content":"1"}}],
@@ -274,13 +306,14 @@ fn one_password_1pux() {
                                 {"id":"y","title":"Recovery","value":{"concealed":"code"}}]}]}},
       {"categoryUuid":"003","state":"active","overview":{"title":"Note"},"details":{"notesPlain":"body"}},
       {"categoryUuid":"002","state":"active","overview":{"title":"Visa"},"details":{"sections":[{"fields":[
-        {"id":"cardholder","title":"n","value":{"string":"Me"}},{"id":"ccnum","title":"c","value":{"creditCardNumber":"4111"}},{"id":"cvv","title":"v","value":{"concealed":"123"}}]}]}},
+        {"id":"cardholder","title":"n","value":{"string":"Me"}},{"id":"ccnum","title":"c","value":{"creditCardNumber":"4111"}},{"id":"cvv","title":"v","value":{"concealed":"123"}},
+        {"id":"type","title":"type","value":{"cctype":"visa"}},{"id":"bank","title":"issuing bank","value":{"string":"Big Bank"}}]}]}},
       {"categoryUuid":"110","state":"active","overview":{"title":"Server"},"details":{"sections":[{"fields":[{"id":"u","title":"URL","value":{"string":"x"}}]}]}},
       {"categoryUuid":"001","state":"archived","overview":{"title":"Old"},"details":{}}
     ]}]}]}"#;
     let (format, imported) = run("e.1pux", &zip_with("export.data", export));
     assert_eq!(format, Format::OnePux);
-    assert_eq!(imported.entries.len(), 4);
+    assert_eq!(imported.entries.len(), 5);
     let mail = &imported.entries[0];
     let login = mail.entry.login().unwrap();
     assert_eq!(login.password.v.expose(), "pw");
@@ -291,8 +324,15 @@ fn one_password_1pux() {
         panic!()
     };
     assert_eq!(card.number.v.expose(), "4111");
+    assert_eq!(card.issuer.v, "visa");
+    let card_fields = &imported.entries[2].entry.common.custom_fields.v;
+    assert_eq!(card_fields.len(), 1, "only the field with no place of its own");
+    assert_eq!(card_fields[0].value.expose(), "Big Bank");
     assert_eq!(imported.entries[3].entry.common.custom_fields.v.len(), 1);
-    assert_eq!(imported.skipped.len(), 1);
+    // The 110 item is kept as a note, and says so; the archived one comes in tagged.
+    assert_eq!(imported.skipped.len(), 1, "{:?}", imported.skipped);
+    let old = imported.entries.iter().find(|i| i.entry.common.title.v == "Old").unwrap();
+    assert_eq!(old.entry.common.tags.v, vec!["Archived".to_owned()]);
 }
 
 #[test]
@@ -386,6 +426,11 @@ fn authenticators() {
     let (format, imported) = run("l.txt", list.as_bytes());
     assert_eq!(format, Format::OtpAuthList);
     assert_eq!((imported.entries.len(), imported.skipped.len()), (1, 1));
+    // As a QR code in its alphanumeric mode gives it.
+    let shouted = format!("OTPAUTH://TOTP/A:ME?SECRET={SEED}\n");
+    let (format, imported) = run("u.txt", shouted.as_bytes());
+    assert_eq!(format, Format::OtpAuthList);
+    assert_eq!(imported.entries.len(), 1);
 }
 
 #[test]
@@ -442,6 +487,30 @@ fn hostile_inputs_fail_cleanly() {
     }
     assert_eq!(detect(b"\xff\xfe\x00"), None);
     assert_eq!(detect(b"hello world"), None);
+}
+
+#[test]
+fn importing_an_authenticator_twice_does_not_double_its_codes() {
+    let mut vault = fast_vault(1);
+    let list = "otpauth://totp/A:me?secret=JBSWY3DPEHPK3PXP\notpauth://totp/B:me?secret=GEZDGNBVGY3TQOJQ\n";
+    let read = || import(Format::OtpAuthList, list.as_bytes(), None, AT).unwrap();
+    let first = apply(&mut vault, read(), 2000).unwrap();
+    assert_eq!((first.added, first.duplicates), (2, 0));
+    let again = apply(&mut vault, read(), 3000).unwrap();
+    assert_eq!((again.added, again.duplicates), (0, 2));
+    // The same seed typed another way is the same code; another length of code is not.
+    let other = "otpauth://totp/A:me?secret=jbsw%20y3dp%20ehpk%203pxp\notpauth://totp/A:me?secret=JBSWY3DPEHPK3PXP&digits=8\n";
+    let third = apply(&mut vault, import(Format::OtpAuthList, other.as_bytes(), None, AT).unwrap(), 4000).unwrap();
+    assert_eq!((third.added, third.duplicates), (1, 1));
+}
+
+#[test]
+fn a_scheme_alone_is_no_address() {
+    let csv = "url,username,password,totp,extra,name,grouping,fav\nhttp://,me,pw,,,Bank,,0\n";
+    let (_, imported) = run("l.csv", csv.as_bytes());
+    let (item, login) = only_login(&imported);
+    assert!(login.site_matchers.v.is_empty(), "{:?}", login.site_matchers.v);
+    assert_eq!(item.entry.common.title.v, "Bank");
 }
 
 #[test]
@@ -556,6 +625,26 @@ fn csv_export_round_trips_logins_and_reports_other_kinds() {
         "values must not be lost"
     );
     assert_eq!(imported.skipped.len(), 1);
+}
+
+#[test]
+fn a_note_comes_back_from_csv_as_the_note_it_was() {
+    let mut vault = fast_vault(1);
+    let at = vault.tick(2000);
+    let mut note = crate::model::Entry::default();
+    note.common.title = Lww::new("Door".into(), at);
+    note.common.tags = Lww::new(vec!["home".into()], at);
+    note.common.custom_fields = Lww::new(vec![crate::model::Field { name: "Floor".into(), value: "3".into(), ..Default::default() }], at);
+    note.kind = Kind::Note(crate::model::Note { body: Lww::new("code 1234\nside door".into(), at) });
+    vault.add(note, 2000).unwrap();
+    let csv = export::to_csv(&vault).unwrap();
+    let (_, imported) = run("e.csv", csv.expose().as_bytes());
+    let back = &imported.entries[0].entry;
+    let Kind::Note(body) = &back.kind else { panic!("a note") };
+    assert_eq!(body.body.v.expose(), "code 1234\nside door");
+    assert_eq!(back.common.custom_fields.v.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), vec!["Floor"]);
+    assert_eq!(back.common.tags.v, vec!["home".to_owned()]);
+    assert!(imported.skipped.is_empty(), "{:?}", imported.skipped);
 }
 
 #[test]
@@ -682,4 +771,290 @@ fn kdbx_in_place_keeps_structure_and_history() {
             .set_password("no-such-id", &Secret::new("x"))
             .is_err()
     );
+}
+
+#[test]
+fn keepassxc_csv_root_entries_land_in_no_folder() {
+    let csv = "\"Group\",\"Title\",\"Username\",\"Password\",\"URL\",\"Notes\"\n\"Root\",\"Mail\",\"me\",\"pw\",\"https://mail.example\",\"\"\n\"Root/Root\",\"Odd\",\"me\",\"pw2\",\"https://odd.example\",\"\"\n";
+    let (format, imported) = run("k.csv", csv.as_bytes());
+    assert_eq!(format, Format::KeePassXcCsv);
+    assert_eq!(imported.entries[0].folder, None);
+    // A group the person named Root under the root stays a folder.
+    assert_eq!(imported.entries[1].folder.as_deref(), Some("Root"));
+}
+
+#[test]
+fn bitwarden_card_without_expiry_has_none() {
+    let json = r#"{"encrypted":false,"folders":[],"items":[
+      {"type":3,"name":"Gift","card":{"cardholderName":"Me","number":"4111","expMonth":null,"expYear":null}}
+    ]}"#;
+    let (_, imported) = run("b.json", json.as_bytes());
+    let Kind::Card(card) = &imported.entries[0].entry.kind else {
+        panic!()
+    };
+    assert_eq!(card.expiry.v, "");
+}
+
+#[test]
+fn bitwarden_export_writes_steam_codes_its_own_way() {
+    let mut vault = fast_vault(1);
+    let at = vault.tick(1000);
+    let mut entry = login_entry("Steam", "me", "pw", at);
+    // Typed the way a page shows it, the seed still goes out as Bitwarden reads one.
+    let config = OtpConfig::from_uri("steam://jbsw y3dp ehpk 3pxp").unwrap();
+    entry.login_mut().unwrap().otp = Lww::new(Some(config), at);
+    vault.add(entry, 1000).unwrap();
+    let json = export::to_bitwarden_json(&vault).unwrap();
+    assert!(json.expose().contains("\"totp\": \"steam://JBSWY3DPEHPK3PXP\""), "{}", json.expose());
+    let (_, imported) = run("b.json", json.expose().as_bytes());
+    let (_, login) = only_login(&imported);
+    assert_eq!(login.otp.v.as_ref().unwrap().kind, OtpKind::Steam);
+}
+
+#[test]
+fn bitwarden_match_settings_survive_both_ways() {
+    use crate::model::SiteMatcher;
+    let json = r#"{"encrypted":false,"folders":[],"items":[
+      {"type":1,"name":"Strict","login":{"username":"me","password":"pw","uris":[
+        {"uri":"https://login.example.com","match":1},
+        {"uri":"^https://[a-z]+\\.corp\\.example/","match":4}]}},
+      {"type":1,"name":"Never","login":{"username":"me","password":"pw2","uris":[{"uri":"https://never.example","match":5}]}},
+      {"type":1,"name":"Plain","login":{"username":"me","password":"pw3","uris":[{"uri":"https://plain.example","match":null}]}}
+    ]}"#;
+    let (_, imported) = run("b.json", json.as_bytes());
+    let matchers = |i: usize| imported.entries[i].entry.login().unwrap().site_matchers.v.clone();
+    assert_eq!(
+        matchers(0),
+        vec![
+            SiteMatcher::Host("https://login.example.com".into()),
+            SiteMatcher::Regex(r"^https://[a-z]+\.corp\.example/".into())
+        ]
+    );
+    assert!(matchers(1).contains(&SiteMatcher::Never));
+    assert_eq!(matchers(2), vec![SiteMatcher::Url("https://plain.example".into())]);
+
+    let mut vault = fast_vault(1);
+    for item in imported.entries {
+        vault.add(item.entry, 1000).unwrap();
+    }
+    let json = export::to_bitwarden_json(&vault).unwrap();
+    let (_, back) = run("b.json", json.expose().as_bytes());
+    let by_title = |title: &str| {
+        back.entries.iter().find(|i| i.entry.common.title.v == title).unwrap().entry.login().unwrap().site_matchers.v.clone()
+    };
+    assert!(by_title("Strict").contains(&SiteMatcher::Host("https://login.example.com".into())));
+    assert!(by_title("Never").contains(&SiteMatcher::Never));
+    assert_eq!(by_title("Plain"), vec![SiteMatcher::Url("https://plain.example".into())]);
+}
+
+#[test]
+fn bitwarden_export_keeps_a_card_expiry_in_any_form() {
+    assert_eq!(export::expiry_parts("12/27"), Some(("12".into(), "2027".into())));
+    assert_eq!(export::expiry_parts("2027-03"), Some(("3".into(), "2027".into())));
+    assert_eq!(export::expiry_parts("202712"), Some(("12".into(), "2027".into())));
+    assert_eq!(export::expiry_parts("0528"), Some(("5".into(), "2028".into())));
+    assert_eq!(export::expiry_parts("1/2030"), Some(("1".into(), "2030".into())));
+    assert_eq!(export::expiry_parts("soon"), None);
+    assert_eq!(export::expiry_parts("12 / 27"), Some(("12".into(), "2027".into())));
+    let mut vault = fast_vault(1);
+    let at = vault.tick(1000);
+    let mut entry = login_entry("Odd card", "", "", at);
+    entry.kind = Kind::Card(crate::model::Card { expiry: Lww::new("end of 2027".into(), at), ..Default::default() });
+    vault.add(entry, 1000).unwrap();
+    let json = export::to_bitwarden_json(&vault).unwrap();
+    assert!(json.expose().contains("end of 2027"), "{}", json.expose());
+}
+
+#[test]
+fn bitwarden_organisation_collections_become_folders() {
+    let json = r#"{"encrypted":false,"collections":[{"id":"c1","name":"Shared"}],"items":[
+      {"type":1,"name":"Team","collectionIds":["c1"],"login":{"username":"me","password":"pw"}}]}"#;
+    let (_, imported) = run("b.json", json.as_bytes());
+    assert_eq!(imported.entries[0].folder.as_deref(), Some("Shared"));
+}
+
+#[test]
+fn spreadsheet_csvs_lose_blank_rows_and_read_semicolons() {
+    let csv = "name,url,username,password\nMail,https://mail.example,me,pw\n,,,\n\n";
+    let (_, imported) = run("c.csv", csv.as_bytes());
+    assert_eq!(imported.entries.len(), 1);
+    let map = ColumnMap { title: Some(0), password: Some(1), ..ColumnMap::default() };
+    let semi = "Title;Secret\nMail;pw\n;\n";
+    let mapped = import_mapped_csv(semi, &map, true, AT).unwrap();
+    assert_eq!(only_login(&mapped).1.password.v.expose(), "pw");
+}
+
+#[test]
+fn an_export_saved_again_by_a_spreadsheet_still_reads() {
+    // Excel in much of Europe saves with semicolons, and as "Unicode Text" with tabs.
+    let semi = "name;url;username;password\nMail;https://mail.example;me;p,w\n";
+    let (format, imported) = run("c.csv", semi.as_bytes());
+    assert_eq!(format, Format::ChromeCsv);
+    assert_eq!(only_login(&imported).1.password.v.expose(), "p,w");
+    let tabs = "name\turl\tusername\tpassword\nMail\thttps://mail.example\tme\tpw\n";
+    let mut data = vec![0xff, 0xfe];
+    data.extend(tabs.encode_utf16().flat_map(u16::to_le_bytes));
+    let (format, imported) = run("c.txt", &data);
+    assert_eq!(format, Format::ChromeCsv);
+    assert_eq!(only_login(&imported).1.username.v, "me");
+}
+
+#[test]
+fn utf16_exports_from_windows_read() {
+    let csv = "name,url,username,password\nCafé,https://cafe.example,me,pässword\n";
+    let mut data = vec![0xff, 0xfe];
+    data.extend(csv.encode_utf16().flat_map(u16::to_le_bytes));
+    let (format, imported) = run("c.csv", &data);
+    assert_eq!(format, Format::ChromeCsv);
+    let (item, login) = only_login(&imported);
+    assert_eq!(item.entry.common.title.v, "Café");
+    assert_eq!(login.password.v.expose(), "pässword");
+    let latin1 = b"name,url,username,password\nCaf\xe9,https://cafe.example,me,pw\n";
+    assert!(import(Format::ChromeCsv, latin1, None, AT).unwrap_err().to_string().contains("UTF-8"));
+}
+
+#[test]
+fn upper_case_otp_links_in_an_import_read() {
+    let mut skipped = Vec::new();
+    let config = parse_otp("OTPAUTH://TOTP/ACME:ME?SECRET=JBSWY3DPEHPK3PXP", "ACME", "me", &mut skipped).unwrap();
+    assert!(skipped.is_empty());
+    assert_eq!(config.account, "ME");
+    let seed = parse_otp("jbsw y3dp ehpk 3pxp", "Site", "me", &mut skipped).unwrap();
+    assert_eq!(seed.secret.expose(), "JBSWY3DPEHPK3PXP");
+}
+
+#[test]
+fn a_login_only_in_the_trash_is_imported_again() {
+    let mut vault = fast_vault(1);
+    let at = vault.tick(1000);
+    let mut old = login_entry("Mail", "me", "pw", at);
+    old.login_mut().unwrap().site_matchers = Lww::new(vec![crate::model::SiteMatcher::Url("https://mail.example".into())], at);
+    let id = vault.add(old, 1000).unwrap();
+    vault.trash(&id, 2000).unwrap();
+    let csv = "name,url,username,password\nMail,https://mail.example,me,pw\n";
+    let (_, imported) = run("c.csv", csv.as_bytes());
+    let report = apply(&mut vault, imported, 3000).unwrap();
+    assert_eq!((report.added, report.duplicates), (1, 0));
+}
+
+#[test]
+fn bitwarden_password_history_keeps_its_dates_both_ways() {
+    let json = r#"{"encrypted":false,"folders":[],"items":[
+      {"type":1,"name":"Mail","login":{"username":"me","password":"new"},
+       "passwordHistory":[{"lastUsedDate":"2024-04-08T13:25:14.123Z","password":"old"},{"password":"older"}]}
+    ]}"#;
+    let (_, imported) = run("b.json", json.as_bytes());
+    let times = |entry: &crate::model::Entry| entry.history_of("password").map(|r| (r.value.expose().to_owned(), r.at.ms)).collect::<Vec<_>>();
+    assert_eq!(times(&imported.entries[0].entry), vec![("old".to_owned(), 1_712_582_714_123), ("older".to_owned(), 0)]);
+
+    let mut vault = fast_vault(1);
+    for item in imported.entries {
+        vault.add(item.entry, 1000).unwrap();
+    }
+    let json = export::to_bitwarden_json(&vault).unwrap();
+    assert!(json.expose().contains(r#""lastUsedDate": "2024-04-08T13:25:14.123Z""#));
+    assert!(json.expose().contains(r#""lastUsedDate": "1970-01-01T00:00:00.000Z""#));
+    let (_, back) = run("b.json", json.expose().as_bytes());
+    let mut kept = times(&back.entries[0].entry);
+    kept.sort();
+    assert_eq!(kept, vec![("old".to_owned(), 1_712_582_714_123), ("older".to_owned(), 0)]);
+}
+
+#[test]
+fn wmpass_csv_keeps_every_matching_rule_and_old_readers_never_widen_one() {
+    use crate::matching::{Target, host_of, match_entry, matcher_from_address};
+    use crate::model::SiteMatcher;
+    let cert = "ab".repeat(32);
+    let strict = vec![
+        SiteMatcher::Url("https://plain.example/login".into()),
+        SiteMatcher::Host("https://login.example.com".into()),
+        SiteMatcher::Domain("corp.example".into()),
+        SiteMatcher::Regex(r"^https://[a-z]+\.corp\.example/a b%20".into()),
+        SiteMatcher::AndroidApp { package: "com.example.app".into(), cert_sha256: Some(cert.clone()) },
+    ];
+    let mut never = strict.clone();
+    never.push(SiteMatcher::Never);
+    let mut vault = fast_vault(1);
+    for (title, matchers) in [("Strict", strict.clone()), ("Never", never.clone())] {
+        let at = vault.tick(1000);
+        let mut entry = login_entry(title, "me", "pw", at);
+        entry.login_mut().unwrap().site_matchers = Lww::new(matchers, at);
+        vault.add(entry, 1000).unwrap();
+    }
+    let csv = export::to_csv(&vault).unwrap();
+    let (_, back) = run("e.csv", csv.expose().as_bytes());
+    let by_title = |title: &str| back.entries.iter().find(|i| i.entry.common.title.v == title).unwrap().entry.clone();
+    // A domain rule goes out as a plain address, so other apps can use it, and comes back as one:
+    // that matches the same registrable domain, as the rule did.
+    let strict_back: Vec<SiteMatcher> = strict
+        .iter()
+        .map(|m| match m {
+            SiteMatcher::Domain(d) => matcher_from_address(d),
+            other => other.clone(),
+        })
+        .collect();
+    assert_eq!(by_title("Strict").login().unwrap().site_matchers.v, strict_back);
+    assert_eq!(by_title("Never").login().unwrap().site_matchers.v, never);
+
+    // An older version read every token as a plain address. Each tagged one then has no host,
+    // so it fills nowhere: not the subdomain a host rule kept out, and not a never-fill login.
+    let mut reader = csv::Reader::from_reader(csv.expose().as_bytes());
+    for record in reader.records() {
+        let record = record.unwrap();
+        let old: Vec<SiteMatcher> = record[5].split(' ').map(matcher_from_address).collect();
+        for token in record[5].split(' ').filter(|t| t.starts_with("wmpass:")) {
+            assert_eq!(host_of(token), None, "{token}");
+        }
+        let at = vault.tick(2000);
+        let mut entry = login_entry(&record[2], "me", "pw", at);
+        entry.login_mut().unwrap().site_matchers = Lww::new(old, at);
+        let fills = |url: &str| match_entry(&entry, Target::Web { url }).is_some();
+        assert!(!fills("https://other.example.com/"), "{}", &record[2]);
+        // The domain rule, written plainly, still covers its own subdomains; nothing else does.
+        assert_eq!(fills("https://a.corp.example/"), &record[2] == "Strict", "{}", &record[2]);
+        assert_eq!(fills("https://plain.example/"), &record[2] == "Strict");
+    }
+}
+
+#[test]
+fn nested_folders_go_out_as_paths_and_come_back_nested() {
+    let mut vault = fast_vault(1);
+    let work = vault.add_folder("Work", None, 2000).unwrap();
+    let mail = vault.add_folder("Mail", Some(work.clone()), 2000).unwrap();
+    // A second folder called Mail elsewhere must not be confused with this one.
+    vault.add_folder("Mail", None, 2000).unwrap();
+    let at = vault.tick(2000);
+    let mut entry = login_entry("Inbox", "me", "pw-one", at);
+    entry.common.folder = Lww::new(Some(mail), at);
+    vault.add(entry, 2000).unwrap();
+
+    let csv = export::to_csv(&vault).unwrap();
+    assert!(csv.expose().contains(",Work/Mail,"), "{}", csv.expose());
+    let json = export::to_bitwarden_json(&vault).unwrap();
+    let root: serde_json::Value = serde_json::from_str(json.expose()).unwrap();
+    let names: Vec<&str> = root["folders"].as_array().unwrap().iter().filter_map(|f| f["name"].as_str()).collect();
+    assert!(names.contains(&"Work/Mail") && names.contains(&"Mail"), "{names:?}");
+
+    // Read back into an empty vault, the path becomes a folder inside a folder.
+    let mut fresh = fast_vault(2);
+    let imported = import(Format::BitwardenJson, json.expose().as_bytes(), None, AT).unwrap();
+    apply(&mut fresh, imported, 3000).unwrap();
+    let folder_of = |vault: &Vault, name: &str, parent: Option<&str>| {
+        vault
+            .doc
+            .folders
+            .values()
+            .find(|f| f.name.v == name && f.parent.v.as_deref() == parent)
+            .map(|f| f.id.clone())
+    };
+    let work = folder_of(&fresh, "Work", None).expect("Work at the top");
+    let mail = folder_of(&fresh, "Mail", Some(&work)).expect("Mail inside Work");
+    let inbox = fresh.doc.entries.values().find(|e| e.common.title.v == "Inbox").unwrap();
+    assert_eq!(inbox.common.folder.v.as_deref(), Some(mail.as_str()));
+    // Bringing it in again uses the folders already there.
+    let again = import(Format::KeePassXcCsv, b"Group,Title,Username,Password,URL,Notes\nRoot/Work/Mail,Other,me,pw-two,,\n", None, AT).unwrap();
+    apply(&mut fresh, again, 4000).unwrap();
+    assert_eq!(fresh.doc.folders.values().filter(|f| f.name.v == "Work").count(), 1);
+    let other = fresh.doc.entries.values().find(|e| e.common.title.v == "Other").unwrap();
+    assert_eq!(other.common.folder.v.as_deref(), Some(mail.as_str()));
 }

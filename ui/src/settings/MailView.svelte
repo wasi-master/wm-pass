@@ -91,7 +91,7 @@
 
 {#if problem}
   <div class="stack" style="align-items:flex-start;padding-bottom:12px">
-    <p class="danger-text">{problem}</p>
+    <p class="danger-text" role="alert">{problem}</p>
     <Btn label="Try again" icon="refresh" onclick={() => again++} />
   </div>
 {/if}

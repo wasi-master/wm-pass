@@ -10,6 +10,23 @@ use crate::{Fault, Result, Sink, Stored};
 const API: &str = "https://api.dropboxapi.com/2";
 const CONTENT: &str = "https://content.dropboxapi.com/2";
 
+/// JSON for the `Dropbox-API-Arg` header, which must be plain ASCII: Dropbox asks for every
+/// other character as a `\u` escape, and a name with an accent in it is otherwise refused.
+fn header_json(value: &Value) -> String {
+    let mut out = String::new();
+    for ch in value.to_string().chars() {
+        if ch.is_ascii() {
+            out.push(ch);
+        } else {
+            let mut units = [0u16; 2];
+            for unit in ch.encode_utf16(&mut units) {
+                out.push_str(&format!("\\u{unit:04x}"));
+            }
+        }
+    }
+    out
+}
+
 /// A Dropbox app folder.
 #[derive(Debug)]
 pub struct Dropbox<H> {
@@ -57,7 +74,7 @@ impl<H: AsyncHttp> Sink for Dropbox<H> {
     }
 
     async fn write(&self, name: &str, bytes: &[u8]) -> Result<Stored> {
-        let argument = json!({"path": format!("/{name}"), "mode": "overwrite", "mute": true}).to_string();
+        let argument = header_json(&json!({"path": format!("/{name}"), "mode": "overwrite", "mute": true}));
         let mut request = self.auth(Request::verb("POST", format!("{CONTENT}/files/upload"))).header("Dropbox-API-Arg", argument);
         request.body = Some(("application/octet-stream", bytes.to_vec()));
         request.timeout_ms = 300_000;
@@ -89,7 +106,7 @@ impl<H: AsyncHttp> Sink for Dropbox<H> {
     }
 
     async fn read(&self, file: &Stored) -> Result<Vec<u8>> {
-        let argument = json!({"path": file.id}).to_string();
+        let argument = header_json(&json!({"path": file.id}));
         let mut request = self.auth(Request::verb("POST", format!("{CONTENT}/files/download"))).header("Dropbox-API-Arg", argument);
         request.timeout_ms = 300_000;
         Ok(self.checked(request).await?.body)
@@ -134,6 +151,15 @@ mod tests {
         assert_eq!(block_on(sink(&gone).delete(&file)), Ok(()));
         let expired = FakeHttp::new().answer(API, 401, "");
         assert_eq!(block_on(sink(&expired).readiness()), Err(Fault::PermissionLost));
+    }
+
+    #[test]
+    fn the_header_argument_is_plain_ascii() {
+        let argument = header_json(&json!({"path": "/café 🔑"}));
+        assert!(argument.is_ascii(), "{argument}");
+        assert_eq!(argument, r#"{"path":"/caf\u00e9 \ud83d\udd11"}"#);
+        let back: Value = serde_json::from_str(&argument).unwrap();
+        assert_eq!(back["path"], "/café 🔑");
     }
 
     #[test]

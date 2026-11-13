@@ -148,9 +148,14 @@ pub fn finish_send<S: Read + Write, B: BlobStore>(
 }
 
 fn send<S: Read + Write, B: BlobStore>(channel: &mut Channel<S>, file: &[u8], names: &[String], blobs: &B) -> Result<()> {
-    let present: Vec<(&String, Vec<u8>)> = names.iter().filter_map(|name| Some((name, blobs.get(name)?))).collect();
+    // Counted without reading, then read and sent one at a time: holding every attachment at
+    // once could run a phone out of memory.
+    let present: Vec<&String> = names.iter().filter(|name| blobs.has(name)).collect();
     channel.send_value(&Header { version: VERSION, file: file.to_vec(), blobs: present.len() })?;
-    for (name, bytes) in present {
+    for name in present {
+        // The count is already sent, so a blob that cannot be read stops the transfer at once
+        // instead of leaving the new device waiting for it.
+        let bytes = blobs.get(name).ok_or(LanError::Core)?;
         channel.send_value(&Blob { name: name.clone(), bytes })?;
     }
     Ok(())

@@ -11,7 +11,7 @@ use wmpass_net::http::{Http, NetError, Request, Response};
 use wmpass_net::NetPolicy;
 
 use super::*;
-use crate::http::{Blocking, block_on};
+use crate::http::{AsyncHttp, Blocking, block_on};
 
 // ---- Vectors ----
 
@@ -342,6 +342,11 @@ fn errors_map_to_faults() {
     block_on(mega.readiness()).unwrap();
     full.0.lock().unwrap().script.extend([ok(json!([{"f": []}])), ok(json!([-17]))]);
     assert_eq!(block_on(mega.write("v", b"x")), Err(Fault::OutOfSpace));
+    // An upload that would go over the quota, and an account locked for being over it.
+    for code in [-24, -29] {
+        full.0.lock().unwrap().script.extend([ok(json!([{"f": []}])), ok(json!([code]))]);
+        assert_eq!(block_on(mega.write("v", b"x")), Err(Fault::OutOfSpace), "{code}");
+    }
 
     let broken = FakeMega::new();
     broken.0.lock().unwrap().script.push_back(Response { status: 500, ..Response::default() });
@@ -370,6 +375,39 @@ fn busy_is_retried_and_a_proof_of_work_is_answered() {
     let solved = state.asked.iter().find_map(|r| r.headers.iter().find(|(n, _)| *n == "X-Hashcash")).unwrap();
     assert!(solved.1.starts_with("1:AwMD"));
     assert_ne!(state.asked[0].url, state.asked[1].url, "each try is a new request id");
+}
+
+/// The scripted MEGA through a client that notes each wait it is asked for instead of waiting.
+struct Timed<'a> {
+    inner: Blocking<'a>,
+    waits: &'a Mutex<Vec<u64>>,
+}
+
+impl AsyncHttp for Timed<'_> {
+    async fn send(&self, request: &Request) -> std::result::Result<Response, NetError> {
+        self.inner.send(request).await
+    }
+
+    async fn pause(&self, ms: u64) {
+        self.waits.lock().unwrap().push(ms);
+    }
+}
+
+#[test]
+fn busy_waits_through_the_client_longer_each_time_and_gives_up() {
+    let fake = FakeMega::new();
+    let waits = Mutex::new(Vec::new());
+    let timed = || Mega::new(Client::new(Timed { inner: Blocking(&fake), waits: &waits }, NetPolicy::Any), config("W"));
+    fake.0.lock().unwrap().script.extend([ok(json!(-3)), ok(json!([-4])), ok(json!(-3))]);
+    block_on(timed().readiness()).unwrap();
+    assert_eq!(*waits.lock().unwrap(), [RETRY_START_MS, RETRY_START_MS * 2, RETRY_START_MS * 4], "one wait per retry, doubling");
+    let asked = fake.0.lock().unwrap().asked.len();
+
+    waits.lock().unwrap().clear();
+    fake.0.lock().unwrap().script.extend((0..RETRIES).map(|_| ok(json!(-3))));
+    assert_eq!(block_on(timed().readiness()), Err(Fault::Io));
+    assert_eq!(fake.0.lock().unwrap().asked.len() - asked, RETRIES as usize, "every try was made");
+    assert_eq!(waits.lock().unwrap().len(), RETRIES as usize - 1, "and no wait after the last");
 }
 
 // ---- Sign-in ----

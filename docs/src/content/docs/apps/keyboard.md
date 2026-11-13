@@ -13,8 +13,9 @@ A password typed this way passes through the keyboard's process, as anything you
 
 The tool lists every item in your vault that is not in the trash or on the hidden shelf, logins, cards, notes, Wi-Fi networks and the rest. Those saved for the app in front come first. Its search uses the vault's own search.
 
-- **Open an item** to see its fields. A plain field, such as a username or a website, shows as it is. A secret, such as a password or a card number, is only named until you tap it.
-- **Type** puts one field into the box you are typing in. That one value is the only thing WM Pass sends to the keyboard, and only when you tap.
+- Open an item to see its fields. A plain field, such as a username or a website, shows as it is. A secret, such as a password or a card number, is only named until you tap it.
+- **Type** puts one field into the box you are typing in. **Show**, beside a secret, shows it for ten seconds. Either way WM Pass sends that one value to the keyboard, and only when you tap.
+- **Fill**, on a login, types the username, moves to the next box and types the password there, for a sign-in form in one tap.
 - **Copy** asks WM Pass to copy the field. WM Pass puts it on the clipboard itself, marked sensitive and cleared after the time set under Settings, Security, so a copied secret never passes through the keyboard.
 - **Open in WM Pass** opens the item here, once the vault is open.
 - **Add a login** saves a name, username, password and website. A login added while an app is in front is tied to that app by its signing certificate, so it comes first there next time. In a browser it is not, since one browser shows every site: give it the website instead.
@@ -27,8 +28,8 @@ The keyboard types and copies nothing into a field that asks it not to learn, su
 
 While the vault is locked, the tool says so and offers two ways in. Neither takes you out of the app you are typing in.
 
-- **Fingerprint** shows WM Pass's fingerprint prompt over that app, the same one autofill uses. The keyboard only starts it, and WM Pass checks the fingerprint. Close the prompt and you are back where you were; tap **Use password** and the door opens there instead. Without fingerprint unlock set up, the door opens straight away.
-- **Password** takes your master password in the keyboard's own box. The keyboard sends it to WM Pass and keeps nothing, and it never reaches the app's field. Wrong tries count toward the same waits as at the door, and a duress password does what it does there. A vault that also needs a key file or a hardware key opens at the door.
+- **Fingerprint** shows WM Pass's fingerprint prompt over that app, the same one autofill uses. The keyboard only starts it, and WM Pass checks the fingerprint. Close the prompt and you are back where you were; tap **Use password** and the door opens there instead. Without fingerprint unlock set up, the button reads **Unlock in WM Pass** and opens the door straight away.
+- **Password** (**Type password** when there is no fingerprint) takes your master password in the keyboard's own box. The keyboard sends it to WM Pass and keeps nothing, and it never reaches the app's field. Wrong tries count toward the same waits as at the door, and a duress password does what it does there. A vault that also needs a key file or a hardware key opens at the door.
 
 Once the vault is open, it locks after the time set under [Lock after leaving the app](/guide/settings/security/#setting-lock-after), counted from then and never sooner than a minute, since you are still typing in the other app. **Lock** in the tool's header locks it at once.
 

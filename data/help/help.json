@@ -505,7 +505,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Search looks at names, websites, tags, usernames, the holder and issuer of cards, names and emails on identities, database hosts and users, Wi-Fi names, products, providers, and the names of fields you added. It never looks inside a password or another secret."
+       "s": "Search looks at names, websites, tags, usernames, the holder and issuer of cards, names and emails on identities, database names, hosts and users, Wi-Fi names, products, providers, the issuer and account of a code, a document's type, SSH key fingerprints, and the names of fields you added. It never looks inside a password or another secret."
       }
      ]
     },
@@ -525,6 +525,12 @@
        {
         "t": "text",
         "s": "\"tag:work\", \"kind:card\", \"site:github\" and \"folder:bank\" keep to one tag, kind, website or folder. \"kind:\" takes login, otp, note, card, identity, recovery, wifi, ssh, api, database, license or document."
+       }
+      ],
+      [
+       {
+        "t": "text",
+        "s": "\"site:\" also takes an address pasted from the browser, and leaves out a leading \"www.\". An address pasted on its own, such as https://www.github.com/login, finds the logins for that site."
        }
       ],
       [
@@ -792,6 +798,15 @@
        "s": "."
       }
      ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "If WM Pass hits an internal error, it locks the vault by itself rather than close, and says so over the screen. Anything you were typing stays there for you to copy before you unlock again. Saved items are not affected, since a save replaces the file in one step."
+      }
+     ]
     }
    ],
    "figure": "fig.lock",
@@ -802,7 +817,7 @@
     "page.security"
    ],
    "docs": "/security/threat-model/",
-   "words": "lock auto-lock timeout sleep idle",
+   "words": "lock auto-lock timeout sleep idle internal error crash",
    "plain": "Locking closes the vault and wipes its key from memory. Until you unlock it again, WM Pass can show, copy or fill nothing from it."
   },
   {
@@ -892,6 +907,23 @@
        "s": "Usernames, websites and other plain fields are copied as they are, and not cleared."
       }
      ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "A password just made with the generator, its widget or "
+      },
+      {
+       "t": "strong",
+       "s": "Set a new password"
+      },
+      {
+       "t": "text",
+       "s": " is not cleared. It is saved nowhere yet and is usually on its way into a sign-up or change-password form, so clearing it there would lose it. It is still marked sensitive, and goes when you copy something else."
+      }
+     ]
     }
    ],
    "when": [
@@ -966,19 +998,27 @@
      "runs": [
       {
        "t": "text",
-       "s": "Open an item and, under "
+       "s": "Open an item, tap "
       },
       {
        "t": "strong",
-       "s": "More"
+       "s": "More options"
       },
       {
        "t": "text",
-       "s": " at the bottom, choose "
+       "s": " at the bottom, and choose "
       },
       {
        "t": "strong",
        "s": "Move to hidden shelf"
+      },
+      {
+       "t": "text",
+       "s": ". Several selected items go at once with "
+      },
+      {
+       "t": "strong",
+       "s": "Put on the hidden shelf"
       },
       {
        "t": "text",
@@ -1214,7 +1254,7 @@
       },
       {
        "t": "strong",
-       "s": "More"
+       "s": "More options"
       },
       {
        "t": "text",
@@ -1522,7 +1562,15 @@
      "runs": [
       {
        "t": "text",
-       "s": "Site icons come with the app, so showing them never tells anyone which sites are in your vault."
+       "s": "Brand marks for well-known sites come with the app, so showing them tells nobody which sites are in your vault. Website icons are fetched only if you add them under "
+      },
+      {
+       "t": "link",
+       "id": "page.icons"
+      },
+      {
+       "t": "text",
+       "s": "."
       }
      ]
     },
@@ -1541,7 +1589,13 @@
       [
        {
         "t": "text",
-        "s": "Breach checks: the first five characters of each password's SHA-1 hash to Have I Been Pwned, and an email address to the service you pick."
+        "s": "Breach checks: the first five characters of each password's SHA-1 hash to Have I Been Pwned, or ten of its Keccak-512 hash to XposedOrNot, and an email address to the service you pick."
+       }
+      ],
+      [
+       {
+        "t": "text",
+        "s": "Website icons, if you add them under Settings, Icons: each site's name, to that site or to DuckDuckGo."
        }
       ],
       [
@@ -1735,7 +1789,7 @@
        },
        {
         "t": "text",
-        "s": " needs an API key of your own. The address and the key go to Have I Been Pwned."
+        "s": " needs an API key of your own. The address and the key go to Have I Been Pwned. After the first check the key is kept in the vault as an API key item, so your other devices have it too."
        }
       ],
       [
@@ -1798,7 +1852,7 @@
     "feature.health",
     "setting.network_allowed"
    ],
-   "words": "breach leak pwned hibp have i been pwned leakcheck comb",
+   "words": "breach leak pwned hibp have i been pwned leakcheck comb xposedornot",
    "plain": "Checks whether your passwords, or the email addresses in your vault, appear in published leaks. It runs only when you ask."
   },
   {
@@ -1879,7 +1933,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "What WM Pass needs to reach a place is kept on this phone under a key in its secure hardware, not in the vault, so scheduled backups can run while the vault is locked. For pCloud, MEGA and Proton Drive it keeps only the session the sign-in hands back."
+       "s": "What WM Pass needs to reach a place is kept on this phone under a key in its secure hardware, not in the vault, so scheduled backups can run while the vault is locked. For pCloud, MEGA and Proton Drive it keeps only the session the sign-in hands back. iCloud Drive keeps your password too, and asks for a code from one of your devices about once a month."
       }
      ]
     },
@@ -2061,7 +2115,43 @@
      "runs": [
       {
        "t": "text",
-       "s": "File sync runs about 20 seconds after you change something, so a burst of edits makes one trip, and whenever you choose "
+       "s": "An item put back from the trash on one device stays, whole, even if another device emptied its trash before it heard of that, or its trash emptied itself. Emptying the trash deletes items only as that device last saw them."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Which edit is newest comes from each device's clock. A device whose clock runs more than a day ahead does not drag the others' clocks along, and an edit you make after its change arrives still wins over it. When a device's clock looks wrong by an hour or more, the vault says so, naming the other device when it can. Fix the time in that device's system settings."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "If the master password is changed on two devices before they sync, both new passwords open the vault afterwards, each with any key file or security key it needed, and WM Pass says so when you unlock. Remove the one you don't want under Settings, Security, "
+      },
+      {
+       "t": "link",
+       "id": "group.security.methods",
+       "s": "Unlock methods"
+      },
+      {
+       "t": "text",
+       "s": ". When the vault has no free slot for both, only the later change stays, and you are told."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "File sync runs about 20 seconds after you change something, so a burst of edits makes one trip. It also runs on its own to bring in what other devices changed: just after you unlock, when you come back to WM Pass after a minute or more, and every five minutes while the vault is open. "
       },
       {
        "t": "strong",
@@ -2069,7 +2159,7 @@
       },
       {
        "t": "text",
-       "s": ". Attachments are carried across once each, already encrypted."
+       "s": " runs one at once. Attachments are carried across once each, already encrypted."
       }
      ]
     }
@@ -2166,7 +2256,15 @@
       },
       {
        "t": "text",
-       "s": ". It asks whether the other device already has this vault: one with none gets a copy and is paired, one that has it is only paired. Either scan a code that the other device shows, or compare six digits on both screens and accept on both."
+       "s": ". It asks whether the other device already has this vault: one with none gets a copy and is paired, one that has it is only paired. Either show a code for the other device to scan, scan the one it shows, or compare six digits on both screens and tap "
+      },
+      {
+       "t": "strong",
+       "s": "They match"
+      },
+      {
+       "t": "text",
+       "s": " on both."
       }
      ]
     },
@@ -2334,7 +2432,39 @@
       },
       {
        "t": "text",
-       "s": ", or at the door. Choose Bitwarden, a server of your own, or a KeePass file."
+       "s": ", or at the door. Choose "
+      },
+      {
+       "t": "strong",
+       "s": "Bitwarden"
+      },
+      {
+       "t": "text",
+       "s": ", "
+      },
+      {
+       "t": "strong",
+       "s": "Bitwarden EU"
+      },
+      {
+       "t": "text",
+       "s": ", "
+      },
+      {
+       "t": "strong",
+       "s": "Own server"
+      },
+      {
+       "t": "text",
+       "s": " or "
+      },
+      {
+       "t": "strong",
+       "s": "KeePass file"
+      },
+      {
+       "t": "text",
+       "s": "."
       }
      ]
     },
@@ -2343,7 +2473,15 @@
      "runs": [
       {
        "t": "text",
-       "s": "It then appears at the door beside your own vault. Choose it there and type its own password."
+       "s": "An account opens in place of your vault, so adding one under Settings offers "
+      },
+      {
+       "t": "strong",
+       "s": "Sign in now"
+      },
+      {
+       "t": "text",
+       "s": ": the vault locks and the door asks for the account's password. Later, it appears at the door beside your own vault; choose it and type its own password."
       }
      ]
     },
@@ -2731,7 +2869,7 @@
       },
       {
        "t": "text",
-       "s": " and a "
+       "s": ", a "
       },
       {
        "t": "strong",
@@ -2739,7 +2877,15 @@
       },
       {
        "t": "text",
-       "s": " are plain text that anyone who opens them can read."
+       "s": " and "
+      },
+      {
+       "t": "strong",
+       "s": "PDF or printer"
+      },
+      {
+       "t": "text",
+       "s": " are plain text that anyone who opens or sees them can read."
       }
      ]
     }
@@ -2860,7 +3006,15 @@
      "runs": [
       {
        "t": "text",
-       "s": "Time-based codes change on a fixed period, usually 30 seconds, and the ring beside each one shows how long it has left. In its last ten seconds the next code shows too, so a late copy still works."
+       "s": "Time-based codes change on a fixed period, usually 30 seconds, and the ring beside each one shows how long it has left. With "
+      },
+      {
+       "t": "link",
+       "id": "setting.code_next"
+      },
+      {
+       "t": "text",
+       "s": " on, the next code shows too in the last ten seconds, so a late copy still works."
       }
      ]
     },
@@ -3312,6 +3466,16 @@
         "t": "text",
         "s": " finds the same site, username and password saved more than once. Merging them keeps both histories."
        }
+      ],
+      [
+       {
+        "t": "em",
+        "s": "Maybe the same account"
+       },
+       {
+        "t": "text",
+        "s": " finds logins that share a password and look like one account saved twice: another spelling of the name, an email in place of a username or phone number, or another address for the same site."
+       }
       ]
      ]
     },
@@ -3360,7 +3524,15 @@
      "runs": [
       {
        "t": "text",
-       "s": "Only logins with a password count towards the score."
+       "s": "Only logins with a password count towards the score. A login you tell one check to leave out no longer counts against the score for it, and logins left out by "
+      },
+      {
+       "t": "link",
+       "id": "setting.health_skip_local"
+      },
+      {
+       "t": "text",
+       "s": " are not counted at all."
       }
      ]
     }
@@ -3578,6 +3750,15 @@
        "s": "Sites that refuse anonymous lookups, or give the same answer for every name, get no answer, because a guess is worse than none. X, Threads and Reddit are among them, and the page links their profiles for you to open yourself."
       }
      ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "TikTok and Instagram only answer a browser, so their pages load in a hidden, private window that runs their scripts and keeps nothing afterwards."
+      }
+     ]
     }
    ],
    "caveats": [
@@ -3657,7 +3838,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Apps are matched by their package name and signing certificate, never by name alone. Browsers are matched by web address, but only browsers WM Pass knows."
+       "s": "Apps are matched by their package name and signing certificate, never by name alone. Browsers are matched by web address, but only browsers WM Pass knows. A browser that does not give Android the page's fields is filled in Android's compatibility mode, which reads the address from the browser's address bar."
       }
      ]
     },
@@ -3687,7 +3868,7 @@
       },
       {
        "t": "text",
-       "s": " offers to save after you sign in with a new or changed password."
+       "s": " offers to save after you sign in with a new or changed password. A sign-in that asks for the username on one screen and the password on the next is saved as one login."
       }
      ]
     },
@@ -3704,7 +3885,7 @@
       },
       {
        "t": "text",
-       "s": "."
+       "s": ". While the vault is locked, the tool can open it with your fingerprint, if you turned that on, or with the master password typed into the keyboard's own box."
       }
      ]
     }
@@ -3736,6 +3917,15 @@
       {
        "t": "text",
        "s": "A password typed by WM Keyboard passes through the keyboard's process, as anything you type does. The autofill service keeps it out of there."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "A master password typed into the keyboard's own box goes through the keyboard too, as it does at the door, and meets the same wrong-try waits and duress passwords. A vault that also needs a key file or a security key opens only at the door."
       }
      ]
     }
@@ -3811,6 +4001,15 @@
       {
        "t": "text",
        "s": "The site is told you were verified only after a real fingerprint or device check."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "When a site asks to create a passkey for an account that already has one in WM Pass, WM Pass says so and makes no second one."
       }
      ]
     },
@@ -3990,7 +4189,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "On the first run it asks you to make your vault: type a master password, then type it again. You cannot go on until the password is strong enough and the two match. "
+       "s": "On the first run it asks you to create your vault: type a master password, then type it again. You cannot go on until the password is strong enough and the two match. "
       },
       {
        "t": "strong",
@@ -3998,7 +4197,15 @@
       },
       {
        "t": "text",
-       "s": " suggests random words."
+       "s": ", or "
+      },
+      {
+       "t": "strong",
+       "s": "Suggest one"
+      },
+      {
+       "t": "text",
+       "s": " in some styles, suggests random words."
       }
      ]
     },
@@ -4041,7 +4248,15 @@
      "runs": [
       {
        "t": "text",
-       "s": "A vault that needs a security key asks you to hold it to the back of the phone, or plug it in and touch it."
+       "s": "A vault that needs a security key asks you to hold it to the back of the phone, or plug it in and touch it. A vault that needs a key file asks for it after the password, with "
+      },
+      {
+       "t": "strong",
+       "s": "Choose the key file"
+      },
+      {
+       "t": "text",
+       "s": "."
       }
      ]
     },
@@ -4050,7 +4265,15 @@
      "runs": [
       {
        "t": "text",
-       "s": "For a vault you already have, the door offers "
+       "s": "On the first run, "
+      },
+      {
+       "t": "strong",
+       "s": "I already have a vault"
+      },
+      {
+       "t": "text",
+       "s": " offers "
       },
       {
        "t": "link",
@@ -4092,6 +4315,39 @@
       {
        "t": "text",
        "s": "."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Once there is a vault on the phone, "
+      },
+      {
+       "t": "strong",
+       "s": "Restore a backup"
+      },
+      {
+       "t": "text",
+       "s": " under the password offers "
+      },
+      {
+       "t": "strong",
+       "s": "Restore from a file"
+      },
+      {
+       "t": "text",
+       "s": " and "
+      },
+      {
+       "t": "strong",
+       "s": "Restore from a backup location"
+      },
+      {
+       "t": "text",
+       "s": ", for a vault here that will not open or is out of date. Nothing on the phone is replaced. The backup waits, and merges into your vault the next time you unlock it: newer values stay, and older ones go to the item's history. If your password opens only the restored copy, that copy opens as a vault of its own and the one here is kept."
       }
      ]
     }
@@ -4527,7 +4783,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Hold a row to start choosing several. The bar on top then moves them to a folder, tags them, changes their color, or moves them to the trash, with "
+       "s": "Hold a row to start choosing several. The bar on top then tags them or moves them to the trash, with "
       },
       {
        "t": "strong",
@@ -4535,7 +4791,23 @@
       },
       {
        "t": "text",
-       "s": " after."
+       "s": " after, and "
+      },
+      {
+       "t": "strong",
+       "s": "More"
+      },
+      {
+       "t": "text",
+       "s": " moves them to a folder, changes their color, adds them to favorites, pins them, or merges or links them together. With one chosen, it also has "
+      },
+      {
+       "t": "strong",
+       "s": "Edit"
+      },
+      {
+       "t": "text",
+       "s": "."
       }
      ]
     },
@@ -4738,7 +5010,39 @@
       },
       {
        "t": "text",
-       "s": ", at the bottom, adds a tag, attaches a file, links another item, sets a reminder, a folder, a color or a self-destruct date, pins it, puts it on the hidden shelf, duplicates it, sends it to another device, or moves it to the trash."
+       "s": ", at the bottom, attaches a file, links another item, sets a reminder, a folder or a color, pins it, sends it to another device, or moves it to the trash. "
+      },
+      {
+       "t": "strong",
+       "s": "More options"
+      },
+      {
+       "t": "text",
+       "s": " there adds "
+      },
+      {
+       "t": "strong",
+       "s": "Move to hidden shelf"
+      },
+      {
+       "t": "text",
+       "s": ", "
+      },
+      {
+       "t": "strong",
+       "s": "Self-destruct"
+      },
+      {
+       "t": "text",
+       "s": " and "
+      },
+      {
+       "t": "strong",
+       "s": "Duplicate"
+      },
+      {
+       "t": "text",
+       "s": ". Tags are added in the tags line above it."
       }
      ]
     },
@@ -4756,6 +5060,15 @@
       {
        "t": "text",
        "s": ", but only for a site that has a page for it, found the way Health finds it. An app that is not installed offers the app stores on this phone, or Google Play and F-Droid in the browser when there are none."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "A Wi-Fi network can show its QR code, for another phone to join, and can be added to this phone's saved networks."
       }
      ]
     }
@@ -4875,7 +5188,7 @@
       },
       {
        "t": "strong",
-       "s": "More details"
+       "s": "Other details"
       },
       {
        "t": "text",
@@ -4896,7 +5209,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Further sections open when you need them: "
+       "s": "Further sections show as one line each, saying what is inside, and open when you tap them: "
       },
       {
        "t": "strong",
@@ -4924,11 +5237,11 @@
       },
       {
        "t": "strong",
-       "s": "More fields"
+       "s": "Custom fields"
       },
       {
        "t": "text",
-       "s": " for fields of your own, hidden or not, "
+       "s": ", "
       },
       {
        "t": "strong",
@@ -4944,7 +5257,7 @@
       },
       {
        "t": "text",
-       "s": " for the folder, tags, icon, color and favorite. A section that already holds something starts open; "
+       "s": " for the folder, tags, icon, color and favorite. "
       },
       {
        "t": "link",
@@ -4952,7 +5265,20 @@
       },
       {
        "t": "text",
-       "s": " sets which empty ones do."
+       "s": " sets which ones show and which start open."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "strong",
+       "s": "Add more"
+      },
+      {
+       "t": "text",
+       "s": ", at the bottom, adds what is not on show: a one-time code, notes, a text or secret field, a security question, an app, a file, a link to another item, or a change reminder."
       }
      ]
     },
@@ -5069,12 +5395,53 @@
      "t": "p",
      "runs": [
       {
+       "t": "text",
+       "s": "A Wi-Fi network has "
+      },
+      {
+       "t": "strong",
+       "s": "Fill in from a QR code"
+      },
+      {
+       "t": "text",
+       "s": " and "
+      },
+      {
+       "t": "strong",
+       "s": "Pick a network saved on this phone"
+      },
+      {
+       "t": "text",
+       "s": ". A card has "
+      },
+      {
+       "t": "strong",
+       "s": "Scan the card"
+      },
+      {
+       "t": "text",
+       "s": "."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
        "t": "strong",
        "s": "Save"
       },
       {
        "t": "text",
-       "s": " saves and shows the item. "
+       "s": ", or "
+      },
+      {
+       "t": "strong",
+       "s": "Save changes"
+      },
+      {
+       "t": "text",
+       "s": " for an item you are editing, saves and shows the item. "
       },
       {
        "t": "strong",
@@ -5082,7 +5449,15 @@
       },
       {
        "t": "text",
-       "s": " leaves, and asks first if you changed anything."
+       "s": " leaves, and asks "
+      },
+      {
+       "t": "strong",
+       "s": "Discard changes?"
+      },
+      {
+       "t": "text",
+       "s": " first if you changed anything."
       }
      ]
     }
@@ -5134,7 +5509,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Each code shows the site or issuer, the account, the code, and a ring for the time it has left. In its last ten seconds the next code shows under it."
+       "s": "Each code shows the item's name, or the issuer when the item has none, then the issuer if it says something the name does not, the account, the code, and a ring for the time it has left. In its last ten seconds the next code shows under it."
       }
      ]
     },
@@ -5310,12 +5685,8 @@
      "t": "p",
      "runs": [
       {
-       "t": "strong",
-       "s": "Type"
-      },
-      {
        "t": "text",
-       "s": " picks what to make. "
+       "s": "The row of choices under it picks what to make, and only the controls for that type show. "
       },
       {
        "t": "strong",
@@ -5371,7 +5742,7 @@
       },
       {
        "t": "text",
-       "s": " has digits, and "
+       "s": " has digits, "
       },
       {
        "t": "strong",
@@ -5379,7 +5750,15 @@
       },
       {
        "t": "text",
-       "s": " takes a template."
+       "s": " takes a template, and "
+      },
+      {
+       "t": "strong",
+       "s": "Lock pattern"
+      },
+      {
+       "t": "text",
+       "s": " draws a pattern of 4 to 9 dots for a phone's lock screen."
       }
      ]
     },
@@ -5483,7 +5862,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Below it, each kind of problem has its own group with a count. Open a group to see why it matters and which items have it, and click an item to open it."
+       "s": "Below it, each kind of problem has its own group with a count. Open a group to see why it matters and which items have it."
       }
      ]
     },
@@ -5501,23 +5880,6 @@
       {
        "t": "text",
        "s": " chooses which groups are listed and whether the score shows."
-      }
-     ]
-    },
-    {
-     "t": "p",
-     "runs": [
-      {
-       "t": "text",
-       "s": "For duplicate items, the button that merges each set asks "
-      },
-      {
-       "t": "strong",
-       "s": "Which one stays?"
-      },
-      {
-       "t": "text",
-       "s": " The others fold into it: their passwords move to its history and their extra fields come along, so nothing is lost."
       }
      ]
     },
@@ -5741,11 +6103,11 @@
       },
       {
        "t": "strong",
-       "s": "Delete for good"
+       "s": "Delete"
       },
       {
        "t": "text",
-       "s": "."
+       "s": " to delete it for good."
       }
      ]
     },
@@ -5950,7 +6312,15 @@
      "runs": [
       {
        "t": "text",
-       "s": "The groups further down change the vault file itself: its passwords, key files and security keys, the duress passwords, and the emergency kit. They are only shown for the vault you opened at the door, not inside a nested or shared one."
+       "s": "The groups further down change the vault file itself: its passwords, key files and security keys, the duress passwords, and the emergency kit. "
+      },
+      {
+       "t": "strong",
+       "s": "Autofill and panic"
+      },
+      {
+       "t": "text",
+       "s": " decides what other apps, WM Keyboard, widgets and a watch may see, and what a panic app can do."
       }
      ]
     }
@@ -6011,6 +6381,23 @@
       {
        "t": "text",
        "s": "The timer starts when WM Pass goes into the background and stops when you come back."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "A vault opened from WM Keyboard, by fingerprint or master password, counts as left as soon as it opens, since you stay in the other app. Its timer runs for at least a minute, even with "
+      },
+      {
+       "t": "strong",
+       "s": "At once"
+      },
+      {
+       "t": "text",
+       "s": "."
       }
      ]
     }
@@ -6272,7 +6659,41 @@
      "runs": [
       {
        "t": "text",
-       "s": "When the time is up, WM Pass empties the clipboard if your secret is still on it."
+       "s": "When the time is up, WM Pass empties the clipboard if your secret is still on it. If you have copied something else since, that is left alone."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "A password just made with the generator, its widget or "
+      },
+      {
+       "t": "strong",
+       "s": "Set a new password"
+      },
+      {
+       "t": "text",
+       "s": " is not cleared. It is saved nowhere yet and is usually on its way into a sign-up or change-password form, so clearing it there would lose it. It is still marked sensitive, and goes when you copy something else."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "The message that says something was copied counts down the seconds and has a "
+      },
+      {
+       "t": "strong",
+       "s": "Clear now"
+      },
+      {
+       "t": "text",
+       "s": " button."
       }
      ]
     }
@@ -6333,6 +6754,21 @@
         {
          "t": "text",
          "s": "For typing into another device by hand."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "value": 300,
+     "label": "5 min",
+     "text": [
+      {
+       "t": "p",
+       "runs": [
+        {
+         "t": "text",
+         "s": "For a long form, or a password typed in pieces."
         }
        ]
       }
@@ -6413,12 +6849,31 @@
        "s": " instead."
       }
      ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Changed on two devices before they sync, both new passwords open the vault, and WM Pass says so when you unlock. Remove the one you don't want under "
+      },
+      {
+       "t": "link",
+       "id": "group.security.methods",
+       "s": "Unlock methods"
+      },
+      {
+       "t": "text",
+       "s": ". A vault with every slot in use keeps only the later change, and says that instead."
+      }
+     ]
     }
    ],
    "related": [
     "action.rekey",
     "concept.master_password",
-    "concept.vault_file"
+    "concept.vault_file",
+    "group.security.methods"
    ],
    "words": "master password new",
    "plain": "Changes the master password and keeps the vault's key as it is."
@@ -6478,7 +6933,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Other passwords, key files and security keys stop working until you add them back under "
+       "s": "Other passwords, key files and security keys, and the wipe and lockout passwords, stop working until you add them back under "
       },
       {
        "t": "link",
@@ -6487,7 +6942,7 @@
       },
       {
        "t": "text",
-       "s": "."
+       "s": " and Duress."
       }
      ]
     },
@@ -6497,6 +6952,15 @@
       {
        "t": "text",
        "s": "An emergency kit made before the rekey stops working. Make a new one."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Quick unlock held the old key. On the phone, fingerprint unlock turns off; on a computer, turn keyring or passkey unlock off and on again."
       }
      ]
     },
@@ -6540,7 +7004,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "The vault file has a fixed number of slots. Each way in fills one, and the empty ones are random bytes, so nobody can tell from the file how many ways in there are, or whether one of them is a duress password."
+       "s": "The vault file has eight slots. Each way in fills one, the wipe and lockout passwords included, and the empty ones are random bytes, so nobody can tell from the file how many ways in there are, or whether one of them is a duress password."
       }
      ]
     },
@@ -6549,7 +7013,16 @@
      "runs": [
       {
        "t": "text",
-       "s": "Click a password in the list to remove it. A vault always keeps at least one way in."
+       "s": "Tap a way in to remove it. A vault always keeps at least one way in."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "A password changed on two devices at once leaves two ways in, each marked as changed at the same time as the other, with when and on which device. Both open the vault until you remove one."
       }
      ]
     }
@@ -6683,7 +7156,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Adds a way in that needs a YubiKey or another FIDO2 key plugged in and touched."
+       "s": "Adds a way in that needs a YubiKey or another FIDO2 key, held to the back of the phone or plugged in and touched."
       }
      ]
     }
@@ -6734,7 +7207,7 @@
     "group.security.methods"
    ],
    "words": "yubikey fido2 hardware hmac-secret usb nfc",
-   "plain": "Adds a way in that needs a YubiKey or another FIDO2 key plugged in and touched."
+   "plain": "Adds a way in that needs a YubiKey or another FIDO2 key, held to the back of the phone or plugged in and touched."
   },
   {
    "id": "action.wipe_password",
@@ -6983,7 +7456,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "WM Pass works fully without a network. Some extras cannot: checking breaches, making aliases, syncing with a server, signing in to an account, and checking for updates. Each one says what it sends, and to whom, on its own page."
+       "s": "WM Pass works fully without a network. Some extras cannot: checking breaches, making aliases, the disposable inbox, the username checker, website icons, syncing with a server, signing in to an account, and checking for updates. Each one says what it sends, and to whom, on its own page."
       }
      ]
     }
@@ -7027,6 +7500,15 @@
       {
        "t": "text",
        "s": "Syncing with other devices on your own network uses its own pairing, under Settings, Sync and accounts."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "The offline build of the app has no way to reach the internet, so it has no such switch."
       }
      ]
     }
@@ -7304,7 +7786,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Results are kept in memory only. Locking the vault forgets them."
+       "s": "Results are kept in memory only, and are gone when WM Pass closes."
       }
      ]
     }
@@ -7341,7 +7823,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Pick the service first. "
+       "s": "Pick the service first. For "
       },
       {
        "t": "strong",
@@ -7349,7 +7831,7 @@
       },
       {
        "t": "text",
-       "s": " gets the first five characters of each password's SHA-1 hash from api.pwnedpasswords.com and checks the answer here. "
+       "s": ", WM Pass sends only the first five characters of each password's SHA-1 hash to api.pwnedpasswords.com and looks for the rest in the answer here. For "
       },
       {
        "t": "strong",
@@ -7357,7 +7839,7 @@
       },
       {
        "t": "text",
-       "s": " gets the first ten characters of its Keccak-512 hash from passwords.xposedornot.com and answers with a count."
+       "s": " it sends the first ten characters of the Keccak-512 hash to passwords.xposedornot.com, which answers with a count."
       }
      ]
     },
@@ -7417,7 +7899,7 @@
       },
       {
        "t": "text",
-       "s": " until the vault locks."
+       "s": " until WM Pass closes."
       }
      ]
     }
@@ -7437,7 +7919,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "The results are never saved. After the vault locks, run the check again to see them on the Health page."
+       "s": "The results are kept in memory only. Once WM Pass has closed, run the check again to see them on the Health page."
       }
      ]
     },
@@ -7505,7 +7987,7 @@
        },
        {
         "t": "text",
-        "s": " gets the address and the API key you type, and answers with the breaches the address was in. It needs an API key of your own, which is not saved: type it each time."
+        "s": " gets the address and your API key, and answers with the breaches the address was in. It needs an API key of your own. After the first check the key is kept in the vault as an item named \"Have I Been Pwned API key\", so your other devices have it too."
        }
       ],
       [
@@ -7877,6 +8359,23 @@
        "s": " hides them from the page but does not change the score. The other checks, such as unencrypted sites, never change it."
       }
      ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "A login you have told a check to leave out no longer counts against the score for that check, and logins left out by "
+      },
+      {
+       "t": "link",
+       "id": "setting.health_skip_local"
+      },
+      {
+       "t": "text",
+       "s": " are not counted at all."
+      }
+     ]
     }
    ],
    "related": [
@@ -7920,7 +8419,25 @@
      "runs": [
       {
        "t": "text",
-       "s": "A login counts as local when every address saved on it is a private or loopback IP, or a name with no dot or one ending in .local, .lan, .home, .internal or .localhost."
+       "s": "A login counts as local when every address saved on it is a private, loopback or link-local IP, or a name with no dot or one ending in .local, .lan, .home, .home.arpa, .internal, .localhost or .localdomain."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "A login with no address, or one saved for an app, is not local. Local logins are left out of the score and of every check but "
+      },
+      {
+       "t": "link",
+       "id": "action.health_check_expiring",
+       "s": "Expiring soon"
+      },
+      {
+       "t": "text",
+       "s": "."
       }
      ]
     }
@@ -8006,18 +8523,7 @@
       },
       {
        "t": "text",
-       "s": " on the Breaches page. The results are never saved, so it empties when the vault locks."
-      }
-     ]
-    }
-   ],
-   "caveats": [
-    {
-     "t": "p",
-     "runs": [
-      {
-       "t": "text",
-       "s": "The browser extension cannot run that check, so there this list stays empty."
+       "s": " on the Breaches page. The results are kept in memory only, so it empties when WM Pass closes."
       }
      ]
     }
@@ -8120,6 +8626,25 @@
       {
        "t": "text",
        "s": "On a plain http page, a password can be read on its way to the site. If the site offers https, change the saved address."
+      }
+     ]
+    }
+   ],
+   "caveats": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "An http address on the device itself, such as localhost, never crosses a network and is not listed. One on your home network is; "
+      },
+      {
+       "t": "link",
+       "id": "setting.health_skip_local"
+      },
+      {
+       "t": "text",
+       "s": " leaves those out."
       }
      ]
     }
@@ -8685,6 +9210,15 @@
        "s": "There is no undo. Only a backup made before you emptied it still holds the items."
       }
      ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "With sync, an item that another device put back from the trash before it heard of the emptying comes back, whole, on every device."
+      }
+     ]
     }
    ],
    "related": [
@@ -8743,7 +9277,7 @@
       [
        {
         "t": "text",
-        "s": "1Password (1PUX), Bitwarden (JSON or CSV), and KeePass or KeePassXC (the .kdbx database itself, KeePass's XML export, or KeePassXC's CSV)."
+        "s": "1Password (1PUX, or the CSV 1Password 8 writes), Bitwarden (JSON or CSV), and KeePass or KeePassXC (the .kdbx database itself, KeePass's XML export, or KeePassXC's CSV)."
        }
       ],
       [
@@ -8755,7 +9289,7 @@
       [
        {
         "t": "text",
-        "s": "CSV from Apple Passwords, Avast, Avira, Buttercup, Chrome and other Chromium browsers, Dashlane, Firefox, LastPass, mSecure, NordPass, RoboForm and Zoho Vault."
+        "s": "CSV from Apple Passwords, Avast, Avira, Buttercup, Chrome and other Chromium browsers, Dashlane, Firefox, LastPass, mSecure, NordPass, Proton Pass, RoboForm and Zoho Vault."
        }
       ],
       [
@@ -8782,6 +9316,20 @@
        {
         "t": "text",
         "s": ", or a screenshot of a code chosen as the file."
+       }
+      ],
+      [
+       {
+        "t": "text",
+        "s": "The Wi-Fi networks this phone has saved, with "
+       },
+       {
+        "t": "link",
+        "id": "action.import_saved_wifi"
+       },
+       {
+        "t": "text",
+        "s": "."
        }
       ],
       [
@@ -8814,7 +9362,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Folders in the file become folders here, matched by name. Attachments come along from KeePass, SafeInCloud and 1Password files. A KeePass or SafeInCloud database, or a password-protected Proton Authenticator export, asks for its password. A KeePass database can also take its key file, and "
+       "s": "Folders in the file become folders here, matched by name. Attachments come along from KeePass, SafeInCloud and 1Password 1PUX files. A KeePass or SafeInCloud database, or a password-protected Proton Authenticator export, asks for its password. A KeePass database can also take its key file, and "
       },
       {
        "t": "strong",
@@ -8831,7 +9379,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "A login with the same site, username and password as one already in the vault is skipped, so importing the same file twice adds nothing."
+       "s": "A login with the same site, username and password as one already in the vault is skipped, and so is a one-time code with the same key and settings, so importing the same file twice adds no login or code again. Notes, cards and other items are not compared, and come in again."
       }
      ]
     },
@@ -9239,7 +9787,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Items of other kinds keep their fields, with a WM Pass kind field saying what they were."
+       "s": "Folders become KeePass groups, nested as they are here. Items of other kinds keep their fields, with a WM Pass kind field saying what they were."
       }
      ]
     }
@@ -9259,7 +9807,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Folders are not kept: every item goes into one group. Each login keeps one web address, and attachments and passkeys are not included."
+       "s": "Each login keeps one web address, and attachments and passkeys are not included."
       }
      ]
     },
@@ -9665,6 +10213,40 @@
        "s": " work by hand."
       }
      ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "To get the vault back on a new device, or after a wipe, use "
+      },
+      {
+       "t": "strong",
+       "s": "Restore from a file"
+      },
+      {
+       "t": "text",
+       "s": " or "
+      },
+      {
+       "t": "strong",
+       "s": "Restore from a backup location"
+      },
+      {
+       "t": "text",
+       "s": " at the "
+      },
+      {
+       "t": "link",
+       "id": "screen.door",
+       "s": "door"
+      },
+      {
+       "t": "text",
+       "s": ". On a device that has a vault already, the copy waits and merges in when you next unlock."
+      }
+     ]
     }
    ],
    "when": [
@@ -9720,7 +10302,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "The backup button on a row makes a copy there now. Click the row itself to bring back a copy, change its details or stop using it."
+       "s": "The backup button on a row makes a copy there now. Tap the row itself to bring back a copy, change its details or stop using it. Stopping affects sync through that place too."
       }
      ]
     },
@@ -9729,7 +10311,15 @@
      "runs": [
       {
        "t": "text",
-       "s": "Changing the details of an account place lets you keep its current sign-in, so you do not have to sign in again."
+       "s": "Changing the details of an account place offers "
+      },
+      {
+       "t": "strong",
+       "s": "Keep the current sign-in"
+      },
+      {
+       "t": "text",
+       "s": ", so you do not have to sign in again."
       }
      ]
     }
@@ -9835,7 +10425,24 @@
      "runs": [
       {
        "t": "text",
-       "s": "Choose the kind, give it a name and fill in what that kind needs. Before a server or account is saved, WM Pass checks that it answers with what you typed, and says what went wrong if it does not; nothing is kept until it works. A backup then runs straight away."
+       "s": "Choose the kind, give it a name and fill in what that kind needs. Before a place is saved, WM Pass checks that it answers with what you typed, and says what went wrong if it does not; nothing is kept until it works. A backup then runs straight away."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "With WM Keyboard installed, "
+      },
+      {
+       "t": "strong",
+       "s": "Use a place from WM Keyboard"
+      },
+      {
+       "t": "text",
+       "s": " copies one of its backup places here instead of typing it again."
       }
      ]
     },
@@ -9932,7 +10539,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Any place but a folder needs "
+       "s": "Saving any place but a folder turns on "
       },
       {
        "t": "link",
@@ -9940,7 +10547,7 @@
       },
       {
        "t": "text",
-       "s": ". Until it is on, a backup there stops and says network features are turned off."
+       "s": ", since reaching it is the reason you set it up. If you turn it off later, a backup there stops and says network features are turned off."
       }
      ]
     },
@@ -11290,6 +11897,16 @@
       [
        {
         "t": "strong",
+        "s": "Paste its code"
+       },
+       {
+        "t": "text",
+        "s": " takes the text under the code, for a computer or the terminal app."
+       }
+      ],
+      [
+       {
+        "t": "strong",
         "s": "Find it on this network"
        },
        {
@@ -11864,7 +12481,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Click an account to remove it. WM Pass forgets it on this device, with its offline copy. Nothing on the server or in the file changes."
+       "s": "The delete button beside an account removes it. WM Pass forgets it on this device, with its offline copy. Nothing on the server or in the file changes."
       }
      ]
     }
@@ -12009,7 +12626,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "A server account needs "
+       "s": "Adding a server account turns on "
       },
       {
        "t": "link",
@@ -12018,6 +12635,31 @@
       {
        "t": "text",
        "s": "."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Before a server account is added, WM Pass checks that the address answers as a Bitwarden server does. Whether the email and password are right shows only at the first sign-in; until then the door offers "
+      },
+      {
+       "t": "strong",
+       "s": "Change the details"
+      },
+      {
+       "t": "text",
+       "s": " and "
+      },
+      {
+       "t": "strong",
+       "s": "Remove this account"
+      },
+      {
+       "t": "text",
+       "s": " when it fails."
       }
      ]
     },
@@ -12096,7 +12738,7 @@
       },
       {
        "t": "text",
-       "s": ", each one says what it is: nested, shared with you, shared and yours to manage, or waiting for the owner's invitation. Click one to open it. "
+       "s": ", each one says what it is: nested, shared with you, shared and yours to manage, or waiting for the owner's invitation. Tap one to open it. "
       },
       {
        "t": "strong",
@@ -12417,7 +13059,15 @@
       },
       {
        "t": "text",
-       "s": ". Ask them to read their code out. If it matches the one shown, choose "
+       "s": ", or choose "
+      },
+      {
+       "t": "strong",
+       "s": "Scan it"
+      },
+      {
+       "t": "text",
+       "s": " and scan their code. Ask them to read their code out. If it matches the one shown, choose "
       },
       {
        "t": "strong",
@@ -12425,7 +13075,7 @@
       },
       {
        "t": "text",
-       "s": ", then give them the invitation that appears. Anyone can see the invitation, but only that person can use it."
+       "s": ", then give them the invitation that appears, to scan or paste. Anyone can see the invitation, but only that person can use it."
       }
      ]
     },
@@ -13931,7 +14581,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Sites whose answer WM Pass cannot read, each with a link to the profile the name would have. Click one to open it in your browser."
+       "s": "Sites whose answer WM Pass cannot read, each with a link to the profile the name would have. After a check, click one to open it in your browser."
       }
      ]
     }
@@ -13950,7 +14600,7 @@
    "related": [
     "page.usernames"
    ],
-   "plain": "Sites whose answer WM Pass cannot read, each with a link to the profile the name would have. Click one to open it in your browser."
+   "plain": "Sites whose answer WM Pass cannot read, each with a link to the profile the name would have. After a check, click one to open it in your browser."
   },
   {
    "id": "page.compare",
@@ -14789,7 +15439,15 @@
      "runs": [
       {
        "t": "text",
-       "s": "They are kept in this device's settings, outside the vault. A "
+       "s": "They are kept with this device's settings. With "
+      },
+      {
+       "t": "link",
+       "id": "setting.sync_settings"
+      },
+      {
+       "t": "text",
+       "s": " on, they also travel inside the vault to your other devices that open it. A "
       },
       {
        "t": "link",
@@ -14798,7 +15456,7 @@
       },
       {
        "t": "text",
-       "s": " carries them to another device, and each theme in it goes through the same checks as an import."
+       "s": " carries them too, and each theme in it goes through the same checks as an import."
       }
      ]
     },
@@ -14829,7 +15487,8 @@
    ],
    "related": [
     "page.file",
-    "action.theme_share"
+    "action.theme_share",
+    "setting.sync_settings"
    ],
    "plain": "Themes you made or imported. The built-in ones are listed below them."
   },
@@ -15230,7 +15889,26 @@
      "runs": [
       {
        "t": "text",
-       "s": "Removes one of your themes from this device. If it was in use, WM Pass goes back to its default theme."
+       "s": "Removes one of your themes. If it was in use, WM Pass goes back to its default theme."
+      }
+     ]
+    }
+   ],
+   "how": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "With "
+      },
+      {
+       "t": "link",
+       "id": "setting.sync_settings"
+      },
+      {
+       "t": "text",
+       "s": " on, it goes from your other devices that sync settings with this vault too."
       }
      ]
     }
@@ -15250,7 +15928,7 @@
     "group.themes.yours",
     "action.theme_share"
    ],
-   "plain": "Removes one of your themes from this device. If it was in use, WM Pass goes back to its default theme."
+   "plain": "Removes one of your themes. If it was in use, WM Pass goes back to its default theme."
   },
   {
    "id": "page.icons",
@@ -16070,7 +16748,7 @@
        "runs": [
         {
          "t": "text",
-         "s": "Large tiles with the name under each. Pinned items, headings and folded sites are not used."
+         "s": "Large tiles with the name under each, in the order you sort by. Pinned items, grouping, headings and folded sites are not used."
         }
        ]
       }
@@ -16150,7 +16828,7 @@
        "runs": [
         {
          "t": "text",
-         "s": "The default. A row for each type you have, with its count, then a row for each folder and "
+         "s": "A row for each type you have, with its count, then a row for each folder and "
         },
         {
          "t": "strong",
@@ -16395,7 +17073,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Only logins fold, and only while the list is grouped by site."
+       "s": "Only logins fold, only while the list is grouped by site, and not in the grid."
       }
      ]
     }
@@ -16427,7 +17105,23 @@
       },
       {
        "t": "text",
+       "s": " above pinned items, and "
+      },
+      {
+       "t": "strong",
+       "s": "Types"
+      },
+      {
+       "t": "text",
        "s": " and "
+      },
+      {
+       "t": "strong",
+       "s": "Folders"
+      },
+      {
+       "t": "text",
+       "s": " when the list is grouped by types, then folders. In the Standard style it also names "
       },
       {
        "t": "strong",
@@ -16435,7 +17129,23 @@
       },
       {
        "t": "text",
-       "s": " when you have pinned items, or each folder's name when the list is grouped by folder."
+       "s": ", "
+      },
+      {
+       "t": "strong",
+       "s": "Folders"
+      },
+      {
+       "t": "text",
+       "s": " and "
+      },
+      {
+       "t": "strong",
+       "s": "No folder"
+      },
+      {
+       "t": "text",
+       "s": " where they follow another part."
       }
      ]
     }
@@ -16444,7 +17154,7 @@
     "setting.grouping",
     "setting.pinned_on_top"
    ],
-   "plain": "Shows a heading above each part of the list: Pinned and All items when you have pinned items, or each folder's name when the list is grouped by folder."
+   "plain": "Shows a heading above each part of the list: Pinned above pinned items, and Types and Folders when the list is grouped by types, then folders. In the Standard style it also names All items, Folders and No folder where they follow another part."
   },
   {
    "id": "setting.filter_chips",
@@ -16615,7 +17325,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "A red timer means the item is set to delete itself. Its page says when."
+       "s": "A red timer means the item is set to delete itself. Its page says when. In the Glass style a pin marks a pinned item too."
       }
      ]
     }
@@ -16686,7 +17396,7 @@
        "runs": [
         {
          "t": "text",
-         "s": "Copies the username of a login or a database."
+         "s": "Copies the username of a login or a database. An item without one copies its password, or else its one-time code."
         }
        ]
       }
@@ -16701,7 +17411,7 @@
        "runs": [
         {
          "t": "text",
-         "s": "Copies the current one-time code. Only items with a code have the button."
+         "s": "Copies the current one-time code. An item with none copies its password, or else its username."
         }
        ]
       }
@@ -16773,7 +17483,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "An item with nothing to copy, such as a note, opens instead."
+       "s": "An item without what is chosen copies the next thing it has: its password, its one-time code or its username. An item with nothing to copy, such as a note, opens instead."
       }
      ]
     }
@@ -16871,7 +17581,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "An item without what the swipe needs, such as a code, is left as it is."
+       "s": "Set to copy, a swipe copies the next thing an item has when it lacks the one chosen: its password, its one-time code or its username. An item with nothing to copy, such as a note, is left as it is."
       }
      ]
     }
@@ -17133,7 +17843,16 @@
      "runs": [
       {
        "t": "text",
-       "s": "In the Standard style, Health shows only when something needs attention."
+       "s": "In the Standard style, Health shows only when something needs attention. Its close button puts it away until something new does, or takes it out of this list for good."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Codes shows only once you have a one-time code."
       }
      ]
     }
@@ -17648,7 +18367,7 @@
     },
     {
      "value": "wifi",
-     "label": "New wi-fi",
+     "label": "New Wi-Fi",
      "text": [
       {
        "t": "p",
@@ -17663,7 +18382,7 @@
     },
     {
      "value": "ssh",
-     "label": "New ssh key",
+     "label": "New SSH key",
      "text": [
       {
        "t": "p",
@@ -17678,7 +18397,7 @@
     },
     {
      "value": "api",
-     "label": "New api key",
+     "label": "New API key",
      "text": [
       {
        "t": "p",
@@ -18132,7 +18851,7 @@
       },
       {
        "t": "text",
-       "s": " opens straight away."
+       "s": " opens straight away. Websites and apps, Other details and Organize are always shown, so their switches only open them."
       }
      ]
     },
@@ -18277,7 +18996,7 @@
       },
       {
        "t": "strong",
-       "s": "More details"
+       "s": "Other details"
       },
       {
        "t": "text",
@@ -18311,11 +19030,19 @@
         },
         {
          "t": "strong",
-         "s": "More details"
+         "s": "Other details"
         },
         {
          "t": "text",
-         "s": " below. It opens by itself when one of its fields has something in it."
+         "s": " below. It starts folded, its line naming the fields inside, unless its switch under "
+        },
+        {
+         "t": "strong",
+         "s": "Shown and open at the start"
+        },
+        {
+         "t": "text",
+         "s": " is on."
         }
        ]
       }
@@ -18342,7 +19069,7 @@
     "concept.item_kinds"
    ],
    "words": "details extra fields fold",
-   "plain": "Keeps a type's everyday fields on show and puts the rest under More details, such as a card's PIN or a database's connection string."
+   "plain": "Keeps a type's everyday fields on show and puts the rest under Other details, such as a card's PIN or a database's connection string."
   },
   {
    "id": "setting.editor_generate",
@@ -18431,7 +19158,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Gives a new item the tag its site suggests, such as Banking or Social, when you save it without any."
+       "s": "Gives a new item the tag its site suggests, such as Banking or Social, when you save it without tags of your own."
       }
      ]
     }
@@ -18465,7 +19192,7 @@
        "runs": [
         {
          "t": "text",
-         "s": "A new item saved with no tags gets its site's suggestions."
+         "s": "A new item saved with no tags of your own gets its site's tag."
         }
        ]
       }
@@ -18513,7 +19240,7 @@
     "action.bulk_tags"
    ],
    "words": "tags automatic category suggest label",
-   "plain": "Gives a new item the tag its site suggests, such as Banking or Social, when you save it without any."
+   "plain": "Gives a new item the tag its site suggests, such as Banking or Social, when you save it without tags of your own."
   },
   {
    "id": "setting.auto_tag_guess",
@@ -18682,12 +19409,16 @@
      "t": "p",
      "runs": [
       {
+       "t": "text",
+       "s": "The button at the foot, such as "
+      },
+      {
        "t": "strong",
-       "s": "Add"
+       "s": "Add 3 tags to 2 items"
       },
       {
        "t": "text",
-       "s": " tags what is left, and the message after it offers "
+       "s": ", tags what is left, and the message after it offers "
       },
       {
        "t": "strong",
@@ -18782,11 +19513,36 @@
       },
       {
        "t": "strong",
-       "s": "Keep the other too"
+       "s": "Keep the other too, as a field of its own"
       },
       {
        "t": "text",
-       "s": " saves it as a field of its own, and for notes joins them one after the other. A password that loses always goes to the kept item's history."
+       "s": " does that, and for notes "
+      },
+      {
+       "t": "strong",
+       "s": "Keep both, one after the other"
+      },
+      {
+       "t": "text",
+       "s": " joins them. A password that loses always goes to the kept item's history."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "The button at the foot, "
+      },
+      {
+       "t": "strong",
+       "s": "Merge into"
+      },
+      {
+       "t": "text",
+       "s": " and the name of the one that stays, merges them."
       }
      ]
     },
@@ -18972,7 +19728,7 @@
       },
       {
        "t": "text",
-       "s": " are the copy and open buttons under the item's name. "
+       "s": ", shown only in the Standard style, are the copy and open buttons under the item's name. "
       },
       {
        "t": "strong",
@@ -19360,7 +20116,7 @@
    "related": [
     "setting.gen_no_ambiguous"
    ],
-   "words": "colors colors password digits read aloud",
+   "words": "colours colors password digits read aloud",
    "plain": "Draws the digits and symbols of a shown password in their own colors, apart from the letters."
   },
   {
@@ -19414,7 +20170,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "A new vault keeps every old value. That shows here as 0 until you choose a number."
+       "s": "A new vault keeps every old value, which shows here as 0. Once you choose another number, 0 is no longer offered."
       }
      ]
     }
@@ -19484,7 +20240,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "How large codes are drawn on the Codes page."
+       "s": "How large codes are drawn on the Codes page and on an item's page."
       }
      ]
     }
@@ -19538,7 +20294,7 @@
    ],
    "preview": "preview.code",
    "words": "big digits font",
-   "plain": "How large codes are drawn on the Codes page."
+   "plain": "How large codes are drawn on the Codes page and on an item's page."
   },
   {
    "id": "setting.code_groups",
@@ -19695,7 +20451,7 @@
        "runs": [
         {
          "t": "text",
-         "s": "A to Z by the service that issued the code, or by the item's name when it does not say."
+         "s": "A to Z by the item's name, or by the service that issued the code when the item has no name."
         }
        ]
       }
@@ -19739,7 +20495,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "An item's own page still shows its code."
+       "s": "An item's own page still shows its code. Codes on home screen widgets stay covered too."
       }
      ]
     }
@@ -19890,6 +20646,21 @@
         {
          "t": "text",
          "s": "Follows a template you type, for sites with fixed rules."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "value": "lock",
+     "label": "Lock pattern",
+     "text": [
+      {
+       "t": "p",
+       "runs": [
+        {
+         "t": "text",
+         "s": "A path through the dots of a phone's lock screen grid, drawn and written out for you to copy."
         }
        ]
       }
@@ -20303,7 +21074,7 @@
       },
       {
        "t": "text",
-       "s": " leaves that action without one."
+       "s": " leaves that action without one, and Back or Escape keeps it as it was."
       }
      ]
     },
@@ -20613,6 +21384,61 @@
      "runs": [
       {
        "t": "text",
+       "s": "Type in "
+      },
+      {
+       "t": "strong",
+       "s": "Search the guide"
+      },
+      {
+       "t": "text",
+       "s": " to find a topic by its words. The search at the top of Settings finds guide topics too."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "strong",
+       "s": "Start here"
+      },
+      {
+       "t": "text",
+       "s": " shows the welcome again or takes you round the app. "
+      },
+      {
+       "t": "strong",
+       "s": "Tours"
+      },
+      {
+       "t": "text",
+       "s": " lists the other tours, and marks the ones you have finished."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Under each settings page, "
+      },
+      {
+       "t": "strong",
+       "s": "About the page"
+      },
+      {
+       "t": "text",
+       "s": " explains the page, and opening its line lists the topics on it."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
        "s": "The same topics open from the "
       },
       {
@@ -20630,7 +21456,15 @@
      "runs": [
       {
        "t": "text",
-       "s": "Two settings decide how the guide shows itself: "
+       "s": "At the bottom, "
+      },
+      {
+       "t": "strong",
+       "s": "The guide itself"
+      },
+      {
+       "t": "text",
+       "s": " has two settings: "
       },
       {
        "t": "link",
@@ -20669,6 +21503,87 @@
    ],
    "words": "help manual tour tutorial explain question",
    "plain": "Every topic in the guide in one place: the tours, the screens, how WM Pass works, and each settings page with what is on it."
+  },
+  {
+   "id": "action.show_welcome",
+   "kind": "action",
+   "title": "Show the welcome again",
+   "page": "guide",
+   "what": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Opens the short welcome from your first unlock again: how to find, add and copy things, and how to ask what anything does."
+      }
+     ]
+    }
+   ],
+   "how": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "strong",
+       "s": "Show me around"
+      },
+      {
+       "t": "text",
+       "s": " in it starts the tour of the app."
+      }
+     ]
+    }
+   ],
+   "related": [
+    "action.guide_take_tour",
+    "page.guide"
+   ],
+   "words": "onboarding introduction start",
+   "plain": "Opens the short welcome from your first unlock again: how to find, add and copy things, and how to ask what anything does."
+  },
+  {
+   "id": "action.guide_take_tour",
+   "kind": "action",
+   "title": "Take the tour",
+   "page": "guide",
+   "what": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Points out the parts of the app one at a time: search, adding, your items, the tabs, the lock and Settings."
+      }
+     ]
+    }
+   ],
+   "how": [
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Once finished, it shows as "
+      },
+      {
+       "t": "strong",
+       "s": "Done"
+      },
+      {
+       "t": "text",
+       "s": ", and it can be taken again."
+      }
+     ]
+    }
+   ],
+   "tour": "tour.home",
+   "related": [
+    "screen.window",
+    "action.show_welcome"
+   ],
+   "words": "tour walkthrough introduction window",
+   "plain": "Points out the parts of the app one at a time: search, adding, your items, the tabs, the lock and Settings."
   },
   {
    "id": "setting.help_buttons",
@@ -20784,7 +21699,23 @@
      "runs": [
       {
        "t": "text",
-       "s": "The note says what the page is for, with a way to read more. Once you have followed it or closed it, that note does not come back on this device."
+       "s": "The note says what the page is for. "
+      },
+      {
+       "t": "strong",
+       "s": "More"
+      },
+      {
+       "t": "text",
+       "s": " opens its guide page, and the cross, "
+      },
+      {
+       "t": "strong",
+       "s": "Do not show this again"
+      },
+      {
+       "t": "text",
+       "s": ", hides it. After either, that note does not come back on this device."
       }
      ]
     }
@@ -20897,6 +21828,24 @@
        "s": "It lives on this phone only. A backup, or the vault on another device, still needs the master password."
       }
      ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "It is only for the vault kept on this phone. A vault inside another, a shared vault or an account vault opens with its password."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "While the door makes you wait, after too many wrong tries or a panic lock, the fingerprint is not offered either."
+      }
+     ]
     }
    ],
    "related": [
@@ -20920,7 +21869,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "How other apps and your watch reach the vault, and what a panic app can make WM Pass do."
+       "s": "How other apps, your widgets and your watch reach the vault, and what a panic app can make WM Pass do."
       }
      ]
     }
@@ -20931,7 +21880,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Autofill, WM Keyboard and the watch get nothing while the vault is locked. Autofill can ask for your fingerprint over the app you are in, or bring up the door; the keyboard and the watch cannot."
+       "s": "Autofill, WM Keyboard, the widgets and the watch get nothing while the vault is locked. Autofill and the keyboard can ask for your fingerprint over the app you are in, or bring up the door, and the keyboard can also take your master password. The watch cannot open the vault."
       }
      ]
     },
@@ -20948,10 +21897,11 @@
    "related": [
     "action.autofill_service",
     "setting.keyboard_access",
+    "setting.widget_access",
     "setting.wear_access",
     "setting.panic_action"
    ],
-   "plain": "How other apps and your watch reach the vault, and what a panic app can make WM Pass do."
+   "plain": "How other apps, your widgets and your watch reach the vault, and what a panic app can make WM Pass do."
   },
   {
    "id": "setting.autofill_inline",
@@ -21070,7 +22020,15 @@
       },
       {
        "t": "text",
-       "s": " makes a new login named after the site or the app. With a match, a button for each matching login puts the new password on it, and "
+       "s": " makes a new login named after the site or the app; its name, username, password and website can be changed first. With a match, an "
+      },
+      {
+       "t": "strong",
+       "s": "Update"
+      },
+      {
+       "t": "text",
+       "s": " button for each matching login puts the new password on it, and "
       },
       {
        "t": "strong",
@@ -21095,7 +22053,25 @@
      "runs": [
       {
        "t": "text",
-       "s": "A login saved from an app remembers the app's package name and signing certificate, so it is offered there next time."
+       "s": "A sign-in that asks for the username on one screen and the password on the next is saved as one login, on Android 10 and later."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "A login typed while the vault is locked can still be saved: the vault is opened first."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "A login saved from an app remembers the app's package name and signing certificate, so it is offered there next time. One saved from a browser is not tied to the browser."
       }
      ]
     }
@@ -21155,7 +22131,7 @@
       },
       {
        "t": "text",
-       "s": " asks for your fingerprint over the app you are in, the way autofill does. WM Pass shows the prompt; the keyboard only starts it. Without fingerprint unlock set up, or after "
+       "s": " asks for your fingerprint over the app you are in, the way autofill does. WM Pass shows the prompt; the keyboard only starts it. After "
       },
       {
        "t": "strong",
@@ -21163,7 +22139,15 @@
       },
       {
        "t": "text",
-       "s": ", the door opens there instead."
+       "s": " the door opens there instead. Without fingerprint unlock set up, the keyboard's button reads "
+      },
+      {
+       "t": "strong",
+       "s": "Unlock in WM Pass"
+      },
+      {
+       "t": "text",
+       "s": " and opens the door straight away."
       }
      ]
     },
@@ -21176,7 +22160,15 @@
       },
       {
        "t": "text",
-       "s": " takes your master password in the keyboard's own box, which sends it to WM Pass and keeps nothing. It counts toward the same wrong tries and waits as the door, and a duress password does what it does there. A vault that also needs a key file or a hardware key opens at the door."
+       "s": " ("
+      },
+      {
+       "t": "strong",
+       "s": "Type password"
+      },
+      {
+       "t": "text",
+       "s": " when there is no fingerprint) takes your master password in the keyboard's own box, which sends it to WM Pass and keeps nothing. It counts toward the same wrong tries and waits as the door, and a duress password does what it does there. A vault that also needs a key file or a hardware key opens at the door."
       }
      ]
     },
@@ -21210,7 +22202,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "It is shown every item that is not in the trash or on the hidden shelf, those saved for the app in front first: each one's name, the line under it, and whether it has a password or a code. Its search goes through the vault's own search."
+       "s": "It is shown the items that are not in the trash or on the hidden shelf, up to 200 at a time, those saved for the app in front first: each one's name, the line under it, and whether it has a password or a code. Its search goes through the vault's own search."
       }
      ]
     },
@@ -21219,7 +22211,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Opening an item there shows its fields. A plain field, such as a username or a website, is shown as it is; a secret is only named. A secret is sent only when you tap to type that one field."
+       "s": "Opening an item there shows its fields. A plain field, such as a username or a website, is shown as it is; a secret is only named. A secret is sent only when you tap to type or show that one field."
       }
      ]
     },
@@ -21605,6 +22597,15 @@
      "runs": [
       {
        "t": "text",
+       "s": "Counter-based codes are never sent, since showing one uses it up, and neither is anything in the trash or on the hidden shelf."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
        "s": "A tile on the watch shows your first code. The complication opens the app and shows no code."
       }
      ]
@@ -21736,6 +22737,32 @@
        "s": "Apps are matched by package name and signing certificate, not by name. Sites are matched by web address."
       }
      ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Picking a login under "
+      },
+      {
+       "t": "strong",
+       "s": "Search WM Pass"
+      },
+      {
+       "t": "text",
+       "s": " for an app links that app to it, so it is offered there next time."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Many browsers that do not hand Android their pages' fields, such as Opera, UC Browser or Via, are filled through Android's compatibility mode, which reads the page and its address bar for WM Pass. Android allows it only for the browsers on its own list."
+      }
+     ]
     }
    ],
    "caveats": [
@@ -21761,6 +22788,15 @@
       {
        "t": "text",
        "s": "."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "It asks the same for a login that names an app by its package name alone, with no signing certificate, since any app could take that name."
       }
      ]
     }
@@ -22019,7 +23055,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Apps known to send the signal, Ripple and Panic Button, are listed first. Tick the ones you use and tap "
+       "s": "The apps you have ticked come first, then those known to send the signal, Ripple and Panic Button. Tick the ones you use and tap "
       },
       {
        "t": "strong",
@@ -22098,6 +23134,15 @@
        "s": "A tap saves anything not yet saved and forgets every key, as locking inside the app does."
       }
      ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "While the vault is locked, a tap unlocks it over whatever is on screen: the fingerprint prompt alone when fingerprint unlock is set up, the door otherwise. On a locked phone, the phone asks to be unlocked first."
+      }
+     ]
     }
    ],
    "related": [
@@ -22138,6 +23183,15 @@
       {
        "t": "text",
        "s": ". It works whether or not the vault is open."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "A tap also clears a copied password from the clipboard. For the hour, the fingerprint is not offered either."
       }
      ]
     }
@@ -22194,7 +23248,7 @@
       },
       {
        "t": "strong",
-       "s": "Add a login"
+       "s": "Add an item"
       },
       {
        "t": "text",
@@ -22225,7 +23279,7 @@
      "runs": [
       {
        "t": "strong",
-       "s": "Add a login"
+       "s": "Add an item"
       },
       {
        "t": "text",
@@ -22238,7 +23292,7 @@
     "feature.home_widget"
    ],
    "words": "launcher long press shortcuts icon",
-   "plain": "Touch and hold the WM Pass icon to go straight to Search, Add a login, Codes or Generate."
+   "plain": "Touch and hold the WM Pass icon to go straight to Search, Add an item, Codes or Generate."
   },
   {
    "id": "feature.share_to_pass",
@@ -22285,6 +23339,12 @@
        {
         "t": "text",
         "s": "A one-time code link, one that starts with otpauth://, opens a new code with its details filled in. Tapping such a link in another app does the same."
+       }
+      ],
+      [
+       {
+        "t": "text",
+        "s": "A Wi-Fi network's text, one that starts with WIFI:, as a shared network's QR code holds, opens a new Wi-Fi network with its details filled in."
        }
       ],
       [
@@ -22346,7 +23406,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "The style, theme, animations, the app, site and settings icons, and the list layout go back to how they started. The door says why."
+       "s": "The style, theme, animations, the app, site and settings icons, the cards on the settings pages, and the list layout go back to how they started. The door says why."
       }
      ]
     },
@@ -22458,7 +23518,15 @@
        },
        {
         "t": "text",
-        "s": ": your score and how many passwords are weak, reused or in a known breach. The counts are kept from the last time the vault was open, with when that was."
+        "s": ": your score, unless "
+       },
+       {
+        "t": "link",
+        "id": "setting.health_score"
+       },
+       {
+        "t": "text",
+        "s": " is off, and how many passwords are weak, reused or in a known breach. The counts are kept from the last time the vault was open, with when that was."
        }
       ],
       [
@@ -22468,7 +23536,7 @@
        },
        {
         "t": "text",
-        "s": ": when each backup place last ran, and whether that failed or the next run is late."
+        "s": ": when each backup place last ran, and whether that failed or the next run is late. A tap opens the backup settings."
        }
       ],
       [
@@ -22478,7 +23546,7 @@
        },
        {
         "t": "text",
-        "s": ": a tap copies a new password made the way the generator is set up. Nothing is shown, and the clipboard is cleared as usual."
+        "s": ": a tap copies a new password made the way the generator is set up. Nothing is shown. The password stays on the clipboard until something else replaces it, since it is saved nowhere yet."
        }
       ],
       [
@@ -22512,7 +23580,7 @@
        },
        {
         "t": "text",
-        "s": ", and a tap copies one. Favorites shows a letter and a name for each favorite, and a tap opens it. Locked, a tap unlocks them where they are."
+        "s": ", and a tap copies one. Favorites shows a letter and a name for each favorite, and a tap opens it. Nothing in the trash or on the hidden shelf is shown. Locked, a tap unlocks them where they are."
        }
       ]
      ]
@@ -22577,7 +23645,7 @@
       },
       {
        "t": "text",
-       "s": ". Whether any widget may show codes or favorites is decided under Security, by "
+       "s": ". Whether any widget may show codes or favorites is "
       },
       {
        "t": "link",
@@ -22585,7 +23653,7 @@
       },
       {
        "t": "text",
-       "s": "."
+       "s": ", on this page and under Security."
       }
      ]
     }
@@ -22760,15 +23828,15 @@
      "runs": [
       {
        "t": "text",
-       "s": "Drag a row by its handle to move it. The bin removes it, and its "
+       "s": "Drag a row by its handle to move it. The bin removes it, and its own row below, such as "
       },
       {
        "t": "strong",
-       "s": "Add"
+       "s": "Add Health"
       },
       {
        "t": "text",
-       "s": " row brings it back."
+       "s": ", brings it back."
       }
      ]
     },
@@ -22888,6 +23956,15 @@
       {
        "t": "text",
        "s": "Locking, from anywhere, empties them at once. If Android ends WM Pass while they show something, they are drawn locked again within a few minutes."
+      }
+     ]
+    },
+    {
+     "t": "p",
+     "runs": [
+      {
+       "t": "text",
+       "s": "Items in the trash or on the hidden shelf never appear on them."
       }
      ]
     },
@@ -23036,7 +24113,7 @@
        "runs": [
         {
          "t": "text",
-         "s": "Your items, one-time codes, the generator and health checks. Which ones show, and in what order, is under Settings, Appearance, Navigation."
+         "s": "Your items, one-time codes, the generator, health checks and tools. Which ones show, and in what order, is under Settings, Appearance, Navigation."
         }
        ]
       }
@@ -23099,7 +24176,7 @@
        "runs": [
         {
          "t": "text",
-         "s": "Each item that has a one-time code is listed here. Click a code to copy it; double-click to open its item."
+         "s": "Each item that has a one-time code is listed here, counting down. Click or tap a code to copy it."
         }
        ]
       }
@@ -23153,7 +24230,7 @@
        "runs": [
         {
          "t": "text",
-         "s": "Random characters, a few words, something you can say aloud, a PIN, or a pattern of your own."
+         "s": "Random characters, a few words, something you can say aloud, a PIN, or a pattern of your own. The phone can also make a lock pattern."
         }
        ]
       }
@@ -23246,7 +24323,7 @@
        "runs": [
         {
          "t": "text",
-         "s": "After a time with nothing happening, when the computer sleeps, and what the clipboard keeps."
+         "s": "After a time with nothing happening, when the computer sleeps or the phone's screen goes off, and how long a copied secret stays on the clipboard."
         }
        ]
       }
@@ -23725,7 +24802,7 @@
   },
   {
    "id": "fig.shelf",
-   "caption": "Items on the shelf stay out of sight until you open it with your password. It closes when the vault locks.",
+   "caption": "Items on the shelf stay out of sight until you open it with your password. It closes again when you leave it or the vault locks.",
    "rows": [
     [
      {
@@ -23751,7 +24828,7 @@
      {
       "id": "password",
       "label": "Master password",
-      "sub": "opens it until you lock"
+      "sub": "opens it until you leave or lock"
      }
     ]
    ],

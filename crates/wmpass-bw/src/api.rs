@@ -297,7 +297,18 @@ pub fn refresh(endpoints: &Endpoints, token: &wmpass_core::Secret) -> Call<Token
         "application/x-www-form-urlencoded; charset=utf-8",
         form(&[("grant_type", "refresh_token"), ("client_id", "cli"), ("refresh_token", token.expose())]),
     ));
-    Call::new(request, |response| read_tokens(&response.ok()?.json()?))
+    // OAuth lets a refresh answer leave the refresh token out, meaning the one sent stays good;
+    // reading that as a bad answer would sign the account out for nothing.
+    let kept = token.clone();
+    Call::new(request, move |response| {
+        let mut root = response.ok()?.json()?;
+        if text(&root, "refresh_token").is_none()
+            && let Some(object) = root.as_object_mut()
+        {
+            object.insert("refresh_token".to_owned(), Value::String(kept.expose().to_owned()));
+        }
+        read_tokens(&root)
+    })
 }
 
 fn authed(mut request: Request, access: &wmpass_core::Secret) -> Request {
@@ -436,6 +447,17 @@ mod tests {
         assert_eq!(refusal(&two_factor), BwError::TwoFactor(vec![0, 1]));
         let other = json!({"error": "invalid_grant", "ErrorModel": {"Message": "Something else entirely."}});
         assert_eq!(refusal(&other), BwError::Refused("Something else entirely.".into()));
+    }
+
+    #[test]
+    fn a_refresh_that_leaves_out_the_refresh_token_keeps_the_old_one() {
+        let call = refresh(&Endpoints::official(), &"old-refresh".into());
+        let answer = wmpass_net::Response { status: 200, body: br#"{"access_token":"new","expires_in":60}"#.to_vec(), ..wmpass_net::Response::default() };
+        let tokens = (call.parse)(&answer).expect("tokens");
+        assert_eq!((tokens.access.expose(), tokens.refresh.expose(), tokens.expires_in), ("new", "old-refresh", 60));
+        let call = refresh(&Endpoints::official(), &"old-refresh".into());
+        let answer = wmpass_net::Response { status: 200, body: br#"{"access_token":"a","refresh_token":"r2"}"#.to_vec(), ..wmpass_net::Response::default() };
+        assert_eq!((call.parse)(&answer).expect("tokens").refresh.expose(), "r2");
     }
 
     #[test]

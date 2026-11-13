@@ -35,9 +35,12 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.editableText
 import androidx.compose.ui.semantics.inputText
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.text
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -135,10 +138,15 @@ fun SecretText(value: String?, modifier: Modifier = Modifier, style: TextStyle =
         shown = target
     }
     val prefs = com.wasimaster.wmpass.app.Prefs.of(androidx.compose.ui.platform.LocalContext.current)
+    // A screen reader hears what is settling, not the scramble on its way, and a hidden value as
+    // hidden rather than twelve bullets read one by one.
+    val read = modifier.clearAndSetSemantics {
+        if (value == null) contentDescription = "Hidden" else text = AnnotatedString(target)
+    }
     if (prefs.colourSecrets.value) {
-        Text(colouredSecret(shown, colors), modifier, style = style, maxLines = maxLines)
+        Text(colouredSecret(shown, colors), read, style = style, maxLines = maxLines)
     } else {
-        Text(shown, modifier, color = colors.text, style = style, maxLines = maxLines)
+        Text(shown, read, color = colors.text, style = style, maxLines = maxLines)
     }
 }
 
@@ -157,7 +165,9 @@ fun RollingCode(code: String, modifier: Modifier = Modifier, style: TextStyle = 
         else -> 1f
     }
     val sized = style.copy(fontSize = style.fontSize * scale)
-    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+    // Read as one code, digit by digit, rather than as separate digits with the outgoing ones
+    // still in the tree while they roll away.
+    Row(modifier.clearAndSetSemantics { contentDescription = code.toList().joinToString(" ") }, verticalAlignment = Alignment.CenterVertically) {
         code.forEachIndexed { index, digit ->
             if (index > 0 && group > 0 && index % group == 0) Spacer(Modifier.width(sized.fontSize.value.dp * 0.32f))
             AnimatedContent(
@@ -185,14 +195,16 @@ fun RollingCode(code: String, modifier: Modifier = Modifier, style: TextStyle = 
 @Composable
 fun LifeRing(periodSeconds: Int, modifier: Modifier = Modifier, size: Dp = 26.dp, stroke: Dp = 3.dp) {
     val colors = palette
+    val reduce = LocalReduceMotion.current
     var left by remember { mutableFloatStateOf(1f) }
-    LaunchedEffect(periodSeconds) {
+    LaunchedEffect(periodSeconds, reduce) {
         val period = periodSeconds.coerceAtLeast(1) * 1000L
         while (true) {
             withFrameMillis { }
             val now = System.currentTimeMillis()
             left = (period - now % period).toFloat() / period
-            delay(33)
+            // With motion reduced the ring steps once a second instead of sweeping smoothly.
+            delay(if (reduce) 1000 - now % 1000 else 33)
         }
     }
     Canvas(modifier.then(Modifier.size(size))) {
@@ -222,7 +234,17 @@ fun StrengthBar(score: Int, modifier: Modifier = Modifier, active: Boolean = tru
         2 -> colors.warn
         else -> colors.primary
     }
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+    val verdict = when (score) {
+        0 -> "Very weak"
+        1 -> "Weak"
+        2 -> "Fair"
+        3 -> "Strong"
+        else -> "Very strong"
+    }
+    Row(
+        modifier.clearAndSetSemantics { if (active) contentDescription = "Strength: $verdict" },
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
         repeat(5) { index ->
             val lit by animateFloatAsState(
                 if (active && index <= score) 1f else 0f,

@@ -37,6 +37,8 @@ A backup is the encrypted vault file itself. It holds every vault on this device
 
 [Where they go](/guide/settings/backup/#group-backup-places) lists your places. [How often](/guide/settings/backup/#action-backup-schedule) makes copies on its own, [How many to keep](/guide/settings/backup/#action-backup-keep) limits them, and [Save a file](/guide/settings/backup/#action-backup-save-file) and [Merge a file](/guide/settings/backup/#action-backup-merge-file) work by hand.
 
+To get the vault back on a new device, or after a wipe, use **Restore from a file** or **Restore from a backup location** at the [door](/guide/screens/#screen-door). On a device that has a vault already, the copy waits and merges in when you next unlock.
+
 #### When to use it
 
 Set up at least one place soon after you make your vault, somewhere other than this device.
@@ -56,6 +58,14 @@ Each row shows when the last copy was made there, or what went wrong.
 The backup button on a row makes a copy there now. Click the row itself to bring back a copy, change its details or stop using it.
 
 Changing the details of an account place lets you keep its current sign-in, so you do not have to sign in again.
+
+#### On Android
+
+Each row shows when the last copy was made there, or what went wrong.
+
+The backup button on a row makes a copy there now. Tap the row itself to bring back a copy, change its details or stop using it. Stopping affects sync through that place too.
+
+Changing the details of an account place offers **Keep the current sign-in**, so you do not have to sign in again.
 
 See also [Add a place](/guide/settings/backup/#action-add-place), [Back up now](/guide/settings/backup/#action-backup-now), [Bring back a copy](/guide/settings/backup/#action-restore-copy), [Places for copies](/guide/how-it-works/#feature-places).
 
@@ -98,7 +108,7 @@ Sets up somewhere new to keep copies: a folder, an account, a server, a Git repo
 
 #### How it works
 
-Choose the kind, give it a name and fill in what that kind needs. Before a server or account is saved, WM Pass checks that it answers with what you typed, and says what went wrong if it does not; nothing is kept until it works. A backup then runs straight away.
+Choose the kind, give it a name and fill in what that kind needs. An account or a NAS signs in before it is saved, and says what went wrong if the sign-in fails. Any other place is saved as you typed it. A backup then runs straight away, and the place's row says whether it worked.
 
 Only the encrypted file goes there. What WM Pass needs to sign in stays on this device, sealed.
 
@@ -123,7 +133,26 @@ Google Drive, Dropbox, OneDrive and Box are offered only by builds made with an 
 
 #### On Android
 
-Any place but a folder needs [Allow network features](/guide/settings/security/#setting-network-allowed). Until it is on, a backup there stops and says network features are turned off.
+Choose the kind, give it a name and fill in what that kind needs. Before a place is saved, WM Pass checks that it answers with what you typed, and says what went wrong if it does not; nothing is kept until it works. A backup then runs straight away.
+
+With WM Keyboard installed, **Use a place from WM Keyboard** copies one of its backup places here instead of typing it again.
+
+Only the encrypted file goes there. What WM Pass needs to sign in stays on this device, sealed.
+
+- A folder on this device. Syncthing, Nextcloud or a cloud provider's own app can carry it on from there.
+- With Google Drive, Dropbox, OneDrive and Box you sign in on the service's own page, in your browser. WM Pass never sees that password, and can reach only its own folder there. Google Drive can use a hidden app folder or a folder you can see.
+- With pCloud, MEGA and Proton Drive you sign in here, with a code afterwards if the account asks for one. WM Pass keeps the session the sign-in hands back, not your password.
+- With iCloud Drive you sign in here, and Apple asks for a code from one of your devices. The sign-in lasts about a month, then WM Pass asks again.
+- For WebDAV, such as Nextcloud, pick a service to have the address filled in, or type it.
+- For S3, such as Backblaze or MinIO, pick a service for its endpoint and regions, or type the endpoint.
+- SFTP signs in with a password or an OpenSSH private key. The server's key is remembered on the first connection, and if it ever changes WM Pass refuses to connect.
+- FTP and SMB reach a server, or a Windows or Samba share.
+- NFS reaches an export on your network. NFS without Kerberos takes the user and group ids on trust and does not encrypt, so use it only on a network you control.
+- Synology and QNAP reach a NAS through its own file manager.
+- Git keeps copies in a folder of a private repository on GitHub, GitLab or Gitea (which also covers Forgejo and Codeberg), with an access token. Each copy is a commit.
+- Email keeps copies in a mailbox, over IMAP. Each copy is one message.
+
+Saving any place but a folder turns on [Allow network features](/guide/settings/security/#setting-network-allowed), since reaching it is the reason you set it up. If you turn it off later, a backup there stops and says network features are turned off.
 
 Google Drive, Dropbox, OneDrive and Box are offered only by builds made with an app id for that service.
 
@@ -149,8 +178,6 @@ See also [Add a place](/guide/settings/backup/#action-add-place).
 
 ## Encrypt the connection
 
-*Only in the desktop app and Android.*
-
 Uses TLS on an FTP connection, so the server's password crosses the network encrypted.
 
 #### What each choice does
@@ -169,8 +196,6 @@ See also [Add a place](/guide/settings/backup/#action-add-place).
 <a id="action-place-smb-encrypt"></a>
 
 ## Require encryption
-
-*Only in the desktop app and Android.*
 
 Requires SMB 3 encryption for everything after the sign-in, and refuses a server that cannot do it.
 

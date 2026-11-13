@@ -90,6 +90,17 @@ function handleOf(frame: Uint8Array): number {
   }
 }
 
+/** The error code a reply frame carries, read from its head alone, or null. */
+function headCode(frame: Uint8Array): string | null {
+  try {
+    const length = new DataView(frame.buffer, frame.byteOffset, frame.byteLength).getUint32(0, true);
+    const code = JSON.parse(new TextDecoder().decode(frame.subarray(4, 4 + length)))?.error?.code;
+    return typeof code === 'string' ? code : null;
+  } catch {
+    return null;
+  }
+}
+
 /** A reply frame that carries only an error, as the engine writes one. */
 function errorFrame(code: string, message: string): Uint8Array {
   const text = new TextEncoder().encode(JSON.stringify({ error: { code, message } }));
@@ -100,13 +111,22 @@ function errorFrame(code: string, message: string): Uint8Array {
 }
 
 export async function extensionHost(): Promise<Host> {
-  const base = await webHost({
-    call: async (frame) => fromB64((await send<{ frame: string }>({ type: 'call', frame: toB64(frame) })).frame),
-    lockAll: () => send({ type: 'closed' }),
-  });
+  // Not shared: the background writes the vault file too, and says so over the runtime's messages
+  // ('changed'), not over the web vault's channel. Without that channel's news a page could not
+  // trust sizes it kept, so it keeps none and reads each file it lists. The extension's storage is
+  // its own origin's, apart from the web vault's.
+  const base = await webHost(
+    {
+      call: async (frame) => fromB64((await send<{ frame: string }>({ type: 'call', frame: toB64(frame) })).frame),
+      lockAll: () => send({ type: 'closed' }),
+    },
+    false,
+  );
   const linkPlaces = linkedPlaces(extensionPlaces);
   const linkKeys = linkedHardware(await webHardware());
   let onCommand: (command: string) => void = () => {};
+  /** Whether this page keeps the open vault itself: an account, or a nested vault. */
+  let writesHere = false;
   /** The desktop app's handle while these screens show its vault, else zero. */
   let desktopHandle = 0;
   async function call(frame: Uint8Array): Promise<Uint8Array> {
@@ -123,10 +143,30 @@ export async function extensionHost(): Promise<Host> {
       onCommand('lock');
       return errorFrame('locked', 'The vault in the desktop app is locked.');
     }
-    return fromB64(reply.frame);
+    const answer = fromB64(reply.frame);
+    // An internal error in the desktop app locked its vault there, and says so there. This
+    // extension's own session is fine: these screens only go back to the door.
+    if (headCode(answer) === 'internal' || headCode(answer) === 'panic') {
+      desktopHandle = 0;
+      onCommand('lock');
+      return errorFrame('locked', 'The desktop app hit an internal error and locked its vault.');
+    }
+    return answer;
   }
-  chrome.runtime.onMessage.addListener((message: any) => {
+  chrome.runtime.onMessage.addListener((message: any, sender: any, respond: (answer: unknown) => void) => {
+    // Content scripts' messages reach every page of the extension too. Only the background and
+    // these pages may tell this one to lock, reload or save.
+    if (sender?.tab && !String(sender.url ?? '').startsWith(chrome.runtime.getURL(''))) return;
+    // The background changed a vault only this page can write, such as a login saved from the
+    // bar into an account: this page saves it. Pages that cannot stay quiet.
+    if ((message?.type === 'save.holder' || message?.type === 'save.request') && writesHere) {
+      if (message.type === 'save.request') onCommand('linked-change');
+      respond(true);
+      return;
+    }
     if (message?.type === 'locked') onCommand('lock');
+    // The background's session met a bug and was thrown away.
+    if (message?.type === 'internal') onCommand('internal');
     if (message?.type === 'changed') onCommand('reload');
     if (message?.type === 'link.changed') {
       linkPlaces.refresh();
@@ -157,9 +197,19 @@ export async function extensionHost(): Promise<Host> {
       await send({ type: 'clip.arm', seconds: 0 });
     },
     stateChanged(state) {
-      void (state.unlocked && state.handle ? send({ type: 'opened', ...state }) : send({ type: 'closed' }));
+      writesHere = state.unlocked && !!state.handle && state.writes === true;
+      // Nobody waits on this, so a refusal is caught here rather than left unhandled.
+      void (state.unlocked && state.handle ? send({ type: 'opened', ...state }) : send({ type: 'closed' })).catch(() => {});
     },
     attach: () => send({ type: 'attach' }),
+    // The background wipes the session's memory, if it has not already.
+    internalError: () => void send({ type: 'internal' }).catch(() => {}),
+    // The session's module cannot be used again once it has trapped, and only a fresh start of
+    // the extension loads it anew. This page comes back at its door, where the browser keeps it.
+    async restart() {
+      await send({ type: 'restart' }).catch(() => {});
+      setTimeout(() => location.reload(), 400);
+    },
     lockGuard: {
       activity: () => send({ type: 'guard.active' }),
       setLockRule: (after, onSleep) => send({ type: 'guard.rule', after, onSleep }),

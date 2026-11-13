@@ -63,14 +63,20 @@ impl<D: HidDevice> CtapHid<D> {
             device.write(&frame)?;
         }
         let mut this = Self { device, channel: BROADCAST };
-        let (command, answer) = this.read_message()?;
-        // Answers to other programs' requests can arrive on the broadcast channel too, and
-        // the nonce tells them apart.
-        if command != CMD_INIT || answer.len() < 12 || answer[..8] != nonce {
-            return Err(HwError::Protocol);
+        loop {
+            let (command, answer) = this.read_message()?;
+            if command != CMD_INIT {
+                return Err(HwError::Protocol);
+            }
+            // Answers to other programs' requests can arrive on the broadcast channel too, and
+            // the nonce tells them apart: one with another nonce is skipped, not an error.
+            if answer.get(..8) != Some(&nonce[..]) {
+                continue;
+            }
+            let channel = answer.get(8..12).ok_or(HwError::Protocol)?;
+            this.channel = u32::from_be_bytes([channel[0], channel[1], channel[2], channel[3]]);
+            return Ok(this);
         }
-        this.channel = u32::from_be_bytes([answer[8], answer[9], answer[10], answer[11]]);
-        Ok(this)
     }
 
     fn read_message(&mut self) -> Result<(u8, Vec<u8>)> {
@@ -98,7 +104,11 @@ impl<D: HidDevice> CtapHid<D> {
             let mut expected = 0u8;
             while out.len() < total {
                 let next = self.device.read()?;
-                if next[..4] != self.channel.to_be_bytes() || next[4] != expected {
+                // Another program's traffic on its own channel can come between the parts.
+                if next[..4] != self.channel.to_be_bytes() {
+                    continue;
+                }
+                if next[4] != expected {
                     return Err(HwError::Protocol);
                 }
                 expected = expected.wrapping_add(1);
@@ -132,6 +142,8 @@ pub trait ApduDevice {
 const FIDO_AID: [u8; 8] = [0xa0, 0x00, 0x00, 0x06, 0x47, 0x2f, 0x00, 0x01];
 /// Bytes of a command in one short APDU.
 const APDU_CHUNK: usize = 250;
+/// Far more than any CTAP2 answer a key sends over NFC.
+const MAX_NFC_ANSWER: usize = 64 * 1024;
 
 /// CTAP2 over NFC.
 #[derive(Debug)]
@@ -177,8 +189,12 @@ impl<A: ApduDevice> Ctap2Transport for CtapNfc<A> {
             answer = Some(self.device.transceive(&apdu)?);
         }
         let (mut out, mut high, mut low) = split_status(answer.ok_or(HwError::Protocol)?)?;
-        // 0x61 means more of the answer waits, and is fetched with GET RESPONSE.
+        // 0x61 means more of the answer waits, and is fetched with GET RESPONSE. A key that
+        // never stops saying so is not followed past any real answer's size.
         while high == 0x61 {
+            if out.len() > MAX_NFC_ANSWER {
+                return Err(HwError::Protocol);
+            }
             let (more, h, l) = split_status(self.device.transceive(&[0x80, 0xc0, 0x00, 0x00, low])?)?;
             out.extend_from_slice(&more);
             (high, low) = (h, l);
@@ -232,6 +248,41 @@ mod tests {
         assert_eq!(sent.len(), 2, "57 bytes in the first report, the rest in the second");
         assert_eq!(&sent[0][..7], &[0, 0, 0, 9, CMD_CBOR, 0, 100]);
         assert_eq!(&sent[1][..5], &[0, 0, 0, 9, 0]);
+    }
+
+    #[test]
+    fn another_programs_traffic_is_skipped() {
+        let nonce = [1, 2, 3, 4, 5, 6, 7, 8];
+        let mut device = Loop::default();
+        // Another program's INIT answer, with its own nonce, comes first on the broadcast channel.
+        let mut theirs = vec![9u8; 8];
+        theirs.extend_from_slice(&[0, 0, 0, 5]);
+        theirs.extend_from_slice(&[0; 5]);
+        device.incoming.extend(hid_frames(BROADCAST, CMD_INIT, &theirs).unwrap());
+        let mut ours = nonce.to_vec();
+        ours.extend_from_slice(&[0, 0, 0, 9]);
+        ours.extend_from_slice(&[0; 5]);
+        device.incoming.extend(hid_frames(BROADCAST, CMD_INIT, &ours).unwrap());
+        // And a report on that other channel lands between the parts of our answer.
+        let payload = vec![3u8; 100];
+        let mut frames = hid_frames(9, CMD_CBOR, &payload).unwrap();
+        frames.insert(1, hid_frames(5, CMD_CBOR, &[7; 70]).unwrap()[1]);
+        device.incoming.extend(frames);
+        let mut hid = CtapHid::open(device, nonce).unwrap();
+        assert_eq!(hid.channel, 9, "the channel from the answer with our nonce");
+        assert_eq!(hid.exchange(&[1]).unwrap(), payload);
+    }
+
+    #[test]
+    fn an_endless_nfc_answer_is_cut_off() {
+        let mut answers = VecDeque::from([vec![0x90, 0x00]]);
+        for _ in 0..400 {
+            let mut more = vec![0u8; 256];
+            more.extend_from_slice(&[0x61, 0x00]);
+            answers.push_back(more);
+        }
+        let mut nfc = CtapNfc::open(Tag { sent: Vec::new(), answers }).unwrap();
+        assert_eq!(nfc.exchange(&[4]).err(), Some(HwError::Protocol));
     }
 
     #[test]

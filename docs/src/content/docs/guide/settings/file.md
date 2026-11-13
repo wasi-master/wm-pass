@@ -24,7 +24,7 @@ The file holds every customization: appearance and themes, icons, the vault list
 
 A file saved on the phone works on the computer, and the other way round. Settings one of them does not have are skipped.
 
-Protection settings never travel in a settings file. Lock timers, clipboard clearing, screenshot blocking, the network switch, the tray and start-up choices, the browser extension's connection, the SSH agent, auto-type, update checks and the quick search shortcut are left out when you save, and ignored when you import. A file from someone else cannot weaken them.
+Protection settings never travel in a settings file. Lock timers, clipboard clearing, screenshot blocking, the network switch, the tray and start-up choices, the browser extension's connection, the SSH agent, auto-type, update checks, the quick search shortcut and what widgets may show are left out when you save, and ignored when you import. A file from someone else cannot weaken them.
 
 #### Limits
 

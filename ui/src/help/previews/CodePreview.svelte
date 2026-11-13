@@ -28,7 +28,7 @@
     {:else}
       <span class="code-value {size}">{show('482913')}</span>
     {/if}
-    {#if next && !hidden}<span class="dim small mono" style="display:block">Next {show('105377').replace(' ', ' ')}</span>{/if}
+    {#if next && !hidden}<span class="dim small mono" style="display:block">Next {show('105377')}</span>{/if}
   </span>
   {#if ring}<Ring period={30} left={18} size={26} />{/if}
 </button>

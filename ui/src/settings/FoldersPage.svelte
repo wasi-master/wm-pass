@@ -8,7 +8,12 @@
 
   async function remove(id: string, name: string) {
     const yes = await overlays.ask({ title: `Remove “${name}”?`, body: 'What is in it stays in the vault, in no folder.', action: 'Remove', danger: true });
-    if (yes) await pass.change('folder.remove', { id });
+    if (!yes) return;
+    try {
+      await pass.change('folder.remove', { id });
+    } catch (failure: any) {
+      overlays.toast(failure?.message ?? 'The folder could not be removed.');
+    }
   }
 </script>
 

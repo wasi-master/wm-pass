@@ -74,7 +74,8 @@ internal fun spaceArcFlags(path: String): String {
 class Brand(val slug: String, val name: String, val color: Color, val otherNames: List<String>, val domains: List<String>, private val context: Context) {
     val glyph: ImageVector by lazy {
         ImageVector.Builder(slug, 24.dp, 24.dp, 24f, 24f)
-            .addPath(pathData = addPathNodes(spaceArcFlags(Brands.drawing(context, slug))), fill = SolidColor(Color.White))
+            // A drawing that will not read leaves the tile blank rather than closing the app on every list.
+            .addPath(pathData = runCatching { addPathNodes(spaceArcFlags(Brands.drawing(context, slug))) }.getOrDefault(emptyList()), fill = SolidColor(Color.White))
             .build()
     }
 }

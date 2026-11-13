@@ -60,13 +60,20 @@ export const protection = [
     figure: 'fig.breach',
     related: ['feature.breaches', 'setting.network_allowed', 'screen.health', 'feature.network'],
     words: 'hibp have i been pwned leak pwned leakcheck proxynova comb compromised',
+    on: {
+      android: {
+        caveats: [
+          'A clean result means the password or address is not in the leaks that service knows about. It says nothing about leaks that have not been published.',
+          'Results are kept in memory only, and are gone when WM Pass closes.',
+        ],
+      },
+    },
   },
   {
     id: 'action.check_every_password',
     kind: 'action',
     title: 'Check every password',
     page: 'breaches',
-    shells: ['desktop', 'android'],
     what: 'Looks up each password in this vault in Have I Been Pwned\'s or XposedOrNot\'s list of leaked passwords, and lists the items whose password has been seen, with how many times.',
     how: [
       'Choose the service first. For Have I Been Pwned, WM Pass works out each password\'s SHA-1 hash on this device and sends only the first five characters of that hash to api.pwnedpasswords.com. For XposedOrNot it sends the first ten characters of a Keccak-512 hash instead.',
@@ -86,10 +93,23 @@ export const protection = [
     on: {
       android: {
         how: [
-          'Pick the service first. **Have I Been Pwned** gets the first five characters of each password\'s SHA-1 hash from api.pwnedpasswords.com and checks the answer here. **XposedOrNot** gets the first ten characters of its Keccak-512 hash from passwords.xposedornot.com and answers with a count.',
+          'Pick the service first. For **Have I Been Pwned**, WM Pass sends only the first five characters of each password\'s SHA-1 hash to api.pwnedpasswords.com and looks for the rest in the answer here. For **XposedOrNot** it sends the first ten characters of the Keccak-512 hash to passwords.xposedornot.com, which answers with a count.',
           'Neither service gets your passwords or their full hashes, so neither can tell which password you asked about.',
           'The check keeps going after you leave the page, with a notification that counts the passwords and has a **Stop** button. Android 13 and later ask once whether WM Pass may post it.',
-          'The page then says when the last check ran, with which service, and how many of how many were found. Found items sort by **Most seen** or by **Name**, and lead the Health page under [[action.health_check_breached|In a known breach]] until the vault locks.',
+          'The page then says when the last check ran, with which service, and how many of how many were found. Found items sort by **Most seen** or by **Name**, and lead the Health page under [[action.health_check_breached|In a known breach]] until WM Pass closes.',
+        ],
+        caveats: [
+          'Items in the trash and on the hidden shelf are not checked.',
+          'The results are kept in memory only. Once WM Pass has closed, run the check again to see them on the Health page.',
+          'A vault with no passwords has nothing to check, and the page says so.',
+        ],
+      },
+      extension: {
+        caveats: [
+          'Items in the trash and on the hidden shelf are not checked.',
+          'The check runs in the extension\'s window: leaving the page does not stop it, but closing the window does.',
+          'The results are never saved. After the vault locks, run the check again to see them on the Health page.',
+          'A vault with no passwords has nothing to check, and the page says so.',
         ],
       },
     },
@@ -99,12 +119,11 @@ export const protection = [
     kind: 'concept',
     title: 'Your email addresses',
     page: 'breaches',
-    shells: ['desktop', 'android'],
     what: 'Asks a breach service whether one of your email addresses appears in a leak. Choose the service, then the search button beside an address.',
     how: [
       'The list holds the email addresses in this vault, such as the usernames of your logins. Nothing is sent until you choose an address, and then only that address goes to the service you chose.',
       '- **LeakCheck** gets the address and answers with the names of the services it appeared in. It needs no account.',
-      '- **Have I Been Pwned** gets the address and the API key you type, and answers with the breaches the address was in. It needs an API key of your own, which is not saved: type it each time.',
+      '- **Have I Been Pwned** gets the address and your API key, and answers with the breaches the address was in. It needs an API key of your own. After the first check the key is kept in the vault as an item named "Have I Been Pwned API key", so your other devices have it too.',
       '- **Passwords in COMB** sends the address to Proxynova, which searches a large published collection of leaked addresses and passwords known as COMB. Its answer holds leaked passwords, so WM Pass reads only the lines for exactly your address, compares each one with the passwords of your logins that use that address, and wipes it.',
       'With Passwords in COMB you see only a verdict: some of your passwords for the address are in the leak, the address is listed with passwords you no longer use, or it is not listed. The leaked text is never shown or kept.',
     ],
@@ -124,7 +143,6 @@ export const protection = [
     kind: 'page',
     title: 'Hardware key',
     page: 'hardware',
-    shells: ['desktop', 'android'],
     what: 'Adds a security key as a way in: a password you choose that opens the vault only with the key plugged in and touched.',
     why: 'A password can be watched, guessed or phished. A key cannot be copied, so someone who learns the password still needs the key in their hand.',
     how: [
@@ -148,6 +166,13 @@ export const protection = [
           'The key never hands over its secret. It answers a challenge stored in the vault, and its answer joins the password in unlocking the vault\'s key.',
         ],
       },
+      extension: {
+        how: [
+          'Choose the kind of key, give it a name, and choose the password that goes with it. It can be your master password, or a new one used only with the key.',
+          'Then the browser asks for the key: plug it in and touch it. The vault saves a new way in that needs both. Next time, type that password at the door and touch the key when asked.',
+          'The key never hands over its secret. It answers a challenge stored in the vault, and its answer joins the password in unlocking the vault\'s key. A key set up here works in the desktop app and on the phone too.',
+        ],
+      },
     },
   },
   {
@@ -155,7 +180,6 @@ export const protection = [
     kind: 'action',
     title: 'A FIDO2 security key',
     page: 'hardware',
-    shells: ['desktop', 'android'],
     what: 'Sets up a FIDO2 key, such as a YubiKey 5, a SoloKey or a Nitrokey, by USB.',
     how: 'WM Pass makes a new credential on the key that uses its hmac-secret extension. A key without hmac-secret cannot be used this way.',
     caveats: 'On Windows, only administrators can reach a FIDO2 key directly. Run WM Pass as administrator, or use a YubiKey with challenge-response instead.',
@@ -166,6 +190,14 @@ export const protection = [
         what: 'Sets up a FIDO2 key, such as a YubiKey 5, a SoloKey or a Nitrokey, by NFC or USB.',
         caveats: undefined,
       },
+      extension: {
+        what: 'Sets up a FIDO2 key, such as a YubiKey 5, a SoloKey or a Nitrokey, through the browser.',
+        how: 'The browser asks for the key, and WM Pass uses its hmac-secret extension, which browsers call PRF. A key without it cannot be used this way. A key set up here works in every WM Pass app afterwards.',
+        caveats: [
+          'A browser without PRF does not offer this.',
+          'A browser cannot ask a key set up by an older version of the desktop app or the phone. While the desktop app is connected under Settings, Desktop app, it asks the key instead; otherwise add the key again.',
+        ],
+      },
     },
   },
   {
@@ -173,12 +205,17 @@ export const protection = [
     kind: 'action',
     title: 'A YubiKey with challenge-response',
     page: 'hardware',
-    shells: ['desktop', 'android'],
     what: 'Sets up a YubiKey through its challenge-response feature in slot 2, instead of FIDO2.',
     how: 'Slot 2 has to be set up for challenge-response beforehand, in Yubico\'s own tool. WM Pass then stores a challenge in the vault, and the key\'s answer to it joins your password.',
     when: 'For a YubiKey whose slot 2 you have already set up this way, or on Windows, where a FIDO2 key would need WM Pass to run as administrator.',
     related: ['page.hardware', 'action.hardware_fido2'],
     words: 'yubikey otp slot hmac-sha1 challenge response',
+    on: {
+      extension: {
+        when: 'For a YubiKey whose slot 2 you have already set up this way.',
+        caveats: 'A browser cannot reach this slot. The choice appears only while the desktop app is connected under Settings, Desktop app, and the desktop app asks the key, after asking you once.',
+      },
+    },
   },
 
   // ---- health ----
@@ -207,7 +244,10 @@ export const protection = [
       'The score is the share of your logins whose password has none of these problems: easy to guess, used more than once, in a known breach, or not changed in a year.',
       'Logins without a password are not counted, and nor is anything in the trash. A vault with no logins scores 100.',
     ],
-    caveats: 'Turning checks off under [[group.health.problems|Problems to list]] hides them from the page but does not change the score. The other checks, such as unencrypted sites, never change it.',
+    caveats: [
+      'Turning checks off under [[group.health.problems|Problems to list]] hides them from the page but does not change the score. The other checks, such as unencrypted sites, never change it.',
+      'A login you have told a check to leave out no longer counts against the score for that check, and logins left out by [[setting.health_skip_local]] are not counted at all.',
+    ],
     related: ['group.health.problems', 'screen.health'],
     words: 'score percent number',
   },
@@ -218,7 +258,10 @@ export const protection = [
     page: 'health',
     pref: 'health_skip_local',
     what: 'Leaves logins for devices on your own network out of the Health checks: a router, a NAS, a printer.',
-    how: 'A login counts as local when every address saved on it is a private or loopback IP, or a name with no dot or one ending in .local, .lan, .home, .internal or .localhost.',
+    how: [
+      'A login counts as local when every address saved on it is a private, loopback or link-local IP, or a name with no dot or one ending in .local, .lan, .home, .home.arpa, .internal, .localhost or .localdomain.',
+      'A login with no address, or one saved for an app, is not local. Local logins are left out of the score and of every check but [[action.health_check_expiring|Expiring soon]].',
+    ],
     why: 'These sit behind your router, out of reach of the leaks and guessing the checks warn about, and many cannot use https or a second factor at all.',
     related: ['group.health.problems', 'screen.health'],
     words: 'local lan router nas intranet private ip firewall',
@@ -240,9 +283,13 @@ export const protection = [
     page: 'health',
     what: 'Lists logins whose password has turned up in a published leak. When there are any, they come first on the Health page.',
     how: 'This list fills only after you run [[action.check_every_password]] on the Breaches page. The results are never saved, so it empties when the vault locks.',
-    caveats: 'The browser extension cannot run that check, so there this list stays empty.',
     related: ['action.check_every_password', 'page.breaches'],
     words: 'breach leak pwned compromised',
+    on: {
+      android: {
+        how: 'This list fills only after you run [[action.check_every_password]] on the Breaches page. The results are kept in memory only, so it empties when WM Pass closes.',
+      },
+    },
   },
   {
     id: 'action.health_check_reused',
@@ -271,6 +318,7 @@ export const protection = [
     page: 'health',
     what: 'Lists logins saved with a web address that starts with http:// rather than https://.',
     why: 'On a plain http page, a password can be read on its way to the site. If the site offers https, change the saved address.',
+    caveats: 'An http address on the device itself, such as localhost, never crosses a network and is not listed. One on your home network is; [[setting.health_skip_local]] leaves those out.',
     words: 'http https insecure unencrypted address url',
   },
   {
@@ -321,7 +369,7 @@ export const protection = [
     kind: 'action',
     title: 'Maybe the same account',
     page: 'health',
-    shells: ['android'],
+    shells: ['android', 'desktop', 'extension'],
     what: 'Lists logins that share a password and look like one account saved twice.',
     how: [
       'Two logins with one password count when they are for the same site, or one is named for the other\'s site, and their usernames could be one person\'s:',
@@ -334,5 +382,9 @@ export const protection = [
     caveats: 'It is a guess from names and addresses. Look before you merge: the merge asks which value wins wherever the two differ.',
     related: ['action.health_check_duplicates', 'action.health_check_reused', 'action.merge_items'],
     words: 'similar same account twice email username spelling merge',
+    on: {
+      desktop: { caveats: 'It is a guess from names and addresses. There is no merge button for these here: open both, compare them, and move what you want to keep into one before you delete the other.' },
+      extension: { caveats: 'It is a guess from names and addresses. There is no merge button for these here: open both, compare them, and move what you want to keep into one before you delete the other.' },
+    },
   },
 ] as const satisfies readonly Topic[];

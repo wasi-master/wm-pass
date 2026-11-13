@@ -167,7 +167,8 @@ object WidgetFeed {
         if (health || data.value.health == null) refreshHealth()
         val prefs = Prefs.of(app)
         val favorites = if (allowed()) {
-            Pass.entries.value.filter { it.favourite && !it.trashed }.take(MAX_FAVORITES).map { FavoriteRow(it.id, it.title, it.color) }
+            // Never an item on the hidden shelf, even while it is open: the home screen is for anyone to see.
+            Pass.entries.value.filter { it.favourite && !it.trashed && !it.hidden }.take(MAX_FAVORITES).map { FavoriteRow(it.id, it.title, it.color) }
         } else {
             emptyList()
         }
@@ -225,7 +226,11 @@ object WidgetFeed {
 
     private suspend fun codeRows(): List<CodeRow> {
         val prefs = Prefs.of(app)
-        val ids = prefs.widgetCodes.ifEmpty { Pass.entries.value.filter { it.favourite && it.hasOtp && !it.trashed }.map { it.id } }.take(MAX_CODES)
+        // As with favorites, never an item on the hidden shelf or in the trash, even one picked
+        // for the widget before it was put there: the home screen is for anyone to see.
+        val visible = Pass.entries.value.filter { !it.trashed && !it.hidden }
+        val shown = visible.mapTo(HashSet()) { it.id }
+        val ids = prefs.widgetCodes.ifEmpty { visible.filter { it.favourite && it.hasOtp }.map { it.id } }.filter { it in shown }.take(MAX_CODES)
         if (ids.isEmpty()) return emptyList()
         val now = System.currentTimeMillis()
         val rows = Pass.codes(ids).filter { it.otp.kind != "hotp" }.associateBy { it.id }

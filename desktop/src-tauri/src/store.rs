@@ -5,6 +5,7 @@
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
 use serde::Serialize;
@@ -93,17 +94,28 @@ impl Store {
 }
 
 /// Written beside the target and moved over it, so a crash leaves the old file or the new one.
+/// Writes take turns: two at once to one file would share its part file and mix their bytes.
+/// One part name per file also means a part left by a crash is replaced by the next write
+/// rather than piling up beside a vault in a synced folder.
 pub fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    static TURN: Mutex<()> = Mutex::new(());
+    let _turn = TURN.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let parent = path.parent().ok_or("that path is not allowed")?;
     fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     let name = path.file_name().and_then(|n| n.to_str()).ok_or("that path is not allowed")?;
     let temporary = parent.join(format!("{name}.part"));
-    let mut file = fs::File::create(&temporary).map_err(|e| e.to_string())?;
-    restrict(&temporary);
-    file.write_all(bytes).map_err(|e| e.to_string())?;
-    file.sync_all().map_err(|e| e.to_string())?;
-    drop(file);
-    fs::rename(&temporary, path).map_err(|e| e.to_string())
+    let written = (|| {
+        let mut file = fs::File::create(&temporary)?;
+        restrict(&temporary);
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        fs::rename(&temporary, path)
+    })();
+    if written.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    written.map_err(|e| e.to_string())
 }
 
 /// Other users on this computer have no business here, even for ciphertext.
@@ -120,6 +132,26 @@ fn restrict(_path: &Path) {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn writes_at_once_to_one_file_each_land_whole() {
+        let folder = std::env::temp_dir().join(format!("wmpass-store-{}", std::process::id()));
+        let target = folder.join("vault");
+        let writers: Vec<_> = (0..8u8)
+            .map(|i| {
+                let target = target.clone();
+                std::thread::spawn(move || write_atomically(&target, &vec![i; 64 * 1024 + usize::from(i)]))
+            })
+            .collect();
+        for writer in writers {
+            writer.join().unwrap().unwrap();
+        }
+        let landed = fs::read(&target).unwrap();
+        assert_eq!(landed.len(), 64 * 1024 + usize::from(landed[0]));
+        assert!(landed.iter().all(|b| *b == landed[0]));
+        assert_eq!(fs::read_dir(&folder).unwrap().count(), 1, "no part file is left behind");
+        let _ = fs::remove_dir_all(&folder);
+    }
 
     #[test]
     fn paths_stay_inside() {

@@ -17,16 +17,24 @@
   let video = $state<HTMLVideoElement>();
   let picker = $state<HTMLInputElement>();
   let problem = $state<string | null>(null);
+  // Why a chosen picture gave nothing. Kept apart from the camera's problem, so the camera still
+  // shows and keeps reading after a picture with no code in it.
+  let pictureNote = $state<string | null>(null);
   let cameras = $state<[string, string][]>([]);
   let camera = $state('');
   let stream: MediaStream | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
   let reading = false;
   let done = false;
+  let turn = 0;
 
   $effect(() => {
     void start(camera);
-    return stop;
+    return () => {
+      // A camera still being asked for is let go when it arrives, as when the dialog goes away.
+      turn++;
+      stop();
+    };
   });
 
   function stop() {
@@ -38,13 +46,15 @@
 
   async function start(deviceId: string) {
     stop();
+    const mine = ++turn;
     problem = null;
     if (!navigator.mediaDevices?.getUserMedia) {
       problem = 'This window cannot use a camera. Choose a picture instead.';
       return;
     }
+    let got: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
+      got = await navigator.mediaDevices.getUserMedia({
         video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: 'environment', width: { ideal: 1280 } },
         audio: false,
       });
@@ -55,15 +65,23 @@
           : 'No camera was found. Choose a picture instead.';
       return;
     }
-    if (done) return stop();
+    // Another camera chosen, or the dialog closed, while this one was asked for: let it go, or
+    // the camera stays on with nothing to stop it.
+    if (done || mine !== turn) {
+      got.getTracks().forEach((t) => t.stop());
+      return;
+    }
+    stream = got;
     if (video) {
       video.srcObject = stream;
       await video.play().catch(() => undefined);
     }
     if (cameras.length === 0) {
-      const all = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
+      // Only for the menu of cameras: a list that cannot be had must not stop this one reading.
+      const all = (await navigator.mediaDevices.enumerateDevices().catch(() => [])).filter((d) => d.kind === 'videoinput');
       if (all.length > 1) cameras = all.map((d, n) => [d.deviceId, d.label || `Camera ${n + 1}`]);
     }
+    if (done || mine !== turn) return;
     timer = setInterval(() => void frame(), 250);
   }
 
@@ -88,13 +106,13 @@
   async function picture(event: Event) {
     const file = (event.target as HTMLInputElement).files?.[0];
     if (!file) return;
-    problem = null;
+    pictureNote = null;
     try {
       const texts = await qrInPicture(file);
-      if (texts.length === 0) problem = 'No QR code was found in that picture.';
+      if (texts.length === 0) pictureNote = 'No QR code was found in that picture.';
       else found(texts);
     } catch {
-      problem = 'That picture could not be read.';
+      pictureNote = 'That picture could not be read.';
     }
     (event.target as HTMLInputElement).value = '';
   }
@@ -110,8 +128,9 @@
       <video bind:this={video} muted playsinline class="viewfinder"></video>
       <p class="dim small">Hold the code up to the camera. It is read on this device.</p>
     {/if}
+    {#if pictureNote}<p class="dim">{pictureNote}</p>{/if}
     {#if cameras.length > 1}
-      <Select value={camera} options={cameras} onchange={(id) => (camera = id)} />
+      <Select value={camera} options={cameras} label="Camera" onchange={(id) => (camera = id)} />
     {/if}
     <input bind:this={picker} type="file" accept="image/*" hidden onchange={picture} />
   </div>

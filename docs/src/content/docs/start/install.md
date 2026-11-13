@@ -25,7 +25,7 @@ yay -S wm-pass-bin
 
 Desktop builds carry no Apple or Windows signature, so macOS and Windows warn the first time you open them. That also means the warning cannot tell you the file is genuine, so check it yourself. Every release has a `SHA256SUMS` file, and updater files carry a minisign signature against the public key in the app. Later updates verify that signature automatically and refuse a file that fails.
 
-On macOS, open the app with right-click, then Open. On Windows, choose More info, then Run anyway.
+On macOS 14 and earlier, open the app with right-click, then Open. On macOS 15 and later, try to open it once, then choose Open Anyway under System Settings, Privacy & Security. The Homebrew cask clears this warning for you. On Windows, choose More info, then Run anyway.
 
 ## Terminal
 
@@ -33,4 +33,4 @@ On macOS, open the app with right-click, then Open. On Windows, choose More info
 
 ## Browser
 
-Load the extension from its release zip, or from the store once it is listed. See [Browser extension](/apps/extension/).
+The extension's downloads are on the releases page under tags that start with `extension-v`. In Chrome, Edge or Brave, unzip `wm-pass-chrome.zip` and load the folder with Load unpacked on the browser's extensions page, with developer mode on. Firefox installs the signed `wm-pass-firefox.xpi`. See [Browser extension](/apps/extension/).

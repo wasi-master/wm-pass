@@ -13,6 +13,7 @@ fn failure(error: &HwError) -> SessionError {
         HwError::NotConfirmed => "not_confirmed",
         HwError::Unsupported => "unsupported",
         HwError::PinRequired => "pin_required",
+        HwError::PinBlocked => "pin_blocked",
         _ => "hardware",
     };
     let message = if matches!(error, HwError::Transport) {

@@ -114,8 +114,13 @@ fn qr_pairing_needs_the_secret_and_expires() {
     let scanned = PairingQr::parse(&text, 2000).unwrap();
     assert_eq!(scanned, qr);
     assert_eq!(scanned.address, "192.168.1.5:9000");
-    assert_eq!(PairingQr::parse(&text, 1000 + 120_001).err(), Some(LanError::Expired));
+    // A scanner whose clock runs a few minutes ahead can still read it; the showing device
+    // holds the code to its own clock.
+    assert!(PairingQr::parse(&text, 1000 + 120_000 + 300_000).is_ok());
+    assert_eq!(PairingQr::parse(&text, 1000 + 120_000 + 600_001).err(), Some(LanError::Expired));
     assert_eq!(PairingQr::parse("nonsense", 1).err(), Some(LanError::BadCode));
+    // Pasted with the line break a copy brings.
+    assert!(PairingQr::parse(&format!(" {text}\n"), 2000).is_ok());
 
     let (a, b) = (Identity::generate().unwrap(), Identity::generate().unwrap());
     let key_a = *a.public();
@@ -132,6 +137,23 @@ fn qr_pairing_needs_the_secret_and_expires() {
     let other = thread::spawn(move || qr.pair(right, &b, "B", Role::Responder, 2000).map(|_| ()));
     assert!(wrong.pair(left, &a, "A", Role::Initiator, 2000).is_err());
     assert!(other.join().unwrap().is_err());
+}
+
+#[test]
+fn a_scanner_with_a_clock_ahead_still_pairs_but_the_shower_keeps_its_own_time() {
+    let qr = PairingQr::new("192.168.1.5:9000", 1000).unwrap();
+    // The phone's clock is five minutes ahead of the computer showing the code.
+    let ahead = 1000 + 5 * 60_000;
+    let scanned = PairingQr::parse(&qr.text(), ahead).unwrap();
+    let (a, b) = (Identity::generate().unwrap(), Identity::generate().unwrap());
+    let (left, right) = linked();
+    let shown = qr.clone();
+    let other = thread::spawn(move || shown.pair(right, &b, "Laptop", Role::Responder, 2000));
+    assert_eq!(scanned.pair(left, &a, "Phone", Role::Initiator, ahead).unwrap().name, "Laptop");
+    assert!(other.join().unwrap().is_ok());
+    // On the showing device, the code stops working on time.
+    let (left, _right) = linked();
+    assert_eq!(qr.pair(left, &Identity::generate().unwrap(), "Laptop", Role::Responder, 1000 + 120_001).err(), Some(LanError::Expired));
 }
 
 #[test]
@@ -265,6 +287,89 @@ fn attachments_travel_and_nothing_else_can_be_requested() {
     assert!(!store_b.0.contains_key("private-unreferenced"));
     let opened = Vault::open_attachment(&record, &store_b.0[&record.blob]).unwrap();
     assert_eq!(opened.len(), 200_000);
+}
+
+/// Counts reads.
+#[derive(Default)]
+struct CountingBlobs {
+    inner: MemoryBlobs,
+    reads: std::cell::Cell<usize>,
+}
+
+impl BlobStore for CountingBlobs {
+    fn get(&self, name: &str) -> Option<Vec<u8>> {
+        self.reads.set(self.reads.get() + 1);
+        self.inner.get(name)
+    }
+    fn has(&self, name: &str) -> bool {
+        self.inner.0.contains_key(name)
+    }
+    fn put(&mut self, name: &str, bytes: &[u8]) -> wmpass_lan::Result<()> {
+        self.inner.put(name, bytes)
+    }
+}
+
+fn vaults_with_one_attachment() -> (Vault, Vault, String, Vec<u8>) {
+    let (mut a, mut b) = vault_pair();
+    let (record, sealed) = Vault::seal_attachment("scan.pdf", "application/pdf", &[7u8; 1000]).unwrap();
+    let at = a.tick(2000);
+    let mut entry = login_entry("With file", "u", "p", at);
+    entry.common.attachments = Lww::new(vec![record.clone()], at);
+    a.add(entry, 2000).unwrap();
+    let (ia, ib, ta, tb) = peers();
+    run_sync(&mut a, &mut b, &ia, &ib, &ta, &tb);
+    (a, b, record.blob, sealed)
+}
+
+#[test]
+fn attachments_both_ends_hold_are_not_read_to_check_for_them() {
+    let (mut a, mut b, blob, sealed) = vaults_with_one_attachment();
+    let (ia, ib, ta, tb) = peers();
+    let mut store_a = CountingBlobs::default();
+    store_a.inner.0.insert(blob.clone(), sealed.clone());
+    let mut store_b = CountingBlobs::default();
+    store_b.inner.0.insert(blob, sealed);
+    let (left, right) = linked();
+    thread::scope(|scope| {
+        let other = scope.spawn(|| sync(right, &ib, &tb, &mut b, &mut store_b, Role::Responder).unwrap());
+        sync(left, &ia, &ta, &mut a, &mut store_a, Role::Initiator).unwrap();
+        other.join().unwrap();
+    });
+    assert_eq!((store_a.reads.get(), store_b.reads.get()), (0, 0));
+}
+
+#[test]
+fn each_blob_sent_is_read_once() {
+    let (mut a, mut b, blob, sealed) = vaults_with_one_attachment();
+    let (ia, ib, ta, tb) = peers();
+    let mut store_a = CountingBlobs::default();
+    store_a.inner.0.insert(blob.clone(), sealed);
+    let mut store_b = CountingBlobs::default();
+    let (left, right) = linked();
+    let report = thread::scope(|scope| {
+        let other = scope.spawn(|| sync(right, &ib, &tb, &mut b, &mut store_b, Role::Responder).unwrap());
+        let mine = sync(left, &ia, &ta, &mut a, &mut store_a, Role::Initiator).unwrap();
+        other.join().unwrap();
+        mine
+    });
+    assert_eq!((report.blobs_sent, store_a.reads.get()), (1, 1));
+    assert!(store_b.inner.0.contains_key(&blob));
+}
+
+#[test]
+fn an_answer_this_version_cannot_read_is_named_as_a_version_mismatch() {
+    let (ia, ib, ta, _) = peers();
+    let (left, right) = linked();
+    let outcome = thread::scope(|scope| {
+        scope.spawn(|| {
+            // A device that speaks differently: it answers with something this one cannot read.
+            let mut channel = Channel::handshake(right, &ib, Role::Responder, None).unwrap();
+            let _ = channel.recv();
+            let _ = channel.send_value(&"SomethingNewer");
+        });
+        wmpass_lan::sync::connect(left, &ia, &ta).err()
+    });
+    assert_eq!(outcome.map(|f| (f.error, f.key)), Some((LanError::Version, Some(*ib.public()))));
 }
 
 #[test]
@@ -585,4 +690,67 @@ fn a_plain_sync_end_turns_a_merge_down() {
     });
     assert_eq!(asked.err().map(|f| f.error), Some(LanError::Declined));
     assert_eq!(waited.err().map(|f| f.error), Some(LanError::Declined));
+}
+
+/// Says it holds a blob, then cannot read it, as a store with a damaged file does.
+struct Unreadable(String);
+
+impl BlobStore for Unreadable {
+    fn get(&self, _: &str) -> Option<Vec<u8>> {
+        None
+    }
+    fn has(&self, name: &str) -> bool {
+        name == self.0
+    }
+    fn put(&mut self, _: &str, _: &[u8]) -> wmpass_lan::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn an_attachment_that_cannot_be_read_stops_the_sync_at_once_instead_of_stalling() {
+    let (mut a, mut b, blob, _) = vaults_with_one_attachment();
+    let (ia, ib, ta, tb) = peers();
+    let mut store_a = Unreadable(blob);
+    let mut store_b = MemoryBlobs::default();
+    let (left, right) = linked();
+    let started = std::time::Instant::now();
+    let (mine, theirs) = thread::scope(|scope| {
+        let other = scope.spawn(|| sync(right, &ib, &tb, &mut b, &mut store_b, Role::Responder));
+        let mine = sync(left, &ia, &ta, &mut a, &mut store_a, Role::Initiator);
+        (mine, other.join().unwrap())
+    });
+    assert_eq!(mine.err().map(|f| f.error), Some(LanError::Core));
+    assert_eq!(theirs.err().map(|f| f.error), Some(LanError::Io));
+    assert!(started.elapsed() < std::time::Duration::from_secs(10), "neither end waited for its socket to time out");
+}
+
+#[test]
+fn a_new_device_is_not_left_waiting_for_an_attachment_that_cannot_be_read() {
+    use wmpass_lan::join::{arrive, send_by_qr};
+    let (mut vault, _) = vault_pair();
+    let file = vault.save().unwrap();
+    let (old, new) = (Identity::generate().unwrap(), Identity::generate().unwrap());
+    let qr = PairingQr::new("127.0.0.1:1", 1000).unwrap();
+    let scanned = PairingQr::parse(&qr.text(), 1000).unwrap();
+    let (left, right) = linked();
+    let started = std::time::Instant::now();
+    let sender = thread::spawn(move || {
+        let held = Unreadable("abc123".into());
+        send_by_qr(left, &scanned, &old, "Phone", 1000, &file, &["abc123".to_owned()], &held)
+    });
+    let arrived = arrive(right, &new, "Mac", Some(&qr), 1000, &mut Shelf::default());
+    assert_eq!(sender.join().unwrap().err(), Some(LanError::Core));
+    assert_eq!(arrived.err(), Some(LanError::Io));
+    assert!(started.elapsed() < std::time::Duration::from_secs(10));
+}
+
+#[test]
+fn qr_handover_codes_survive_a_stray_space_or_line_break() {
+    let at = wmpass_core::clock::Hlc { ms: 5, counter: 0, device: 1 };
+    let entry = login_entry("Wi-Fi at home", "u", "hunter2", at);
+    let receiver = ShareReceiver::new(1000).unwrap();
+    let sealed = seal_to_offer(&format!(" {}\n", receiver.offer_text()), &entry, 2000).unwrap();
+    let got = receiver.open(&format!("{sealed}\r\n"), 3000).unwrap();
+    assert_eq!(got.login().unwrap().password.v.expose(), "hunter2");
 }

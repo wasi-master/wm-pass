@@ -90,7 +90,9 @@ fun ShieldMark(state: ShieldState, modifier: Modifier = Modifier, typed: Int = 0
     val markFrom = if (flat) Color(0xFF10B981) else colors.brandFrom
     val markTo = if (flat) Color(0xFF0D9488) else colors.brandTo
     val loop = rememberInfiniteTransition(label = "shield")
-    val breathe by if (flat) {
+    // Breathing is only ornament, so it rests when motion is reduced; the comet stays, as it says
+    // that work is under way.
+    val breathe by if (flat || reduce) {
         remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     } else {
         loop.animateFloat(0f, 1f, infiniteRepeatable(tween(3600, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "breathe")

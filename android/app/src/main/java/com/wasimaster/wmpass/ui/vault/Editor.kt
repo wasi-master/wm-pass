@@ -2,6 +2,10 @@
 
 package com.wasimaster.wmpass.ui.vault
 
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.contentDescription
+import com.wasimaster.wmpass.ui.parts.announced
 import com.wasimaster.wmpass.ui.theme.readableWidth
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -29,6 +33,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicSecureTextField
 import androidx.compose.foundation.text.BasicTextField
@@ -96,6 +101,7 @@ import com.wasimaster.wmpass.ui.parts.PrimaryButton
 import com.wasimaster.wmpass.ui.parts.RowIconButton
 import com.wasimaster.wmpass.ui.parts.SiteTile
 import com.wasimaster.wmpass.ui.parts.StrengthBar
+import com.wasimaster.wmpass.ui.parts.kindInSentence
 import com.wasimaster.wmpass.ui.parts.kindName
 import com.wasimaster.wmpass.ui.parts.oklch
 import com.wasimaster.wmpass.ui.parts.secretSemantics
@@ -126,6 +132,8 @@ private class EditField(val spec: FieldView) {
     var loaded by mutableStateOf(!spec.hasValue)
     var original: String = spec.text
     var showing by mutableStateOf(false)
+    /** A choice filled in for a new item, such as a Wi-Fi network's security. Not an edit of its own. */
+    var preset: String? = null
 
     val changed: Boolean
         get() = when {
@@ -159,6 +167,12 @@ private class EditCustom(val existing: CustomFieldView?, hidden: Boolean) {
 private class EditQuestion(val index: Int?, question: String) {
     val question = TextFieldState(question)
     val answer = TextFieldState("")
+    /** The wording saved, to tell a reworded question from one left alone. */
+    val original = question
+    var remove by mutableStateOf(false)
+    var showing by mutableStateOf(false)
+
+    val reworded: Boolean get() = index != null && question.text.toString().trim() != original.trim()
 }
 
 /** A file chosen before saving. It is read and sealed into the vault only when the item is saved. */
@@ -288,9 +302,12 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
             val field = fields.firstOrNull { it.spec.input == "password" }
             if (field != null && field.text.text.isEmpty()) {
                 val made = GenState.fromPrefs(shell.prefs)
-                made.roll()
+                // A courtesy: a generator that fails leaves the field empty to type in, not a crash.
+                if (runCatching { made.roll() }.isFailure || made.value.isEmpty()) return@LaunchedEffect
                 field.text.setTextAndPlaceCursorAtEnd(made.value)
                 field.loaded = true
+                // Filled in, not typed: backing out of an otherwise empty form asks nothing.
+                field.preset = made.value
             }
         }
     }
@@ -315,6 +332,8 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
     var generating by remember { mutableStateOf<EditField?>(null) }
     var aliasFor by remember { mutableStateOf<EditField?>(null) }
     var askDiscard by remember { mutableStateOf(false) }
+    /** The private key field a new key would replace, waiting on a yes. */
+    var askNewKey by remember { mutableStateOf<EditField?>(null) }
     val titleFocus = remember { FocusRequester() }
 
     // The buttons that fill a card or a network from elsewhere. WM Keyboard offers the same on its
@@ -351,7 +370,14 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
 
     LaunchedEffect(entryId, newKind) {
         if (entryId != null) {
-            val d = Pass.detail(entryId)
+            // Gone since the edit began, as an item another device deleted: back, not a crash.
+            val d = try {
+                Pass.detail(entryId)
+            } catch (_: NativeFailure) {
+                shell.notice("That item is no longer in this vault")
+                shell.nav.popBackStack()
+                return@LaunchedEffect
+            }
             detail = d
             kind = d.kind
             title.setTextAndPlaceCursorAtEnd(d.title)
@@ -375,18 +401,38 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
             tags = d.tags
             otpOpen = d.otp != null
             // A note's body is what you came to edit, so it opens straight away.
+            // One that cannot be read, as when the vault locks meanwhile, is said under it and left to a tap.
             fields.firstOrNull { it.spec.key == "body" && it.spec.hasValue }?.let { body ->
-                val text = Pass.reveal(entryId, "body").consumeText()
-                body.text.setTextAndPlaceCursorAtEnd(text)
-                body.original = text
-                body.loaded = true
+                try {
+                    val text = Pass.reveal(entryId, "body").consumeText()
+                    body.text.setTextAndPlaceCursorAtEnd(text)
+                    body.original = text
+                    body.loaded = true
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    error = failure.message ?: "Could not read this field"
+                    errorAt = body
+                }
             }
         } else {
-            val spec = Pass.kinds().firstOrNull { it.kind == newKind }
+            // Without the kind's table there is no form to fill: back, with a word, rather than a crash.
+            val spec = try {
+                Pass.kinds().firstOrNull { it.kind == newKind }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                shell.notice("Could not start a new item")
+                shell.nav.popBackStack()
+                return@LaunchedEffect
+            }
             fields.addAll(
                 spec?.fields.orEmpty().map { f ->
                     EditField(FieldView(f.key, f.label, f.input, f.secret, f.choices, f.suggestions)).also { field ->
-                        if (f.input == "choice" && f.choices.isNotEmpty()) field.text.setTextAndPlaceCursorAtEnd(f.choices.first())
+                        if (f.input == "choice" && f.choices.isNotEmpty()) {
+                            field.text.setTextAndPlaceCursorAtEnd(f.choices.first())
+                            field.preset = f.choices.first()
+                        }
                     }
                 },
             )
@@ -433,10 +479,23 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
         }
     }
 
+    /** A new SSH key pair in place of the fields' key, public half and fingerprint. */
+    fun newKey(field: EditField) {
+        shell.launch {
+            val reply = com.wasimaster.wmpass.core.Engine.call("ssh.new", args = { put("comment", title.text.toString()) })
+            field.text.setTextAndPlaceCursorAtEnd(reply.secret!!.consumeText())
+            field.loaded = true
+            fields.firstOrNull { it.spec.key == "public_key" }?.text?.setTextAndPlaceCursorAtEnd(reply.obj["public_key"]!!.jsonPrimitive.content)
+            fields.firstOrNull { it.spec.key == "fingerprint" }?.text?.setTextAndPlaceCursorAtEnd(reply.obj["fingerprint"]!!.jsonPrimitive.content)
+            shell.haptics.confirm()
+        }
+    }
+
     /** A code that wants a username and password too becomes a login, keeping its code. */
     fun becomeLogin() {
         scope.launch {
-            val spec = Pass.kinds().firstOrNull { it.kind == "login" } ?: return@launch
+            // A table that cannot be read leaves the form as it is, rather than closing the app.
+            val spec = runCatching { Pass.kinds() }.getOrNull()?.firstOrNull { it.kind == "login" } ?: return@launch
             fields.clear()
             fields.addAll(spec.fields.map { f -> EditField(FieldView(f.key, f.label, f.input, f.secret, f.choices, f.suggestions)) })
             if (sites.isEmpty()) sites.add(TextFieldState() to null)
@@ -482,21 +541,23 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
         if (blank != null) blank.first.setTextAndPlaceCursorAtEnd(site) else sites.add(TextFieldState(site) to null)
     }
 
-    val dirty = fields.any { it.changed } ||
+    val dirty = fields.any { it.changed && (it.preset == null || it.text.text.toString() != it.preset) } ||
         title.text.toString() != (detail?.title ?: presetTitle) ||
         sites.any { it.second == null && it.first.text.isNotBlank() } ||
         otpSeed.text.isNotEmpty() ||
         (notesLoaded && notes.text.toString() != notesOriginal) ||
         customs.any { it.existing == null || it.remove || it.valueChanged || it.metaChanged } ||
-        questions.any { it.answer.text.isNotEmpty() } ||
+        questions.any { it.answer.text.isNotEmpty() || it.remove || it.reworded } ||
         color != detail?.color || icon != detail?.icon || folder != detail?.folder || favourite != (detail?.favourite ?: false) || tags != detail?.tags.orEmpty() ||
         apps.toList() != detail?.sites.orEmpty().filter(::isApp) || files.isNotEmpty() || links.toList() != detail?.links.orEmpty() ||
         remindDays != detail?.reminders?.changeEveryDays || (detail != null && kind != detail?.kind)
 
     fun leave() {
+        // A save under way pops the editor itself when it is done; leaving as well would pop twice.
+        if (saving) return
         if (dirty) askDiscard = true else shell.nav.popBackStack()
     }
-    BackHandler(dirty && !saving) { askDiscard = true }
+    BackHandler(dirty || saving) { if (!saving) askDiscard = true }
 
     fun save() {
         if (saving) return
@@ -614,16 +675,36 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                     written.add(custom)
                     removedAny = true
                 }
-                questions.filter { it.answer.text.isNotEmpty() && it.question.text.isNotBlank() && it !in written }.forEach { q ->
+                questions.filter { !it.remove && it.question.text.isNotBlank() && it !in written }.forEach { q ->
                     step = q
-                    val bytes = q.answer.text.toString().toByteArray()
-                    Pass.change("entry.question_set", secret = bytes) {
-                        put("id", id)
-                        q.index?.let { put("index", it) }
-                        put("question", q.question.text.toString().trim())
+                    if (q.answer.text.isNotEmpty()) {
+                        val bytes = q.answer.text.toString().toByteArray()
+                        Pass.change("entry.question_set", secret = bytes) {
+                            put("id", id)
+                            q.index?.let { put("index", it) }
+                            put("question", q.question.text.toString().trim())
+                        }
+                        bytes.fill(0)
+                        written.add(q)
+                    } else if (q.reworded) {
+                        // New wording only: the saved answer stays as it is.
+                        Pass.change("entry.question_set") {
+                            put("id", id)
+                            put("index", q.index!!)
+                            put("question", q.question.text.toString().trim())
+                            put("keep_answer", true)
+                        }
+                        written.add(q)
                     }
-                    bytes.fill(0)
-                    if (q.index == null) written.add(q)
+                }
+                // Removed last and from the end, so the indexes written above still pointed at the right ones.
+                questions.filter { it.remove && it.index != null && it !in written }.sortedByDescending { it.index!! }.forEach { q ->
+                    step = null
+                    Pass.change("entry.question_remove") {
+                        put("id", id)
+                        put("index", q.index!!)
+                    }
+                    written.add(q)
                 }
                 step = null
                 Pass.change("entry.common") {
@@ -649,14 +730,14 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                 }
                 files.filter { it !in written }.forEach { file ->
                     step = file
+                    // A file that opens to nothing, as one deleted since it was chosen, is an error
+                    // under it, not an attachment quietly left out.
                     val bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                         context.contentResolver.openInputStream(file.uri)?.use { it.readBytes() }
-                    }
-                    if (bytes != null) {
-                        Pass.addAttachment(id, file.name, file.mime, bytes)
-                        bytes.fill(0)
-                        written.add(file)
-                    }
+                    } ?: throw java.io.FileNotFoundException(file.name)
+                    Pass.addAttachment(id, file.name, file.mime, bytes)
+                    bytes.fill(0)
+                    written.add(file)
                 }
                 step = null
                 // Tagged by its site, such as Banking or Social; the kind already says it is a card or a code.
@@ -682,6 +763,15 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                 error = failure.message
                 errorAt = step
                 saving = false
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                // A file that can no longer be read, or a vault that locked meanwhile, says so instead of
+                // closing the app with the form half saved.
+                shell.haptics.reject()
+                error = (step as? PendingFile)?.let { "Could not read ${it.name}" } ?: failure.message ?: "Could not save this item"
+                errorAt = step
+                saving = false
             }
         }
     }
@@ -690,7 +780,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
         Column(Modifier.fillMaxSize().imePadding()) {
             if (colors.flat) {
                 androidx.compose.material3.TopAppBar(
-                    title = { Text(if (entryId == null) "New ${kindName(kind).lowercase()}" else "Edit ${kindName(kind).lowercase()}") },
+                    title = { Text(if (entryId == null) "New ${kindInSentence(kind)}" else "Edit ${kindInSentence(kind)}") },
                     navigationIcon = {
                         androidx.compose.material3.IconButton(onClick = { leave() }) { Icon(PassIcons.Close, "Close") }
                     },
@@ -726,17 +816,17 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                     SiteTile(title.text.toString().ifEmpty { derived }, seedSite, kind, size = 72.dp, label = color, icon = icon)
                     Spacer(Modifier.height(14.dp))
                     Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
-                        if (title.text.isEmpty()) {
-                            Text(
-                                derived.ifEmpty { "Name" },
-                                color = colors.textLow,
-                                style = MaterialTheme.typography.headlineMedium,
-                                textAlign = TextAlign.Center,
-                            )
-                        }
                         BasicTextField(
                             title,
                             Modifier.fillMaxWidth().focusRequester(titleFocus),
+                            decorator = com.wasimaster.wmpass.ui.parts.placeholderDecorator(title, name = "Name") {
+                                Text(
+                                    derived.ifEmpty { "Name" },
+                                    color = colors.textLow,
+                                    style = MaterialTheme.typography.headlineMedium,
+                                    textAlign = TextAlign.Center,
+                                )
+                            },
                             textStyle = MaterialTheme.typography.headlineMedium.copy(color = colors.text, textAlign = TextAlign.Center),
                             cursorBrush = SolidColor(colors.primary),
                             lineLimits = TextFieldLineLimits.SingleLine,
@@ -744,7 +834,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                         )
                     }
                     Text(
-                        if (entryId == null) "New ${kindName(kind).lowercase()}" else kindName(kind),
+                        if (entryId == null) "New ${kindInSentence(kind)}" else kindName(kind),
                         color = colors.textMid,
                         style = MaterialTheme.typography.bodyMedium,
                     )
@@ -761,14 +851,9 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                                     onAlias = if (field.spec.key == "username") ({ aliasFor = field }) else null,
                                     onSsh = if (field.spec.key == "private_key") {
                                         {
-                                            shell.launch {
-                                                val reply = com.wasimaster.wmpass.core.Engine.call("ssh.new", args = { put("comment", title.text.toString()) })
-                                                field.text.setTextAndPlaceCursorAtEnd(reply.secret!!.consumeText())
-                                                field.loaded = true
-                                                fields.firstOrNull { it.spec.key == "public_key" }?.text?.setTextAndPlaceCursorAtEnd(reply.obj["public_key"]!!.jsonPrimitive.content)
-                                                fields.firstOrNull { it.spec.key == "fingerprint" }?.text?.setTextAndPlaceCursorAtEnd(reply.obj["fingerprint"]!!.jsonPrimitive.content)
-                                                shell.haptics.confirm()
-                                            }
+                                            // A key already there, saved or typed, is asked about first: one tap
+                                            // would otherwise replace it, and its public half, unseen.
+                                            if ((field.spec.hasValue && !field.loaded) || field.text.text.isNotEmpty()) askNewKey = field else newKey(field)
                                         }
                                     } else {
                                         null
@@ -836,10 +921,10 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                                     Icon(PassIcons.Language, null, tint = colors.textMid, modifier = Modifier.size(20.dp))
                                     Spacer(Modifier.width(14.dp))
                                     Box(Modifier.weight(1f).heightIn(min = 40.dp), contentAlignment = Alignment.CenterStart) {
-                                        if (state.text.isEmpty()) Text("example.com", color = colors.textLow, style = MaterialTheme.typography.bodyLarge)
                                         BasicTextField(
                                             state,
                                             Modifier.fillMaxWidth(),
+                                            decorator = com.wasimaster.wmpass.ui.parts.placeholderDecorator(state) { Text("example.com", color = colors.textLow, style = MaterialTheme.typography.bodyLarge) },
                                             textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.text),
                                             cursorBrush = SolidColor(colors.primary),
                                             lineLimits = TextFieldLineLimits.SingleLine,
@@ -926,16 +1011,16 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                                     Text("Setup key or otpauth link", color = colors.textLow, style = MaterialTheme.typography.labelMedium)
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Box(Modifier.weight(1f).heightIn(min = 44.dp), contentAlignment = Alignment.CenterStart) {
-                                            if (otpSeed.text.isEmpty()) {
-                                                Text(
-                                                    if (detail?.otp != null) "Saved. Type to replace it" else "JBSWY3DPEHPK3PXP",
-                                                    color = colors.textLow,
-                                                    style = MaterialTheme.typography.bodyLarge,
-                                                )
-                                            }
                                             BasicTextField(
                                                 otpSeed,
                                                 Modifier.fillMaxWidth(),
+                                                decorator = com.wasimaster.wmpass.ui.parts.placeholderDecorator(otpSeed) {
+                                                    Text(
+                                                        if (detail?.otp != null) "Saved. Type to replace it" else "JBSWY3DPEHPK3PXP",
+                                                        color = colors.textLow,
+                                                        style = MaterialTheme.typography.bodyLarge,
+                                                    )
+                                                },
                                                 textStyle = TextStyle(fontFamily = MonoFamily, fontSize = 16.sp, color = colors.text),
                                                 cursorBrush = SolidColor(colors.primary),
                                                 lineLimits = TextFieldLineLimits.SingleLine,
@@ -966,10 +1051,10 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                                 )
                             } else if (notesLoaded) {
                                 Box(Modifier.padding(horizontal = 18.dp, vertical = 14.dp).heightIn(min = 54.dp)) {
-                                    if (notes.text.isEmpty()) Text("Anything worth remembering", color = colors.textLow, style = MaterialTheme.typography.bodyLarge)
                                     BasicTextField(
                                         notes,
                                         Modifier.fillMaxWidth(),
+                                        decorator = com.wasimaster.wmpass.ui.parts.placeholderDecorator(notes) { Text("Anything worth remembering", color = colors.textLow, style = MaterialTheme.typography.bodyLarge) },
                                         textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.text),
                                         cursorBrush = SolidColor(colors.primary),
                                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
@@ -979,12 +1064,20 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                                 AddLine(if (detail?.hasNotes == true) "Edit notes" else "Add notes", if (detail?.hasNotes == true) PassIcons.Edit else PassIcons.Add) {
                                     val existing = detail
                                     scope.launch {
-                                        if (existing?.hasNotes == true) {
-                                            val text = Pass.reveal(existing.id, "notes").consumeText()
-                                            notes.setTextAndPlaceCursorAtEnd(text)
-                                            notesOriginal = text
+                                        try {
+                                            if (existing?.hasNotes == true) {
+                                                val text = Pass.reveal(existing.id, "notes").consumeText()
+                                                notes.setTextAndPlaceCursorAtEnd(text)
+                                                notesOriginal = text
+                                            }
+                                            notesLoaded = true
+                                            if (errorAt == "notes") error = null
+                                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                            throw cancelled
+                                        } catch (failure: Exception) {
+                                            error = failure.message ?: "Could not read the notes"
+                                            errorAt = "notes"
                                         }
-                                        notesLoaded = true
                                     }
                                 }
                             }
@@ -1017,31 +1110,43 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                             AddLine("Add a secret field", PassIcons.Password) { customs.add(EditCustom(null, true)) }
                         }
                     }
-                    if (kind == "login") Appear(questions.isNotEmpty() || "questions" in added || "questions" in opened) {
-                        EditorFold("questions", "Security questions", if (questions.isEmpty()) null else "${questions.size}", "questions" in added, opensFor = questions.any { it === errorAt }) {
+                    val questionCount = questions.count { !it.remove }
+                    if (kind == "login") Appear(questionCount > 0 || "questions" in added || "questions" in opened) {
+                        EditorFold("questions", "Security questions", if (questionCount == 0) null else "$questionCount", "questions" in added, opensFor = questions.any { it === errorAt }) {
+                            val first = questions.indexOfFirst { !it.remove }
                             questions.forEachIndexed { index, q ->
-                                if (index > 0) Hairline()
-                                Column(Modifier.padding(horizontal = 18.dp, vertical = 12.dp)) {
-                                    PlainField(q.question, "Question")
-                                    Spacer(Modifier.height(8.dp))
-                                    PlainField(q.answer, if (q.index != null) "Saved. Type to replace the answer" else "Answer", mono = true)
+                                if (q.remove) return@forEachIndexed
+                                if (index > first) Hairline()
+                                Row(Modifier.padding(start = 18.dp, end = 6.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        PlainField(q.question, "Question")
+                                        Spacer(Modifier.height(8.dp))
+                                        // An answer is as good as a password to whoever reads it over a shoulder.
+                                        SecretLine(q.answer, if (q.index != null) "Saved. Type to replace the answer" else "Answer", q.showing)
+                                    }
+                                    Column {
+                                        RowIconButton(PassIcons.Close, "Remove question") {
+                                            if (q.index == null) questions.remove(q) else q.remove = true
+                                        }
+                                        RowIconButton(if (q.showing) PassIcons.VisibilityOff else PassIcons.Visibility, if (q.showing) "Hide answer" else "Show answer") { q.showing = !q.showing }
+                                    }
                                 }
                                 FieldError(error.takeIf { errorAt === q })
                             }
-                            if (questions.isNotEmpty()) Hairline()
+                            if (questionCount > 0) Hairline()
                             AddLine("Add a question") { questions.add(EditQuestion(null, "")) }
                         }
                     }
                     val hasPasswordField = fields.any { it.spec.input == "password" }
                     Appear(hasPasswordField && (remindDays != null || "reminder" in added)) {
-                        EditorFold("reminder", "Change reminder", remindDays?.let { "Every $it days" } ?: "Off", "reminder" in added) {
+                        EditorFold("reminder", "Change reminder", remindDays?.let { if (it == 1) "Every day" else "Every $it days" } ?: "Off", "reminder" in added) {
                             FlowRow(
                                 Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
                                 Pill("Off", remindDays == null) { remindDays = null }
-                                listOf(30, 90, 180, 365).forEach { days -> Pill("Every $days days", remindDays == days) { remindDays = days } }
+                                (listOf(30, 90, 180, 365) + listOfNotNull(detail?.reminders?.changeEveryDays)).distinct().sorted().forEach { days -> Pill(if (days == 1) "Every day" else "Every $days days", remindDays == days) { remindDays = days } }
                             }
                         }
                     }
@@ -1107,28 +1212,31 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                             }
                         }
                         Hairline(inset = 58.dp)
+                        // One switch to a screen reader: the row toggles, and the switch only shows it.
                         Row(
                             Modifier
                                 .fillMaxWidth()
-                                .clickable { favourite = !favourite }
+                                .toggleable(favourite, role = androidx.compose.ui.semantics.Role.Switch) { favourite = it }
                                 .padding(start = 18.dp, end = 14.dp, top = 8.dp, bottom = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Icon(if (favourite) PassIcons.StarFilled else PassIcons.Star, null, tint = if (favourite) colors.warn else colors.textMid, modifier = Modifier.size(22.dp))
                             Spacer(Modifier.width(18.dp))
                             Text("Favorite", color = colors.text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                            PassSwitch(favourite) { favourite = it }
+                            PassSwitch(favourite, null)
                         }
                     }
                     // Everything an item can also hold waits behind one line instead of a stack of empty sections.
                     if (!colors.flat) Spacer(Modifier.height(10.dp)) else Spacer(Modifier.height(8.dp))
                     GroupCard(plain = true) { AddLine("Add more", PassIcons.Add) { sheet = "more" } }
                 }
-                Spacer(Modifier.height(24.dp))
+                // The standard look has no bar below the form, so its end clears the navigation bar
+                // itself; the error line, when there is one, already does.
+                Spacer((if (colors.flat && !(error != null && errorAt == null)) Modifier.navigationBarsPadding() else Modifier).height(24.dp))
             }
             // Saving stays under the thumb, above the keyboard when there is one.
             if (colors.flat && error != null && errorAt == null) {
-                Text(error.orEmpty(), color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.navigationBarsPadding().padding(16.dp))
+                Text(error.orEmpty(), color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced().navigationBarsPadding().padding(16.dp))
             }
             if (!colors.flat) Column(Modifier.navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 10.dp)) {
                 AnimatedVisibility(error != null && errorAt == null) {
@@ -1136,7 +1244,7 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
                         error.orEmpty(),
                         color = colors.danger,
                         style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, bottom = 8.dp),
+                        modifier = Modifier.fillMaxWidth().announced().padding(start = 6.dp, end = 6.dp, bottom = 8.dp),
                     )
                 }
                 PrimaryButton(if (entryId == null) "Save" else "Save changes", Modifier.fillMaxWidth().helpAnchor("editor.save"), enabled = ready && !saving && (dirty || entryId == null)) { save() }
@@ -1198,7 +1306,22 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
         "app" -> AppPickerSheet({ sheet = null }) { pkg, label -> addApp(pkg, label) }
         "link" -> PassSheet({ sheet = null }, "Link to") {
             val everything by Pass.entries.collectAsStateWithLifecycle()
-            everything.filter { it.id != entryId }.take(80).forEach { other ->
+            // Searched, since only the first few dozen are listed: any item must be reachable.
+            val query = androidx.compose.foundation.text.input.rememberTextFieldState()
+            SheetField(query, "Search items")
+            Spacer(Modifier.height(8.dp))
+            val typed = query.text.toString().trim()
+            val matching = everything.filter { it.id != entryId && (typed.isEmpty() || it.title.contains(typed, true) || it.subtitle.contains(typed, true)) }
+            // An empty list says why, rather than leaving a blank sheet under the search.
+            if (matching.isEmpty()) {
+                Text(
+                    if (typed.isEmpty()) "There are no other items to link to yet." else "No item matches “$typed”.",
+                    color = colors.textMid,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(8.dp),
+                )
+            }
+            matching.take(80).forEach { other ->
                 SheetRow(com.wasimaster.wmpass.ui.parts.kindIcon(other.kind), other.title, other.subtitle.ifEmpty { null }, selected = other.id in links) {
                     if (!links.remove(other.id)) links.add(other.id)
                 }
@@ -1231,8 +1354,20 @@ fun EditorScreen(entryId: String?, newKind: String?, presetTitle: String = "") {
             generating = null
         }
     }
+    askNewKey?.let { field ->
+        ConfirmSheet(
+            "Replace this key?",
+            "A new key pair takes the place of the one here once you save. Servers that know the old public key will not accept the new one until you add it there.",
+            "Make a new key",
+            icon = PassIcons.Key,
+            onDismiss = { askNewKey = null },
+        ) {
+            askNewKey = null
+            newKey(field)
+        }
+    }
     if (askDiscard) {
-        ConfirmSheet("Discard changes?", "Your edits to this item will be lost.", "Discard", onDismiss = { askDiscard = false }) {
+        ConfirmSheet("Discard changes?", if (entryId == null) "This new item has not been saved and will be lost." else "Your edits to this item will be lost.", "Discard", icon = PassIcons.Close, onDismiss = { askDiscard = false }) {
             shell.nav.popBackStack()
         }
     }
@@ -1272,7 +1407,9 @@ private fun EditorFold(key: String, title: String, summary: String?, startOpen: 
         Row(
             Modifier
                 .fillMaxWidth()
-                .clickable {
+                // Read as open or folded, and what a tap will do, rather than through the chevron's name.
+                .semantics { stateDescription = if (open) "Expanded" else "Collapsed" }
+                .clickable(onClickLabel = if (open) "Fold" else "Open") {
                     shell.haptics.tick()
                     open = !open
                     if (prefs.editorRemember.value) prefs.setEditorOpen(key, open)
@@ -1288,7 +1425,7 @@ private fun EditorFold(key: String, title: String, summary: String?, startOpen: 
             }
             Icon(
                 PassIcons.ExpandMore,
-                if (open) "Fold $title" else "Open $title",
+                null,
                 tint = colors.textMid,
                 modifier = Modifier.graphicsLayer { rotationZ = turn },
             )
@@ -1326,7 +1463,7 @@ private fun FieldError(message: String?) {
             message.orEmpty(),
             color = colors.danger,
             style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.fillMaxWidth().bringIntoViewRequester(requester).padding(start = 18.dp, end = 16.dp, top = 2.dp, bottom = 10.dp),
+            modifier = Modifier.fillMaxWidth().announced().bringIntoViewRequester(requester).padding(start = 18.dp, end = 16.dp, top = 2.dp, bottom = 10.dp),
         )
     }
 }
@@ -1498,11 +1635,12 @@ private fun OptionLine(icon: androidx.compose.ui.graphics.vector.ImageVector, ti
 }
 
 @Composable
-fun PassSwitch(checked: Boolean, onChange: (Boolean) -> Unit) {
+fun PassSwitch(checked: Boolean, onChange: ((Boolean) -> Unit)?, modifier: Modifier = Modifier) {
     val colors = palette
     Switch(
         checked,
         onChange,
+        modifier = modifier,
         colors = SwitchDefaults.colors(
             checkedTrackColor = colors.primary,
             checkedThumbColor = colors.onPrimary,
@@ -1514,7 +1652,7 @@ fun PassSwitch(checked: Boolean, onChange: (Boolean) -> Unit) {
 }
 
 @Composable
-private fun PlainField(state: TextFieldState, hint: String, mono: Boolean = false) {
+private fun PlainField(state: TextFieldState, hint: String, mono: Boolean = false, keyboardOptions: KeyboardOptions = KeyboardOptions.Default) {
     val colors = palette
     if (colors.flat) {
         androidx.compose.material3.OutlinedTextField(
@@ -1522,20 +1660,52 @@ private fun PlainField(state: TextFieldState, hint: String, mono: Boolean = fals
             modifier = Modifier.fillMaxWidth(),
             label = { Text(hint) },
             textStyle = if (mono) TextStyle(fontFamily = MonoFamily, fontSize = 16.sp) else MaterialTheme.typography.bodyLarge,
+            keyboardOptions = keyboardOptions,
         )
         return
     }
     Box(Modifier.fillMaxWidth().heightIn(min = 28.dp), contentAlignment = Alignment.CenterStart) {
-        if (state.text.isEmpty()) Text(hint, color = colors.textLow, style = MaterialTheme.typography.bodyLarge)
         BasicTextField(
             state,
             Modifier.fillMaxWidth(),
+            decorator = com.wasimaster.wmpass.ui.parts.placeholderDecorator(state) { Text(hint, color = colors.textLow, style = MaterialTheme.typography.bodyLarge) },
             textStyle = if (mono) {
                 TextStyle(fontFamily = MonoFamily, fontSize = 16.sp, color = colors.text)
             } else {
                 MaterialTheme.typography.bodyLarge.copy(color = colors.text)
             },
             cursorBrush = SolidColor(colors.primary),
+            keyboardOptions = keyboardOptions,
+        )
+    }
+}
+
+/** A one-line secret typed into the form, such as a security answer: hidden unless [showing]. */
+@Composable
+private fun SecretLine(state: TextFieldState, hint: String, showing: Boolean) {
+    val colors = palette
+    val mode = if (showing) TextObfuscationMode.Visible else TextObfuscationMode.RevealLastTyped
+    val keys = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false)
+    if (colors.flat) {
+        androidx.compose.material3.OutlinedSecureTextField(
+            state = state,
+            modifier = Modifier.fillMaxWidth().secretSemantics(state, showing),
+            label = { Text(hint) },
+            textStyle = TextStyle(fontFamily = MonoFamily, fontSize = 16.sp),
+            textObfuscationMode = mode,
+            keyboardOptions = keys,
+        )
+        return
+    }
+    Box(Modifier.fillMaxWidth().heightIn(min = 28.dp), contentAlignment = Alignment.CenterStart) {
+        BasicSecureTextField(
+            state,
+            Modifier.fillMaxWidth().secretSemantics(state, showing),
+            decorator = com.wasimaster.wmpass.ui.parts.placeholderDecorator(state) { Text(hint, color = colors.textLow, style = MaterialTheme.typography.bodyLarge) },
+            textStyle = TextStyle(fontFamily = MonoFamily, fontSize = 16.sp, color = colors.text),
+            cursorBrush = SolidColor(colors.primary),
+            textObfuscationMode = mode,
+            keyboardOptions = keys,
         )
     }
 }
@@ -1560,12 +1730,12 @@ private fun FieldEditor(
         "toggle" -> Row(
             Modifier
                 .fillMaxWidth()
-                .clickable { field.flag = !field.flag }
+                .toggleable(field.flag, role = androidx.compose.ui.semantics.Role.Switch) { field.flag = it }
                 .padding(start = 18.dp, end = 14.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(spec.label, color = colors.text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-            PassSwitch(field.flag) { field.flag = it }
+            PassSwitch(field.flag, null)
         }
         "choice" -> Column(Modifier.padding(horizontal = 18.dp, vertical = 12.dp)) {
             Text(spec.label, color = colors.textLow, style = MaterialTheme.typography.labelMedium)
@@ -1588,7 +1758,7 @@ private fun FieldEditor(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(spec.label, color = colors.text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                Text(field.millis?.let { java.text.DateFormat.getDateInstance().format(java.util.Date(it)) } ?: "Not set", color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
+                Text(field.millis?.let(::dayText) ?: "Not set", color = colors.textMid, style = MaterialTheme.typography.bodyMedium)
             }
             if (picking) {
                 val state = rememberDatePickerState(initialSelectedDateMillis = field.millis)
@@ -1616,7 +1786,7 @@ private fun FieldEditor(
                 val actions: @Composable () -> Unit = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (isSecret && !multiline && field.loaded && field.text.text.isNotEmpty()) {
-                            RowIconButton(if (field.showing) PassIcons.VisibilityOff else PassIcons.Visibility, if (field.showing) "Hide" else "Show") { field.showing = !field.showing }
+                            RowIconButton(if (field.showing) PassIcons.VisibilityOff else PassIcons.Visibility, if (field.showing) "Hide ${spec.label}" else "Show ${spec.label}") { field.showing = !field.showing }
                         }
                         if (spec.input == "password") RowIconButton(PassIcons.Casino, "Generate", tint = colors.primary, onClick = onGenerate)
                         if (onAlias != null) RowIconButton(PassIcons.AlternateEmail, "Use an alias", tint = colors.primary, onClick = onAlias)
@@ -1627,12 +1797,14 @@ private fun FieldEditor(
                     isSecret && !field.loaded -> androidx.compose.material3.OutlinedCard(
                         onClick = {
                             scope.launch {
-                                if (entryId != null) {
-                                    val text = Pass.reveal(entryId, spec.key).consumeText()
-                                    field.text.setTextAndPlaceCursorAtEnd(text)
-                                    field.original = text
+                                revealing(shell) {
+                                    if (entryId != null) {
+                                        val text = Pass.reveal(entryId, spec.key).consumeText()
+                                        field.text.setTextAndPlaceCursorAtEnd(text)
+                                        field.original = text
+                                    }
+                                    field.loaded = true
                                 }
-                                field.loaded = true
                             }
                         },
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -1677,41 +1849,50 @@ private fun FieldEditor(
                     .animateContentSize(Springs.glide())
                     .padding(start = 18.dp, end = 10.dp, top = 11.dp, bottom = 11.dp),
             ) {
-                Text(spec.label, color = colors.textLow, style = MaterialTheme.typography.labelMedium)
-                Spacer(Modifier.height(2.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                val label: @Composable () -> Unit = {
+                    Text(spec.label, color = colors.textLow, style = MaterialTheme.typography.labelMedium)
+                    Spacer(Modifier.height(2.dp))
+                }
+                // A field carries its name inside it, so a screen reader says it with the value;
+                // a saved secret not yet opened is no field, and keeps it above.
+                val inField = !(isSecret && !field.loaded)
+                if (!inField) label()
+                Row(verticalAlignment = if (inField) Alignment.Bottom else Alignment.CenterVertically) {
                     Box(Modifier.weight(1f).heightIn(min = 42.dp), contentAlignment = Alignment.CenterStart) {
                         if (isSecret && !field.loaded) {
                             Text(
                                 "••••••••••••  Tap to change",
                                 color = colors.textLow,
                                 style = TextStyle(fontFamily = MonoFamily, fontSize = 15.sp),
-                                modifier = Modifier.fillMaxWidth().clickable {
+                                // Read as what it is, not as twelve bullets.
+                                modifier = Modifier.fillMaxWidth().semantics { contentDescription = "${spec.label}, saved" }.clickable(onClickLabel = "Change it") {
                                     scope.launch {
-                                        if (entryId != null) {
-                                            val text = Pass.reveal(entryId, spec.key).consumeText()
-                                            field.text.setTextAndPlaceCursorAtEnd(text)
-                                            field.original = text
+                                        revealing(shell) {
+                                            if (entryId != null) {
+                                                val text = Pass.reveal(entryId, spec.key).consumeText()
+                                                field.text.setTextAndPlaceCursorAtEnd(text)
+                                                field.original = text
+                                            }
+                                            field.loaded = true
                                         }
-                                        field.loaded = true
                                     }
                                 },
                             )
                         } else if (isSecret && !multiline) {
-                            if (field.text.text.isEmpty()) Text("Not set", color = colors.textLow, style = MaterialTheme.typography.bodyLarge)
                             BasicSecureTextField(
                                 field.text,
                                 Modifier.fillMaxWidth().secretSemantics(field.text, field.showing),
+                                decorator = com.wasimaster.wmpass.ui.parts.labelledDecorator(field.text, label, 42.dp) { Text("Not set", color = colors.textLow, style = MaterialTheme.typography.bodyLarge) },
                                 textStyle = TextStyle(fontFamily = MonoFamily, fontSize = 16.sp, color = colors.text),
                                 cursorBrush = SolidColor(colors.primary),
                                 textObfuscationMode = if (field.showing) TextObfuscationMode.Visible else TextObfuscationMode.RevealLastTyped,
                                 keyboardOptions = tag(KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false)),
                             )
                         } else {
-                            if (field.text.text.isEmpty()) Text(hintOf(spec), color = colors.textLow, style = MaterialTheme.typography.bodyLarge)
                             BasicTextField(
                                 field.text,
                                 Modifier.fillMaxWidth(),
+                                decorator = com.wasimaster.wmpass.ui.parts.labelledDecorator(field.text, label, 42.dp) { Text(hintOf(spec), color = colors.textLow, style = MaterialTheme.typography.bodyLarge) },
                                 textStyle = if (isSecret) {
                                     TextStyle(fontFamily = MonoFamily, fontSize = 15.sp, color = colors.text)
                                 } else {
@@ -1727,7 +1908,7 @@ private fun FieldEditor(
                         Spacer(Modifier.width(6.dp))
                         RowIconButton(
                             if (field.showing) PassIcons.VisibilityOff else PassIcons.Visibility,
-                            if (field.showing) "Hide" else "Show",
+                            if (field.showing) "Hide ${spec.label}" else "Show ${spec.label}",
                         ) { field.showing = !field.showing }
                     }
                     if (spec.input == "password") {
@@ -1772,6 +1953,9 @@ private fun keyboardFor(spec: FieldView): KeyboardOptions = when (spec.input) {
     "number" -> KeyboardOptions(keyboardType = KeyboardType.Number)
     else -> if (spec.key == "username") {
         KeyboardOptions(keyboardType = KeyboardType.Email, autoCorrectEnabled = false)
+    } else if (spec.secret && spec.key != "body") {
+        // A private key or recovery phrase typed out: a corrected word is a wrong secret.
+        KeyboardOptions(autoCorrectEnabled = false)
     } else {
         KeyboardOptions.Default
     }
@@ -1800,9 +1984,21 @@ private fun LiveStrength(field: TextFieldState, context: List<String>) {
     }
 }
 
+/** A saved secret read for editing. One that fails, as when the vault locks meanwhile, is said rather than closing the app. */
+private suspend fun revealing(shell: Shell, block: suspend () -> Unit) {
+    try {
+        block()
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        throw cancelled
+    } catch (failure: Exception) {
+        shell.notice(failure.message ?: "Could not read this field")
+    }
+}
+
 @Composable
 private fun CustomEditor(entryId: String?, custom: EditCustom) {
     val colors = palette
+    val shell = LocalShell.current
     val scope = rememberCoroutineScope()
     Row(Modifier.padding(start = 18.dp, end = 10.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
@@ -1815,18 +2011,26 @@ private fun CustomEditor(entryId: String?, custom: EditCustom) {
                     style = TextStyle(fontFamily = MonoFamily, fontSize = 15.sp),
                     modifier = Modifier.fillMaxWidth().clickable {
                         scope.launch {
-                            val existing = custom.existing
-                            if (entryId != null && existing != null) {
-                                val text = Pass.revealCustom(entryId, existing.index).consumeText()
-                                custom.value.setTextAndPlaceCursorAtEnd(text)
-                                custom.original = text
+                            revealing(shell) {
+                                val existing = custom.existing
+                                if (entryId != null && existing != null) {
+                                    val text = Pass.revealCustom(entryId, existing.index).consumeText()
+                                    custom.value.setTextAndPlaceCursorAtEnd(text)
+                                    custom.original = text
+                                }
+                                custom.loaded = true
                             }
-                            custom.loaded = true
                         }
                     },
                 )
             } else {
-                PlainField(custom.value, "Value", mono = custom.hidden)
+                // A secret value is still a secret while it is typed: the keyboard is told so.
+                PlainField(
+                    custom.value,
+                    "Value",
+                    mono = custom.hidden,
+                    keyboardOptions = if (custom.hidden) KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false) else KeyboardOptions.Default,
+                )
             }
         }
         RowIconButton(
@@ -1838,11 +2042,13 @@ private fun CustomEditor(entryId: String?, custom: EditCustom) {
             if (custom.hidden && !custom.loaded && entryId != null && existing != null) {
                 // Made plain, it shows its value, so the value is read first.
                 scope.launch {
-                    val text = Pass.revealCustom(entryId, existing.index).consumeText()
-                    custom.value.setTextAndPlaceCursorAtEnd(text)
-                    custom.original = text
-                    custom.loaded = true
-                    custom.hidden = false
+                    revealing(shell) {
+                        val text = Pass.revealCustom(entryId, existing.index).consumeText()
+                        custom.value.setTextAndPlaceCursorAtEnd(text)
+                        custom.original = text
+                        custom.loaded = true
+                        custom.hidden = false
+                    }
                 }
             } else {
                 custom.hidden = !custom.hidden
@@ -1858,7 +2064,7 @@ private fun GeneratorSheet(onDismiss: () -> Unit, onUse: (String) -> Unit) {
     val shellPrefs = LocalShell.current.prefs
     val state = remember { GenState.fromPrefs(shellPrefs) }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(Unit) { state.roll() }
+    LaunchedEffect(Unit) { runCatching { state.roll() } }
     PassSheet(onDismiss, "Generate password") {
         GeneratedValue(state, large = false)
         GeneratedStrength(state, Modifier.padding(horizontal = 4.dp))
@@ -1866,8 +2072,9 @@ private fun GeneratorSheet(onDismiss: () -> Unit, onUse: (String) -> Unit) {
         GeneratorControls(state)
         Spacer(Modifier.height(18.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            PrimaryButton("Use this", Modifier.weight(1f)) { onUse(state.value) }
-            if (!palette.flat) RollButton({ scope.launch { state.roll() } })
+            // Not before the first value is made: an empty password would be put in the field.
+            PrimaryButton("Use this", Modifier.weight(1f), enabled = state.value.isNotEmpty()) { onUse(state.value) }
+            if (!palette.flat) RollButton({ scope.launch { runCatching { state.roll() } } })
         }
     }
 }

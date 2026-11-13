@@ -50,6 +50,8 @@ struct State {
     counter: usize,
     xattrs: Vec<Value>,
     refreshes: usize,
+    /// Pages that ignore where they were asked to start, as a broken server would.
+    pages_never_move: bool,
 }
 
 #[derive(Clone, Default)]
@@ -178,6 +180,9 @@ impl Server {
             })),
             ("GET", ["drive", "v2", "volumes", _, "folders", folder, "children"]) => {
                 let ids: Vec<&String> = state.nodes.iter().filter(|(_, n)| n.parent == *folder).map(|(id, _)| id).collect();
+                if state.pages_never_move {
+                    return ok(json!({ "LinkIDs": ids, "More": true, "AnchorID": "same" }));
+                }
                 ok(json!({ "LinkIDs": ids, "More": false }))
             }
             ("POST", ["drive", "v2", "volumes", _, "links"]) => {
@@ -286,6 +291,13 @@ impl Server {
                     .filter(|(index, _, _)| *index >= from)
                     .map(|(index, n, hash)| json!({ "Index": index, "BareURL": format!("{STORAGE}{n}"), "Token": "t", "Hash": hash }))
                     .collect();
+                if state.pages_never_move {
+                    // A full page of the first block, wherever it was asked to start.
+                    let first = state.nodes[*file].revisions[*revision][0].clone();
+                    let (index, n, hash) = first;
+                    let block = json!({ "Index": index, "BareURL": format!("{STORAGE}{n}"), "Token": "t", "Hash": hash });
+                    return ok(json!({ "Revision": { "Blocks": vec![block; BLOCK_PAGE] } }));
+                }
                 ok(json!({ "Revision": { "Blocks": blocks } }))
             }
             ("POST", ["drive", "v2", "volumes", _, "trash_multiple"]) => {
@@ -368,6 +380,18 @@ fn a_file_goes_up_encrypted_comes_back_and_is_replaced_as_a_new_revision() {
     block_on(again.delete(&listed[0])).unwrap();
     assert!(block_on(again.list()).unwrap().is_empty());
     assert_eq!(block_on(again.read(&listed[0])), Err(Fault::TargetMissing));
+}
+
+#[test]
+fn pages_that_never_move_end_rather_than_repeat() {
+    let server = Server::new();
+    let proton = sink(&server);
+    block_on(proton.readiness()).unwrap();
+    let stored = block_on(proton.write("small.bin", b"one block")).unwrap();
+    server.0.lock().unwrap().pages_never_move = true;
+    let listed = block_on(proton.list()).unwrap();
+    assert_eq!(listed.len(), 1, "the children were asked for once more, then no further");
+    assert_eq!(block_on(proton.read(&stored)), Err(Fault::Io));
 }
 
 #[test]

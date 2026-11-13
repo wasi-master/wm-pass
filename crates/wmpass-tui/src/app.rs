@@ -14,7 +14,7 @@ use zeroize::Zeroizing;
 use crate::clip::{Clip, Route};
 use crate::door::{self, Ask, Door};
 use crate::editor::{Editor, Slot};
-use crate::engine::{self, ImportPreview, Secret, Unlock, Wiped};
+use crate::engine::{self, Current, ImportPreview, Secret, Unlock, Wiped};
 use crate::settings::{self, Look, Setting};
 use crate::draw::Hit;
 use crate::input::Input;
@@ -60,6 +60,8 @@ pub enum PromptFor {
     ImportPassword(PathBuf, Option<PathBuf>),
     ExportPath(String),
     ExportPassword(String, PathBuf),
+    /// The export's password again: a typo in it would leave a file nobody can open.
+    ExportPasswordAgain(String, PathBuf, Wiped),
     AttachAdd(String),
     AttachSave { id: String, blob: String, name: String },
     ShelfPassword,
@@ -71,9 +73,12 @@ pub enum PromptFor {
     VaultName,
     /// The vault's password now, before a new one.
     CurrentPassword,
-    NewPassword,
+    /// The key file the current password also needs, with that password.
+    CurrentKeyFile(Wiped),
+    /// The new password, for the slot the current one opened.
+    NewPassword(usize),
     /// The new password again, to be sure of it.
-    ConfirmPassword(Wiped),
+    ConfirmPassword(Wiped, usize),
     RenameTag(String),
 }
 
@@ -252,7 +257,8 @@ enum EditorDo {
 /// Something drawn over the screen.
 #[derive(Debug)]
 pub enum Overlay {
-    Help,
+    /// The keys list, scrolled this far.
+    Help { scroll: u16 },
     Palette { input: Input, at: usize },
     Confirm { title: String, body: String, act: Act, danger: bool },
     Prompt { title: String, hint: String, input: Input, secret: bool, then: PromptFor },
@@ -321,6 +327,8 @@ pub struct App {
     last_click: Option<(Position, Instant)>,
     /// Whether the last QR code drawn used big cells, for flipping its size.
     pub link_drew_big: bool,
+    /// Ctrl+Z was pressed: the loop hands the terminal back to the shell before the next frame.
+    suspend: bool,
 }
 
 impl App {
@@ -350,6 +358,7 @@ impl App {
             overlay_from: None,
             last_click: None,
             link_drew_big: false,
+            suspend: false,
         }
     }
 
@@ -380,6 +389,7 @@ impl App {
             overlay_from: None,
             last_click: None,
             link_drew_big: false,
+            suspend: false,
         }
     }
 
@@ -395,6 +405,18 @@ impl App {
         self.mouse(mouse);
     }
 
+    /// For tests: whether Ctrl+Z asked to hand the terminal back.
+    #[cfg(test)]
+    pub fn suspending(&self) -> bool {
+        self.suspend
+    }
+
+    /// For tests: whether the app is on its way out.
+    #[cfg(test)]
+    pub fn quitting(&self) -> bool {
+        self.quit
+    }
+
     /// For tests: one key, as if pressed.
     #[cfg(test)]
     pub fn key_for_test(&mut self, key: KeyEvent) {
@@ -402,13 +424,23 @@ impl App {
     }
 
     pub fn say(&mut self, level: Level, text: impl Into<String>) {
-        self.toast = Some(Toast { text: text.into(), level, at: Instant::now() });
+        // Errors from the session read "that password is not right"; the app's own messages
+        // start with a capital. They sit in the same place, so they read the same way.
+        let mut text: String = text.into();
+        if let Some(first) = text.chars().next().filter(char::is_ascii_lowercase) {
+            text.replace_range(..1, &first.to_ascii_uppercase().to_string());
+        }
+        self.toast = Some(Toast { text, level, at: Instant::now() });
     }
 
     /// Runs until quit.
-    pub fn run(&mut self, terminal: &mut DefaultTerminal) -> std::io::Result<()> {
+    pub fn run(&mut self, terminal: &mut DefaultTerminal, suspend: fn(&mut DefaultTerminal) -> std::io::Result<()>) -> std::io::Result<()> {
         let mut dirty = true;
         while !self.quit {
+            if std::mem::take(&mut self.suspend) {
+                suspend(terminal)?;
+                dirty = true;
+            }
             if dirty {
                 terminal.draw(|frame| draw::draw(frame, self))?;
                 dirty = false;
@@ -431,14 +463,7 @@ impl App {
                     }
                     Event::Paste(text) => {
                         self.last_input = Instant::now();
-                        let text = Zeroizing::new(text);
-                        for ch in text.chars().filter(|c| *c != '\r') {
-                            let code = if ch == '\n' { KeyCode::Enter } else { KeyCode::Char(ch) };
-                            if code == KeyCode::Enter && !self.typing_multiline() {
-                                continue;
-                            }
-                            self.key(KeyEvent::new(code, KeyModifiers::NONE));
-                        }
+                        self.paste(&Zeroizing::new(text));
                     }
                     _ => {}
                 }
@@ -450,12 +475,60 @@ impl App {
         if let Screen::Vault(_) = self.screen {
             self.lock("");
         }
+        // Where the alternate screen is off, as in GNU screen by default, the last frame stays
+        // in the terminal once the app has gone, a shown password with it.
+        // The backend's own clear: the terminal's would ask where the cursor is, which some
+        // terminals never answer, and quitting must not hang on that or fail.
+        let _ = ratatui::backend::Backend::clear(terminal.backend_mut());
         Ok(())
+    }
+
+    /// Pasted text, typed into the box that has the keyboard. With no box to take it, nothing
+    /// happens: pasted letters must never run as keys, where `d` trashes, `y` confirms and `q`
+    /// quits.
+    fn paste(&mut self, text: &str) {
+        if !self.takes_text() {
+            return self.say(Level::Info, "Nothing to paste into here");
+        }
+        for ch in text.chars().filter(|c| *c != '\r') {
+            let code = if ch == '\n' { KeyCode::Enter } else { KeyCode::Char(ch) };
+            if code == KeyCode::Enter && !self.typing_multiline() {
+                continue;
+            }
+            self.key(KeyEvent::new(code, KeyModifiers::NONE));
+        }
+    }
+
+    /// For tests: text pasted, as a terminal sends it.
+    #[cfg(test)]
+    pub fn paste_for_test(&mut self, text: &str) {
+        self.paste(text);
+    }
+
+    /// Whether a text box has the keyboard, so pasted text has somewhere to go.
+    fn takes_text(&self) -> bool {
+        match &self.overlay {
+            Some(Overlay::Palette { .. } | Overlay::Prompt { .. }) => true,
+            Some(Overlay::Editor(editor)) => {
+                !editor.confirm_discard
+                    && editor
+                        .rows
+                        .get(editor.at)
+                        .is_some_and(|r| !r.is_action() && (editor.on_name || !matches!(r.input.as_str(), "toggle" | "choice")))
+            }
+            Some(Overlay::Link(link)) => link.stage == Stage::Searching,
+            Some(Overlay::Restore(ui)) => ui.typing(),
+            Some(_) => false,
+            None => match &self.screen {
+                Screen::Door(door) => door.recent.is_none() && door.busy.is_none(),
+                Screen::Vault(ui) => ui.searching || ui.filtering_codes,
+            },
+        }
     }
 
     fn typing_multiline(&self) -> bool {
         match &self.overlay {
-            Some(Overlay::Editor(editor)) => editor.rows.get(editor.at).is_some_and(|r| r.value.multiline),
+            Some(Overlay::Editor(editor)) => editor.rows.get(editor.at).is_some_and(|r| r.value.multiline) && !editor.on_name,
             _ => false,
         }
     }
@@ -632,6 +705,9 @@ impl App {
     pub fn lock(&mut self, why: &str) {
         self.clip.clear_now();
         self.overlay = None;
+        // A message from the open vault, such as "Password copied, cleared in 60 s" or an
+        // item's name, has no place on the door: the copy is gone and the vault is shut.
+        self.toast = None;
         let door = Door::new(None, &self.prefs.recent);
         if let Screen::Vault(ui) = std::mem::replace(&mut self.screen, Screen::Door(Box::new(door))) {
             let path = ui.engine.path().to_owned();
@@ -648,7 +724,24 @@ impl App {
 
     fn key(&mut self, key: KeyEvent) {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        if ctrl && key.code == KeyCode::Char('z') {
+            if cfg!(unix) {
+                self.suspend = true;
+            } else {
+                self.say(Level::Info, "Ctrl+Z suspends only in Unix terminals");
+            }
+            return;
+        }
         if ctrl && key.code == KeyCode::Char('c') {
+            // Typing lost to one stray ^C would be a surprise, as Esc asks first: the editor
+            // asks, and a second ^C quits all the same.
+            if let Some(Overlay::Editor(editor)) = &mut self.overlay
+                && editor.dirty()
+                && !editor.confirm_discard
+            {
+                editor.confirm_discard = true;
+                return self.say(Level::Warn, "Unsaved changes. ^S saves them; ^C again quits without them");
+            }
             self.quit = true;
             return;
         }
@@ -756,14 +849,18 @@ impl App {
                 if let Some(root) = engine.app_folder() {
                     self.follow_app_timers(root);
                 }
-                self.screen = Screen::Vault(Box::new(VaultUi::new(engine)));
+                let ui = VaultUi::new(engine);
+                let notice = ui.notices.first().cloned();
+                self.screen = Screen::Vault(Box::new(ui));
                 self.pull_settings();
-                match rollback {
-                    Some((seen, file)) => self.say(
+                match (rollback, notice) {
+                    (Some((seen, file)), _) => self.say(
                         Level::Warn,
                         format!("This copy is older than one seen here (revision {file}, seen {seen}). Check your sync"),
                     ),
-                    None => self.say(Level::Good, format!("{name} unlocked")),
+                    // Said on every unlock until it is dealt with, and kept on the status line.
+                    (None, Some(notice)) => self.say(Level::Warn, notice),
+                    (None, None) => self.say(Level::Good, format!("{name} unlocked")),
                 }
             }
             Err(message) => {
@@ -1006,6 +1103,7 @@ impl App {
                 let body = match (ids.len(), ui.current()) {
                     (0, _) => return self.say(Level::Info, "Pick an item first"),
                     (1, Some(row)) if ui.marked.is_empty() => format!("{} stays in the trash for a while and can be brought back.", row.title),
+                    (1, _) => "1 item stays in the trash for a while and can be brought back.".to_owned(),
                     (n, _) => format!("{} stay in the trash for a while and can be brought back.", items(n)),
                 };
                 self.overlay = Some(Overlay::Confirm { title: "Move to the trash?".into(), body, act: Act::Trash(ids), danger: false });
@@ -1130,10 +1228,9 @@ impl App {
                     Err(e) => self.say(Level::Bad, e),
                 }
             }
-            Command::NewFolder => {
-                let ids = ui.current_id().into_iter().collect();
-                self.prompt("New folder", "Its name", false, PromptFor::NewFolder(ids));
-            }
+            // A folder made from the commands starts empty; "Move to folder" offers one that
+            // takes the items along.
+            Command::NewFolder => self.prompt("New folder", "Its name", false, PromptFor::NewFolder(Vec::new())),
             Command::RenameTag | Command::DeleteTag => {
                 let Some(tag) = ui.picked_tag() else {
                     return self.say(Level::Info, "Pick a tag in the sidebar first");
@@ -1303,7 +1400,7 @@ impl App {
                 }
                 self.prompt("Change the vault password", "First, the password it opens with now", true, PromptFor::CurrentPassword);
             }
-            Command::Help => self.overlay = Some(Overlay::Help),
+            Command::Help => self.overlay = Some(Overlay::Help { scroll: 0 }),
             Command::Lock => self.lock("Locked"),
             Command::IntoApp => {
                 if ui.engine.app_folder().is_some() {
@@ -1457,11 +1554,16 @@ impl App {
             Line::Code => self.copy_code(),
             Line::Past { index, field, .. } => self.copy_secret(&format!("Earlier {field}"), &Secret::History(index)),
             Line::File(_) => self.save_attachment(),
-            Line::Link(id) => {
-                let Screen::Vault(ui) = &mut self.screen else { return };
-                ui.show_entry(&id);
-            }
+            Line::Link(id) => self.show_entry(&id),
             _ => {}
+        }
+    }
+
+    /// Opens an item in the Items tab, or says it is gone.
+    fn show_entry(&mut self, id: &str) {
+        let Screen::Vault(ui) = &mut self.screen else { return };
+        if !ui.show_entry(id) {
+            self.say(Level::Info, "That item is no longer in the vault");
         }
     }
 
@@ -1540,7 +1642,7 @@ impl App {
             }
             KeyCode::Char('o') => {
                 if let Some(id) = ui.codes.get(ui.code_at).map(|c| c.id.clone()) {
-                    ui.show_entry(&id);
+                    self.show_entry(&id);
                 }
             }
             _ => {}
@@ -1638,7 +1740,7 @@ impl App {
             KeyCode::Enter => {
                 if let Some(id) = ids.get(ui.health_at) {
                     let id = id.clone();
-                    ui.show_entry(&id);
+                    self.show_entry(&id);
                 }
             }
             _ => {}
@@ -1649,7 +1751,37 @@ impl App {
         let Some(mut overlay) = self.overlay.take() else { return };
         let mut save = false;
         let keep = match &mut overlay {
-            Overlay::Help => !matches!(key.code, KeyCode::Esc | KeyCode::Char('?' | 'q') | KeyCode::Enter),
+            Overlay::Help { scroll } => {
+                let most = crate::draw::help_most();
+                match key.code {
+                    KeyCode::Esc | KeyCode::Char('?' | 'q') | KeyCode::Enter => false,
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        *scroll = (*scroll + 1).min(most);
+                        true
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        *scroll = scroll.saturating_sub(1);
+                        true
+                    }
+                    KeyCode::PageDown | KeyCode::Char(' ') => {
+                        *scroll = (*scroll + 10).min(most);
+                        true
+                    }
+                    KeyCode::PageUp => {
+                        *scroll = scroll.saturating_sub(10);
+                        true
+                    }
+                    KeyCode::Home | KeyCode::Char('g') => {
+                        *scroll = 0;
+                        true
+                    }
+                    KeyCode::End | KeyCode::Char('G') => {
+                        *scroll = most;
+                        true
+                    }
+                    _ => true,
+                }
+            }
             Overlay::Palette { input, at } => match key.code {
                 KeyCode::Esc => false,
                 KeyCode::Down => {
@@ -1673,8 +1805,16 @@ impl App {
                     true
                 }
             },
-            Overlay::Confirm { act, .. } => match key.code {
-                KeyCode::Char('y' | 'Y') | KeyCode::Enter => {
+            // Enter says yes only to what can be undone: deleting for good, deleting a tag
+            // everywhere or writing secrets in the clear wants the y on the button, so an Enter
+            // pressed once too often does no harm.
+            Overlay::Confirm { act, danger, .. } => match key.code {
+                KeyCode::Char('y' | 'Y') => {
+                    let act = act.clone();
+                    self.confirmed(act);
+                    return;
+                }
+                KeyCode::Enter if !*danger => {
                     let act = act.clone();
                     self.confirmed(act);
                     return;
@@ -1815,11 +1955,17 @@ impl App {
                 let row = editor.row();
                 if row.input == "password" {
                     let recipe = ui.generator.recipe();
-                    if let Ok((value, _)) = ui.engine.generate(&recipe) {
-                        row.value.set(&value);
-                        row.loaded = true;
-                        editor.show = true;
+                    match ui.engine.generate(&recipe) {
+                        Ok((value, _)) => {
+                            row.value.set(&value);
+                            row.loaded = true;
+                            editor.show = true;
+                            editor.error = None;
+                        }
+                        Err(e) => editor.error = Some(e),
                     }
+                } else {
+                    editor.error = Some("^G makes a password in a password box".to_owned());
                 }
             }
             // A named row's name and value sit side by side, so the arrows cross between them.
@@ -2032,12 +2178,18 @@ impl App {
                 }
                 match ui.engine.add_folder(text) {
                     Ok(folder) => {
-                        if !ids.is_empty() {
-                            let _ = ui.engine.bulk(&ids, "folder", json!({"folder": folder}));
+                        let moved = if ids.is_empty() {
+                            Ok(())
+                        } else {
                             ui.marked.clear();
-                        }
+                            ui.engine.bulk(&ids, "folder", json!({"folder": folder}))
+                        };
                         ui.reload();
-                        self.say(Level::Good, format!("Folder {text} made"));
+                        match moved {
+                            Ok(()) if ids.is_empty() => self.say(Level::Good, format!("Folder {text} made")),
+                            Ok(()) => self.say(Level::Good, format!("Folder {text} made; {} moved into it", items(ids.len()))),
+                            Err(e) => self.say(Level::Bad, format!("Folder {text} made, but nothing moved into it: {e}")),
+                        }
                     }
                     Err(e) => self.say(Level::Bad, e),
                 }
@@ -2114,6 +2266,9 @@ impl App {
                 }
             }
             PromptFor::ExportPath(format) => {
+                if text.is_empty() {
+                    return self.say(Level::Info, "Nothing exported: no file named");
+                }
                 let path = store::expand(text);
                 if path.exists() {
                     return self.say(Level::Bad, format!("{} already exists", path.display()));
@@ -2134,7 +2289,15 @@ impl App {
             }
             PromptFor::ExportPassword(format, path) => {
                 if answer.chars().count() < 8 {
-                    return self.say(Level::Bad, "Use at least 8 characters for the export's password");
+                    self.say(Level::Bad, "Use at least 8 characters for the export's password");
+                    return self.prompt("Password for the export", "KeePass will ask for it. At least 8 characters", true, PromptFor::ExportPassword(format, path));
+                }
+                self.prompt("Password for the export", "The same password again", true, PromptFor::ExportPasswordAgain(format, path, Wiped::new(&answer)));
+            }
+            PromptFor::ExportPasswordAgain(format, path, first) => {
+                if first.as_str() != answer.as_str() {
+                    self.say(Level::Bad, "Those passwords do not match. Type it again");
+                    return self.prompt("Password for the export", "KeePass will ask for it", true, PromptFor::ExportPassword(format, path));
                 }
                 let result = Self::write_export(ui, &format, &path, &answer);
                 match result {
@@ -2171,9 +2334,10 @@ impl App {
             },
             PromptFor::LockMinutes => match text.parse::<u32>() {
                 Ok(minutes) => {
-                    self.prefs.lock_minutes = minutes.min(24 * 60);
+                    let minutes = minutes.min(24 * 60);
+                    self.prefs.lock_minutes = minutes;
                     self.prefs.save();
-                    let text = if minutes == 0 { "Never locks on its own".to_owned() } else { format!("Locks after {minutes} minutes") };
+                    let text = if minutes == 0 { "Never locks on its own".to_owned() } else { if minutes == 1 { "Locks after 1 minute".to_owned() } else { format!("Locks after {minutes} minutes") } };
                     self.say(Level::Good, text);
                 }
                 Err(_) => self.say(Level::Bad, "That is not a number of minutes"),
@@ -2182,7 +2346,14 @@ impl App {
                 Ok(seconds) => {
                     self.prefs.clip_seconds = seconds.min(3600);
                     self.prefs.save();
-                    let text = if seconds == 0 { "Copied secrets stay on the clipboard".to_owned() } else { format!("Copied secrets are cleared after {} seconds", seconds.min(3600)) };
+                    let text = if seconds == 0 {
+                        "Copied secrets stay on the clipboard".to_owned()
+                    } else {
+                        match seconds.min(3600) {
+                            1 => "Copied secrets are cleared after 1 second".to_owned(),
+                            n => format!("Copied secrets are cleared after {n} seconds"),
+                        }
+                    };
                     self.say(Level::Good, text);
                 }
                 Err(_) => self.say(Level::Bad, "That is not a number of seconds"),
@@ -2210,24 +2381,38 @@ impl App {
                     Err(e) => self.say(Level::Bad, e),
                 }
             }
-            PromptFor::CurrentPassword => match ui.engine.verify(answer.as_bytes()) {
-                Ok(true) => self.prompt("Change the vault password", "The new password. A few random words work well", true, PromptFor::NewPassword),
-                Ok(false) => self.say(Level::Bad, "That is not the vault's password"),
+            PromptFor::CurrentPassword => match ui.engine.password_slot(answer.as_bytes(), None) {
+                Ok(Current::Slot(slot)) => self.prompt("Change the vault password", "The new password. A few random words work well", true, PromptFor::NewPassword(slot)),
+                Ok(Current::NeedsKeyFile) => self.prompt("Change the vault password", "This password also needs its key file. Where is it?", false, PromptFor::CurrentKeyFile(Wiped::new(&answer))),
+                Ok(Current::NeedsHardware) => self.say(Level::Bad, "This password also needs a hardware key. Change it in the desktop or phone app"),
+                Ok(Current::Wrong) => self.say(Level::Bad, "That is not the vault's password"),
                 Err(e) => self.say(Level::Bad, e),
             },
-            PromptFor::NewPassword => {
+            PromptFor::CurrentKeyFile(current) => {
+                let key = match store::read(&store::expand(text)) {
+                    Ok(bytes) => Zeroizing::new(bytes),
+                    Err(e) => return self.say(Level::Bad, e),
+                };
+                match ui.engine.password_slot(current.as_str().as_bytes(), Some(&key)) {
+                    // The key file stays with the slot: the new password needs it too.
+                    Ok(Current::Slot(slot)) => self.prompt("Change the vault password", "The new password. The key file stays as it is", true, PromptFor::NewPassword(slot)),
+                    Ok(_) => self.say(Level::Bad, "That key file does not go with that password"),
+                    Err(e) => self.say(Level::Bad, e),
+                }
+            }
+            PromptFor::NewPassword(slot) => {
                 if answer.chars().count() < 8 {
                     self.say(Level::Bad, "Use at least 8 characters; a few random words work well");
-                    return self.prompt("Change the vault password", "The new password. A few random words work well", true, PromptFor::NewPassword);
+                    return self.prompt("Change the vault password", "The new password. A few random words work well", true, PromptFor::NewPassword(slot));
                 }
-                self.prompt("Change the vault password", "The new password again", true, PromptFor::ConfirmPassword(Wiped::new(&answer)));
+                self.prompt("Change the vault password", "The new password again", true, PromptFor::ConfirmPassword(Wiped::new(&answer), slot));
             }
-            PromptFor::ConfirmPassword(first) => {
+            PromptFor::ConfirmPassword(first, slot) => {
                 if first.as_str() != answer.as_str() {
                     self.say(Level::Bad, "Those passwords do not match. Nothing was changed");
                     return;
                 }
-                match ui.engine.change_password(answer.as_bytes()) {
+                match ui.engine.change_password(slot, answer.as_bytes()) {
                     Ok(()) => self.say(Level::Good, "Password changed. Your other devices take the new one with the next sync"),
                     Err(e) => self.say(Level::Bad, e),
                 }
@@ -2252,8 +2437,10 @@ impl App {
                 ui.info = ui.engine.info().ok();
                 let text = match (trash, n) {
                     (true, 0) => "The trash keeps things until you empty it".to_owned(),
+                    (true, 1) => "The trash empties itself after 1 day".to_owned(),
                     (true, n) => format!("The trash empties itself after {n} days"),
                     (false, 0) => "Every past value is kept".to_owned(),
+                    (false, 1) => "Each field keeps its last value".to_owned(),
                     (false, n) => format!("Each field keeps its last {n} values"),
                 };
                 self.say(Level::Good, text);
@@ -2448,7 +2635,7 @@ impl App {
                 match landed {
                     // Outside an open overlay: the light ones close, the rest stay.
                     Some(None) => {
-                        if matches!(self.overlay, Some(Overlay::Help | Overlay::Palette { .. } | Overlay::Pick { .. })) {
+                        if matches!(self.overlay, Some(Overlay::Help { .. } | Overlay::Palette { .. } | Overlay::Pick { .. })) {
                             self.overlay = None;
                         }
                     }
@@ -2470,7 +2657,7 @@ impl App {
         let plain = |code| KeyEvent::new(code, KeyModifiers::NONE);
         match hit {
             Hit::Cover => {
-                if matches!(self.overlay, Some(Overlay::Help)) {
+                if matches!(self.overlay, Some(Overlay::Help { .. })) {
                     self.overlay = None;
                 }
             }
@@ -2599,6 +2786,10 @@ impl App {
             }
             Some(Overlay::Link(link)) => {
                 link.at = step(link.at, by, link.found.len());
+                return;
+            }
+            Some(Overlay::Help { scroll }) => {
+                *scroll = scroll.saturating_add_signed(by as i16).min(crate::draw::help_most());
                 return;
             }
             Some(_) => return,

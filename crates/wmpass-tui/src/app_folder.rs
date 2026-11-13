@@ -65,7 +65,7 @@ pub fn files(root: &Path) -> Result<Vec<(String, Vec<u8>)>, String> {
     names(root)
         .map_err(|e| format!("could not read {}: {e}", root.display()))?
         .into_iter()
-        .map(|name| fs::read(vault_path(root, &name)).map(|bytes| (name, bytes)).map_err(|e| e.to_string()))
+        .map(|name| fs::read(vault_path(root, &name)).map(|bytes| (name, bytes)).map_err(|e| crate::store::io_text(&e)))
         .collect()
 }
 
@@ -86,18 +86,29 @@ pub fn new_name() -> Result<String, String> {
     Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
 }
 
-/// Writes beside the target and moves over it, readable by this user only.
+/// Writes beside the target and moves over it, readable by this user only. Writes take turns,
+/// as the app's do: two at once to one file would share its part file and mix their bytes. One
+/// part name per file means a part left by a crash is replaced by the next write, and one left
+/// by a failed write is removed.
 pub fn write(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    static TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _turn = TURN.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let parent = path.parent().ok_or("that path is not allowed")?;
-    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    fs::create_dir_all(parent).map_err(|e| crate::store::io_text(&e))?;
     let name = path.file_name().and_then(|n| n.to_str()).ok_or("that path is not allowed")?;
     let temporary = parent.join(format!("{name}.part"));
-    let mut file = fs::File::create(&temporary).map_err(|e| e.to_string())?;
-    restrict(&temporary);
-    file.write_all(bytes).map_err(|e| e.to_string())?;
-    file.sync_all().map_err(|e| e.to_string())?;
-    drop(file);
-    fs::rename(&temporary, path).map_err(|e| e.to_string())
+    let written = (|| {
+        let mut file = fs::File::create(&temporary)?;
+        restrict(&temporary);
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        fs::rename(&temporary, path)
+    })();
+    if written.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    written.map_err(|e| crate::store::io_text(&e))
 }
 
 #[cfg(unix)]
@@ -122,9 +133,9 @@ pub fn cover_tracks(root: &Path, partner: &str, saved_len: usize, chaff: impl Fn
 /// Sets every file in `vaults/` to the one moment.
 pub fn cover_times(root: &Path) -> Result<(), String> {
     let when = SystemTime::UNIX_EPOCH + Duration::from_millis(COVER_TIME_MS);
-    for name in names(root).map_err(|e| e.to_string())? {
-        let file = fs::File::options().write(true).open(vault_path(root, &name)).map_err(|e| e.to_string())?;
-        file.set_modified(when).map_err(|e| e.to_string())?;
+    for name in names(root).map_err(|e| crate::store::io_text(&e))? {
+        let file = fs::File::options().write(true).open(vault_path(root, &name)).map_err(|e| crate::store::io_text(&e))?;
+        file.set_modified(when).map_err(|e| crate::store::io_text(&e))?;
     }
     Ok(())
 }
@@ -222,6 +233,25 @@ mod tests {
         assert_eq!(door.retry_at, 901_000);
         door.opened();
         assert_eq!(door.waiting(1000), None);
+    }
+
+    #[test]
+    fn writes_at_once_to_one_file_each_land_whole() {
+        let dir = tempfile::tempdir().expect("dir");
+        let target = dir.path().join("vault");
+        let writers: Vec<_> = (0..8u8)
+            .map(|i| {
+                let target = target.clone();
+                std::thread::spawn(move || write(&target, &vec![i; 64 * 1024 + usize::from(i)]))
+            })
+            .collect();
+        for writer in writers {
+            writer.join().expect("join").expect("write");
+        }
+        let landed = fs::read(&target).expect("read");
+        assert_eq!(landed.len(), 64 * 1024 + usize::from(landed[0]));
+        assert!(landed.iter().all(|b| *b == landed[0]));
+        assert_eq!(fs::read_dir(dir.path()).expect("list").count(), 1, "no part file is left behind");
     }
 
     #[test]

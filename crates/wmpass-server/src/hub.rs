@@ -36,6 +36,8 @@ struct Push {
     /// The device that made the change, so it can skip its own echo.
     context: Option<String>,
     user: String,
+    /// Set when the push is for one device's sockets only.
+    device: Option<String>,
 }
 
 /// Live sockets per user.
@@ -52,11 +54,21 @@ impl Hub {
 
     /// Tells a user's live devices.
     pub fn push(&self, user: &str, kind: UpdateKind, context: Option<&str>) {
+        self.send(Push { kind, context: context.map(str::to_owned), user: user.to_owned(), device: None });
+    }
+
+    /// Logs out and closes one device's live sockets, leaving the user's other devices alone.
+    /// Used when that device is revoked, so it stops hearing about changes it can no longer fetch.
+    pub fn close_device(&self, user: &str, device: &str) {
+        self.send(Push { kind: UpdateKind::LogOut, context: None, user: user.to_owned(), device: Some(device.to_owned()) });
+    }
+
+    fn send(&self, message: Push) {
         let Ok(mut channels) = self.channels.lock() else { return };
-        if let Some(sender) = channels.get(user) {
-            let message = Push { kind, context: context.map(str::to_owned), user: user.to_owned() };
+        if let Some(sender) = channels.get(&message.user) {
+            let user = message.user.clone();
             if sender.send(message).is_err() {
-                channels.remove(user);
+                channels.remove(&user);
             }
         }
     }
@@ -85,6 +97,15 @@ async fn connect(
     let token = query.get("access_token").ok_or(ApiError::Unauthorised)?;
     let auth = authenticate(&state, token).await?;
     let receiver = state.hub.subscribe(&auth.user.id).ok_or(ApiError::Internal)?;
+    // A revoke between the check above and subscribing would miss this socket, so look again.
+    let still_there = sqlx::query("SELECT id FROM devices WHERE id = $1 AND user_id = $2")
+        .bind(&auth.device_id)
+        .bind(&auth.user.id)
+        .fetch_optional(&state.db.pool)
+        .await?;
+    if still_there.is_none() {
+        return Err(ApiError::Unauthorised);
+    }
     let device = auth.device_id.clone();
     Ok(upgrade.on_upgrade(move |socket| serve_socket(socket, receiver, device)).into_response())
 }
@@ -190,12 +211,16 @@ async fn serve_socket(socket: WebSocket, mut receiver: broadcast::Receiver<Push>
             push = receiver.recv() => {
                 match push {
                     Ok(push) => {
+                        if push.device.as_ref().is_some_and(|only| *only != device) {
+                            continue;
+                        }
                         if let Some(encoded) = encode_push(&push, protocol)
                             && sender.send(encoded).await.is_err()
                         {
                             return;
                         }
                         if push.kind == UpdateKind::LogOut && push.context.as_deref() != Some(device.as_str()) {
+                            let _ = sender.send(Message::Close(None)).await;
                             return;
                         }
                     }

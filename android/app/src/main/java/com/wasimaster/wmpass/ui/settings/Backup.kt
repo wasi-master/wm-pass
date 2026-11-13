@@ -39,6 +39,7 @@ import com.wasimaster.wmpass.system.Backups
 import com.wasimaster.wmpass.system.Destination
 import com.wasimaster.wmpass.system.Destinations
 import com.wasimaster.wmpass.system.sinkProblem
+import com.wasimaster.wmpass.ui.parts.announced
 import com.wasimaster.wmpass.ui.help.HelpMark
 import com.wasimaster.wmpass.ui.help.helpAnchor
 import com.wasimaster.wmpass.ui.icons.PassIcons
@@ -99,7 +100,8 @@ fun BackupScreen() {
     val places by Destinations.list.collectAsStateWithLifecycle()
     var editing by remember { mutableStateOf<Destination?>(null) }
     var adding by remember { mutableStateOf(false) }
-    var busy by remember { mutableStateOf<String?>(null) }
+    // Every place with a copy on its way: two at once each keep their spinner, and neither runs twice.
+    var busy by remember { mutableStateOf(setOf<String>()) }
     var tick by remember { mutableIntStateOf(0) }
     var every by remember { mutableIntStateOf(Backups.everyDays(context)) }
     var keep by remember { mutableIntStateOf(Backups.keep(context)) }
@@ -109,20 +111,39 @@ fun BackupScreen() {
     val saveFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         if (uri != null) {
             scope.launch {
-                val bytes = Pass.bundle()
-                context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
-                shell.haptics.confirm()
-                message = "The backup is saved. It opens with your vault's password."
+                // This page's scope has no handler of its own: a failure is said here, not a crash.
+                try {
+                    val bytes = Pass.bundle()
+                    // Off the main thread: the picker's provider may be slow or remote, as a cloud drive's is.
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                            ?: throw java.io.IOException("The backup could not be written there.")
+                    }
+                    shell.haptics.confirm()
+                    message = "The backup is saved. It opens with your vault's password."
+                } catch (failure: Exception) {
+                    if (failure is kotlinx.coroutines.CancellationException) throw failure
+                    shell.haptics.reject()
+                    message = failure.message ?: "The backup could not be saved."
+                }
             }
         }
     }
     val openFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             scope.launch {
-                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@launch
-                val merged = Pass.mergeIn(bytes)
-                message = if (merged > 0) "Merged into this vault. Anything newer here was kept, and older values moved to history." else "That file is under another key, so it holds some other vault."
-                if (merged > 0) shell.haptics.confirm() else shell.haptics.reject()
+                try {
+                    val bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    } ?: error("That file could not be read.")
+                    val merged = Pass.mergeIn(bytes)
+                    message = if (merged > 0) "Merged into this vault. Anything newer here was kept, and older values moved to history." else "That file is under another key, so it holds some other vault."
+                    if (merged > 0) shell.haptics.confirm() else shell.haptics.reject()
+                } catch (failure: Exception) {
+                    if (failure is kotlinx.coroutines.CancellationException) throw failure
+                    shell.haptics.reject()
+                    message = failure.message ?: "That file could not be merged."
+                }
             }
         }
     }
@@ -142,15 +163,16 @@ fun BackupScreen() {
                     DestinationRow(
                         place,
                         tick,
-                        busy == place.id,
+                        place.id in busy,
                         onOpen = { editing = place },
                         onBackup = {
-                            busy = place.id
+                            if (place.id in busy) return@DestinationRow
+                            busy = busy + place.id
                             scope.launch {
                                 Backups.to(context, place)
                                     .onSuccess { shell.haptics.confirm() }
                                     .onFailure { shell.haptics.reject() }
-                                busy = null
+                                busy = busy - place.id
                                 tick++
                             }
                         },
@@ -202,10 +224,10 @@ fun BackupScreen() {
     if (adding) {
         DestinationSheet(null, { adding = false }) { place ->
             adding = false
-            busy = place.id
+            busy = busy + place.id
             scope.launch {
                 Backups.to(context, place)
-                busy = null
+                busy = busy - place.id
                 tick++
             }
         }
@@ -237,6 +259,7 @@ fun BackupScreen() {
             "Stop using ${place.label}?",
             "WM Pass forgets this place and its login. Copies already there stay where they are.",
             "Stop using it",
+            icon = PassIcons.Close,
             onDismiss = { removing = null },
         ) { Destinations.remove(context, place.id) }
     }
@@ -276,7 +299,7 @@ fun CopiesSheet(place: Destination, onDismiss: () -> Unit, onPicked: suspend (By
         Backups.copies(context, place).onSuccess { copies = it }.onFailure { problem = sinkProblem(it) }
     }
     PassSheet(onDismiss, "Copies at ${place.label}") {
-        problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
+        problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced()) }
         val shown = copies
         when {
             shown == null && problem == null -> CircularProgressIndicator(Modifier.size(26.dp), color = colors.primary, strokeWidth = 2.dp)
@@ -309,7 +332,7 @@ fun CopiesSheet(place: Destination, onDismiss: () -> Unit, onPicked: suspend (By
                     )
                 }
                 failed?.takeIf { it.first == entry.id }?.let { (_, why) ->
-                    Text(why, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 34.dp, bottom = 12.dp))
+                    Text(why, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced().padding(start = 34.dp, bottom = 12.dp))
                 }
             }
         }

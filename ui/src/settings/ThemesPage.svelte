@@ -20,7 +20,11 @@
   let text = $state('');
   let problem = $state<string | null>(null);
 
-  const dark = $derived(document.documentElement.dataset.dark === '1');
+  // Read again each time a theme reaches the page, or the cards keep the side they first showed.
+  const dark = $derived.by(() => {
+    void prefs.themeApplied;
+    return document.documentElement.dataset.dark === '1';
+  });
 
   function side(theme: ThemeFile) {
     return dark ? (theme.dark ?? theme.light)! : (theme.light ?? theme.dark)!;
@@ -39,35 +43,47 @@
       text = '';
       problem = null;
     } catch (failure: any) {
-      problem = failure.message;
+      problem = failure?.message ?? 'That is not a theme WM Pass can read.';
     }
   }
 
   async function fromFile() {
-    const file = await host().pickFile('Choose a theme file', ['wmtheme', 'json']);
-    if (file) take(new TextDecoder().decode(file.bytes));
+    try {
+      const file = await host().pickFile('Choose a theme file', ['wmtheme', 'json']);
+      if (file) take(new TextDecoder().decode(file.bytes));
+    } catch (failure: any) {
+      problem = failure?.message ?? 'That file could not be read.';
+    }
   }
 
   async function saveFile(theme: ThemeFile) {
-    const name = `${theme.name.replace(/[^A-Za-z0-9]+/g, '-').toLowerCase()}.wmtheme`;
-    await host().saveFile('Save the theme', name, bytesOf(themeToText(theme)));
+    // A name in another script has no letters left here, and a file called ".wmtheme" hides itself.
+    const stem = theme.name.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'theme';
+    try {
+      await host().saveFile('Save the theme', `${stem}.wmtheme`, bytesOf(themeToText(theme)));
+    } catch (failure: any) {
+      overlays.toast(failure?.message ?? 'The theme could not be saved.');
+    }
   }
 
   async function more(event: MouseEvent, theme: ThemeFile) {
     const mine = prefs.customThemes.some((t) => t.id === theme.id);
+    const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
     const choice = await overlays.popup(
       [
         { id: 'edit', label: mine ? 'Edit…' : 'Customize a copy…' },
         { id: 'share', label: 'Share…' },
-        ...(mine ? [{ separator: true }, { id: 'delete', label: 'Delete', danger: true }] : []),
+        ...(mine ? [{ separator: true }, { id: 'delete', label: 'Delete…', danger: true }] : []),
       ],
-      event.clientX,
-      event.clientY,
+      // Opened by keyboard, a click has no pointer position: the menu goes under the button.
+      event.clientX || box.left,
+      event.clientY || box.bottom,
     );
     if (choice === 'edit') editing = { source: theme };
     if (choice === 'share') sharing = theme;
     if (choice === 'delete') {
-      const yes = await overlays.ask({ title: `Delete ${theme.name}?`, body: 'This removes the theme from this computer.', action: 'Delete', danger: true });
+      const body = prefs.syncs('custom_themes') ? 'This removes the theme here and on your other devices that sync settings with this vault.' : 'This removes the theme from this computer.';
+      const yes = await overlays.ask({ title: `Delete ${theme.name}?`, body, action: 'Delete', danger: true });
       if (yes) prefs.deleteTheme(theme.id);
     }
   }
@@ -101,7 +117,7 @@
 <div class="theme-grid" style="margin-bottom:18px">{#each BUILT_IN as theme (theme.id)}{@render card(theme)}{/each}</div>
 <div class="gap">
   <Btn label="New theme" icon="add" variant="primary" onclick={() => (editing = { source: null })} />
-  <Btn label="Import" icon="download" onclick={() => (importing = true)} />
+  <Btn label="Import" icon="download" onclick={() => { problem = null; importing = true; }} />
 </div>
 
 {#if editing}
@@ -128,7 +144,7 @@
   <Dialog title="Import a theme" onclose={() => (importing = false)}>
     <div class="stack">
       <Field bind:value={text} multiline rows={4} mono placeholder="Paste a theme code" autofocus />
-      {#if problem}<p class="danger-text small">{problem}</p>{/if}
+      {#if problem}<p class="danger-text small" role="alert">{problem}</p>{/if}
     </div>
     {#snippet foot()}
       <Btn label="Cancel" onclick={() => (importing = false)} />

@@ -78,7 +78,7 @@ export const TOURS: readonly Tour[] = [
       { anchor: 'list.search', title: 'Search', body: 'Type part of a name, a website, a username or a tag.' },
       { anchor: 'list.add', title: 'Add an item', body: 'Choose what kind it is: a login, a one-time code, a note, a card and more.', placement: 'top' },
       { anchor: 'list.rows', title: 'Your items', body: 'Tap one to see it and copy from it. Swipe a row for a quick action, which you can choose under Settings, Appearance, Vault list.' },
-      { anchor: 'narrow.tabs', title: 'Pages', body: 'Your items, one-time codes, the generator and health checks. Which ones show, and in what order, is under Settings, Appearance, Navigation.', placement: 'top' },
+      { anchor: 'narrow.tabs', title: 'Pages', body: 'Your items, one-time codes, the generator, health checks and tools. Which ones show, and in what order, is under Settings, Appearance, Navigation.', placement: 'top' },
       { anchor: 'sidebar.lock', title: 'Lock', body: 'Locks the vault now. It also locks by itself after you leave the app, which you can change under Settings, Security.' },
       { anchor: 'sidebar.settings', title: 'Settings and this guide', body: 'Every setting has a **?** beside it that says what it does, and Settings, Guide has the rest.' },
     ],
@@ -126,7 +126,7 @@ export const TOURS: readonly Tour[] = [
         anchor: 'codes.list',
         before: { go: 'codes' },
         title: 'Every code in one place',
-        body: 'Each item that has a one-time code is listed here. Click a code to copy it; double-click to open its item.',
+        body: 'Each item that has a one-time code is listed here, counting down. Click or tap a code to copy it.',
       },
       {
         anchor: 'codes.add',
@@ -148,7 +148,7 @@ export const TOURS: readonly Tour[] = [
       {
         anchor: 'generator.modes',
         title: 'What kind',
-        body: 'Random characters, a few words, something you can say aloud, a PIN, or a pattern of your own.',
+        body: 'Random characters, a few words, something you can say aloud, a PIN, or a pattern of your own. The phone can also make a lock pattern.',
       },
       {
         anchor: 'generator.controls',
@@ -187,7 +187,7 @@ export const TOURS: readonly Tour[] = [
         anchor: 'group:security.locking',
         before: { go: 'settings/security' },
         title: 'When the vault locks',
-        body: 'After a time with nothing happening, when the computer sleeps, and what the clipboard keeps.',
+        body: 'After a time with nothing happening, when the computer sleeps or the phone\'s screen goes off, and how long a copied secret stays on the clipboard.',
       },
       {
         anchor: 'group:security.master',

@@ -21,8 +21,28 @@ const PATTERN: &str = "Noise_XX_25519_ChaChaPoly_BLAKE2s";
 const PROLOGUE: &[u8] = b"wmpass/bridge/v1";
 const COMMIT_CONTEXT: &str = "wm-pass bridge 2026 commitment";
 const CODE_CONTEXT: &str = "wm-pass bridge 2026 comparison code";
-/// Noise's own limit on one message, less its tag.
-pub const LARGEST_MESSAGE: usize = 65_535 - 16;
+/// Noise's own limit on one message.
+const NOISE_MESSAGE: usize = 65_535;
+/// Noise's own limit on one message, less its tag. A longer one is sealed in several.
+pub const LARGEST_MESSAGE: usize = NOISE_MESSAGE - 16;
+/// The most a browser takes in one message from its native host: Chrome refuses anything over
+/// 1 MiB, and drops the connection with it.
+pub const BROWSER_MESSAGE: usize = 1024 * 1024;
+/// The longest frame the host can hand the browser: it goes as base64 inside `{"f":"…"}`, which
+/// makes it a third longer again, so a frame past about 768 KiB would not fit in a message.
+pub const LARGEST_TO_BROWSER: usize = (BROWSER_MESSAGE - r#"{"f":""}"#.len()) / 4 * 3;
+
+/// How long the frame [`Channel::seal`] makes from `plain` bytes is, so a sender can tell before
+/// sealing whether it will fit. Sealing moves the channel on, so one sealed and not sent would
+/// leave every later frame unreadable.
+#[must_use]
+pub fn sealed_len(plain: usize) -> usize {
+    if plain <= LARGEST_MESSAGE {
+        return plain + 16;
+    }
+    let pieces = plain.div_ceil(LARGEST_MESSAGE - 1);
+    plain + pieces * 17
+}
 
 /// Why the conversation ended. No variant carries key material.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
@@ -132,10 +152,26 @@ impl Channel {
         Ok(Self { noise: handshake.into_transport_mode()?, remote, hash })
     }
 
+    /// One frame for `plain`. Up to [`LARGEST_MESSAGE`] that is one Noise message; anything
+    /// longer goes as several back to back, each but the last a full [`NOISE_MESSAGE`] bytes,
+    /// and each led by a byte saying whether more follow, so a frame cut short is refused.
     pub fn seal(&mut self, plain: &[u8]) -> Result<Vec<u8>> {
-        if plain.len() > LARGEST_MESSAGE {
-            return Err(BridgeError::TooLarge);
+        // Up to the limit is one Noise message, exactly as older builds send it.
+        if plain.len() <= LARGEST_MESSAGE {
+            return self.seal_one(plain);
         }
+        let pieces: Vec<&[u8]> = plain.chunks(LARGEST_MESSAGE - 1).collect();
+        let mut out = Vec::with_capacity(pieces.len() * NOISE_MESSAGE);
+        for (i, piece) in pieces.iter().enumerate() {
+            let mut part = Zeroizing::new(Vec::with_capacity(piece.len() + 1));
+            part.push(u8::from(i + 1 < pieces.len()));
+            part.extend_from_slice(piece);
+            out.extend_from_slice(&self.seal_one(&part)?);
+        }
+        Ok(out)
+    }
+
+    fn seal_one(&mut self, plain: &[u8]) -> Result<Vec<u8>> {
         let mut out = vec![0u8; plain.len() + 16];
         let written = self.noise.write_message(plain, &mut out)?;
         out.truncate(written);
@@ -143,6 +179,29 @@ impl Channel {
     }
 
     pub fn open(&mut self, frame: &[u8]) -> Result<Zeroizing<Vec<u8>>> {
+        if frame.len() <= NOISE_MESSAGE {
+            let plain = self.open_one(frame)?;
+            // A full-size piece that says more follow is a longer frame cut short: a message
+            // itself is JSON and never starts with that byte.
+            if frame.len() == NOISE_MESSAGE && plain.first() == Some(&1) {
+                return Err(BridgeError::Tampered);
+            }
+            return Ok(plain);
+        }
+        let pieces: Vec<&[u8]> = frame.chunks(NOISE_MESSAGE).collect();
+        let mut out = Zeroizing::new(Vec::with_capacity(frame.len()));
+        for (i, piece) in pieces.iter().enumerate() {
+            let part = self.open_one(piece)?;
+            let (&more, rest) = part.split_first().ok_or(BridgeError::Tampered)?;
+            if more != u8::from(i + 1 < pieces.len()) {
+                return Err(BridgeError::Tampered);
+            }
+            out.extend_from_slice(rest);
+        }
+        Ok(out)
+    }
+
+    fn open_one(&mut self, frame: &[u8]) -> Result<Zeroizing<Vec<u8>>> {
         let mut out = Zeroizing::new(vec![0u8; frame.len()]);
         let written = self.noise.read_message(frame, &mut out).map_err(|_| BridgeError::Tampered)?;
         out.truncate(written);
@@ -548,6 +607,58 @@ mod tests {
         let mut request = client.seal(b"fill").unwrap();
         request[0] ^= 1;
         assert_eq!(server.feed(&request, |_| true).unwrap_err(), BridgeError::Tampered);
+    }
+
+    #[test]
+    fn a_message_past_one_noise_message_crosses_whole() {
+        let (extension, app) = (Keys::generate().unwrap(), Keys::generate().unwrap());
+        let (mut client, first) = Client::start(&extension.secret, Some(app.public), "Chrome").unwrap();
+        let mut server = Server::start(&app.secret).unwrap();
+        pump(&mut client, &mut server, first, true);
+        for size in [LARGEST_MESSAGE - 1, LARGEST_MESSAGE, LARGEST_MESSAGE + 1, (LARGEST_MESSAGE - 1) * 2, 512 * 1024 + 3] {
+            let big: Vec<u8> = (0..size).map(|i| (i % 251) as u8).collect();
+            let request = client.seal(&big).unwrap();
+            assert_eq!(server.feed(&request, |_| true).unwrap().message.unwrap().as_slice(), big.as_slice(), "{size}");
+            let reply = server.seal(&big).unwrap();
+            assert_eq!(client.feed(&reply).unwrap().message.unwrap().as_slice(), big.as_slice(), "{size}");
+        }
+        assert_eq!(client.seal(b"small").unwrap().len(), 5 + 16, "a small message is one Noise message, as before");
+        let full = vec![b'{'; LARGEST_MESSAGE];
+        assert_eq!(client.seal(&full).unwrap().len(), NOISE_MESSAGE, "the largest single message goes as one, as before");
+    }
+
+    #[test]
+    fn the_sealed_length_is_known_before_sealing() {
+        let (extension, app) = (Keys::generate().unwrap(), Keys::generate().unwrap());
+        let (mut client, first) = Client::start(&extension.secret, Some(app.public), "Chrome").unwrap();
+        let mut server = Server::start(&app.secret).unwrap();
+        pump(&mut client, &mut server, first, true);
+        for size in [0, 1, LARGEST_MESSAGE - 1, LARGEST_MESSAGE, LARGEST_MESSAGE + 1, (LARGEST_MESSAGE - 1) * 2, (LARGEST_MESSAGE - 1) * 2 + 1, 700_000] {
+            assert_eq!(server.seal(&vec![b'x'; size]).unwrap().len(), sealed_len(size), "{size}");
+        }
+    }
+
+    #[test]
+    fn the_largest_frame_for_the_browser_fits_its_message() {
+        use base64::Engine as _;
+        let wrapped = |frame: usize| format!(r#"{{"f":"{}"}}"#, base64::engine::general_purpose::STANDARD.encode(vec![0u8; frame])).len();
+        assert!(wrapped(LARGEST_TO_BROWSER) <= BROWSER_MESSAGE);
+        assert!(wrapped(LARGEST_TO_BROWSER + 1) > BROWSER_MESSAGE);
+    }
+
+    #[test]
+    fn a_long_frame_cut_short_is_refused() {
+        let (extension, app) = (Keys::generate().unwrap(), Keys::generate().unwrap());
+        let (mut client, first) = Client::start(&extension.secret, Some(app.public), "Chrome").unwrap();
+        let mut server = Server::start(&app.secret).unwrap();
+        pump(&mut client, &mut server, first, true);
+        let request = client.seal(&vec![b'x'; LARGEST_MESSAGE * 3]).unwrap();
+        assert_eq!(server.feed(&request[..NOISE_MESSAGE * 2], |_| true).unwrap_err(), BridgeError::Tampered);
+        let (mut client, first) = Client::start(&extension.secret, Some(app.public), "Chrome").unwrap();
+        let mut server = Server::start(&app.secret).unwrap();
+        pump(&mut client, &mut server, first, true);
+        let request = client.seal(&vec![b'x'; LARGEST_MESSAGE * 3]).unwrap();
+        assert_eq!(server.feed(&request[..NOISE_MESSAGE], |_| true).unwrap_err(), BridgeError::Tampered);
     }
 
     #[test]

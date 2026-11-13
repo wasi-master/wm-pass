@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use wmpass_core::format::FactorKind;
 use wmpass_core::model::{Entry, FieldKind, Kind, SiteMatcher};
-use wmpass_core::vault::hex;
+use wmpass_core::vault::{Vault, hex};
 use wmpass_core::{health, otp};
 
 use crate::fields::{self, FieldSpec, Shown};
@@ -71,7 +71,7 @@ pub fn summary(entry: &Entry) -> Summary {
         kind: entry.kind.name(),
         title: entry.common.title.v.clone(),
         subtitle: fields::subtitle(entry),
-        site: health::entry_domains(entry).into_iter().next(),
+        site: health::first_domain(entry),
         app: entry.login().and_then(|login| {
             login.site_matchers.v.iter().find_map(|matcher| match wmpass_core::matching::normalized_matcher(matcher) {
                 SiteMatcher::AndroidApp { package, .. } => Some(package),
@@ -425,4 +425,57 @@ pub fn factor_view(kind: &FactorKind) -> FactorView {
             input: hex(input),
         },
     }
+}
+
+/// "about 3 hours", "about 2 days".
+fn span(ms: u64) -> String {
+    let hours = ms.saturating_add(1_800_000) / 3_600_000;
+    match hours {
+        0 | 1 => "about 1 hour".to_owned(),
+        2..=47 => format!("about {hours} hours"),
+        _ => format!("about {} days", hours.saturating_add(12) / 24),
+    }
+}
+
+/// A clock that looks wrong, as the vault judges it against `now`, with the words to show; null
+/// when the clocks agree well enough.
+pub fn clock_warning_view(vault: &Vault, now: u64) -> serde_json::Value {
+    let Some(warning) = vault.clock_warning(now) else {
+        return serde_json::Value::Null;
+    };
+    let name = warning.device.and_then(|device| vault.device_name(device));
+    let by = span(warning.by_ms);
+    let message = if warning.this_device {
+        format!("This device's clock is wrong by {by}. Fix the time in your system settings so changes sync in the right order.")
+    } else {
+        let who = name.map_or_else(|| "Another device's clock".to_owned(), |name| format!("Another device's clock ({name})"));
+        format!("{who} is {by} ahead. Fix the time on that device so changes sync in the right order.")
+    };
+    serde_json::json!({
+        "this_device": warning.this_device,
+        "ahead_device": name,
+        "device": warning.device,
+        "by_ms": warning.by_ms,
+        "hours": warning.by_ms.saturating_add(1_800_000) / 3_600_000,
+        "message": message,
+    })
+}
+
+/// What a shell says when the vault's master password was changed on two devices at once.
+pub const PASSWORD_CONFLICT_MESSAGE: &str = "Your master password was changed on two devices at about the same time. Both new passwords open this vault for now. Go to Settings, Security, Unlock methods to remove the one you don't want.";
+
+/// The same, when the vault had no room for both and only the later one stayed.
+pub const PASSWORD_DROPPED_MESSAGE: &str = "Your master password was changed on two devices at about the same time. The vault had no free slot for both, so only the later new password opens it. Check Settings, Security, Unlock methods.";
+
+/// Two passwords changed from one on two devices at once, with the slots that hold them and the
+/// words to show; null when there is none. `both_open` is false when only the later one stayed.
+pub fn password_conflict_view(vault: &Vault) -> serde_json::Value {
+    let slots = vault.doc.password_conflict();
+    if !slots.is_empty() {
+        return serde_json::json!({"slots": slots, "both_open": true, "message": PASSWORD_CONFLICT_MESSAGE});
+    }
+    if vault.doc.password_dropped() {
+        return serde_json::json!({"slots": [], "both_open": false, "message": PASSWORD_DROPPED_MESSAGE});
+    }
+    serde_json::Value::Null
 }

@@ -27,19 +27,38 @@ class Icons {
   style = $state('outlined');
   private cache: Record<string, Table> = { outlined };
 
+  private asked = 0;
+
   async setStyle(style: string) {
-    const table = await this.tableOf(style);
-    this.table = table;
-    this.style = loaders[style] ? style : 'outlined';
+    // A style chosen while another is still loading wins, however the two loads finish.
+    const turn = ++this.asked;
+    const got = await this.load(style);
+    if (turn !== this.asked) return;
+    this.table = got.table;
+    this.style = got.style;
   }
 
+  /** A style's glyphs, or the outlined ones when it is unknown or its file would not load. */
   async tableOf(style: string) {
+    return (await this.load(style)).table;
+  }
+
+  /**
+   * A style's glyphs with the style they really are: outlined when the one asked for is unknown or
+   * would not load, since each style is drawn differently and glyphs must go with their own.
+   */
+  async load(style: string): Promise<{ style: string; table: Table }> {
     if (!this.cache[style]) {
       const load = loaders[style];
-      if (!load) return outlined;
-      this.cache[style] = (await load()).default;
+      if (!load) return { style: 'outlined', table: outlined };
+      try {
+        this.cache[style] = (await load()).default;
+      } catch (failure) {
+        console.warn(`The ${style} icons could not be loaded`, failure);
+        return { style: 'outlined', table: outlined };
+      }
     }
-    return this.cache[style];
+    return { style, table: this.cache[style] };
   }
 }
 

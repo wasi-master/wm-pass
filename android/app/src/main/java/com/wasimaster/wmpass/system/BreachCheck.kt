@@ -160,7 +160,11 @@ object BreachCheck {
     /** The notification's Stop button. */
     class StopReceiver : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action == STOP) stop()
+            if (intent.action != STOP) return
+            // A check from a process that has since died left its notification up, ongoing, with
+            // nothing left to stop: Stop takes it away.
+            if (job?.isActive != true) NotificationManagerCompat.from(context).cancel(NOTE)
+            stop()
         }
     }
 }

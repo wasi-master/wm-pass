@@ -3,6 +3,7 @@
   import PasswordField from '../parts/PasswordField.svelte';
   import { bytesOf, pass } from '../engine/pass.svelte';
   import { ui } from '../vault/ui.svelte';
+  import { overlays } from '../parts/floating.svelte';
   import EntryLines from './EntryLines.svelte';
   import type { Summary } from '../engine/types';
 
@@ -25,10 +26,15 @@
 
   $effect(() => {
     void pass.revision;
-    void pass.info().then(async (info) => {
-      open = info.shelf_open;
-      items = open ? await pass.search('hidden') : [];
-    });
+    // As the list's shelf has it: only what is on the shelf, and a vault locking meanwhile is no error.
+    void pass
+      .info()
+      .then(async (info) => {
+        const found = info.shelf_open ? (await pass.search('hidden')).filter((e) => e.hidden) : [];
+        open = info.shelf_open;
+        items = found;
+      })
+      .catch(() => undefined);
   });
 
   async function openIt() {
@@ -40,7 +46,7 @@
       password = '';
       error = null;
     } catch (failure: any) {
-      error = failure.message;
+      error = failure?.message ?? 'The shelf could not be opened.';
     } finally {
       secret.fill(0);
       checking = false;
@@ -52,12 +58,12 @@
   <div class="stack" style="max-width:420px">
     <p class="dim">Entries on the shelf stay out of every list, search and autofill until you open it with your password. It closes again when you leave this page or the vault locks.</p>
     <PasswordField bind:value={password} placeholder="Master password" error={!!error} onenter={openIt} />
-    {#if error}<p class="danger-text small">{error}</p>{/if}
+    {#if error}<p class="danger-text small" role="alert">{error}</p>{/if}
     <div><Btn label={checking ? 'Checking the password…' : 'Open the shelf'} variant="primary" disabled={!password || checking} onclick={openIt} /></div>
   </div>
 {:else}
   <div class="stack">
     {#if items.length === 0}<p class="dim">The shelf is empty.</p>{:else}<EntryLines {items} onpick={(e) => { keep = true; ui.go('shelf'); ui.open(e.id); }} />{/if}
-    <div><Btn label="Close the shelf" icon="visibility_lock" onclick={() => pass.change('shelf.close')} /></div>
+    <div><Btn label="Close the shelf" icon="visibility_lock" onclick={() => void pass.change('shelf.close').catch((failure: any) => overlays.toast(failure?.message ?? 'The shelf could not be closed.'))} /></div>
   </div>
 {/if}

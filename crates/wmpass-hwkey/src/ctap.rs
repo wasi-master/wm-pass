@@ -44,10 +44,19 @@ fn encode(command: u8, map: Vec<(Value, Value)>) -> Result<Vec<u8>> {
 fn status(code: u8) -> Result<()> {
     match code {
         0x00 => Ok(()),
+        // CTAP2_ERR_NO_CREDENTIALS.
         0x2e => Err(HwError::WrongKey),
-        0x27 | 0x2f | 0x30 | 0x3a | 0x35 => Err(HwError::NotConfirmed),
-        0x36 | 0x31 | 0x34 => Err(HwError::PinRequired),
-        0x2c | 0x2b => Err(HwError::Unsupported),
+        // Denied, cancelled, timed out waiting for a touch, not allowed, action timed out,
+        // touch required.
+        0x27 | 0x2d | 0x2f | 0x30 | 0x3a | 0x3b => Err(HwError::NotConfirmed),
+        // CTAP2_ERR_PIN_BLOCKED and CTAP2_ERR_UV_BLOCKED: no PIN or finger will do any more.
+        // Asking for the PIN again would only mislead.
+        0x32 | 0x3c => Err(HwError::PinBlocked),
+        // The key wants user verification: its PIN is required, wrong, not set, or blocked
+        // until it is plugged in again. None of these is about touching it.
+        0x31 | 0x34 | 0x35 | 0x36 => Err(HwError::PinRequired),
+        // An option or the ES256 algorithm it does not support.
+        0x26 | 0x2b | 0x2c => Err(HwError::Unsupported),
         _ => Err(HwError::Protocol),
     }
 }
@@ -356,6 +365,19 @@ pub(crate) mod tests {
         let factor = enroll(&mut key).unwrap();
         key.user_present = false;
         assert_eq!(derive(&mut key, &factor).err(), Some(HwError::NotConfirmed));
+    }
+
+    #[test]
+    fn key_errors_are_named_for_what_the_person_can_do() {
+        assert_eq!(status(0x2d), Err(HwError::NotConfirmed), "a cancelled request is not a protocol fault");
+        assert_eq!(status(0x35), Err(HwError::PinRequired), "a PIN that is not set is not a missed touch");
+        assert_eq!(status(0x31), Err(HwError::PinRequired));
+        assert_eq!(status(0x32), Err(HwError::PinBlocked), "a blocked PIN is not one to type again");
+        assert_eq!(status(0x3c), Err(HwError::PinBlocked), "nor a blocked fingerprint reader");
+        assert!(HwError::PinBlocked.to_string().contains("too many wrong PINs"));
+        assert_eq!(status(0x26), Err(HwError::Unsupported));
+        assert_eq!(status(0x2f), Err(HwError::NotConfirmed));
+        assert_eq!(status(0x01), Err(HwError::Protocol));
     }
 
     #[test]

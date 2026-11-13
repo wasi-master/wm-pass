@@ -41,6 +41,14 @@ A nested vault for groups of items you want apart, such as work and home. A shar
 
 What Settings, Security changes about a vault file, such as its passwords and duress passwords, applies only to the vault you opened at the door.
 
+#### On Android
+
+A nested vault is its own encrypted file, opened from inside this one without asking again.
+
+A shared vault is held at a place you and the others can all reach, such as a shared folder or a WebDAV server. Each person has their own key to it, and the owner decides who is in. No server is needed.
+
+Under **Yours**, each one says what it is: nested, shared with you, shared and yours to manage, or waiting for the owner's invitation. Tap one to open it. **You are inside**, at the top, takes you back out.
+
 See also [Vaults inside a vault](/guide/how-it-works/#feature-vaults), [A nested vault](/guide/settings/vaults/#action-nested-vault), [A shared vault](/guide/settings/vaults/#action-shared-vault).
 
 <a id="action-nested-vault"></a>
@@ -139,5 +147,13 @@ To remove someone, use the remove button beside their name.
 If the code they read out differs, choose **Not them**. A different one means someone swapped it, and adding it would hand that person the vault.
 
 Removing someone moves the vault to a new key, so they cannot open anything written from then on. They may have kept a copy, so change any password they could see.
+
+#### On Android
+
+Each person shows with their name and a fingerprint of their key.
+
+To add someone, paste the code they made to join and choose **Check it**, or choose **Scan it** and scan their code. Ask them to read their code out. If it matches the one shown, choose **It matches**, then give them the invitation that appears, to scan or paste. Anyone can see the invitation, but only that person can use it.
+
+To remove someone, use the remove button beside their name.
 
 See also [A shared vault](/guide/settings/vaults/#action-shared-vault), [Join someone’s shared vault](/guide/settings/vaults/#action-join-shared-vault).

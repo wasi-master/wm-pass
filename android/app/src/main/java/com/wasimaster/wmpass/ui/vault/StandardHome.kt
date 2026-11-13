@@ -1,6 +1,9 @@
 package com.wasimaster.wmpass.ui.vault
 
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.text.input.clearText
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -51,7 +54,11 @@ fun StandardHome() {
     val prefs = shell.prefs
     val colors = palette
     BackHandler(shell.selecting) { shell.selection.clear() }
-    BackHandler(shell.searching) { shell.searching = false }
+    // The same as the search bar's own Back: closing search clears it, so it opens empty next time.
+    BackHandler(shell.searching) {
+        shell.searching = false
+        shell.searchField.clearText()
+    }
     val tabs = prefs.tabs.mapNotNull { id -> AllTabs.firstOrNull { it.id == id } }
     // Material's navigation rail from the medium width up: a tablet, an open foldable, a phone on
     // its side. A bar along the bottom of those is far from the hands and costs scarce height.
@@ -64,7 +71,8 @@ fun StandardHome() {
         Row(Modifier.fillMaxSize()) {
         if (rail) {
             NavigationRail(
-                modifier = Modifier.helpAnchor("narrow.tabs"),
+                // Its own group, read before the page beside it rather than interleaved with it.
+                modifier = Modifier.helpAnchor("narrow.tabs").semantics { isTraversalGroup = true },
                 containerColor = colors.ground,
                 header = { if (addInRail) AddFab() },
             ) {
@@ -77,7 +85,8 @@ fun StandardHome() {
                             if (!selected) shell.haptics.tick()
                             shell.tab = tab.id
                         },
-                        icon = { Icon(if (selected) tab.filled else tab.icon, tab.label) },
+                        // Named by its label when it has one, or a screen reader says the name twice.
+                        icon = { Icon(if (selected) tab.filled else tab.icon, if (prefs.navLabels.value == "none") tab.label else null) },
                         label = if (prefs.navLabels.value == "none") null else ({ Text(tab.label, maxLines = 1) }),
                         alwaysShowLabel = prefs.navLabels.value == "all",
                     )
@@ -85,7 +94,7 @@ fun StandardHome() {
                 Spacer(Modifier.weight(1f))
             }
         }
-        ListAndItem(panes, Modifier.weight(1f).fillMaxHeight()) {
+        ListAndItem(panes, Modifier.weight(1f).fillMaxHeight().semantics { isTraversalGroup = true }) {
         Scaffold(
             containerColor = colors.ground,
             topBar = {
@@ -125,7 +134,7 @@ fun StandardHome() {
                                     if (!selected) shell.haptics.tick()
                                     shell.tab = tab.id
                                 },
-                                icon = { Icon(if (selected) tab.filled else tab.icon, tab.label) },
+                                icon = { Icon(if (selected) tab.filled else tab.icon, if (prefs.navLabels.value == "none") tab.label else null) },
                                 label = if (prefs.navLabels.value == "none") null else ({ Text(tab.label, maxLines = 1) }),
                                 alwaysShowLabel = prefs.navLabels.value == "all",
                             )

@@ -68,7 +68,7 @@ impl std::fmt::Debug for NasConfig {
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 pub fn nas_http(config: &NasConfig, on_certificate: Box<dyn Fn(String) + Send + Sync>) -> Result<Box<dyn wmpass_net::Http>> {
     if !config.own_certificate {
-        return Ok(Box::new(wmpass_net::http::NativeHttp::default()));
+        return Ok(Box::new(wmpass_net::http::NativeHttp::for_places()));
     }
     let engine = base64::engine::general_purpose::STANDARD;
     let expected = if config.cert_pin.is_empty() {
@@ -889,9 +889,22 @@ mod pin_tests {
             for socket in listener.incoming().flatten() {
                 let Ok(connection) = rustls::ServerConnection::new(crate::ftp::test_tls::server()) else { continue };
                 let mut tls = rustls::StreamOwned::new(connection, socket);
+                // The whole request, body too: the sign-in is a POST, and a socket closed with
+                // its body still unread is reset, which the client can see as a failed read
+                // before the answer when tests run side by side.
                 let mut seen = Vec::new();
                 let mut buffer = [0u8; 4096];
-                while !seen.windows(4).any(|w| w == b"\r\n\r\n") {
+                let whole = |seen: &[u8]| {
+                    let Some(end) = seen.windows(4).position(|w| w == b"\r\n\r\n") else { return false };
+                    let head = String::from_utf8_lossy(&seen[..end]).to_ascii_lowercase();
+                    let length = head
+                        .lines()
+                        .find_map(|line| line.strip_prefix("content-length:"))
+                        .and_then(|n| n.trim().parse::<usize>().ok())
+                        .unwrap_or(0);
+                    seen.len() >= end + 4 + length
+                };
+                while !whole(&seen) {
                     match tls.read(&mut buffer) {
                         Ok(0) | Err(_) => break,
                         Ok(n) => seen.extend_from_slice(&buffer[..n]),

@@ -29,6 +29,9 @@ struct Pending {
 pub struct Clip {
     board: Option<Clipboard>,
     pending: Option<Pending>,
+    /// Whether a copy with no clipboard goes to the terminal. Tests have no terminal, and a
+    /// secret written to their output would sit in the test log.
+    terminal: bool,
 }
 
 impl std::fmt::Debug for Clip {
@@ -67,19 +70,58 @@ fn osc52(text: &str) -> std::io::Result<()> {
     out.flush()
 }
 
+/// The secret waiting to be cleared, as far as a panic can see: a release build aborts on one,
+/// so the timer and the lock that would clear it never run.
+static AFTER_PANIC: std::sync::Mutex<Option<(blake3::Hash, Route)>> = std::sync::Mutex::new(None);
+
+/// From the panic hook: clears a copied secret that is still on the clipboard, best effort and
+/// without waiting on a lock another thread may hold.
+pub fn clear_after_panic() {
+    let Ok(mut noted) = AFTER_PANIC.try_lock() else { return };
+    let Some((fingerprint, route)) = noted.take() else { return };
+    match route {
+        Route::System => {
+            if let Ok(mut board) = Clipboard::new() {
+                let ours = board.get_text().map(Zeroizing::new).is_ok_and(|now| blake3::hash(now.as_bytes()) == fingerprint);
+                if ours {
+                    let _ = board.clear();
+                }
+            }
+        }
+        Route::Terminal => {
+            let _ = osc52("");
+        }
+    }
+}
+
 impl Clip {
     /// Opens the clipboard. Over SSH or with no display there is none, and copies go to the
     /// terminal instead.
     pub fn new() -> Self {
         let remote = std::env::var_os("SSH_CONNECTION").is_some() || std::env::var_os("SSH_TTY").is_some();
         let board = if remote { None } else { Clipboard::new().ok() };
-        Self { board, pending: None }
+        Self { board, pending: None, terminal: true }
     }
 
     /// A clipboard that copies nowhere, for tests.
     #[cfg(test)]
     pub fn none() -> Self {
-        Self { board: None, pending: None }
+        Self { board: None, pending: None, terminal: false }
+    }
+
+    /// Keeps [`AFTER_PANIC`] in step with what waits to be cleared. Only the real clipboard
+    /// does: a test's must not reach into another's.
+    fn note_for_panic(&self) {
+        if !self.terminal {
+            return;
+        }
+        if let Ok(mut noted) = AFTER_PANIC.lock() {
+            *noted = self.pending.as_ref().map(|p| (p.fingerprint, p.route));
+        }
+    }
+
+    fn osc52(&self, text: &str) -> std::io::Result<()> {
+        if self.terminal { osc52(text) } else { Ok(()) }
     }
 
     /// Puts text on the clipboard. A secret is cleared after `clear_after`, if not zero.
@@ -90,13 +132,13 @@ impl Clip {
                 match done {
                     Ok(()) => Route::System,
                     Err(_) => {
-                        osc52(text).map_err(|e| e.to_string())?;
+                        self.osc52(text).map_err(|e| format!("could not reach the clipboard: {e}"))?;
                         Route::Terminal
                     }
                 }
             }
             None => {
-                osc52(text).map_err(|e| format!("no clipboard here: {e}"))?;
+                self.osc52(text).map_err(|e| format!("no clipboard here, and the terminal would not take it: {e}"))?;
                 Route::Terminal
             }
         };
@@ -105,6 +147,7 @@ impl Clip {
             fingerprint: blake3::hash(text.as_bytes()),
             route,
         });
+        self.note_for_panic();
         Ok(route)
     }
 
@@ -129,6 +172,7 @@ impl Clip {
     /// Clears a pending secret now, as on lock or quit, unless something else was copied since.
     pub fn clear_now(&mut self) {
         let Some(pending) = self.pending.take() else { return };
+        self.note_for_panic();
         match pending.route {
             Route::System => {
                 if let Some(board) = self.board.as_mut() {
@@ -143,7 +187,7 @@ impl Clip {
             }
             // A terminal cannot be asked what it holds, so it is always cleared.
             Route::Terminal => {
-                let _ = osc52("");
+                let _ = self.osc52("");
             }
         }
     }

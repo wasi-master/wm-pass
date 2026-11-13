@@ -58,6 +58,10 @@ pub fn rp_id_allowed(host: &str, rp_id: &str) -> bool {
     if rp_id.is_empty() || host.is_empty() {
         return false;
     }
+    // An address has no parent domain: its RP ID is the address itself or nothing.
+    if host.trim_start_matches('[').trim_end_matches(']').parse::<std::net::IpAddr>().is_ok() {
+        return host == rp_id;
+    }
     let covers = host == rp_id || host.strip_suffix(&rp_id).is_some_and(|rest| rest.ends_with('.'));
     if !covers {
         return false;
@@ -144,6 +148,23 @@ pub fn create(rp_id: &str, rp_name: &str, user_handle: &[u8], user_name: &str, u
     })
 }
 
+/// Moves the signature counter on before an assertion, and says whether it moved so the caller
+/// saves the passkey. WebAuthn asks an authenticator that keeps a counter to send a strictly
+/// higher one each time, and a relying party that sees one repeat may take the credential for a
+/// clone. A counter at zero stays there: that is how an authenticator without a counter answers,
+/// and it is what every passkey made here sends, since a synced credential cannot keep a
+/// meaningful count. Only one imported with a count of its own moves.
+pub fn advance_counter(passkey: &mut Passkey) -> Result<bool> {
+    if passkey.counter == 0 {
+        return Ok(false);
+    }
+    passkey.counter = passkey
+        .counter
+        .checked_add(1)
+        .ok_or_else(|| Error::Invalid("this passkey's signature counter has run out".into()))?;
+    Ok(true)
+}
+
 /// Signs a sign-in challenge. Pass `user_verified` only after a real unlock or biometric
 /// check for this request: relying parties trust that flag.
 pub fn sign(passkey: &Passkey, client_data_hash: &[u8; 32], user_verified: bool) -> Result<Assertion> {
@@ -170,15 +191,17 @@ pub fn sign(passkey: &Passkey, client_data_hash: &[u8; 32], user_verified: bool)
     })
 }
 
-/// The client data a browser would build, for the extension, and its hash.
+/// The client data a browser would build, for the extension, and its hash. Its members come in
+/// the order WebAuthn fixes, `type`, `challenge`, `origin`, `crossOrigin`, since a relying party
+/// may check the text against that template rather than parse it.
 pub fn client_data(kind: &str, challenge: &[u8], origin: &str, cross_origin: bool) -> (String, [u8; 32]) {
-    let json = serde_json::json!({
-        "type": kind,
-        "challenge": URL_SAFE_NO_PAD.encode(challenge),
-        "origin": origin,
-        "crossOrigin": cross_origin,
-    })
-    .to_string();
+    let text = |value: &str| serde_json::Value::from(value).to_string();
+    let json = format!(
+        "{{\"type\":{},\"challenge\":{},\"origin\":{},\"crossOrigin\":{cross_origin}}}",
+        text(kind),
+        text(&URL_SAFE_NO_PAD.encode(challenge)),
+        text(origin),
+    );
     let hash = Sha256::digest(json.as_bytes());
     let mut out = [0u8; 32];
     out.copy_from_slice(&hash);
@@ -197,7 +220,8 @@ mod tests {
         let created = create("example.com", "Example", b"user-1", "me", true, 1000).unwrap();
         let verifying = VerifyingKey::from_public_key_der(&created.public_key_der).unwrap();
         let (json, hash) = client_data("webauthn.get", b"challenge", "https://example.com", false);
-        assert!(json.contains("Y2hhbGxlbmdl"));
+        assert_eq!(json, r#"{"type":"webauthn.get","challenge":"Y2hhbGxlbmdl","origin":"https://example.com","crossOrigin":false}"#, "in WebAuthn's order");
+        assert_eq!(serde_json::from_str::<serde_json::Value>(&client_data("x", b"", "a\"b", true).0).unwrap()["origin"], "a\"b");
 
         let assertion = sign(&created.passkey, &hash, true).unwrap();
         let mut signed = assertion.authenticator_data.clone();
@@ -212,6 +236,23 @@ mod tests {
         let mut tampered = signed.clone();
         tampered[0] ^= 1;
         assert!(verifying.verify(&tampered, &signature).is_err());
+    }
+
+    #[test]
+    fn a_counter_in_use_rises_and_one_at_zero_stays_there() {
+        let mut fresh = create("example.com", "Example", b"u", "me", true, 1000).unwrap().passkey;
+        assert!(!advance_counter(&mut fresh).unwrap());
+        assert_eq!(fresh.counter, 0);
+
+        let mut imported = fresh.clone();
+        imported.counter = 41;
+        assert!(advance_counter(&mut imported).unwrap());
+        assert_eq!(imported.counter, 42);
+        let data = sign(&imported, &[0u8; 32], true).unwrap().authenticator_data;
+        assert_eq!(&data[33..37], &42u32.to_be_bytes());
+
+        imported.counter = u32::MAX;
+        assert!(advance_counter(&mut imported).is_err(), "never wraps back to a lower number");
     }
 
     #[test]
@@ -264,6 +305,10 @@ mod tests {
         assert!(!rp_id_allowed("example.co.uk", "co.uk"));
         assert!(!rp_id_allowed("foo.github.io", "github.io"), "user pages cannot claim the whole host");
         assert!(!rp_id_allowed("", ""));
+        assert!(!rp_id_allowed("192.168.1.1", "1.1"), "an address has no parent domain");
+        assert!(!rp_id_allowed("10.0.0.1", "0.1"));
+        assert!(!rp_id_allowed("[::1]", "1]"));
+        assert!(rp_id_allowed("192.168.1.1", "192.168.1.1"), "an address may claim itself");
     }
 
     #[test]

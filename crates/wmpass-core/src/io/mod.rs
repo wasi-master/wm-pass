@@ -42,6 +42,7 @@ pub enum Format {
     KeeperJson,
     ProtonPass,
     AppleCsv,
+    OnePasswordCsv,
     SafeInCloudXml,
     SafeInCloudDb,
     RoboFormCsv,
@@ -86,6 +87,7 @@ impl Format {
             Self::KeeperJson => "Keeper JSON",
             Self::ProtonPass => "Proton Pass",
             Self::AppleCsv => "Apple Passwords CSV",
+            Self::OnePasswordCsv => "1Password CSV",
             Self::SafeInCloudXml => "SafeInCloud XML",
             Self::SafeInCloudDb => "SafeInCloud database",
             Self::RoboFormCsv => "RoboForm CSV",
@@ -114,7 +116,7 @@ impl Format {
     }
 
     /// Every format, for looking one up by its name.
-    pub const ALL: [Self; 38] = [
+    pub const ALL: [Self; 39] = [
         Self::Kdbx,
         Self::BitwardenJson,
         Self::BitwardenCsv,
@@ -129,6 +131,7 @@ impl Format {
         Self::KeeperJson,
         Self::ProtonPass,
         Self::AppleCsv,
+        Self::OnePasswordCsv,
         Self::SafeInCloudXml,
         Self::SafeInCloudDb,
         Self::RoboFormCsv,
@@ -206,7 +209,10 @@ pub(crate) struct Draft {
 impl Draft {
     pub fn into_login(mut self, at: Hlc, skipped: &mut Vec<String>) -> ImportedEntry {
         let mut matchers: Vec<SiteMatcher> = Vec::new();
-        for url in self.urls.iter().map(|u| u.trim()).filter(|u| !u.is_empty()) {
+        // LastPass writes `http://` for a login with no address: that is no address, and kept
+        // it would read as a site on plain http.
+        let bare_scheme = |u: &str| u.split_once("://").is_some_and(|(_, rest)| rest.trim_matches('/').is_empty());
+        for url in self.urls.iter().map(|u| u.trim()).filter(|u| !u.is_empty() && !bare_scheme(u)) {
             let matcher = crate::matching::matcher_from_address(url);
             if !matchers.contains(&matcher) {
                 matchers.push(matcher);
@@ -318,6 +324,34 @@ pub(crate) fn otp_entry(config: OtpConfig, at: Hlc) -> ImportedEntry {
     }
 }
 
+/// A one-time code item, when its settings can make codes: a seed that is base32 and not empty,
+/// a sensible number of digits and a period. Otherwise `None`, with the reason in `skipped`,
+/// rather than an item that only ever shows an error.
+pub(crate) fn checked_code(config: OtpConfig, at: Hlc, skipped: &mut Vec<String>) -> Option<ImportedEntry> {
+    let name = match (config.issuer.trim(), config.account.trim()) {
+        ("", "") => "A code",
+        ("", account) => account,
+        (issuer, _) => issuer,
+    }
+    .to_owned();
+    let problem = match crate::otp::base32_decode(config.secret.expose()) {
+        Err(_) => Some("its setup key is not base32 (the letters A to Z and digits 2 to 7)"),
+        Ok(seed) if seed.is_empty() => Some("it has no setup key"),
+        Ok(_) if !(1..=10).contains(&config.digits) && config.kind != crate::otp::OtpKind::Steam => {
+            Some("its number of digits is not one codes are made with")
+        }
+        Ok(_) if config.kind == (crate::otp::OtpKind::Totp { period: 0 }) => Some("its period is zero"),
+        Ok(_) => None,
+    };
+    match problem {
+        Some(reason) => {
+            skipped.push(format!("{name}: left out, as {reason}"));
+            None
+        }
+        None => Some(otp_entry(config, at)),
+    }
+}
+
 /// Reads a code from a link or a bare base32 seed.
 pub(crate) fn parse_otp(
     text: &str,
@@ -329,7 +363,8 @@ pub(crate) fn parse_otp(
     if text.is_empty() {
         return None;
     }
-    if text.starts_with("otpauth://") || text.starts_with("steam://") {
+    let lower = text.get(..10).unwrap_or(text).to_ascii_lowercase();
+    if lower.starts_with("otpauth://") || lower.starts_with("steam://") {
         // Zoho Vault writes links with no label, `otpauth://totp?secret=…`; the
         // entry's title stands in for it.
         let labelled = ["totp", "hotp"].iter().find_map(|kind| {
@@ -347,7 +382,7 @@ pub(crate) fn parse_otp(
         };
     }
     if crate::otp::base32_decode(text).is_ok_and(|bytes| !bytes.is_empty()) {
-        let mut config = OtpConfig::totp(text.replace([' ', '-'], "").to_uppercase());
+        let mut config = OtpConfig::totp(crate::otp::normalize_secret(text));
         config.issuer = title.to_owned();
         config.account = account.to_owned();
         return Some(config);
@@ -367,23 +402,46 @@ pub fn detect(data: &[u8]) -> Option<Format> {
     if safeincloud::is_database(data) {
         return Some(Format::SafeInCloudDb);
     }
-    let text = std::str::from_utf8(data)
-        .ok()?
-        .trim_start_matches('\u{feff}')
-        .trim();
+    let wide = utf16_text(data);
+    let text = match &wide {
+        Some(text) => text.as_str(),
+        None => std::str::from_utf8(data).ok()?,
+    };
+    let text = text.trim_start_matches('\u{feff}').trim();
     if text.starts_with('<') {
         return xml_kind(text);
     }
     if text.starts_with('{') || text.starts_with('[') {
         return json_formats::detect(text);
     }
-    if text.lines().next()?.trim_start().starts_with("otpauth") {
+    // A link read from a QR code in its alphanumeric mode comes in capitals.
+    if text.lines().next()?.trim_start().get(..7).is_some_and(|head| head.eq_ignore_ascii_case("otpauth")) {
         return Some(Format::OtpAuthList);
     }
     if text_formats::is_kaspersky(text) {
         return Some(Format::KasperskyTxt);
     }
     csv_formats::detect(text)
+}
+
+/// Text saved as UTF-16 with its byte-order mark, as Excel's "Unicode Text" and some Windows
+/// apps write it. Everything else is read as UTF-8.
+fn utf16_text(data: &[u8]) -> Option<zeroize::Zeroizing<String>> {
+    let little = match data {
+        [0xff, 0xfe, ..] => true,
+        [0xfe, 0xff, ..] => false,
+        _ => return None,
+    };
+    let (pairs, rest) = data[2..].as_chunks::<2>();
+    if !rest.is_empty() {
+        return None;
+    }
+    let units = pairs.iter().map(|pair| if little { u16::from_le_bytes(*pair) } else { u16::from_be_bytes(*pair) });
+    let mut text = zeroize::Zeroizing::new(String::with_capacity(pairs.len()));
+    for unit in char::decode_utf16(units) {
+        text.push(unit.ok()?);
+    }
+    Some(text)
 }
 
 /// Whether a file opens only with its own password: a KeePass or SafeInCloud database,
@@ -470,10 +528,19 @@ pub fn import_with_keys(
         Format::ProtonPass if data.starts_with(b"PK\x03\x04") => {
             onepux::import_proton_zip(data, at)
         }
+        Format::DashlaneCsv if data.starts_with(b"PK\x03\x04") => onepux::import_dashlane_zip(data, at),
         _ => {
-            let text = std::str::from_utf8(data)
-                .map_err(|_| Error::Import("the file is not text".into()))?
-                .trim_start_matches('\u{feff}');
+            let wide = utf16_text(data);
+            let text = match &wide {
+                Some(text) => text.as_str(),
+                None => std::str::from_utf8(data).map_err(|_| {
+                    Error::Import(
+                        "this file is not UTF-8 text. Save it again as UTF-8 (in Excel, as CSV UTF-8) and import that"
+                            .into(),
+                    )
+                })?,
+            };
+            let text = text.trim_start_matches('\u{feff}');
             match format {
                 Format::BitwardenJson => json_formats::bitwarden(text, at),
                 Format::EnpassJson => json_formats::enpass(text, at),
@@ -551,39 +618,53 @@ pub(crate) fn identity_key(entry: &Entry) -> Option<(String, String, [u8; 32])> 
     ))
 }
 
+/// A one-time code item's seed and settings, as an import compares them: a second item that
+/// makes the same codes is the same item. The counter of a HOTP code is left out, since it moves.
+fn code_key(entry: &Entry) -> Option<[u8; 32]> {
+    let Kind::Otp(otp) = &entry.kind else {
+        return None;
+    };
+    let config = otp.config.v.as_ref()?;
+    let seed = zeroize::Zeroizing::new(crate::otp::normalize_secret(config.secret.expose()));
+    if seed.is_empty() {
+        return None;
+    }
+    let kind = match config.kind {
+        crate::otp::OtpKind::Totp { period } => format!("totp {period}"),
+        crate::otp::OtpKind::Hotp { .. } => "hotp".to_owned(),
+        crate::otp::OtpKind::Steam => "steam".to_owned(),
+    };
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(seed.as_bytes());
+    hasher.update(format!("/{kind}/{:?}/{}", config.algorithm, config.digits).as_bytes());
+    Some(*hasher.finalize().as_bytes())
+}
+
 /// Adds imported items to a vault, creating folders by path and leaving out
-/// logins identical to one already there.
+/// logins and one-time codes identical to one already there.
 pub fn apply(vault: &mut Vault, imported: Imported, now_ms: u64) -> Result<ApplyReport> {
     let mut report = ApplyReport::default();
-    let mut seen: HashSet<_> = vault
-        .doc
-        .entries
-        .values()
-        .filter_map(identity_key)
-        .collect();
-    let mut folders: BTreeMap<String, String> = vault
-        .doc
-        .folders
-        .values()
-        .map(|f| (f.name.v.clone(), f.id.clone()))
-        .collect();
+    // A copy in the trash is no reason to leave one out: the person would be told it is already
+    // there and find it nowhere.
+    let live = || vault.doc.entries.values().filter(|entry| !entry.is_trashed());
+    let mut seen: HashSet<_> = live().filter_map(identity_key).collect();
+    // An authenticator's export read in a second time would otherwise double every code.
+    let mut codes: HashSet<[u8; 32]> = live().filter_map(code_key).collect();
+    let mut folders: BTreeMap<String, String> = BTreeMap::new();
     for item in imported.entries {
         let mut entry = item.entry;
-        if let Some(key) = identity_key(&entry)
-            && !seen.insert(key)
-        {
+        let repeated = match (identity_key(&entry), code_key(&entry)) {
+            (Some(key), _) => !seen.insert(key),
+            (None, Some(code)) => !codes.insert(code),
+            (None, None) => false,
+        };
+        if repeated {
             report.duplicates += 1;
             continue;
         }
-        if let Some(path) = item.folder {
-            let id = match folders.get(&path) {
-                Some(id) => id.clone(),
-                None => {
-                    let id = vault.add_folder(&path, None, now_ms)?;
-                    folders.insert(path, id.clone());
-                    id
-                }
-            };
+        if let Some(path) = item.folder
+            && let Some(id) = folder_for_path(vault, &mut folders, &path, now_ms)?
+        {
             let at = entry.common.title.at;
             entry.common.folder = Lww::new(Some(id), at);
         }
@@ -602,6 +683,43 @@ pub fn apply(vault: &mut Vault, imported: Imported, now_ms: u64) -> Result<Apply
     Ok(report)
 }
 
+/// The folder for a path such as `Work/Mail`, one level per part, as KeePass groups and
+/// Bitwarden's nested folders come: a folder already there under the same parent and name is
+/// used, and the rest are made. `None` for a path with no name in it.
+fn folder_for_path(
+    vault: &mut Vault,
+    made: &mut BTreeMap<String, String>,
+    path: &str,
+    now_ms: u64,
+) -> Result<Option<String>> {
+    let mut parent: Option<String> = None;
+    let mut walked = String::new();
+    for name in path.split('/').map(str::trim).filter(|name| !name.is_empty()) {
+        walked.push('/');
+        walked.push_str(name);
+        let id = match made.get(&walked) {
+            Some(id) => id.clone(),
+            None => {
+                let existing = vault
+                    .doc
+                    .folders
+                    .values()
+                    .filter(|f| f.name.v == name && f.parent.v == parent)
+                    .map(|f| f.id.clone())
+                    .min();
+                let id = match existing {
+                    Some(id) => id,
+                    None => vault.add_folder(name, parent.clone(), now_ms)?,
+                };
+                made.insert(walked.clone(), id.clone());
+                id
+            }
+        };
+        parent = Some(id);
+    }
+    Ok(parent)
+}
+
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -610,3 +728,5 @@ mod tests_kdbx;
 mod tests_kdbx_yubikey;
 #[cfg(test)]
 mod tests_more;
+#[cfg(test)]
+mod tests_audit;

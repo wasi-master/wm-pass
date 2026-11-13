@@ -36,7 +36,7 @@ export const lists = [
     effects: [
       { value: 'list', label: 'List', text: 'Full rows, with the second line under the name if that is on.' },
       { value: 'compact', label: 'Compact', text: 'One line per item, with a small icon and the second line beside the name, so many more rows fit.' },
-      { value: 'grid', label: 'Grid', text: 'Large tiles with the name under each. Pinned items, headings and folded sites are not used.' },
+      { value: 'grid', label: 'Grid', text: 'Large tiles with the name under each, in the order you sort by. Pinned items, grouping, headings and folded sites are not used.' },
     ],
     preview: 'preview.row',
     related: ['setting.row_subtitle', 'setting.grouping', 'setting.density'],
@@ -61,7 +61,7 @@ export const lists = [
         effects: [
           { value: 'smart', label: 'By site', text: 'One list in the order you sort by. Several logins for one website fold into a single row when [[setting.group_sites]] is on.' },
           { value: 'folder', label: 'By folder', text: 'Each folder is one row, in alphabetical order, that opens in place to show its items. Items in no folder come after the folders. Sites are not folded.' },
-          { value: 'types', label: 'Types, then folders', text: 'The default. A row for each type you have, with its count, then a row for each folder and **No folder**. Each opens in place. An item is under both its type and its folder. Picking a type chip above the list shows that type as one list.' },
+          { value: 'types', label: 'Types, then folders', text: 'A row for each type you have, with its count, then a row for each folder and **No folder**. Each opens in place. An item is under both its type and its folder. Picking a type chip above the list shows that type as one list.' },
         ],
       },
     },
@@ -106,7 +106,7 @@ export const lists = [
     what: 'Shows several logins for the same website as one row, which opens to show each account.',
     how: 'The row shows the site and how many accounts it holds. Open it to see them, set in under it, and again to fold them away.',
     when: 'Useful when you keep more than one account on a site, such as a personal one and one for work.',
-    caveats: 'Only logins fold, and only while the list is grouped by site.',
+    caveats: 'Only logins fold, only while the list is grouped by site, and not in the grid.',
     preview: 'preview.row',
     related: ['setting.grouping'],
     words: 'stack accounts multiple same site',
@@ -117,8 +117,13 @@ export const lists = [
     title: 'Section headings',
     page: 'list',
     pref: 'list_headings',
-    what: 'Shows a heading above each part of the list: **Pinned** and **All items** when you have pinned items, or each folder\'s name when the list is grouped by folder.',
+    what: 'Shows a heading above each part of the list: **Pinned** above pinned items, and the name of each folder or type when the list is grouped by folder or by type. Grouped by site, the items after the pinned ones sit under **All items**.',
     related: ['setting.grouping', 'setting.pinned_on_top'],
+    on: {
+      android: {
+        what: 'Shows a heading above each part of the list: **Pinned** above pinned items, and **Types** and **Folders** when the list is grouped by types, then folders. In the Standard style it also names **All items**, **Folders** and **No folder** where they follow another part.',
+      },
+    },
   },
   {
     id: 'setting.filter_chips',
@@ -180,6 +185,11 @@ export const lists = [
     how: 'A red timer means the item is set to delete itself. Its page says when.',
     preview: 'preview.row',
     words: 'badges star icons attachment passkey',
+    on: {
+      android: {
+        how: 'A red timer means the item is set to delete itself. Its page says when. In the Glass style a pin marks a pinned item too.',
+      },
+    },
   },
   {
     id: 'setting.row_button',
@@ -190,8 +200,8 @@ export const lists = [
     what: 'A copy button at the end of each row, shown while the pointer is over it.',
     effects: [
       { value: 'password', label: 'Copy password', text: 'Copies the item\'s password. An item with none copies its one-time code, or else its username.' },
-      { value: 'username', label: 'Copy username', text: 'Copies the username of a login or a database.' },
-      { value: 'code', label: 'Copy code', text: 'Copies the current one-time code. Only items with a code have the button.' },
+      { value: 'username', label: 'Copy username', text: 'Copies the username of a login or a database. An item without one copies its password, or else its one-time code.' },
+      { value: 'code', label: 'Copy code', text: 'Copies the current one-time code. An item with none copies its password, or else its username.' },
       { value: 'none', label: 'None', text: 'Rows have no button. Right-click a row for the same choices.' },
     ],
     caveats: 'A copied password or code is cleared after the time under [[setting.clipboard_seconds]]. A username stays until you copy something else.',
@@ -205,8 +215,8 @@ export const lists = [
         how: 'When [[setting.tap_action|Tap]] is set to copy something, this button becomes an arrow that opens the item instead.',
         effects: [
           { value: 'password', label: 'Copy password', text: 'Copies the item\'s password. An item with none copies its one-time code, or else its username.' },
-          { value: 'username', label: 'Copy username', text: 'Copies the username of a login or a database.' },
-          { value: 'code', label: 'Copy code', text: 'Copies the current one-time code. Only items with a code have the button.' },
+          { value: 'username', label: 'Copy username', text: 'Copies the username of a login or a database. An item without one copies its password, or else its one-time code.' },
+          { value: 'code', label: 'Copy code', text: 'Copies the current one-time code. An item with none copies its password, or else its username.' },
           { value: 'none', label: 'None', text: 'Rows have no button.' },
         ],
       },
@@ -222,7 +232,7 @@ export const lists = [
     page: 'list',
     pref: 'tap_action',
     what: 'What a single click on a row does.',
-    how: 'An item with nothing to copy, such as a note, only opens.',
+    how: 'An item without what is chosen copies the next thing it has: its password, its one-time code or its username. An item with nothing to copy, such as a note, only opens.',
     effects: [
       { value: 'open', label: 'Open', text: 'Opens the item.' },
       { value: 'password', label: 'Copy password', text: 'Copies the password and opens the item.' },
@@ -235,7 +245,7 @@ export const lists = [
       android: {
         title: 'Tap',
         what: 'What a tap on a row does.',
-        how: 'An item with nothing to copy, such as a note, opens instead.',
+        how: 'An item without what is chosen copies the next thing it has: its password, its one-time code or its username. An item with nothing to copy, such as a note, opens instead.',
         effects: [
           { value: 'open', label: 'Open', text: 'Opens the item.' },
           { value: 'password', label: 'Copy password', text: 'Copies the password without opening the item. The button on the right becomes an arrow that opens it.' },
@@ -254,7 +264,7 @@ export const lists = [
     pref: 'double_click',
     shells: ['desktop', 'extension'],
     what: 'What a double-click on a row or a tile does.',
-    how: 'A double-click starts with a click, so whatever **Click** is set to happens first.',
+    how: 'A double-click starts with a click, so whatever **Click** is set to happens first. Set to copy, it copies the next thing an item has when it lacks the one chosen, as **Click** does.',
     effects: [
       { value: 'password', label: 'Copy password', text: 'Copies the password.' },
       { value: 'username', label: 'Copy username', text: 'Copies the username.' },
@@ -273,7 +283,7 @@ export const lists = [
     pref: 'swipe_right',
     shells: ['android'],
     what: 'What sliding a row to the right does.',
-    how: 'An item without what the swipe needs, such as a code, is left as it is.',
+    how: 'Set to copy, a swipe copies the next thing an item has when it lacks the one chosen: its password, its one-time code or its username. An item with nothing to copy, such as a note, is left as it is.',
     effects: [
       { value: 'password', label: 'Copy password', text: 'Copies the password.' },
       { value: 'username', label: 'Copy username', text: 'Copies the username of a login or a database.' },
@@ -316,7 +326,10 @@ export const lists = [
       '- *Codes* is a shortcut to your one-time codes.',
       'Drag a row by its handle to move it. The bin removes it, and its **Add** row brings it back.',
     ],
-    caveats: 'In the Standard style, Health shows only when something needs attention.',
+    caveats: [
+      'In the Standard style, Health shows only when something needs attention. Its close button puts it away until something new does, or takes it out of this list for good.',
+      'Codes shows only once you have a one-time code.',
+    ],
     related: ['screen.health', 'screen.codes'],
     words: 'widgets cards dashboard top',
   },
@@ -329,7 +342,7 @@ export const lists = [
     title: 'Sidebar',
     page: 'navigation',
     what: 'Which places the sidebar lists and in what order, what else it shows, and where the window starts.',
-    how: 'The first group is the list of places at the top of the sidebar. **Also in the sidebar** adds your types, folders and tags below them. **Starting** covers the first page after you unlock, and the lock button.',
+    how: '**Sidebar** is the list of places at the top of the sidebar. **Also in the sidebar** adds your types, folders and tags below them. **Starting** covers the first page after you unlock, and the lock button.',
     related: ['screen.sidebar', 'page.list', 'page.add'],
     words: 'tabs navigation pages',
     on: {
@@ -349,7 +362,7 @@ export const lists = [
     pref: 'tabs',
     what: 'The places listed at the top of the sidebar, in order.',
     how: [
-      'Drag a place to move it, or use its arrow to move it down one. The minus button takes it out, and its **Add** row below puts it back.',
+      'Drag a place to move it, or use its arrows to move it up or down one. The minus button takes it out, and its **Add** row below puts it back.',
       '**Hidden shelf** is not in the sidebar at the start. Add it here if you use the shelf.',
     ],
     caveats: [
@@ -523,9 +536,9 @@ export const lists = [
       { value: 'card', label: 'New card', text: 'Starts a card.' },
       { value: 'identity', label: 'New identity', text: 'Starts an identity.' },
       { value: 'recovery', label: 'New recovery', text: 'Starts a recovery item.' },
-      { value: 'wifi', label: 'New wi-fi', text: 'Starts a Wi-Fi network.' },
-      { value: 'ssh', label: 'New ssh key', text: 'Starts an SSH key.' },
-      { value: 'api', label: 'New api key', text: 'Starts an API key.' },
+      { value: 'wifi', label: 'New Wi-Fi', text: 'Starts a Wi-Fi network.' },
+      { value: 'ssh', label: 'New SSH key', text: 'Starts an SSH key.' },
+      { value: 'api', label: 'New API key', text: 'Starts an API key.' },
       { value: 'database', label: 'New database', text: 'Starts a database.' },
       { value: 'licence', label: 'New license', text: 'Starts a license.' },
       { value: 'document', label: 'New document', text: 'Starts a document.' },
@@ -567,8 +580,9 @@ export const lists = [
     pref: 'add_kinds',
     what: 'The types the add button offers, in order. The first one is also what {{key:add}} starts.',
     how: [
-      'Drag a type to move it, or use its arrow to move it down one. The minus button hides it, and its **Add** row under **Hidden** brings it back.',
+      'Drag a type to move it, or use its arrows to move it up or down one. The minus button hides it, and its **Add** row under **Hidden** brings it back.',
       'With only one type shown, the add button skips the menu and starts that type.',
+      'An item added while a folder or a tag is open in the list starts in that folder, or with that tag.',
     ],
     caveats: 'The last type cannot be hidden.',
     related: ['action.add_show_all', 'concept.item_kinds'],

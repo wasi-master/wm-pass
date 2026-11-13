@@ -268,6 +268,8 @@ pub enum Unlock {
         key: VaultKey,
         /// What the matched slot asks for.
         action: SlotAction,
+        /// Which slot matched.
+        slot: usize,
     },
     /// The password is right but a second factor is needed. Only reachable with
     /// the right password, because the hints are sealed under it.
@@ -395,6 +397,29 @@ impl Header {
         factors: &[FactorOutput],
         current: &VaultKey,
     ) -> Result<Option<SlotAction>> {
+        Ok(self.slot_match_at(root, factors, current)?.map(|(_, action)| action))
+    }
+
+    /// As [`Self::slot_match`], with the index of the first slot that matched.
+    pub fn slot_match_at(
+        &self,
+        root: &RootKey,
+        factors: &[FactorOutput],
+        current: &VaultKey,
+    ) -> Result<Option<(usize, SlotAction)>> {
+        Ok(self
+            .slot_match_with(root, factors, current)?
+            .map(|(index, action, _)| (index, action)))
+    }
+
+    /// As [`Self::slot_match_at`], also saying which of `factors` the slot took: `None` for
+    /// a slot the password opens alone.
+    pub fn slot_match_with(
+        &self,
+        root: &RootKey,
+        factors: &[FactorOutput],
+        current: &VaultKey,
+    ) -> Result<Option<(usize, SlotAction, Option<usize>)>> {
         let id = self.vault_id().to_vec();
         let mut keys = vec![root.slot_key(&id, None)?];
         for factor in factors {
@@ -402,15 +427,32 @@ impl Header {
         }
         let mut found = None;
         for index in 0..SLOTS {
-            for key in &keys {
+            for (position, key) in keys.iter().enumerate() {
                 if let Some((opened, action)) = self.open_slot(index, key)
                     && bool::from(opened.0[..].ct_eq(&current.0[..]))
                 {
-                    found.get_or_insert(action);
+                    found.get_or_insert((index, action, position.checked_sub(1)));
                 }
             }
         }
         Ok(found)
+    }
+
+    /// The second factor a slot written with this root key needs, read from its hint.
+    /// `None` for a slot the password opens alone, or one written with another password.
+    pub fn slot_factor(&self, root: &RootKey, index: usize) -> Result<Option<FactorKind>> {
+        if index >= SLOTS {
+            return Err(Error::NoFreeSlot);
+        }
+        let id = self.vault_id().to_vec();
+        let hint_key = root.hint_key(&id)?;
+        Ok(crypto::open(&hint_key, self.hint(index), &record_aad(&id, index))
+            .and_then(|hint| FactorKind::decode(&hint)))
+    }
+
+    /// A slot's sealed record as it stands, to tell later whether it was rewritten.
+    pub fn slot_record(&self, index: usize) -> Option<&[u8]> {
+        (index < SLOTS).then(|| self.slot(index))
     }
 
     /// Tries a password, with any second-factor outputs the caller already has.
@@ -426,12 +468,12 @@ impl Header {
         let mut opened = None;
         let mut needed = Vec::new();
         for index in 0..SLOTS {
-            if let Some(found) = self.open_slot(index, &plain_key) {
-                opened.get_or_insert(found);
+            if let Some((key, action)) = self.open_slot(index, &plain_key) {
+                opened.get_or_insert((key, action, index));
             }
             for key in &factor_keys {
-                if let Some(found) = self.open_slot(index, key) {
-                    opened.get_or_insert(found);
+                if let Some((key, action)) = self.open_slot(index, key) {
+                    opened.get_or_insert((key, action, index));
                 }
             }
             let aad = record_aad(&id, index);
@@ -442,9 +484,9 @@ impl Header {
             }
         }
         match opened {
-            Some((key, action)) => {
+            Some((key, action, slot)) => {
                 self.verify(&key)?;
-                Ok(Unlock::Opened { key, action })
+                Ok(Unlock::Opened { key, action, slot })
             }
             None if !needed.is_empty() => Ok(Unlock::NeedsFactor(needed)),
             None => Ok(Unlock::NoMatch),
@@ -484,6 +526,23 @@ impl Header {
             }
             None => crypto::fill_random(&mut self.bytes[hint_at..hint_at + HINT_LEN])?,
         }
+        Ok(())
+    }
+
+    /// Takes one slot, record and hint, from another copy of this header, as a merge does when
+    /// that copy wrote the slot later. Both must be the same file's, under one key: a record is
+    /// bound to the file's id and its own place.
+    pub fn copy_slot(&mut self, other: &Self, index: usize) -> Result<()> {
+        if index >= SLOTS || other.bytes.len() != self.bytes.len() {
+            return Err(Error::NoFreeSlot);
+        }
+        if other.vault_id() != self.vault_id() || other.bytes[OFF_KDF..OFF_ID] != self.bytes[OFF_KDF..OFF_ID] {
+            return Err(Error::Malformed);
+        }
+        let at = OFF_SLOTS + index * SLOT_LEN;
+        self.bytes[at..at + SLOT_LEN].copy_from_slice(&other.bytes[at..at + SLOT_LEN]);
+        let hint_at = OFF_HINTS + index * HINT_LEN;
+        self.bytes[hint_at..hint_at + HINT_LEN].copy_from_slice(&other.bytes[hint_at..hint_at + HINT_LEN]);
         Ok(())
     }
 
@@ -641,6 +700,7 @@ mod tests {
         let Unlock::Opened {
             key: opened,
             action,
+            ..
         } = open_with(&file, b"correct horse", &[])
         else {
             panic!("expected to open");

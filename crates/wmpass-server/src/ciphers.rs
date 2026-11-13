@@ -79,7 +79,13 @@ async fn access(state: &State, user_id: &str, id: &str) -> ApiResult<Stored> {
 
 async fn render(state: &State, user_id: &str, stored: &Stored) -> ApiResult<Value> {
     let mut object: Map<String, Value> = serde_json::from_str(&stored.data).unwrap_or_default();
-    let row = sqlx::query("SELECT folder_id, favorite FROM cipher_user WHERE cipher_id = $1 AND user_id = $2")
+    // Through the folder itself: one deleted while another request was moving this item into
+    // it leaves a folder id behind, and clients shown a folder that is not in their list fail.
+    let row = sqlx::query(
+        "SELECT f.id AS folder_id, cu.favorite FROM cipher_user cu
+         LEFT JOIN folders f ON f.id = cu.folder_id AND f.user_id = cu.user_id
+         WHERE cu.cipher_id = $1 AND cu.user_id = $2",
+    )
         .bind(&stored.id)
         .bind(user_id)
         .fetch_optional(&state.db.pool)
@@ -146,6 +152,9 @@ fn clean(body: &Value) -> ApiResult<String> {
     Ok(Value::Object(kept).to_string())
 }
 
+/// Clients look for this wording to tell a conflict from other refusals.
+const OUT_OF_DATE: &str = "The client copy of this cipher is out of date. Resync the client and try again.";
+
 /// Clients expect a stale edit to be refused, so they can merge and retry. Revisions are
 /// stored as exact milliseconds and clients echo them back, so any difference is a real
 /// change, and a tolerance here would let an edit silently overwrite a newer one.
@@ -165,8 +174,12 @@ async fn set_user_state(state: &State, user_id: &str, cipher_id: &str, body: &Va
         None => None,
     };
     let favorite = i64::from(body.get("favorite").and_then(Value::as_bool).unwrap_or(false));
-    sqlx::query("DELETE FROM cipher_user WHERE cipher_id = $1 AND user_id = $2").bind(cipher_id).bind(user_id).execute(&state.db.pool).await?;
-    sqlx::query("INSERT INTO cipher_user (cipher_id, user_id, folder_id, favorite) VALUES ($1, $2, $3, $4)")
+    // One statement, so two requests for the same item cannot both delete and then collide
+    // on the insert.
+    sqlx::query(
+        "INSERT INTO cipher_user (cipher_id, user_id, folder_id, favorite) VALUES ($1, $2, $3, $4)
+         ON CONFLICT (cipher_id, user_id) DO UPDATE SET folder_id = excluded.folder_id, favorite = excluded.favorite",
+    )
         .bind(cipher_id)
         .bind(user_id)
         .bind(folder)
@@ -251,10 +264,22 @@ async fn read(Extract(state): Extract<State>, auth: Auth, Path(id): Path<String>
 async fn update(Extract(state): Extract<State>, auth: Auth, Path(id): Path<String>, Json(body): Json<Value>) -> ApiResult<Json<Value>> {
     let stored = access(&state, &auth.user.id, &id).await?;
     if stale(&body, &stored) {
-        return Err(ApiError::Bad("The client copy of this cipher is out of date. Resync the client and try again."));
+        return Err(ApiError::Bad(OUT_OF_DATE));
     }
-    let now = now_ms();
-    sqlx::query("UPDATE ciphers SET data = $1, revision = $2 WHERE id = $3").bind(clean(&body)?).bind(now).bind(&id).execute(&state.db.pool).await?;
+    // Written only over the revision just checked, so of two edits made from the same copy
+    // the second is refused instead of silently replacing the first. Always later than that
+    // revision, so two edits in one millisecond still differ.
+    let now = now_ms().max(stored.revision.saturating_add(1));
+    let done = sqlx::query("UPDATE ciphers SET data = $1, revision = $2 WHERE id = $3 AND revision = $4")
+        .bind(clean(&body)?)
+        .bind(now)
+        .bind(&id)
+        .bind(stored.revision)
+        .execute(&state.db.pool)
+        .await?;
+    if done.rows_affected() == 0 {
+        return Err(ApiError::Bad(OUT_OF_DATE));
+    }
     set_user_state(&state, &auth.user.id, &id, &body).await?;
     changed(&state, &auth, stored.org_id.as_deref(), now).await?;
     let stored = access(&state, &auth.user.id, &id).await?;
@@ -264,6 +289,9 @@ async fn update(Extract(state): Extract<State>, auth: Auth, Path(id): Path<Strin
 async fn partial(Extract(state): Extract<State>, auth: Auth, Path(id): Path<String>, Json(body): Json<Value>) -> ApiResult<Json<Value>> {
     let stored = access(&state, &auth.user.id, &id).await?;
     set_user_state(&state, &auth.user.id, &id, &body).await?;
+    // The account's revision moves too, so a device that polls rather than listens, or whose
+    // live connection dropped meanwhile, still learns of the move.
+    state.db.touch_user(&auth.user.id, now_ms()).await?;
     state.hub.push(&auth.user.id, UpdateKind::SyncVault, Some(&auth.device_id));
     Ok(Json(render(&state, &auth.user.id, &stored).await?))
 }
@@ -271,9 +299,18 @@ async fn partial(Extract(state): Extract<State>, auth: Auth, Path(id): Path<Stri
 async fn set_deleted(state: &State, auth: &Auth, id: &str, deleted: Option<i64>) -> ApiResult<Stored> {
     let stored = access(state, &auth.user.id, id).await?;
     let now = now_ms();
-    sqlx::query("UPDATE ciphers SET deleted = $1, revision = $2 WHERE id = $3").bind(deleted).bind(now).bind(id).execute(&state.db.pool).await?;
-    changed(state, auth, stored.org_id.as_deref(), now).await?;
-    access(state, &auth.user.id, id).await
+    // Always past the revision before, as an edit's is. One no later, as an edit in the same
+    // millisecond or a clock set back would give, would let a client still holding the copy
+    // from before the trash write over it as if nothing had changed.
+    sqlx::query("UPDATE ciphers SET deleted = $1, revision = CASE WHEN revision >= $2 THEN revision + 1 ELSE $2 END WHERE id = $3")
+        .bind(deleted)
+        .bind(now)
+        .bind(id)
+        .execute(&state.db.pool)
+        .await?;
+    let after = access(state, &auth.user.id, id).await?;
+    changed(state, auth, stored.org_id.as_deref(), after.revision).await?;
+    Ok(after)
 }
 
 async fn trash(Extract(state): Extract<State>, auth: Auth, Path(id): Path<String>) -> ApiResult<Json<Value>> {
@@ -333,6 +370,7 @@ async fn bulk_move(Extract(state): Extract<State>, auth: Auth, Json(body): Json<
         let change = json!({"folderId": body.get("folderId"), "favorite": favorite});
         set_user_state(&state, &auth.user.id, &id, &change).await?;
     }
+    state.db.touch_user(&auth.user.id, now_ms()).await?;
     state.hub.push(&auth.user.id, UpdateKind::SyncVault, Some(&auth.device_id));
     Ok(Json(json!({})))
 }
@@ -340,8 +378,7 @@ async fn bulk_move(Extract(state): Extract<State>, auth: Auth, Json(body): Json<
 /// Deleting everything needs the password again, in case a session was left open.
 async fn purge(Extract(state): Extract<State>, auth: Auth, Json(body): Json<Value>) -> ApiResult<Json<Value>> {
     let given = field(&body, "masterPasswordHash").ok_or(ApiError::Bad("The password is required."))?;
-    let actual = crate::auth::hash_password(&state, given, &auth.user.password_salt).await?;
-    if !crate::auth::same(&actual, &auth.user.password_hash) {
+    if !crate::accounts::password_matches(&state, &auth.user, given).await? {
         return Err(ApiError::Bad("The password is not correct."));
     }
     let rows = sqlx::query("SELECT id FROM ciphers WHERE user_id = $1").bind(&auth.user.id).fetch_all(&state.db.pool).await?;
@@ -397,14 +434,23 @@ async fn share(Extract(state): Extract<State>, auth: Auth, Path(id): Path<String
     if stored.org_id.as_deref().is_some_and(|current| current != org) {
         return Err(ApiError::Bad("This item already belongs to an organisation."));
     }
-    let now = now_ms();
-    sqlx::query("UPDATE ciphers SET data = $1, user_id = NULL, org_id = $2, revision = $3 WHERE id = $4")
+    // Sharing writes the whole item, so it is refused for an old copy as an edit is: otherwise
+    // an edit made on another device since this one last synced would be silently replaced.
+    if stale(cipher, &stored) {
+        return Err(ApiError::Bad(OUT_OF_DATE));
+    }
+    let now = now_ms().max(stored.revision.saturating_add(1));
+    let done = sqlx::query("UPDATE ciphers SET data = $1, user_id = NULL, org_id = $2, revision = $3 WHERE id = $4 AND revision = $5")
         .bind(clean(cipher)?)
         .bind(org)
         .bind(now)
         .bind(&id)
+        .bind(stored.revision)
         .execute(&state.db.pool)
         .await?;
+    if done.rows_affected() == 0 {
+        return Err(ApiError::Bad(OUT_OF_DATE));
+    }
     sqlx::query("DELETE FROM collection_ciphers WHERE cipher_id = $1").bind(&id).execute(&state.db.pool).await?;
     for collection in &collections {
         sqlx::query("INSERT INTO collection_ciphers (collection_id, cipher_id) VALUES ($1, $2)").bind(collection).bind(&id).execute(&state.db.pool).await?;

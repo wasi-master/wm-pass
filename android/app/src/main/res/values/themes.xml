@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- The first frame is the door's own ground, so opening the app never flashes white. -->
+    <!-- The first frame is the door's own ground, light or dark as the phone is, so opening the
+         app never flashes white in the dark, nor black in the light. -->
     <style name="Theme.WmPass" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">#FF061311</item>
+        <item name="android:windowBackground">@color/launch_ground</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightStatusBar">@bool/launch_light_bars</item>
     </style>
 
     <!-- For screens another app starts: the app stays in view behind, under the fingerprint prompt. -->

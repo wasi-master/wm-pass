@@ -63,8 +63,15 @@ pub fn looks_like_package(text: &str) -> bool {
     }
     let first = labels[0].to_ascii_lowercase();
     let last = labels[labels.len() - 1].to_ascii_lowercase();
-    PACKAGE_ROOTS.contains(&first.as_str()) && !psl::suffix(last.as_bytes()).is_some_and(|suffix| suffix.is_known())
+    PACKAGE_ROOTS.contains(&first.as_str())
+        && !psl::suffix(last.as_bytes()).is_some_and(|suffix| suffix.is_known())
+        && !LOCAL_SUFFIXES.contains(&last.as_str())
 }
+
+/// Names home networks and development machines use, which no public list holds: `dev.local`
+/// and `app.localhost` are sites, not apps.
+const LOCAL_SUFFIXES: &[&str] =
+    &["local", "localhost", "localdomain", "lan", "home", "internal", "intranet", "corp", "test", "invalid", "arpa"];
 
 /// The Android app an address saved for a login names, in the forms exports write it:
 /// `androidapp://package` (Bitwarden), `android://<certificate digest>@package/` (Google
@@ -111,14 +118,32 @@ pub fn normalized_matcher(matcher: &SiteMatcher) -> SiteMatcher {
     }
 }
 
+/// Whether text starts with a scheme and `://`, such as `http://`. A `://` further on, as in
+/// `example.com/login?next=https://example.com/`, is part of the address, not its scheme.
+fn has_scheme(text: &str) -> bool {
+    text.split_once("://").is_some_and(|(scheme, _)| {
+        let mut chars = scheme.chars();
+        chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+            && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+    })
+}
+
+/// A saved value as a URL with a host, giving one that lacks a scheme `https://`.
+fn saved_url(text: &str) -> Option<Url> {
+    let trimmed = text.trim();
+    // Only text with no scheme of its own gets one: `http://` alone, as some exports write for
+    // no address, has no host, not one called "http".
+    Url::parse(trimmed).ok().filter(|url| url.has_host()).or_else(|| {
+        if has_scheme(trimmed) {
+            return None;
+        }
+        Url::parse(&format!("https://{trimmed}")).ok()
+    })
+}
+
 /// The host of a saved value that may lack a scheme.
 pub fn host_of(text: &str) -> Option<String> {
-    let trimmed = text.trim();
-    let parsed = Url::parse(trimmed)
-        .ok()
-        .filter(|url| url.has_host())
-        .or_else(|| Url::parse(&format!("https://{trimmed}")).ok())?;
-    parsed
+    saved_url(text)?
         .host_str()
         .map(|host| host.trim_end_matches('.').to_ascii_lowercase())
 }
@@ -130,6 +155,17 @@ pub fn registrable_domain(host: &str) -> String {
         return host;
     }
     psl::domain_str(&host).map_or(host.clone(), str::to_owned)
+}
+
+/// The port a saved address names, when it names one other than its scheme's default.
+fn explicit_port(text: &str) -> Option<u16> {
+    saved_url(text)?.port()
+}
+
+/// A saved address with a port of its own belongs to that port only: one development server or
+/// router page on a machine is not the next one.
+fn port_differs(saved: &str, page: &Url) -> bool {
+    explicit_port(saved).is_some_and(|port| page.port_or_known_default() != Some(port))
 }
 
 fn scheme_downgrade(saved: &str, page: &Url) -> bool {
@@ -144,17 +180,31 @@ fn web_level(matcher: &SiteMatcher, page: &Url, url: &str) -> Option<MatchLevel>
     let page_host = page.host_str()?.trim_end_matches('.').to_ascii_lowercase();
     match matcher {
         SiteMatcher::Domain(domain) => {
-            let saved = registrable_domain(&host_of(domain)?);
+            // A rule saved with `https://` written out is kept off plain http, and one written
+            // with a port to that port, as an address is.
+            if scheme_downgrade(domain, page) || port_differs(domain, page) {
+                return None;
+            }
+            let saved_host = host_of(domain)?;
+            let saved = registrable_domain(&saved_host);
             let same = registrable_domain(&page_host) == saved;
-            same.then_some(if page_host == saved {
+            // The host the rule was written with is as exact as its bare domain: a rule saved
+            // as `www.example.com` is exact on www.example.com.
+            same.then_some(if page_host == saved || page_host == saved_host {
                 MatchLevel::Exact
             } else {
                 MatchLevel::Domain
             })
         }
-        SiteMatcher::Host(host) => (host_of(host)? == page_host).then_some(MatchLevel::Exact),
+        SiteMatcher::Host(host) => {
+            let same = host_of(host)? == page_host && !port_differs(host, page) && !scheme_downgrade(host, page);
+            same.then_some(MatchLevel::Exact)
+        }
         SiteMatcher::Url(saved) => {
-            if scheme_downgrade(saved, page) || app_of_address(saved).is_some() {
+            if scheme_downgrade(saved, page)
+                || app_of_address(saved).is_some()
+                || port_differs(saved, page)
+            {
                 return None;
             }
             let host = host_of(saved)?;
@@ -231,10 +281,8 @@ pub fn matches_for<'a>(
         .into_iter()
         .filter_map(|e| match_entry(e, target).map(|level| (e, level)))
         .collect();
-    found.sort_by(|a, b| {
-        b.1.cmp(&a.1)
-            .then_with(|| a.0.common.title.v.cmp(&b.0.common.title.v))
-    });
+    // Ties read in the order a person would look for them, whatever the case of each title.
+    found.sort_by_cached_key(|(entry, level)| (std::cmp::Reverse(*level), entry.common.title.v.to_lowercase()));
     found
 }
 
@@ -395,6 +443,96 @@ mod tests {
     }
 
     #[test]
+    fn a_saved_port_matches_only_that_port() {
+        let entry = login(vec![SiteMatcher::Url("http://localhost:3000/login".into())]);
+        assert_eq!(
+            match_entry(&entry, web("http://localhost:3000/")),
+            Some(MatchLevel::Exact)
+        );
+        assert_eq!(match_entry(&entry, web("http://localhost:8080/")), None);
+        assert_eq!(match_entry(&entry, web("http://localhost/")), None);
+        let router = login(vec![SiteMatcher::Host("192.168.1.1:8443".into())]);
+        assert_eq!(
+            match_entry(&router, web("https://192.168.1.1:8443/")),
+            Some(MatchLevel::Exact)
+        );
+        assert_eq!(match_entry(&router, web("https://192.168.1.1/")), None);
+        // An address saved with no port still fills on any port of its site.
+        let plain = login(vec![SiteMatcher::Url("https://example.com/".into())]);
+        assert_eq!(
+            match_entry(&plain, web("https://example.com:8443/")),
+            Some(MatchLevel::Exact)
+        );
+        // Naming the default port is the same as naming none.
+        let default = login(vec![SiteMatcher::Url("https://example.com:443/".into())]);
+        assert_eq!(
+            match_entry(&default, web("https://example.com/")),
+            Some(MatchLevel::Exact)
+        );
+    }
+
+    #[test]
+    fn a_scheme_with_no_host_is_no_address() {
+        for empty in ["http://", "https://", "http:///"] {
+            assert_eq!(host_of(empty), None, "{empty}");
+            let entry = login(vec![SiteMatcher::Url(empty.into())]);
+            assert_eq!(match_entry(&entry, web("https://http/")), None, "{empty}");
+        }
+        assert_eq!(host_of("example.com/login").as_deref(), Some("example.com"));
+        assert_eq!(host_of("localhost:3000").as_deref(), Some("localhost"));
+    }
+
+    #[test]
+    fn an_address_without_a_scheme_keeps_its_host_whatever_its_query_holds() {
+        let saved = "accounts.example.com/login?next=https://mail.example.com/";
+        assert_eq!(host_of(saved).as_deref(), Some("accounts.example.com"));
+        let entry = login(vec![SiteMatcher::Url(saved.into())]);
+        assert_eq!(match_entry(&entry, web("https://accounts.example.com/login")), Some(MatchLevel::Exact));
+        assert_eq!(host_of("https://example.com/?to=http://other.net").as_deref(), Some("example.com"));
+        assert_eq!(host_of("ftp+x://").as_deref(), None, "a scheme with nothing after it");
+    }
+
+    #[test]
+    fn a_domain_rule_written_with_its_host_is_exact_there() {
+        let entry = login(vec![SiteMatcher::Domain("www.example.com".into())]);
+        assert_eq!(match_entry(&entry, web("https://www.example.com/")), Some(MatchLevel::Exact));
+        assert_eq!(match_entry(&entry, web("https://example.com/")), Some(MatchLevel::Exact));
+        assert_eq!(match_entry(&entry, web("https://login.example.com/")), Some(MatchLevel::Domain));
+    }
+
+    #[test]
+    fn rules_saved_with_https_stay_off_plain_http() {
+        for matcher in [
+            SiteMatcher::Domain("https://example.com/login".into()),
+            SiteMatcher::Host("https://example.com".into()),
+        ] {
+            let entry = login(vec![matcher.clone()]);
+            assert_eq!(match_entry(&entry, web("https://example.com/")), Some(MatchLevel::Exact), "{matcher:?}");
+            assert_eq!(match_entry(&entry, web("http://example.com/")), None, "{matcher:?}");
+        }
+        // A rule saved with no scheme says nothing about one.
+        let bare = login(vec![SiteMatcher::Domain("example.com".into())]);
+        assert_eq!(match_entry(&bare, web("http://example.com/")), Some(MatchLevel::Exact));
+        // As typed in an editor, a domain with a port keeps to that port.
+        let dev = login(vec![SiteMatcher::Domain("localhost:3000".into())]);
+        assert_eq!(match_entry(&dev, web("http://localhost:3000/")), Some(MatchLevel::Exact));
+        assert_eq!(match_entry(&dev, web("http://localhost:8080/")), None);
+    }
+
+    #[test]
+    fn equal_matches_sort_by_title_whatever_its_case() {
+        let at = Hlc::default();
+        let titled = |title: &str| {
+            let mut entry = login(vec![SiteMatcher::Domain("example.com".into())]);
+            entry.common.title = Lww::new(title.into(), at);
+            entry
+        };
+        let (upper, lower) = (titled("Zebra"), titled("apple"));
+        let found = matches_for([&upper, &lower], web("https://example.com/"));
+        assert_eq!(found[0].0.common.title.v, "apple");
+    }
+
+    #[test]
     fn strongest_match_sorts_first() {
         let at = Hlc::default();
         let mut a = login(vec![SiteMatcher::Domain("example.com".into())]);
@@ -417,7 +555,7 @@ mod tests {
         for package in ["com.bkash.customerapp", "bd.com.sonalibank.sw", "us.zoom.videomeetings"] {
             assert_eq!(app_of_address(package).map(|(p, _)| p).as_deref(), Some(package), "{package}");
         }
-        for site in ["x.com", "payment.bkash.app", "co.uk", "me.com", "https://com.example.org/", "github.com/login", "localhost"] {
+        for site in ["x.com", "payment.bkash.app", "co.uk", "me.com", "https://com.example.org/", "github.com/login", "localhost", "dev.local", "app.localhost", "me.lan"] {
             assert_eq!(app_of_address(site), None, "{site}");
         }
     }

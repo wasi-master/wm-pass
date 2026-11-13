@@ -398,6 +398,21 @@ mod tests {
     }
 
     #[test]
+    fn emptying_the_trash_after_a_merge_keeps_the_files_moved_across() {
+        let mut vault = fast_vault(1);
+        let a = add(&mut vault, "GitHub", "https://github.com", "jane", "one", "");
+        let b = add(&mut vault, "GitHub", "https://github.com", "jane", "one", "");
+        let (record, _) = Vault::seal_attachment("codes.txt", "text/plain", b"recovery").unwrap();
+        vault.edit(&b, NOW + 1, |entry, at| entry.common.attachments = Lww::new(vec![record.clone()], at)).unwrap();
+        let choices = Choices { keep: a.clone(), ids: vec![a.clone(), b.clone()], ..Choices::default() };
+        merge(&mut vault, &choices, NOW + 10).unwrap();
+        assert!(vault.get(&b).unwrap().is_trashed());
+        assert!(vault.get(&a).unwrap().common.attachments.v.iter().any(|f| f.blob == record.blob));
+        // The merged-away item goes for good: its file is the kept item's now, and stays.
+        assert!(vault.purge(&b, NOW + 20).is_empty());
+    }
+
+    #[test]
     fn a_merge_joins_lists_keeps_answers_and_loses_no_secret() {
         let mut vault = fast_vault(1);
         let a = add(&mut vault, "GitHub", "https://github.com", "jane", "old-one", "Developer");

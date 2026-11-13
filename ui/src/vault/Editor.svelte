@@ -45,11 +45,12 @@
 
   import Icon from '../parts/Icon.svelte';
   import IconBtn from '../parts/IconBtn.svelte';
+  import PasswordField from '../parts/PasswordField.svelte';
   import Strength from '../parts/Strength.svelte';
   import Switch from '../parts/Switch.svelte';
   import Tile from '../parts/Tile.svelte';
 
-  import { kindName, oklch } from '../engine/face';
+  import { kindInSentence, kindName, oklch } from '../engine/face';
   import { brands } from '../engine/brands.svelte';
   import { siteLine, titleFromSite, whenText } from '../engine/text';
   import { overlays } from '../parts/floating.svelte';
@@ -67,6 +68,8 @@
     loaded: boolean;
     original: string;
     showing: boolean;
+    /** On a new item, what the form filled in by itself: a first choice, a generated password. */
+    start?: string;
   }
   interface EditCustom {
     index: number | null;
@@ -80,6 +83,9 @@
   interface EditQuestion {
     index: number | null;
     question: string;
+    /** The wording saved, to tell a reworded question from one left alone. */
+    original: string;
+    remove: boolean;
     answer: string;
   }
   interface EditSite {
@@ -99,12 +105,24 @@
     wifi: ['ssid', 'password'],
   };
 
+  /** Choices that are codes, shown in capitals; the rest are words, such as open. */
+  const CODES = new Set(['wep', 'wpa', 'sae', 'eap']);
+
+  // The form is made anew for each item it edits (it is keyed on `editing`), so what it starts
+  // from is read once.
   let { editing, initial = null }: { editing: Editing; initial?: EditorLoaded | null } = $props();
 
+  // svelte-ignore state_referenced_locally
   const entryId = editing.id;
+  // A new item made by a save that then failed part-way: trying again finishes it, not a second one.
+  let createdId: string | null = null;
+  // Custom fields and questions already written by such a save, so a retry does not add them twice.
+  const written = new WeakSet<object>();
+  // svelte-ignore state_referenced_locally
   let kind = $state(editing.kind);
   let detail = $state<Detail | null>(null);
   let fields = $state<EditField[]>([]);
+  // svelte-ignore state_referenced_locally
   let title = $state(editing.presetTitle ?? '');
   let sites = $state<EditSite[]>([]);
   /** The Android apps a login fills in, kept as saved. */
@@ -114,6 +132,7 @@
   let notes = $state('');
   let notesLoaded = $state(entryId === null);
   let notesOriginal = $state('');
+  // svelte-ignore state_referenced_locally
   let otpSeed = $state(editing.presetOtp ?? '');
   let scanningOtp = $state(false);
   let otpNote = $state<string | null>(null);
@@ -125,17 +144,35 @@
     if (link) {
       otpSeed = link;
       otpNote = null;
+      // A new code is named for the site the link names, as an authenticator app names it.
+      if (!entryId && !title.trim()) title = issuerOf(link);
     } else if (texts.some((t) => t.startsWith('otpauth-migration://'))) {
       otpNote = 'That is an export of several codes. Bring them in with Settings, Import.';
     } else {
       otpNote = 'That QR code holds no one-time code setup.';
     }
   }
+
+  /** The site an otpauth link is for: its issuer, or the part before the colon in its label. */
+  function issuerOf(link: string) {
+    if (!/^otpauth:\/\//i.test(link.trim())) return '';
+    try {
+      const url = new URL(link.trim());
+      const named = url.searchParams.get('issuer')?.trim();
+      if (named) return named;
+      const label = decodeURIComponent(url.pathname.replace(/^\//, ''));
+      return label.includes(':') ? label.slice(0, label.indexOf(':')).trim() : '';
+    } catch {
+      return '';
+    }
+  }
   let color = $state<string | null>(null);
   let icon = $state<string | null>(null);
-  let folder = $state<string | null>(null);
+  // svelte-ignore state_referenced_locally
+  let folder = $state<string | null>(editing.presetFolder ?? null);
   let favourite = $state(false);
-  let tags = $state<string[]>([]);
+  // svelte-ignore state_referenced_locally
+  let tags = $state<string[]>([...(editing.presetTags ?? [])]);
   let ready = $state(false);
   let saving = $state(false);
   let error = $state<string | null>(null);
@@ -145,6 +182,11 @@
   let gen = $state<GenState | null>(null);
   let titleInput = $state<HTMLInputElement | HTMLTextAreaElement>();
   let rating = $state<Record<string, StrengthView | null>>({});
+  let errorLine = $state<HTMLElement>();
+  // The reason a save failed is at the foot of the form, out of sight from the Save button.
+  $effect(() => {
+    if (error && errorLine) errorLine.scrollIntoView({ block: 'nearest' });
+  });
 
   function makeField(spec: FieldView): EditField {
     return {
@@ -163,7 +205,8 @@
   if (start) fill(start);
   else
     $effect(() => {
-      void loadEditor(untrack(() => editing)).then(fill);
+      // A form that cannot be filled says so, rather than staying empty with Save turned off.
+      void loadEditor(untrack(() => editing)).then(fill, (failure: any) => (error = failure?.message ?? 'This item could not be opened for editing.'));
     });
 
   function fill(got: EditorLoaded) {
@@ -186,7 +229,7 @@
         loaded: c.value !== null,
         remove: false,
       }));
-      questions = d.questions.map((question, index) => ({ index, question, answer: '' }));
+      questions = d.questions.map((question, index) => ({ index, question, original: question, remove: false, answer: '' }));
       color = d.color;
       icon = d.icon;
       folder = d.folder;
@@ -210,10 +253,28 @@
       const body = fields.find((f) => f.spec.key === 'body');
       if (editing.presetNote && body) body.text = editing.presetNote;
       if (got.generated && password) password.text = got.generated;
+      // Only what the generator or a first choice put there: a preset from elsewhere is the
+      // person's own and still counts as a change to keep.
+      for (const f of fields) if (f.text && !(f === password && editing.presetPassword) && !(f.spec.key === 'body' && editing.presetNote)) f.start = f.text;
+      // A password already filled in gets its strength shown, as one from the generator's Use this does.
+      if (password?.text) rate(password);
     }
     ready = true;
     if (!entryId && !title) setTimeout(() => titleInput?.focus(), 30);
   }
+
+  // A tag renamed or deleted while the form is open, from its tag picker: the form follows, as the
+  // vault's items did, or saving would bring the old name back.
+  const tagChangeSeen = untrack(() => ui.tagChanged);
+  $effect(() => {
+    const change = ui.tagChanged;
+    if (!change || change === tagChangeSeen) return;
+    const follow = (list: string[]) => [...new Set(list.flatMap((t) => (t !== change.from ? [t] : change.to === null ? [] : [change.to])))];
+    untrack(() => {
+      tags = follow(tags);
+      if (detail) detail.tags = follow(detail.tags);
+    });
+  });
 
   function changed(f: EditField) {
     if (f.spec.input === 'toggle') return f.flag !== (f.spec.value === true);
@@ -234,21 +295,24 @@
   });
 
   const dirty = $derived(
-    fields.some(changed) ||
+    // A new item with only what the form filled in by itself has nothing to lose.
+    fields.some((f) => changed(f) && !(f.start !== undefined && f.text === f.start)) ||
       title !== (detail?.title ?? editing.presetTitle ?? '') ||
       sites.some((s) => (s.raw === null ? s.text.trim() !== '' : siteLine(s.raw)?.label !== s.text)) ||
-      (detail ? detail.sites.filter((s) => siteLine(s) && !siteLine(s)?.app).length !== sites.length : false) ||
+      // A saved website taken away. An empty row added and left empty is no change.
+      (detail ? detail.sites.filter((s) => siteLine(s) && !siteLine(s)?.app).length !== sites.filter((s) => s.raw !== null).length : false) ||
       (detail ? JSON.stringify(detail.sites.filter((s) => siteLine(s)?.app)) !== JSON.stringify(apps) : apps.length > 0) ||
       (detail !== null && kind !== detail.kind) ||
       otpSeed !== '' ||
       (notesLoaded && notes !== notesOriginal) ||
-      customs.some((c) => c.index === null ? c.name !== '' || c.value !== '' : c.remove || c.value !== c.original || c.name !== detail?.custom_fields[c.index]?.name) ||
-      questions.some((q) => q.answer !== '') ||
+      // A new field or question added and then taken away again is no change.
+      customs.some((c) => c.index === null ? !c.remove && (c.name !== '' || c.value !== '') : c.remove || c.value !== c.original || c.name !== detail?.custom_fields[c.index]?.name) ||
+      questions.some((q) => (q.index === null ? q.answer !== '' || q.question.trim() !== '' : q.remove || q.answer !== '' || q.question.trim() !== q.original)) ||
       color !== (detail?.color ?? null) ||
       icon !== (detail?.icon ?? null) ||
-      folder !== (detail?.folder ?? null) ||
+      folder !== (detail?.folder ?? editing.presetFolder ?? null) ||
       favourite !== (detail?.favourite ?? false) ||
-      tags.join() !== (detail?.tags ?? []).join(),
+      tags.join() !== (detail?.tags ?? editing.presetTags ?? []).join(),
   );
 
   $effect(() => {
@@ -273,7 +337,8 @@
     if (!entryId) ui.showDetail = false;
   }
 
-  async function leave() {
+  /** Close, asking first if there are changes to lose: the Close button, and Escape. */
+  export async function leave() {
     if (dirty) {
       const yes = await overlays.ask({ title: 'Discard changes?', body: 'Your edits to this item will be lost.', action: 'Discard', danger: true });
       if (!yes) return;
@@ -291,102 +356,170 @@
   }
 
   export async function save() {
-    if (saving) return;
+    // Ctrl+S on an untouched item has nothing to write, and writing it anyway would stamp every
+    // field as new and win over a change made on another device.
+    if (saving || !ready || (entryId && !dirty)) return;
+    // A field with no name, or an answer with no question, would otherwise be left out without a word.
+    if (customs.some((c) => !c.remove && !c.name.trim() && (c.value !== '' || c.index !== null))) {
+      error = 'Give each field under More fields a name, or remove it.';
+      return;
+    }
+    if (questions.some((q) => !q.remove && !q.question.trim() && (q.answer !== '' || q.index !== null))) {
+      error = 'Write out each security question, or remove it.';
+      return;
+    }
+    // A new question with no answer has nothing to keep, and would be dropped without a word.
+    if (questions.some((q) => !q.remove && q.index === null && q.question.trim() && !q.answer)) {
+      error = 'Give each new security question its answer, or remove it.';
+      return;
+    }
+    // A new code with no setup key would be an item with nothing in it, and not on the Codes page.
+    if (!entryId && !createdId && kind === 'otp' && !otpSeed.trim()) {
+      error = 'Enter the setup key or otpauth link, or scan its QR code.';
+      return;
+    }
+    // A number field with words in it would be saved as empty, losing what was there.
+    const notNumber = fields.find((f) => f.spec.input === 'number' && f.text.trim() !== '' && Number.isNaN(Number(f.text.trim())));
+    if (notNumber) {
+      error = `${notNumber.spec.label} has to be a number. Fix it, or leave it empty.`;
+      return;
+    }
     saving = true;
     error = null;
     try {
-      const finalTitle = title.trim() || siteTitle || 'Untitled';
-      const plain = fields.filter((f) => !f.spec.secret && changed(f));
-      const fieldsJson = Object.fromEntries(plain.map((f) => [f.spec.key, jsonValue(f)]));
-      const newSites: Record<string, any>[] = [];
-      for (const site of sites) {
-        const typed = site.text.trim();
-        if (!typed) continue;
-        if (site.raw && siteLine(site.raw)?.label === typed) newSites.push(site.raw);
-        else newSites.push({ Url: typed.includes('://') ? typed : `https://${typed}` });
-      }
-      newSites.push(...apps);
-      let id = entryId;
-      if (!id) {
-        const reply = await pass.change<{ id: string }>('entry.create', { kind, title: finalTitle, color, folder, fields: fieldsJson, sites: newSites });
-        id = reply.json.id;
-      } else {
-        // A code given a username and password becomes a login that keeps its code.
-        if (detail?.kind === 'otp' && kind === 'login') await pass.change('entry.convert', { id, kind: 'login' });
-        if (plain.length) await pass.change('entry.set', { id, fields: fieldsJson });
-      }
-      for (const f of fields.filter((f) => f.spec.secret && changed(f))) {
-        await secretCall('entry.set_secret', { id, field: f.spec.key }, f.text);
-      }
-      if (notesLoaded && notes !== notesOriginal) await secretCall('entry.set_secret', { id, field: 'notes' }, notes);
-      if (otpSeed.trim()) await secretCall('entry.otp_set', { id, ...(kind === 'otp' ? { issuer: finalTitle } : {}) }, otpSeed);
-      // Removed from the end first, so earlier indexes stay right.
-      for (const c of customs.filter((c) => c.remove && c.index !== null).sort((a, b) => b.index! - a.index!)) {
-        await pass.change('entry.custom_remove', { id, index: c.index });
-      }
-      for (const c of customs.filter((c) => !c.remove && c.name.trim() && (c.index === null || c.value !== c.original || c.name !== detail?.custom_fields[c.index]?.name))) {
-        if (c.hidden && !c.loaded) continue;
-        await secretCall('entry.custom_set', { id, index: c.index, name: c.name.trim(), kind: c.hidden ? 'hidden' : 'text' }, c.value);
-      }
-      for (const q of questions.filter((q) => q.answer && q.question.trim())) {
-        await secretCall('entry.question_set', { id, index: q.index, question: q.question.trim() }, q.answer);
-      }
-      await pass.change('entry.common', {
-        id,
-        title: finalTitle,
-        color,
-        icon,
-        folder,
-        favourite,
-        tags,
-        ...(kind === 'login' ? { sites: newSites } : {}),
+      // One reload of the lists for the whole save, rather than one for each field written.
+      const savedId = await pass.batch(async () => {
+        // A code pasted as an otpauth link with no name typed takes the site the link names, rather
+        // than being saved, and shown on the Codes page, as Untitled.
+        const finalTitle = title.trim() || siteTitle || (kind === 'otp' ? issuerOf(otpSeed) : '') || 'Untitled';
+        const plain = fields.filter((f) => !f.spec.secret && changed(f));
+        const fieldsJson = Object.fromEntries(plain.map((f) => [f.spec.key, jsonValue(f)]));
+        const newSites: Record<string, any>[] = [];
+        for (const site of sites) {
+          const typed = site.text.trim();
+          if (!typed) continue;
+          if (site.raw && siteLine(site.raw)?.label === typed) newSites.push(site.raw);
+          else newSites.push({ Url: typed.includes('://') ? typed : `https://${typed}` });
+        }
+        newSites.push(...apps);
+        let id = entryId ?? createdId;
+        if (!id) {
+          const reply = await pass.change<{ id: string }>('entry.create', { kind, title: finalTitle, color, folder, fields: fieldsJson, sites: newSites });
+          id = createdId = reply.json.id;
+        } else {
+          // A code given a username and password becomes a login that keeps its code.
+          if (entryId && detail?.kind === 'otp' && kind === 'login') await pass.change('entry.convert', { id, kind: 'login' });
+          if (plain.length) await pass.change('entry.set', { id, fields: fieldsJson });
+        }
+        for (const f of fields.filter((f) => f.spec.secret && changed(f))) {
+          await secretCall('entry.set_secret', { id, field: f.spec.key }, f.text);
+        }
+        if (notesLoaded && notes !== notesOriginal) await secretCall('entry.set_secret', { id, field: 'notes' }, notes);
+        if (otpSeed.trim()) await secretCall('entry.otp_set', { id, ...(kind === 'otp' ? { issuer: finalTitle } : {}) }, otpSeed);
+        for (const c of customs.filter((c) => !c.remove && c.name.trim() && (c.index === null || c.value !== c.original || c.name !== detail?.custom_fields[c.index]?.name))) {
+          if ((c.hidden && !c.loaded) || (c.index === null && written.has(c))) continue;
+          await secretCall('entry.custom_set', { id, index: c.index, name: c.name.trim(), kind: c.hidden ? 'hidden' : 'text' }, c.value);
+          written.add(c);
+        }
+        // Removed after the changes above and from the end, so every index they used was still right:
+        // removing the second field first would have sent an edit to the third into the second.
+        for (const c of customs.filter((c) => c.remove && c.index !== null && !written.has(c)).sort((a, b) => b.index! - a.index!)) {
+          await pass.change('entry.custom_remove', { id, index: c.index });
+          written.add(c);
+        }
+        for (const q of questions.filter((q) => !q.remove && q.question.trim())) {
+          if (written.has(q)) continue;
+          if (q.answer) await secretCall('entry.question_set', { id, index: q.index, question: q.question.trim() }, q.answer);
+          else if (q.index !== null && q.question.trim() !== q.original) await pass.change('entry.question_set', { id, index: q.index, question: q.question.trim(), keep_answer: true });
+          else continue;
+          written.add(q);
+        }
+        // Removed last and from the end, so the indexes written above still pointed at the right ones.
+        for (const q of questions.filter((q) => q.remove && q.index !== null && !written.has(q)).sort((a, b) => b.index! - a.index!)) {
+          await pass.change('entry.question_remove', { id, index: q.index });
+          written.add(q);
+        }
+        // Only what changed here: each field written is stamped as new, and sync keeps the newest,
+        // so an unchanged one sent anyway would undo an edit made to it on another device.
+        const before = entryId ? detail : null;
+        const common: Record<string, unknown> = {};
+        if (!before || finalTitle !== before.title) common.title = finalTitle;
+        if (!before || color !== before.color) common.color = color;
+        if (!before || icon !== before.icon) common.icon = icon;
+        if (!before || folder !== before.folder) common.folder = folder;
+        if (!before || favourite !== before.favourite) common.favourite = favourite;
+        if (!before || tags.join() !== before.tags.join()) common.tags = tags;
+        if (kind === 'login' && (!before || JSON.stringify(newSites) !== JSON.stringify(before.sites))) common.sites = newSites;
+        if (Object.keys(common).length) await pass.change('entry.common', { id, ...common });
+        // Tagged by its site, such as Banking or Social; the kind already says it is a card or a code.
+        // Never from the classifier's guess: a wrong tag costs the owner a hunt to undo it.
+        // A tag it was given for being added from that tag's list is not one the person chose.
+        if (!entryId && tags.join() === (editing.presetTags ?? []).join() && prefs.v.auto_tag) {
+          const site = await pass
+            .view<{ site: string | null; site_source: string | null }>('categorise.suggest', { id })
+            .then((r) => (r.site_source === 'guess' ? null : r.site))
+            .catch(() => null);
+          if (site && !tags.includes(site)) await pass.change('entry.common', { id, tags: [...tags, site] });
+        }
+        return id!;
       });
-      // Tagged by its site, such as Banking or Social; the kind already says it is a card or a code.
-      // Never from the classifier's guess: a wrong tag costs the owner a hunt to undo it.
-      if (!entryId && tags.length === 0 && prefs.v.auto_tag) {
-        const site = await pass
-          .view<{ site: string | null; site_source: string | null }>('categorise.suggest', { id })
-          .then((r) => (r.site_source === 'guess' ? null : r.site))
-          .catch(() => null);
-        if (site) await pass.change('entry.common', { id, tags: [site] });
-      }
       ui.editing = null;
-      ui.open(id!);
+      ui.open(savedId);
     } catch (failure: any) {
-      error = failure.message;
+      error = failure?.message || 'The item could not be saved.';
     } finally {
       saving = false;
     }
   }
 
-  async function load_secret(f: EditField) {
-    if (entryId) {
-      const text = await pass.reveal('entry.reveal', { id: entryId, field: f.spec.key });
-      f.text = text;
-      f.original = text;
+  /** A step that reads from the vault, with the reason shown if it cannot. */
+  async function attempt(work: () => Promise<void>) {
+    try {
+      await work();
+    } catch (failure: any) {
+      error = failure?.message ?? 'That did not work.';
     }
-    f.loaded = true;
   }
 
-  async function loadNotes() {
-    if (detail?.has_notes) {
-      const text = await pass.reveal('entry.reveal', { id: detail.id, field: 'notes' });
-      notes = text;
-      notesOriginal = text;
-    }
-    notesLoaded = true;
-  }
+  /** The box a "Saved. Click to change" button just opened, which takes the focus the button had. */
+  let opened = $state<string | null>(null);
 
-  async function loadCustom(c: EditCustom) {
-    if (entryId && c.index !== null) {
-      const text = await pass.reveal('entry.reveal_custom', { id: entryId, index: c.index });
-      c.value = text;
-      c.original = text;
-    }
-    c.loaded = true;
-  }
+  const load_secret = (f: EditField) =>
+    attempt(async () => {
+      if (entryId) {
+        const text = await pass.reveal('entry.reveal', { id: entryId, field: f.spec.key });
+        f.text = text;
+        f.original = text;
+      }
+      f.loaded = true;
+      opened = `field:${f.spec.key}`;
+    });
 
-  async function newSshKey(f: EditField) {
+  const loadNotes = () =>
+    attempt(async () => {
+      if (detail?.has_notes) {
+        const text = await pass.reveal('entry.reveal', { id: detail.id, field: 'notes' });
+        notes = text;
+        notesOriginal = text;
+      }
+      notesLoaded = true;
+      opened = 'notes';
+    });
+
+  const loadCustom = (c: EditCustom) =>
+    attempt(async () => {
+      if (entryId && c.index !== null) {
+        const text = await pass.reveal('entry.reveal_custom', { id: entryId, index: c.index });
+        c.value = text;
+        c.original = text;
+      }
+      c.loaded = true;
+      opened = `custom:${c.index}`;
+    });
+
+  const newSshKey = (f: EditField) => attempt(() => makeSshKey(f));
+
+  async function makeSshKey(f: EditField) {
     const reply = await pass.engine('ssh.new', { comment: title });
     f.text = consumeText(reply.secret);
     f.loaded = true;
@@ -569,9 +702,15 @@
         return;
       }
       const bytes = bytesOf(text);
-      const view = await pass.engine<StrengthView>('strength.assess', { context: title ? [title] : [] }, { secret: bytes });
-      bytes.fill(0);
-      rating = { ...rating, [key]: view.json };
+      try {
+        const view = await pass.engine<StrengthView>('strength.assess', { context: title ? [title] : [] }, { secret: bytes });
+        // Typed on while it was rated: the rating for the newer text is on its way.
+        if (f.text === text) rating = { ...rating, [key]: view.json };
+      } catch {
+        rating = { ...rating, [key]: null };
+      } finally {
+        bytes.fill(0);
+      }
     }, 120);
   }
 
@@ -604,9 +743,9 @@
   {:else if spec.input === 'choice'}
     <div class="form-row">
       <span class="label">{spec.label}</span>
-      <span class="gap wrap">
+      <span class="gap wrap" role="group" aria-label={spec.label}>
         {#each spec.choices as choice}
-          <button type="button" class="chip" aria-pressed={f.text === choice} onclick={() => (f.text = choice)}>{choice.length <= 4 ? choice.toUpperCase() : choice[0].toUpperCase() + choice.slice(1)}</button>
+          <button type="button" class="chip" aria-pressed={f.text === choice} onclick={() => (f.text = choice)}>{CODES.has(choice) ? choice.toUpperCase() : choice[0].toUpperCase() + choice.slice(1)}</button>
         {/each}
       </span>
     </div>
@@ -625,12 +764,12 @@
   {:else if spec.secret && !f.loaded}
     <div class="form-row">
       <span class="label">{spec.label}</span>
-      <span><Btn label="Saved. Click to change" onclick={() => load_secret(f)} /></span>
+      <span><Btn label="Saved. Click to change" name="{spec.label}: saved. Click to change" onclick={() => load_secret(f)} /></span>
     </div>
   {:else if spec.input === 'multiline'}
     <div class="form-row top">
       <span class="label">{spec.label}</span>
-      <Field bind:value={f.text} multiline rows={spec.key === 'body' ? 10 : 4} mono={spec.secret} placeholder={spec.key === 'body' ? '' : hintOf(spec.key)} label={spec.label}>
+      <Field bind:value={f.text} autofocus={opened === `field:${spec.key}`} multiline rows={spec.key === 'body' ? 10 : 4} mono={spec.secret} placeholder={spec.key === 'body' ? '' : hintOf(spec.key)} label={spec.label}>
         {#snippet trail()}
           {#if spec.key === 'private_key'}<IconBtn icon="casino" label="Generate a key" size={16} onclick={() => newSshKey(f)} />{/if}
         {/snippet}
@@ -642,17 +781,19 @@
       <div>
         <Field
           bind:value={f.text}
+          autofocus={opened === `field:${spec.key}`}
           type={spec.secret && !f.showing ? 'password' : 'text'}
           mono={spec.secret}
           placeholder={hintOf(spec.key)}
           label={spec.label}
+          describedby={spec.input === 'password' && f.loaded && f.text && rating[spec.key] ? `rating-${spec.key}` : undefined}
           oninput={() => {
             if (spec.input === 'password') rate(f);
             if (kind === 'wifi' && spec.key === 'ssid') void ssidTyped(f);
           }}
         >
           {#snippet trail()}
-            {#if spec.secret && f.text}<IconBtn icon={f.showing ? 'visibility_off' : 'visibility'} label={f.showing ? 'Hide' : 'Show'} size={16} onclick={() => (f.showing = !f.showing)} />{/if}
+            {#if spec.secret && f.text}<IconBtn icon={f.showing ? 'visibility_off' : 'visibility'} label="{f.showing ? 'Hide' : 'Show'} {spec.label}" size={16} onclick={() => (f.showing = !f.showing)} />{/if}
             {#if spec.input === 'password'}<IconBtn icon="casino" label="Generate" size={16} on onclick={() => openGenerator(f)} />{/if}
             {#if spec.key === 'username'}<IconBtn icon="alternate_email" label="Use an alias" size={16} on onclick={() => (aliasFor = f)} />{/if}
           {/snippet}
@@ -660,7 +801,7 @@
         {#if !spec.secret && offered(f).length}
           <div class="gap wrap" style="padding-top:6px">
             {#each offered(f) as option (option)}
-              <button type="button" class="chip" onclick={() => (f.text = option)}>{option}</button>
+              <button type="button" class="chip" title={option} onclick={() => (f.text = option)}><span class="ell">{option}</span></button>
             {/each}
           </div>
         {/if}
@@ -668,7 +809,7 @@
           {@const s = rating[spec.key]!}
           <div style="padding-top:5px">
             <Strength score={s.score} />
-            <p class="small" class:danger-text={s.score < 2} class:dim={s.score >= 2} style="padding-top:3px">{s.warning || `Time to crack: ${s.crack_slow_hash}`}</p>
+            <p class="small" class:danger-text={s.score < 2} class:dim={s.score >= 2} style="padding-top:3px" id="rating-{spec.key}">{s.warning || `Time to crack: ${s.crack_slow_hash}`}</p>
           </div>
         {/if}
       </div>
@@ -678,7 +819,7 @@
 
 <div class="detail-bar" data-tauri-drag-region>
   <IconBtn icon="close" label="Close" onclick={leave} />
-  <span class="grow" style="font-weight:600" data-tauri-drag-region>{entryId ? 'Edit' : 'New'} {kindName(kind).toLowerCase()}</span>
+  <h1 class="grow" style="font-weight:600" data-tauri-drag-region>{entryId ? 'Edit' : 'New'} {kindInSentence(kind)}</h1>
   <HelpButton id="screen.editor" title="the editor" />
   <span data-help-anchor="editor.save" style="display:flex"><Btn label={saving ? 'Saving…' : 'Save'} variant="primary" disabled={!ready || saving || (!dirty && !!entryId)} onclick={save} /></span>
 </div>
@@ -690,7 +831,7 @@
       <div>
         <Field bind:value={title} bind:ref={titleInput} placeholder={siteTitle || 'Name'} label="Name" />
         {#if !title && related?.name && related.name.toLowerCase() !== siteTitle.toLowerCase()}
-          <div class="gap wrap" style="padding-top:6px"><button type="button" class="chip" onclick={() => (title = related!.name!)}>{related.name}</button></div>
+          <div class="gap wrap" style="padding-top:6px"><button type="button" class="chip" title={related.name} onclick={() => (title = related!.name!)}><span class="ell">{related.name}</span></button></div>
         {/if}
       </div>
     </div>
@@ -705,13 +846,13 @@
             {#if canReadSaved}<Btn label="Pick a network saved on this computer" icon="wifi" variant="quiet" onclick={() => (pickingSaved = true)} />{/if}
           </span>
         </div>
-        {#if wifiNote}<p class="dim small">{wifiNote}</p>{/if}
+        {#if wifiNote}<p class="dim small" role="status">{wifiNote}</p>{/if}
       {/if}
       {#if kind === 'otp'}
         <div class="form-row">
           <span class="label"></span>
           <span class="stack" style="gap:2px;align-items:flex-start">
-            <Btn label="Add a username and password" icon="person" variant="quiet" onclick={becomeLogin} />
+            <Btn label="Add a username and password" icon="person" variant="quiet" onclick={() => attempt(becomeLogin)} />
             <span class="dim small">Keeps the code, and adds the login it belongs to</span>
           </span>
         </div>
@@ -757,10 +898,10 @@
               <p class="dim small gap" style="gap:6px;padding-bottom:6px"><Icon name="auto_awesome" size={14} />Goes with this login</p>
               <div class="gap wrap">
                 {#each related.sites as site (site)}
-                  <button type="button" class="chip" onclick={() => addSite(site)}><Icon name="language" size={14} />{site}</button>
+                  <button type="button" class="chip" title={site} onclick={() => addSite(site)}><Icon name="language" size={14} /><span class="ell">{site}</span></button>
                 {/each}
                 {#each related.apps as app (app.package)}
-                  <button type="button" class="chip" title={app.package} onclick={() => addApp(app.package, app.name)}><Icon name="smartphone" size={14} />{app.name}</button>
+                  <button type="button" class="chip" title={app.package} onclick={() => addApp(app.package, app.name)}><Icon name="smartphone" size={14} /><span class="ell">{app.name}</span></button>
                 {/each}
               </div>
             </div>
@@ -791,7 +932,7 @@
             <span class="label"></span>
             <Btn label="Scan its QR code" icon="qr_code_scanner" variant="quiet" onclick={() => (scanningOtp = true)} />
           </div>
-          {#if otpNote}<p class="dim small">{otpNote}</p>{/if}
+          {#if otpNote}<p class="dim small" role="status">{otpNote}</p>{/if}
         </Fold>
       {/if}
 
@@ -799,7 +940,7 @@
         {@const content = !!detail?.has_notes || notes !== ''}
         <Fold title="Notes" summary={detail?.has_notes ? 'Saved' : null} open={isOpen('notes', content)} ontoggle={(o) => remember('notes', content, o)}>
           {#if notesLoaded || !detail?.has_notes}
-            <Field bind:value={notes} multiline rows={4} placeholder="Notes" label="Notes" />
+            <Field bind:value={notes} autofocus={opened === 'notes'} multiline rows={4} placeholder="Notes" label="Notes" />
           {:else}
             <Btn label="Edit notes" icon="edit" variant="quiet" onclick={loadNotes} />
           {/if}
@@ -810,12 +951,12 @@
         {#each customs as custom}
           {#if !custom.remove}
             <div class="gap" style="padding:3px 0;align-items:flex-start">
-              <div style="width:130px;flex:none"><Field bind:value={custom.name} placeholder="Name" /></div>
+              <div style="width:130px;flex:none"><Field bind:value={custom.name} placeholder="Name" label="Field name" /></div>
               <div class="grow">
                 {#if custom.hidden && !custom.loaded}
-                  <Btn label="Saved. Click to change" onclick={() => loadCustom(custom)} />
+                  <Btn label="Saved. Click to change" name="{custom.name.trim() || 'Hidden field'}: saved. Click to change" onclick={() => loadCustom(custom)} />
                 {:else}
-                  <Field bind:value={custom.value} placeholder="Value" mono={custom.hidden} type={custom.hidden ? 'password' : 'text'} />
+                  <Field bind:value={custom.value} autofocus={custom.index !== null && opened === `custom:${custom.index}`} placeholder="Value" label={custom.name.trim() || 'Field value'} mono={custom.hidden} type={custom.hidden ? 'password' : 'text'} />
                 {/if}
               </div>
               <IconBtn icon="close" label="Remove field" size={16} onclick={() => (custom.remove = true)} />
@@ -831,24 +972,30 @@
       {#if kind === 'login'}
         {@const content = questions.length > 0}
         <Fold title="Security questions" summary={questions.length ? String(questions.length) : null} open={isOpen('questions', content)} ontoggle={(o) => remember('questions', content, o)}>
-          {#each questions as q}
-            <div class="stack" style="gap:4px;padding:4px 0">
-              <Field bind:value={q.question} placeholder="Question" />
-              <Field bind:value={q.answer} mono placeholder={q.index !== null ? 'Saved. Type to replace the answer' : 'Answer'} />
-            </div>
+          {#each questions as q, at}
+            {#if !q.remove}
+              <div class="stack" style="gap:4px;padding:4px 0">
+                <div class="gap" style="gap:4px">
+                  <div style="flex:1;min-width:0"><Field bind:value={q.question} placeholder="Question" /></div>
+                  <IconBtn icon="delete" label="Remove this question" onclick={() => (q.index === null ? questions.splice(at, 1) : (q.remove = true))} />
+                </div>
+                <!-- An answer is as good as a password to whoever reads it over a shoulder. -->
+                <PasswordField bind:value={q.answer} placeholder={q.index !== null ? 'Saved. Type to replace the answer' : 'Answer'} />
+              </div>
+            {/if}
           {/each}
-          <Btn label="Add a question" icon="add" variant="quiet" onclick={() => questions.push({ index: null, question: '', answer: '' })} />
+          <Btn label="Add a question" icon="add" variant="quiet" onclick={() => questions.push({ index: null, question: '', original: '', remove: false, answer: '' })} />
         </Fold>
       {/if}
 
       <Fold title="Organize" summary="Folder, tags, icon, color and favorite" open={isOpen('organise', false)} ontoggle={(o) => remember('organise', false, o)}>
-        <div class="form-row"><span class="label">Folder</span><span><Btn label={folderName} icon="folder" onclick={() => (picker = 'folder')} /></span></div>
-        <div class="form-row"><span class="label">Tags</span><span><Btn label={tags.length ? tags.join(', ') : 'None'} icon="sell" onclick={() => (picker = 'tags')} /></span></div>
-        <div class="form-row"><span class="label">Icon</span><span><Btn label={icon ? 'Your choice' : 'Automatic'} icon="image" onclick={() => (picker = 'icon')} /></span></div>
+        <div class="form-row"><span class="label">Folder</span><span><Btn label={folderName} name="Folder: {folderName}" icon="folder" onclick={() => (picker = 'folder')} /></span></div>
+        <div class="form-row"><span class="label">Tags</span><span><Btn label={tags.length ? tags.join(', ') : 'None'} name="Tags: {tags.length ? tags.join(', ') : 'None'}" icon="sell" onclick={() => (picker = 'tags')} /></span></div>
+        <div class="form-row"><span class="label">Icon</span><span><Btn label={icon ? 'Your choice' : 'Automatic'} name="Icon: {icon ? 'Your choice' : 'Automatic'}" icon="image" onclick={() => (picker = 'icon')} /></span></div>
         <div class="form-row">
-          <span class="label">Colour</span>
+          <span class="label">Color</span>
           <span>
-            <Btn label={color ? 'Your choice' : 'From the site'} onclick={() => (picker = 'colour')}>
+            <Btn label={color ? 'Your choice' : 'From the site'} name="Color: {color ? 'Your choice' : 'From the site'}" onclick={() => (picker = 'colour')}>
               {#if color && !Number.isNaN(Number(color))}<span style="width:12px;height:12px;border-radius:50%;background:{oklch(0.58, 0.11, Number(color))}"></span>{/if}
             </Btn>
           </span>
@@ -858,7 +1005,7 @@
       </div>
     {/if}
 
-    {#if error}<p class="danger-text" style="padding-top:10px">{error}</p>{/if}
+    {#if error}<p class="danger-text" style="padding-top:10px" role="alert" bind:this={errorLine}>{error}</p>{/if}
   </div>
 </div>
 
@@ -880,7 +1027,7 @@
     </div>
     {#snippet foot()}
       <Btn label="Cancel" onclick={() => (generating = null)} />
-      <Btn label="Use this" variant="primary" onclick={() => { const f = generating!; f.loaded = true; f.text = gen!.value; f.showing = true; rate(f); generating = null; }} />
+      <Btn label="Use this" variant="primary" disabled={!gen?.value} onclick={() => { const f = generating!; f.loaded = true; f.text = gen!.value; f.showing = true; rate(f); generating = null; }} />
     {/snippet}
   </Dialog>
 {/if}

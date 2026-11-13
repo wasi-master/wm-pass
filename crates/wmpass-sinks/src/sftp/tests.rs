@@ -16,6 +16,8 @@ struct Fs {
     denied: BTreeSet<String>,
     /// Longest READ answer; real servers answer short at will.
     max_read: usize,
+    /// Bytes a file may hold before a write to it fails, as a full disk does.
+    quota: Option<usize>,
     posix_rename: bool,
     /// Requests by name, in order.
     log: Vec<&'static str>,
@@ -128,6 +130,10 @@ impl FakeSftp {
                 let (path, _) = self.handles[p.bytes().unwrap()].clone();
                 let offset = p.u64().unwrap() as usize;
                 let data = p.bytes().unwrap();
+                if fs.quota.is_some_and(|quota| offset + data.len() > quota) {
+                    // As a version 3 server says a full disk: a plain failure, in words.
+                    return Wire::msg(FXP_STATUS).u32(id).u32(FX_FAILURE).text("No space left on device").text("en").0;
+                }
                 let file = fs.files.get_mut(&path).unwrap();
                 if file.len() < offset + data.len() {
                     file.resize(offset + data.len(), 0);
@@ -277,11 +283,58 @@ fn client_pipelines_and_copes_with_short_reads() {
 }
 
 #[test]
+fn a_write_that_fails_part_way_leaves_no_part_file_and_the_old_copy() {
+    let fs = shared(false, usize::MAX);
+    let port = serve(&fs);
+    let sftp = sink(port, "", "", Arc::default());
+    block_on(sftp.write("v.wmvault", b"old")).unwrap();
+    fs.lock().unwrap().quota = Some(CHUNK * 3);
+    let big = vec![7u8; CHUNK * 8];
+    assert_eq!(block_on(sftp.write("v.wmvault", &big)), Err(Fault::OutOfSpace), "out of space, not unreachable");
+    let fs = fs.lock().unwrap();
+    assert_eq!(fs.files.keys().collect::<Vec<_>>(), ["v.wmvault"], "the part file was removed");
+    assert_eq!(fs.files["v.wmvault"], b"old");
+}
+
+#[test]
+fn a_plain_rename_is_tried_before_the_target_is_removed() {
+    let fs = shared(false, usize::MAX);
+    let mut client = SftpClient::new(Direct { server: FakeSftp::new(fs.clone()), out: Default::default() });
+    client.init().unwrap();
+    client.put("a.part", b"new").unwrap();
+    client.rename_replacing("a.part", "a").unwrap();
+    assert_eq!(fs.lock().unwrap().log.iter().filter(|e| **e == "remove").count(), 0, "nothing to replace, nothing removed");
+}
+
+#[test]
+fn an_empty_read_that_is_not_eof_is_refused_rather_than_repeated() {
+    let fs = shared(false, 0);
+    fs.lock().unwrap().files.insert("f".into(), b"data".to_vec());
+    let mut client = SftpClient::new(Direct { server: FakeSftp::new(fs), out: Default::default() });
+    client.init().unwrap();
+    assert_eq!(client.get("f"), Err(Failure::Broken(Fault::Io)));
+}
+
+#[test]
 fn statuses_mean_what_kotlin_said() {
     assert_eq!(fault_of(Failure::Status(FX_PERMISSION_DENIED)), Fault::PermissionLost);
     assert_eq!(fault_of(Failure::Status(FX_NO_SUCH_FILE)), Fault::TargetMissing);
     assert_eq!(fault_of(Failure::Status(4)), Fault::Io);
     assert_eq!(fault_of(Failure::Broken(Fault::Unsafe)), Fault::Unsafe);
+    assert_eq!(fault_of(Failure::Status(FX_NO_SPACE_ON_FILESYSTEM)), Fault::OutOfSpace);
+    assert_eq!(fault_of(Failure::Status(FX_QUOTA_EXCEEDED)), Fault::OutOfSpace);
+}
+
+#[test]
+fn a_full_disk_in_a_failures_words_is_out_of_space() {
+    let status = |code: u32, message: &str| SftpClient::<Direct>::status(&Wire::default().u32(code).text(message).text("en").0).unwrap();
+    for message in ["No space left on device", "Disk quota exceeded", "There is not enough space on the disk.", "disk full"] {
+        assert_eq!(fault_of(Failure::Status(status(FX_FAILURE, message))), Fault::OutOfSpace, "{message}");
+    }
+    assert_eq!(fault_of(Failure::Status(status(FX_FAILURE, "Failure"))), Fault::Io, "OpenSSH's bare word says nothing more");
+    assert_eq!(status(FX_PERMISSION_DENIED, "no space"), FX_PERMISSION_DENIED, "only a failure is read for words");
+    // A version 3 status with no message at all, as some servers send.
+    assert_eq!(SftpClient::<Direct>::status(&Wire::default().u32(FX_FAILURE).0).unwrap(), FX_FAILURE);
 }
 
 fn sink(port: u16, path: &str, host_key: &str, seen: Arc<Mutex<Vec<String>>>) -> Sftp {

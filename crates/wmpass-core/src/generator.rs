@@ -191,12 +191,27 @@ fn shuffle<T>(items: &mut [T]) -> Result<()> {
     Ok(())
 }
 
+/// Each character once: a symbol typed twice in a custom set must not come up twice as often.
 fn pool(chars: &str, spec: &PasswordSpec) -> Vec<char> {
-    chars
+    let mut out: Vec<char> = Vec::new();
+    for c in chars
         .chars()
         .filter(|c| !spec.exclude.contains(*c))
         .filter(|c| !spec.exclude_ambiguous || !AMBIGUOUS.contains(*c))
-        .collect()
+    {
+        if !out.contains(&c) {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Every character the classes allow, each once, though a custom symbol set may repeat a letter.
+fn every_char(classes: &[Vec<char>]) -> Vec<char> {
+    let mut all: Vec<char> = classes.iter().flatten().copied().collect();
+    all.sort_unstable();
+    all.dedup();
+    all
 }
 
 fn classes(spec: &PasswordSpec) -> Vec<Vec<char>> {
@@ -218,6 +233,7 @@ fn classes(spec: &PasswordSpec) -> Vec<Vec<char>> {
     out
 }
 
+#[cfg(test)]
 fn too_many_repeats(chars: &[char], limit: u32) -> bool {
     limit > 0
         && chars
@@ -234,28 +250,58 @@ pub fn password(spec: &PasswordSpec) -> Result<Secret> {
         ));
     }
     let length = spec.length as usize;
-    if length < classes.len() || !(4..=1024).contains(&length) {
+    if !(4..=1024).contains(&length) {
+        return Err(Error::Invalid("choose a length between 4 and 1024".into()));
+    }
+    if length < classes.len() {
         return Err(Error::Invalid(
-            "that length does not fit the settings".into(),
+            "that length is too short for every kind of character chosen".into(),
         ));
     }
-    let all: Vec<char> = classes.iter().flatten().copied().collect();
-    for _ in 0..256 {
-        let mut chars = Vec::with_capacity(length);
-        for class in &classes {
-            chars.push(pick(class)?);
-        }
-        while chars.len() < length {
-            chars.push(pick(&all)?);
-        }
-        shuffle(&mut chars)?;
-        if !too_many_repeats(&chars, spec.max_consecutive) {
-            return Ok(Secret::from(chars.into_iter().collect::<String>()));
+    let all = every_char(&classes);
+    let pools: Vec<&[char]> = classes.iter().map(Vec::as_slice).collect();
+    drawn(&pools, &all, length, spec.max_consecutive)
+        .ok_or_else(|| Error::Invalid("those settings leave too few possibilities".into()))?
+}
+
+/// One character from each of `required`, the rest from `every`, in random order, with no
+/// run of one character longer than `limit` (zero for no limit). A character that would make
+/// such a run is drawn again from the set it came from, so every required kind stays. `None`
+/// when a run cannot be broken, as with a single character to draw from.
+fn drawn(required: &[&[char]], every: &[char], length: usize, limit: u32) -> Option<Result<Secret>> {
+    let mut chars: Vec<(char, &[char])> = Vec::with_capacity(length);
+    for pool in required {
+        match pick(pool) {
+            Ok(c) => chars.push((c, pool)),
+            Err(e) => return Some(Err(e)),
         }
     }
-    Err(Error::Invalid(
-        "those settings leave too few possibilities".into(),
-    ))
+    while chars.len() < length {
+        match pick(every) {
+            Ok(c) => chars.push((c, every)),
+            Err(e) => return Some(Err(e)),
+        }
+    }
+    if let Err(e) = shuffle(&mut chars) {
+        return Some(Err(e));
+    }
+    let limit = limit as usize;
+    if limit > 0 {
+        for at in limit..chars.len() {
+            let current = chars[at].0;
+            if chars[at - limit..at].iter().all(|(c, _)| *c == current) {
+                let others: Vec<char> = chars[at].1.iter().copied().filter(|c| *c != current).collect();
+                if others.is_empty() {
+                    return None;
+                }
+                match pick(&others) {
+                    Ok(c) => chars[at].0 = c,
+                    Err(e) => return Some(Err(e)),
+                }
+            }
+        }
+    }
+    Some(Ok(Secret::from(chars.into_iter().map(|(c, _)| c).collect::<String>())))
 }
 
 /// Random words.
@@ -317,6 +363,10 @@ fn pin(length: u32) -> Result<Secret> {
 }
 
 fn pattern(template: &str) -> Result<Secret> {
+    // An empty pattern would hand back an empty password to save.
+    if template.is_empty() {
+        return Err(Error::Invalid("write a pattern, such as Cvcv-9999".into()));
+    }
     let lower: Vec<char> = LOWER.chars().collect();
     let upper: Vec<char> = UPPER.chars().collect();
     let digits: Vec<char> = DIGITS.chars().collect();
@@ -346,6 +396,10 @@ fn pattern(template: &str) -> Result<Secret> {
             '\\' => out.extend(chars.next()),
             other => out.push(other),
         }
+    }
+    // A lone `\` escapes nothing and writes nothing.
+    if out.is_empty() {
+        return Err(Error::Invalid("write a pattern, such as Cvcv-9999".into()));
     }
     Ok(Secret::from(out))
 }
@@ -465,7 +519,7 @@ pub fn generate(recipe: &Recipe) -> Result<Secret> {
 pub fn entropy_bits(recipe: &Recipe) -> f64 {
     match recipe {
         Recipe::Password(spec) => {
-            let size: usize = classes(spec).iter().map(Vec::len).sum();
+            let size = every_char(&classes(spec)).len();
             f64::from(spec.length) * (size.max(1) as f64).log2()
         }
         Recipe::Passphrase(spec) => {
@@ -632,21 +686,9 @@ pub fn password_for_rules(rules: &SiteRules, wanted_length: u32) -> Result<Secre
     if every.is_empty() || target < pools.len() {
         return Err(Error::Invalid("those site rules cannot be met".into()));
     }
-    let limit = rules.max_consecutive.unwrap_or(0);
-    for _ in 0..256 {
-        let mut chars = Vec::with_capacity(target);
-        for pool in &pools {
-            chars.push(pick(pool)?);
-        }
-        while chars.len() < target {
-            chars.push(pick(&every)?);
-        }
-        shuffle(&mut chars)?;
-        if !too_many_repeats(&chars, limit) {
-            return Ok(Secret::from(chars.into_iter().collect::<String>()));
-        }
-    }
-    Err(Error::Invalid("those site rules cannot be met".into()))
+    let required: Vec<&[char]> = pools.iter().map(Vec::as_slice).collect();
+    drawn(&required, &every, target, rules.max_consecutive.unwrap_or(0))
+        .ok_or_else(|| Error::Invalid("those site rules cannot be met".into()))?
 }
 
 #[cfg(test)]
@@ -668,6 +710,21 @@ mod tests {
             assert!(text.chars().any(|c| c.is_ascii_digit()));
             assert!(text.chars().any(|c| SYMBOLS.contains(c)));
         }
+    }
+
+    #[test]
+    fn a_repeated_character_in_a_custom_set_is_no_likelier() {
+        let spec = PasswordSpec {
+            lower: false,
+            upper: false,
+            digits: false,
+            symbol_set: Some("!!!!!!!!!@a".into()),
+            ..PasswordSpec::default()
+        };
+        assert_eq!(classes(&spec), vec![vec!['!', '@', 'a']]);
+        let overlapping = PasswordSpec { symbol_set: Some("ab".into()), ..PasswordSpec::default() };
+        assert_eq!(every_char(&classes(&overlapping)).len(), 26 + 26 + 10);
+        assert!((entropy_bits(&Recipe::Password(spec)) - 20.0 * 3f64.log2()).abs() < 1e-9);
     }
 
     #[test]
@@ -736,6 +793,33 @@ mod tests {
                 (f64::from(count) - expected).abs() < expected * 0.12,
                 "{counts:?}"
             );
+        }
+    }
+
+    #[test]
+    fn a_run_limit_is_met_however_long_the_password() {
+        // Ten digits and no two alike in a row: drawing again until one came out whole failed
+        // nearly always at this length.
+        let spec = PasswordSpec {
+            lower: false,
+            upper: false,
+            symbols: false,
+            max_consecutive: 1,
+            length: 1024,
+            ..PasswordSpec::default()
+        };
+        for _ in 0..20 {
+            let out = password(&spec).unwrap();
+            let chars: Vec<char> = out.expose().chars().collect();
+            assert_eq!(chars.len(), 1024);
+            assert!(!too_many_repeats(&chars, 1));
+        }
+        let classes = PasswordSpec { length: 4, max_consecutive: 1, ..PasswordSpec::default() };
+        for _ in 0..200 {
+            let out = password(&classes).unwrap();
+            let text = out.expose();
+            assert!(text.chars().any(|c| c.is_ascii_lowercase()) && text.chars().any(|c| c.is_ascii_uppercase()));
+            assert!(text.chars().any(|c| c.is_ascii_digit()) && text.chars().any(|c| SYMBOLS.contains(c)));
         }
     }
 
@@ -873,6 +957,12 @@ mod tests {
         assert!(
             (bits - (2.0 * 18f64.log2() + 2.0 * 5f64.log2() + 4.0 * 10f64.log2())).abs() < 0.01
         );
+    }
+
+    #[test]
+    fn an_empty_pattern_is_refused() {
+        assert!(generate(&Recipe::Pattern(String::new())).is_err());
+        assert!(generate(&Recipe::Pattern("\\".into())).is_err());
     }
 
     #[test]

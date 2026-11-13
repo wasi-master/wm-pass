@@ -128,7 +128,7 @@ fn inbox_base(provider: &str, base: &str) -> Result<String, SessionError> {
 
 /// A kept mailbox, read from the open vault.
 fn kept_inbox(service: &Mutex<Option<Service>>, handle: u64, id: &str) -> Result<wmpass_core::model::Inbox, SessionError> {
-    let mut guard = service.lock().map_err(|_| failed("busy", "try that again"))?;
+    let mut guard = crate::lock_service(service)?;
     let service = guard.as_mut().ok_or_else(|| failed("not_started", "the vault service has not started"))?;
     service
         .with_vault(handle, |vault| vault.doc.prefs.inboxes.get(id).and_then(|kept| kept.v.clone()))?
@@ -137,7 +137,7 @@ fn kept_inbox(service: &Mutex<Option<Service>>, handle: u64, id: &str) -> Result
 
 /// Writes a kept mailbox back, or closes it with `None`.
 fn keep_inbox(service: &Mutex<Option<Service>>, handle: u64, id: &str, inbox: Option<wmpass_core::model::Inbox>, now_ms: u64) -> Result<(), SessionError> {
-    let mut guard = service.lock().map_err(|_| failed("busy", "try that again"))?;
+    let mut guard = crate::lock_service(service)?;
     let service = guard.as_mut().ok_or_else(|| failed("not_started", "the vault service has not started"))?;
     service.with_vault(handle, |vault| {
         let at = vault.tick(now_ms);
@@ -214,7 +214,7 @@ pub async fn call_over(
     now_ms: u64,
 ) -> Result<Reply, SessionError> {
     let with_service = |run: &mut dyn FnMut(&mut Service) -> Result<Reply, SessionError>| -> Result<Reply, SessionError> {
-        let mut guard = service.lock().map_err(|_| failed("busy", "try that again"))?;
+        let mut guard = crate::lock_service(service)?;
         let service = guard.as_mut().ok_or_else(|| failed("not_started", "the vault service has not started"))?;
         run(service)
     };
@@ -743,5 +743,21 @@ mod tests {
     fn a_login_that_reaches_no_server_is_a_network_failure() {
         assert_eq!(login_error(false).code, "network");
         assert_eq!(login_error(true).code, "network");
+    }
+
+    /// A lock a panic poisoned guards a service left half changed. A call on the network that
+    /// gets there before the boundary has replaced it treats it as locked, and never reads it.
+    #[test]
+    fn a_poisoned_lock_answers_as_an_internal_error() {
+        let service: Mutex<Option<Service>> = Mutex::new(Some(Service::new(1)));
+        let _ = std::panic::catch_unwind(|| {
+            let _held = service.lock();
+            panic!("poison it");
+        });
+        assert!(service.is_poisoned());
+        assert_eq!(kept_inbox(&service, 0, "x").err().map(|e| e.code), Some(crate::INTERNAL));
+        assert_eq!(keep_inbox(&service, 0, "x", None, 0).err().map(|e| e.code), Some(crate::INTERNAL));
+        let Err(error) = call(&service, "remote.sync", 0, "{}", b"", false, 0) else { panic!("nothing to sync") };
+        assert_eq!(error.code, crate::INTERNAL);
     }
 }

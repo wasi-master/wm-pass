@@ -57,11 +57,24 @@ export class GenState {
     return true;
   }
 
+  private rolls = 0;
+
   async roll() {
     if (this.mode === 'password' && !this.lower && !this.upper && !this.digits && !this.symbols) this.lower = true;
+    // Only the latest ask is shown: a slower reply for settings since changed is dropped.
+    const mine = ++this.rolls;
     for (let i = 0; i < 40; i++) {
-      const reply = await pass.engine('gen.generate', this.recipe());
+      let reply;
+      try {
+        reply = await pass.engine('gen.generate', this.recipe());
+      } catch {
+        // A pattern the engine cannot follow, such as an empty one, gives nothing to copy rather
+        // than leaving a value made from the pattern before.
+        if (mine === this.rolls && this.mode !== 'password') this.whole = '';
+        return;
+      }
       const text = consumeText(reply.secret);
+      if (mine !== this.rolls) return;
       this.drawnBits = Number(reply.json.bits) || 0;
       if (this.mode === 'password') {
         this.buffer = text;
@@ -101,6 +114,9 @@ export class GenState {
     } else if (r?.Pin) {
       this.mode = 'pin';
       this.pin = r.Pin.length ?? 6;
+    } else if (typeof r?.Pattern === 'string') {
+      this.mode = 'pattern';
+      this.pattern = r.Pattern;
     }
   }
 }

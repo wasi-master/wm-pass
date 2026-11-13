@@ -69,9 +69,23 @@ internal object Native {
 }
 
 /** A refusal from the Rust side. The message is safe to show and never holds a secret. */
-class NativeFailure(text: String) : Exception(text.substringAfter('\n')) {
+open class NativeFailure(text: String) : Exception(text.substringAfter('\n')) {
     val code: String = text.substringBefore('\n')
+
+    /** A bug in the core (a Rust panic) stopped the call. See [Engine.stopped]. */
+    val isInternal: Boolean get() = code == INTERNAL || code == "panic"
+
+    companion object {
+        const val INTERNAL = "internal"
+    }
 }
+
+/**
+ * An internal error: a bug in the core stopped a call part way. The core has thrown its whole
+ * session away, wiping every key, and started afresh, so every vault is locked. Not the panic
+ * lock a person asks for ([Pass.panic]), which is an ordinary lock.
+ */
+class InternalFailure : NativeFailure("${INTERNAL}\nWM Pass hit an internal error and locked the vault.")
 
 /** A hardware key as Rust talks to it. Each side implements only what it can carry. */
 interface HwDevice {

@@ -16,6 +16,7 @@
     ['old', 'Not changed in a year', 'history'],
     ['twofactor', 'No second factor', 'pin'],
     ['duplicates', 'Duplicate items', 'layers'],
+    ['similar', 'Maybe the same account', 'layers'],
   ];
   const hidden = $derived(prefs.listOf('health_hidden'));
 </script>
@@ -26,7 +27,8 @@
 </Group>
 <Group title="Problems to list" help="group.health.problems">
   {#each CHECKS as [key, name, icon] (key)}
-    <Row title={name} {icon} help={`action.health_check_${key}` as TopicId}>
+    <!-- The guide explains Maybe the same account only for the phone so far. -->
+    <Row title={name} {icon} help={key === 'similar' ? null : (`action.health_check_${key}` as TopicId)}>
       <Switch checked={!hidden.includes(key)} label={name} onchange={(on) => prefs.toggleInList('health_hidden', key, !on)} />
     </Row>
   {/each}

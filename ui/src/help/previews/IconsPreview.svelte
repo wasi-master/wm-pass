@@ -10,10 +10,10 @@
   let shown = $state(icons.style);
   $effect(() => {
     const wanted = style;
-    void icons.tableOf(wanted).then((t) => {
+    void icons.load(wanted).then((got) => {
       if (wanted !== style) return;
-      table = t;
-      shown = wanted;
+      table = got.table;
+      shown = got.style;
     });
   });
   const names: IconName[] = ['lock', 'search', 'add', 'star', 'content_copy', 'key', 'folder', 'settings', 'delete', 'sync'];

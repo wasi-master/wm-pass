@@ -1,5 +1,8 @@
 package com.wasimaster.wmpass.ui.settings
 
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
@@ -16,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.CircularProgressIndicator
@@ -38,10 +42,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.wasimaster.wmpass.BuildConfig
 import com.wasimaster.wmpass.core.Engine
-import com.wasimaster.wmpass.core.NativeFailure
 import com.wasimaster.wmpass.core.Pass
 import com.wasimaster.wmpass.core.Summary
 import com.wasimaster.wmpass.system.NetAccess
+import com.wasimaster.wmpass.ui.parts.announced
 import com.wasimaster.wmpass.ui.fx.rim
 import com.wasimaster.wmpass.ui.icons.PassIcons
 import com.wasimaster.wmpass.ui.parts.Eyebrow
@@ -87,7 +91,7 @@ fun NetGate(what: String, content: @Composable () -> Unit) {
     }
     Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         GlyphTile(PassIcons.Language, colors.primary, size = 52.dp)
-        Text("This needs the network", color = colors.text, style = MaterialTheme.typography.titleLarge)
+        Text("This needs the network", color = colors.text, style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
         Text(what, color = colors.textMid, style = MaterialTheme.typography.bodyLarge)
         Text("WM Pass stays offline until you allow this. You can turn it off again in Settings.", color = colors.textLow, style = MaterialTheme.typography.bodyMedium)
         PrimaryButton("Allow network features", Modifier.fillMaxWidth()) { shell.prefs.updateNetworkAllowed(true) }
@@ -132,6 +136,7 @@ fun BreachScreen() {
                     when {
                         checkable.isEmpty() -> "No item in this vault holds a password yet, so there is nothing to check."
                         running -> "Checked ${progress.done} of ${progress.total} with ${com.wasimaster.wmpass.system.BreachCheck.sourceName(progress.source)}. You can leave this page; the notification shows how far it has got."
+                        found.size == 1 -> "One of them has appeared in leaks. It now leads the list on the Health page."
                         found.isNotEmpty() -> "${found.size} of them have appeared in leaks. They now lead the list on the Health page."
                         else -> "See whether any password in this vault has appeared in a known leak."
                     },
@@ -170,7 +175,7 @@ fun BreachScreen() {
                     }
                 }
                 if (running) QuietButton("Stop", Modifier.fillMaxWidth(), PassIcons.Close) { com.wasimaster.wmpass.system.BreachCheck.stop() }
-                progress.problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
+                progress.problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced()) }
                 val breached = entries.filter { it.id in found }
                 if (breached.isNotEmpty()) {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -204,7 +209,7 @@ private fun EntryLineCounted(entry: Summary, count: Long) {
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(entry.title, color = colors.text, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
-            Text("Seen %,d times".format(count), color = colors.danger, style = MaterialTheme.typography.bodySmall)
+            Text(if (count == 1L) "Seen once" else "Seen %,d times".format(count), color = colors.danger, style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -217,9 +222,13 @@ private fun EmailChecks(entries: List<Summary>) {
     val scope = rememberCoroutineScope()
     val emails = remember(entries) { entries.map { it.subtitle.trim().lowercase() }.filter { '@' in it }.distinct() }
     var source by remember { mutableStateOf("leakcheck") }
-    val key = rememberTextFieldState()
-    var busy by remember { mutableStateOf<String?>(null) }
+    // Not saved with the activity's state, and typed with no suggestions: an API key is a secret.
+    val key = remember { TextFieldState() }
+    // By address: two checks can run at once, and each row keeps its own spinner until its own ends.
+    val busy = remember { androidx.compose.runtime.mutableStateListOf<String>() }
     val results = remember { mutableStateMapOf<String, String>() }
+    // Two checks run at once with a typed key keep it in the vault once, not twice.
+    var keySaving by remember { mutableStateOf(false) }
     if (emails.isEmpty()) return
     Eyebrow("Your email addresses") { com.wasimaster.wmpass.ui.help.HelpMark("group.breaches.emails", "your email addresses") }
     Text(
@@ -243,7 +252,7 @@ private fun EmailChecks(entries: List<Summary>) {
         if (hibpKept) {
             Text("Using the key kept in the vault as “$HIBP_KEY”.", color = colors.textMid, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 6.dp))
         } else {
-            SheetField(key, "API key")
+            SheetField(key, "API key", keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password, autoCorrectEnabled = false))
             Text("After the first check the key is kept in the vault, so your other devices have it too.", color = colors.textMid, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 6.dp))
         }
     }
@@ -252,14 +261,15 @@ private fun EmailChecks(entries: List<Summary>) {
             if (index > 0) Hairline()
             Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 12.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(email, color = colors.text, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
+                    Text(email, color = colors.text, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     results[email]?.let { Text(it, color = colors.textMid, style = MaterialTheme.typography.bodySmall) }
                 }
-                if (busy == email) {
+                if (email in busy) {
                     CircularProgressIndicator(Modifier.size(22.dp), color = colors.primary, strokeWidth = 2.dp)
                 } else {
                     RowIconButton(PassIcons.Search, "Check $email") {
-                        busy = email
+                        if (email in busy) return@RowIconButton
+                        busy += email
                         scope.launch {
                             val online = NetAccess.allowed(context)
                             results[email] = try {
@@ -268,6 +278,7 @@ private fun EmailChecks(entries: List<Summary>) {
                                     val matched = reply.obj["matched"]!!.jsonArray.size
                                     val lines = reply.obj["lines"]!!.jsonPrimitive.long
                                     when {
+                                        matched == 1 -> "One of your passwords for it is in this leak. Change it."
                                         matched > 0 -> "$matched of your passwords for it are in this leak. Change them."
                                         lines > 0 -> "The address is listed, with passwords you no longer use."
                                         else -> "Not listed."
@@ -284,16 +295,25 @@ private fun EmailChecks(entries: List<Summary>) {
                                         put("email", email)
                                     }.json as JsonArray
                                     secret?.fill(0)
-                                    if (source == "hibp" && !hibpKept && typed.isNotEmpty()) {
-                                        saveServiceKey(HIBP_KEY, typed)
+                                    if (source == "hibp" && !hibpKept && typed.isNotEmpty() && !keySaving) {
+                                        keySaving = true
+                                        try {
+                                            saveServiceKey(HIBP_KEY, typed)
+                                        } catch (failure: Exception) {
+                                            keySaving = false
+                                            throw failure
+                                        }
                                         key.clearText()
                                     }
                                     if (rows.isEmpty()) "Not listed." else "In ${rows.size}: " + rows.take(5).joinToString(", ") { it.jsonObject["name"]!!.jsonPrimitive.content }
                                 }
-                            } catch (failure: NativeFailure) {
-                                failure.message.orEmpty()
+                            } catch (failure: Exception) {
+                                // This page's scope has no handler: a key that will not open, or an
+                                // answer missing a field, is said on the row rather than closing the app.
+                                if (failure is kotlinx.coroutines.CancellationException) throw failure
+                                failure.message ?: "The check did not work."
                             }
-                            busy = null
+                            busy -= email
                         }
                     }
                 }
@@ -344,7 +364,8 @@ fun AliasScreen() {
     val scope = rememberCoroutineScope()
     var service by remember { mutableStateOf(AliasServices.first()) }
     var hasKey by remember { mutableStateOf(false) }
-    val keyField = rememberTextFieldState()
+    // Not saved with the activity's state, and typed with no suggestions: an API key is a secret.
+    val keyField = remember { TextFieldState() }
     val note = rememberTextFieldState()
     var aliases by remember { mutableStateOf<List<JsonObject>>(emptyList()) }
     var problem by remember { mutableStateOf<String?>(null) }
@@ -352,17 +373,28 @@ fun AliasScreen() {
     val entries by Pass.entries.collectAsStateWithLifecycle()
     suspend fun refresh() {
         problem = null
-        val key = serviceKey(service.keyTitle)
+        // Run from an effect with no handler: a key that will not open is said here, not a crash.
+        val key = try {
+            serviceKey(service.keyTitle)
+        } catch (failure: Exception) {
+            if (failure is kotlinx.coroutines.CancellationException) throw failure
+            problem = failure.message ?: "The key could not be read from the vault."
+            null
+        }
         hasKey = key != null
         aliases = emptyList()
         if (key != null && service.id != "duckduckgo") {
+            val bytes = key.toByteArray()
             try {
-                val bytes = key.toByteArray()
                 aliases = (
                     Engine.net("alias.list", online = NetAccess.allowed(context), secret = bytes) { put("provider", service.id) }.json as JsonArray
                     ).map { it.jsonObject }
-            } catch (failure: NativeFailure) {
-                problem = failure.message
+            } catch (failure: Exception) {
+                // Run from an effect with no handler: any failure is said here, not a crash.
+                if (failure is kotlinx.coroutines.CancellationException) throw failure
+                problem = failure.message ?: "The aliases could not be listed."
+            } finally {
+                bytes.fill(0)
             }
         }
     }
@@ -378,11 +410,21 @@ fun AliasScreen() {
                     }
                     if (!hasKey) {
                         Text(service.note, color = colors.textMid, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 6.dp))
-                        SheetField(keyField, "API key")
-                        PrimaryButton("Keep this key in the vault", Modifier.fillMaxWidth(), enabled = keyField.text.isNotBlank()) {
-                            scope.launch {
-                                saveServiceKey(service.keyTitle, keyField.text.toString().trim())
-                                refresh()
+                        SheetField(keyField, "API key", keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password, autoCorrectEnabled = false))
+                        PrimaryButton("Keep this key in the vault", Modifier.fillMaxWidth(), enabled = keyField.text.isNotBlank() && !busy) {
+                            // Once: a second tap while the first saves would keep the key twice.
+                            if (busy) return@PrimaryButton
+                            busy = true
+                            // A save that fails is said at the bottom of the screen, rather than closing the app.
+                            shell.launch {
+                                try {
+                                    saveServiceKey(service.keyTitle, keyField.text.toString().trim())
+                                    // Kept in the vault now, so not on screen as well.
+                                    keyField.clearText()
+                                    refresh()
+                                } finally {
+                                    busy = false
+                                }
                             }
                         }
                     } else {
@@ -396,16 +438,18 @@ fun AliasScreen() {
                                         put("provider", service.id)
                                         put("note", note.text.toString())
                                     }.obj
+                                    key.fill(0)
                                     shell.copyPlain("Alias", made["address"]!!.jsonPrimitive.content)
                                     refresh()
-                                } catch (failure: NativeFailure) {
-                                    problem = failure.message
+                                } catch (failure: Exception) {
+                                    if (failure is kotlinx.coroutines.CancellationException) throw failure
+                                    problem = failure.message ?: "The alias could not be made."
                                 }
                                 busy = false
                             }
                         }
                     }
-                    problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
+                    problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced()) }
                     if (aliases.isNotEmpty()) {
                         GroupCard {
                             aliases.forEachIndexed { index, alias ->
@@ -433,13 +477,14 @@ private fun AliasRow(alias: JsonObject, provider: String, onChange: () -> Unit) 
     val enabled = alias["enabled"]!!.jsonPrimitive.content == "true"
     Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 10.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(address, color = if (enabled) colors.text else colors.textLow, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+            Text(address, color = if (enabled) colors.text else colors.textLow, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             val note = alias["note"]!!.jsonPrimitive.content
-            if (note.isNotEmpty()) Text(note, color = colors.textMid, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+            if (note.isNotEmpty()) Text(note, color = colors.textMid, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         }
-        RowIconButton(PassIcons.ContentCopy, "Copy") { shell.copyPlain("Alias", address) }
+        RowIconButton(PassIcons.ContentCopy, "Copy $address") { shell.copyPlain("Alias", address) }
         Spacer(Modifier.width(6.dp))
-        com.wasimaster.wmpass.ui.vault.PassSwitch(enabled) { on ->
+        // Named, as it stands apart from the address it turns on and off.
+        com.wasimaster.wmpass.ui.vault.PassSwitch(enabled, modifier = Modifier.semantics { contentDescription = "Receive mail at $address" }, onChange = { on ->
             scope.launch {
                 runCatching {
                     Engine.net("alias.set_enabled", online = NetAccess.allowed(context), secret = serviceKey(title).orEmpty().toByteArray()) {
@@ -447,10 +492,14 @@ private fun AliasRow(alias: JsonObject, provider: String, onChange: () -> Unit) 
                         put("id", id)
                         put("enabled", on)
                     }
+                }.onFailure {
+                    if (it is kotlinx.coroutines.CancellationException) throw it
+                    // The switch goes back as the list reloads; this says why.
+                    shell.notice(it.message ?: "The alias could not be changed")
                 }
                 onChange()
             }
-        }
+        })
     }
 }
 
@@ -485,6 +534,8 @@ fun AliasPickerSheet(note: String, onDismiss: () -> Unit, onPicked: (String) -> 
                     if (busy == service.id) "Making it…" else service.name,
                     "A new address that forwards to you",
                 ) {
+                    // One at a time: a second tap while the first is made would make a second address.
+                    if (busy != null) return@SheetRow
                     busy = service.id
                     failed = null
                     scope.launch {
@@ -496,14 +547,15 @@ fun AliasPickerSheet(note: String, onDismiss: () -> Unit, onPicked: (String) -> 
                             }.obj
                             key.fill(0)
                             onPicked(made["address"]!!.jsonPrimitive.content)
-                        } catch (failure: NativeFailure) {
+                        } catch (failure: Exception) {
+                            if (failure is kotlinx.coroutines.CancellationException) throw failure
                             failed = service.id to (failure.message ?: "${service.name} did not make an address.")
                         }
                         busy = null
                     }
                 }
                 failed?.takeIf { it.first == service.id }?.let { (_, why) ->
-                    Text(why, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 60.dp, bottom = 6.dp))
+                    Text(why, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced().padding(start = 60.dp, bottom = 6.dp))
                 }
             }
         }
@@ -538,15 +590,17 @@ private fun AddressTricks() {
                         put("tag", tag.text.toString().trim())
                     }.obj["address"]!!.jsonPrimitive.content
                     problem = null
-                } catch (failure: NativeFailure) {
-                    problem = failure.message
+                } catch (failure: Exception) {
+                    // This scope has no handler: an answer missing its field is said here, not a crash.
+                    if (failure is kotlinx.coroutines.CancellationException) throw failure
+                    problem = failure.message ?: "That address could not be made."
                 }
             }
         }
         QuietButton("Plus tag", Modifier.weight(1f), height = 48.dp) { run("alias.plus") }
         QuietButton("Gmail dots", Modifier.weight(1f), height = 48.dp) { run("alias.dots") }
     }
-    problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium) }
+    problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced()) }
     result?.let { value ->
         Row(
             Modifier.fillMaxWidth().clip(Shapes.cardSmall).background(colors.surface1).rim(Shapes.cardSmall, colors).padding(start = 18.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),

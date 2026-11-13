@@ -12,9 +12,11 @@
   import { brands } from '../engine/brands.svelte';
   import { GLYPH_CHOICES, kindIcon, oklch } from '../engine/face';
   import { glyphName } from '../engine/glyphs';
+  import { nameText } from '../engine/text';
   import { tags as tagStore } from '../engine/tags.svelte';
   import { ui } from './ui.svelte';
   import { pass } from '../engine/pass.svelte';
+  import { overlays } from '../parts/floating.svelte';
   import type { Detail } from '../engine/types';
 
   // The small questions an entry asks: which folder, what colour, when to remind. With `onpick`,
@@ -40,10 +42,35 @@
   } = $props();
 
   const HUES = [25, 55, 85, 120, 150, 180, 210, 240, 270, 300, 330, 355];
+  /** What each hue is called, for a screen reader and the pointer's tooltip. */
+  const HUE_NAMES: Record<number, string> = {
+    25: 'Red',
+    55: 'Orange',
+    85: 'Amber',
+    120: 'Lime',
+    150: 'Green',
+    180: 'Teal',
+    210: 'Cyan',
+    240: 'Blue',
+    270: 'Indigo',
+    300: 'Purple',
+    330: 'Magenta',
+    355: 'Pink',
+  };
   let text = $state('');
 
   const folder = $derived(current !== undefined ? current : entry?.folder);
-  const tags = $derived<string[]>(current !== undefined ? current : (entry?.tags ?? []));
+  // What was just chosen, until the item comes back with it: two quick clicks build on each other
+  // rather than the second undoing the first.
+  let localTags = $state<string[] | null>(null);
+  let localLinks = $state<string[] | null>(null);
+  const same = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x));
+  $effect(() => {
+    if (localTags && entry && same(entry.tags, localTags)) localTags = null;
+    if (localLinks && entry && same(entry.links, localLinks)) localLinks = null;
+  });
+  const tags = $derived<string[]>(current !== undefined ? current : (localTags ?? entry?.tags ?? []));
+  const links = $derived<string[]>(localLinks ?? entry?.links ?? []);
   const colour = $derived(current !== undefined ? current : entry?.color);
   const iconNow = $derived(current !== undefined ? current : entry?.icon);
 
@@ -89,7 +116,13 @@
   });
 
   async function setCommon(args: Record<string, unknown>) {
-    await pass.change('entry.common', { id: entry!.id, ...args });
+    try {
+      await pass.change('entry.common', { id: entry!.id, ...args });
+    } catch (failure: any) {
+      localTags = null;
+      localLinks = null;
+      overlays.toast(failure?.message ?? 'That could not be changed.');
+    }
   }
 
   function choose(field: string, value: unknown) {
@@ -101,14 +134,46 @@
   function toggleTag(tag: string) {
     const next = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
     if (onpick) onpick(next);
-    else void setCommon({ tags: next });
+    else {
+      localTags = next;
+      void setCommon({ tags: next });
+    }
   }
 
+  function toggleLink(id: string) {
+    const next = links.includes(id) ? links.filter((l) => l !== id) : [...links, id];
+    localLinks = next;
+    void setCommon({ links: next });
+  }
+
+  // Typing a tag the item already has keeps it, rather than taking it away.
+  function addTyped() {
+    const tag = nameText(text);
+    if (!tag) return;
+    text = '';
+    if (tags.some((t) => t.toLowerCase() === tag.toLowerCase())) return;
+    // A tag the vault already has, typed in other capitals, is that tag rather than a second one,
+    // as a folder typed again is.
+    const same = (t: string) => t.toLowerCase() === tag.toLowerCase();
+    toggleTag(allTags.find(same) ?? suggested.find(same) ?? tag);
+  }
+
+  let adding = false;
   async function addFolder() {
-    const name = text.trim();
-    if (!name) return;
-    const reply = await pass.change<{ id: string }>('folder.add', { name });
-    choose('folder', reply.json.id);
+    const name = nameText(text);
+    if (!name || adding) return;
+    // A folder of that name already there is the one meant, rather than a second of the same name.
+    const existing = pass.folders.find((f) => f.name.toLowerCase() === name.toLowerCase());
+    if (existing) return choose('folder', existing.id);
+    adding = true;
+    try {
+      const reply = await pass.change<{ id: string }>('folder.add', { name });
+      choose('folder', reply.json.id);
+    } catch (failure: any) {
+      overlays.toast(failure?.message ?? 'The folder could not be made.');
+    } finally {
+      adding = false;
+    }
   }
 
   function setReminder(days: number | null) {
@@ -138,11 +203,11 @@
   {#if kind === 'folder'}
     <div class="stack">
       <div style="border:1px solid var(--hair);border-radius:var(--r-m);overflow:hidden">
-        <button type="button" class="set-row" onclick={() => choose('folder', null)}>
+        <button type="button" class="set-row" aria-current={!folder} onclick={() => choose('folder', null)}>
           <Icon name="inventory_2" /><span class="text">No folder</span>{#if !folder}<Icon name="check" />{/if}
         </button>
         {#each pass.folders as f (f.id)}
-          <button type="button" class="set-row" onclick={() => choose('folder', f.id)}>
+          <button type="button" class="set-row" aria-current={folder === f.id} onclick={() => choose('folder', f.id)}>
             <Icon name="folder" /><span class="text">{f.name}</span>{#if folder === f.id}<Icon name="check" />{/if}
           </button>
         {/each}
@@ -159,7 +224,7 @@
           <p class="dim small" style="padding-bottom:6px">Suggested</p>
           <div class="gap wrap">
             {#each offeredTags as tag (tag)}
-              <button type="button" class="chip" onclick={() => toggleTag(tag)}><Icon name="add" size={14} />{tag}</button>
+              <button type="button" class="chip" title={tag} onclick={() => toggleTag(tag)}><Icon name="add" size={14} /><span class="ell">{tag}</span></button>
             {/each}
           </div>
         </div>
@@ -179,23 +244,25 @@
         </div>
       {/if}
       <div class="gap">
-        <div class="grow"><Field bind:value={text} placeholder="New tag" onenter={() => { if (text.trim()) { toggleTag(text.trim()); text = ''; } }} /></div>
-        <Btn label="Add" disabled={!text.trim()} onclick={() => { toggleTag(text.trim()); text = ''; }} />
+        <div class="grow"><Field bind:value={text} placeholder="New tag" onenter={addTyped} /></div>
+        <Btn label="Add" disabled={!text.trim()} onclick={addTyped} />
       </div>
     </div>
   {:else if kind === 'colour'}
     <div class="stack">
-      <div class="gap wrap">
+      <div class="gap wrap" role="group" aria-label="Colors">
         {#each HUES as hue}
           <button
             type="button"
-            aria-label="Color {hue}"
+            aria-label={HUE_NAMES[hue]}
+            title={HUE_NAMES[hue]}
+            aria-pressed={colour === String(hue)}
             style="width:30px;height:30px;border-radius:50%;padding:0;border:{colour === String(hue) ? '2px solid var(--text)' : '0'};background:{oklch(0.58, 0.11, hue)}"
             onclick={() => choose('color', String(hue))}
           ></button>
         {/each}
       </div>
-      <button type="button" class="set-row" style="border:1px solid {colour == null ? 'var(--primary)' : 'var(--hair)'};border-radius:var(--r-m)" onclick={() => choose('color', null)}>
+      <button type="button" class="set-row" aria-pressed={colour == null} style="border:1px solid {colour == null ? 'var(--primary)' : 'var(--hair)'};border-radius:var(--r-m)" onclick={() => choose('color', null)}>
         <Tile title={seen.title} site={seen.site} kind={seen.kind} label={null} icon={seen.icon} size={28} />
         <span class="text">Use the site's own color</span>
         {#if colour == null}<Icon name="check" />{/if}
@@ -203,7 +270,7 @@
     </div>
   {:else if kind === 'icon'}
     <div class="stack">
-      <button type="button" class="set-row" style="border:1px solid {iconNow ? 'var(--hair)' : 'var(--primary)'};border-radius:var(--r-m)" onclick={() => choose('icon', null)}>
+      <button type="button" class="set-row" aria-pressed={!iconNow} style="border:1px solid {iconNow ? 'var(--hair)' : 'var(--primary)'};border-radius:var(--r-m)" onclick={() => choose('icon', null)}>
         <Tile title={seen.title} site={seen.site} kind={seen.kind} label={seen.color} icon={null} size={36} />
         <span class="text"><span style="display:block">Automatic</span><span class="sub" style="display:block">The site's own mark when it is known, or a letter</span></span>
         {#if !iconNow}<Icon name="check" />{/if}
@@ -242,7 +309,8 @@
                 <Tile title={brand.name} icon="brand:{brand.slug}" size={34} />
               </button>
             {/each}
-            {#if brandLimit < matches.length}<span use:more style="width:1px;height:1px"></span>{/if}
+            <!-- Made anew for each page: a page too short to scroll leaves it in view, and only a new watcher asks again. -->
+            {#if brandLimit < matches.length}{#key brandLimit}<span use:more style="width:1px;height:1px"></span>{/key}{/if}
           </div>
         {/if}
         {#if !glyphs.length && !matches.length}<p class="dim" style="padding:12px">Nothing called “{text.trim()}”.</p>{/if}
@@ -251,9 +319,9 @@
     </div>
   {:else if kind === 'reminder'}
     <div style="border:1px solid var(--hair);border-radius:var(--r-m);overflow:hidden">
-      <button type="button" class="set-row" onclick={() => setReminder(null)}><span class="text">Never</span>{#if !entry?.reminders.change_every_days}<Icon name="check" />{/if}</button>
+      <button type="button" class="set-row" aria-current={!entry?.reminders.change_every_days} onclick={() => setReminder(null)}><span class="text">Never</span>{#if !entry?.reminders.change_every_days}<Icon name="check" />{/if}</button>
       {#each [30, 90, 180, 365] as days}
-        <button type="button" class="set-row" onclick={() => setReminder(days)}><span class="text">Every {days} days</span>{#if entry?.reminders.change_every_days === days}<Icon name="check" />{/if}</button>
+        <button type="button" class="set-row" aria-current={entry?.reminders.change_every_days === days} onclick={() => setReminder(days)}><span class="text">Every {days} days</span>{#if entry?.reminders.change_every_days === days}<Icon name="check" />{/if}</button>
       {/each}
     </div>
   {:else if kind === 'destruct'}
@@ -271,15 +339,17 @@
     <div class="stack">
       <Field bind:value={text} placeholder="Search" />
       <div class="scroll" style="max-height:320px;border:1px solid var(--hair);border-radius:var(--r-m)">
+        {#if others.length === 0}<p class="dim" style="padding:12px">{text.trim() ? `Nothing called “${text.trim()}”.` : 'There is nothing else to link to yet.'}</p>{/if}
         {#each others as other (other.id)}
-          {@const on = entry?.links.includes(other.id)}
+          {@const on = links.includes(other.id)}
           <button
             type="button"
             class="set-row"
-            onclick={() => setCommon({ links: on ? entry!.links.filter((l) => l !== other.id) : [...entry!.links, other.id] })}
+            aria-pressed={on}
+            onclick={() => toggleLink(other.id)}
           >
             <Icon name={kindIcon(other.kind)} />
-            <span class="text ell">{other.title}</span>
+            <span class="text ell">{other.title || 'Untitled'}</span>
             {#if on}<Icon name="check" />{/if}
           </button>
         {/each}

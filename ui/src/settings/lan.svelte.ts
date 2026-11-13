@@ -1,6 +1,7 @@
 // This computer's identity for the local network, and who it trusts there. Both are held with the
 // places, sealed by the system's keychain. Everything else about a sync is in the Rust side.
 
+import { plural } from '../engine/text';
 import { host } from '../engine/host';
 import { consumeText, pass } from '../engine/pass.svelte';
 import { overlays } from '../parts/floating.svelte';
@@ -65,7 +66,7 @@ export function describe(failed: Failed) {
 }
 
 function syncedText(json: any) {
-  return json.sent === 0 && json.received === 0 ? 'Synced. Nothing had changed.' : `Synced: ${json.sent} sent, ${json.received} received.`;
+  return json.sent === 0 && json.received === 0 ? 'Synced. Nothing had changed.' : `Synced: ${plural(json.sent, 'item')} sent, ${plural(json.received, 'item')} received.`;
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -439,7 +440,7 @@ class Lan {
     const peer = this.peer(json.key);
     const text = syncedText(json);
     if (peer) await this.note(peer.key, true, text);
-    if (quiet && json.received > 0) overlays.toast(`Synced with ${peer ? shown(peer) : json.peer}: ${json.received} received.`);
+    if (quiet && json.received > 0) overlays.toast(`Synced with ${peer ? shown(peer) : json.peer}: ${plural(json.received, 'item')} received.`);
     return `${peer ? shown(peer) : json.peer}: ${text}`;
   }
 
@@ -504,7 +505,7 @@ class Lan {
     }
     if (json.merged === 'kept') {
       await this.settle();
-      const text = `Merged: ${json.added} added, ${json.matched} already here.`;
+      const text = `Merged: ${plural(json.added, 'item')} added, ${json.matched} already here.`;
       if (peer) await this.note(peer.key, true, text);
       overlays.toast(`${label}’s items are in this vault now. ${label} uses this vault from here on.`);
       return text;

@@ -11,6 +11,8 @@
     clearTimeout(patternTimer);
     patternTimer = setTimeout(reroll, 200);
   }
+  // Closed straight after typing, the generator must not roll for a page no longer there.
+  $effect(() => () => clearTimeout(patternTimer));
 </script>
 
 {#snippet slider(label: string, value: number, min: number, max: number, set: (v: number) => void, settle: () => void)}
@@ -32,6 +34,7 @@
     <span class="label">Type</span>
     <span>
       <Segmented
+        label="Type"
         value={gen.mode}
         options={[['password', 'Random'], ['passphrase', 'Words'], ['pronounceable', 'Pronounceable'], ['pin', 'PIN'], ['pattern', 'Pattern']]}
         onchange={(mode) => { gen.mode = mode; reroll(); }}
@@ -42,7 +45,7 @@
     {@render slider('Length', gen.length, 8, BUFFER, (v) => (gen.length = v), () => void gen.settle())}
     <div class="form-row">
       <span class="label">Characters</span>
-      <span class="gap wrap">
+      <span class="gap wrap" role="group" aria-label="Characters">
         {@render flag('a-z', gen.lower, () => (gen.lower = !gen.lower))}
         {@render flag('A-Z', gen.upper, () => (gen.upper = !gen.upper))}
         {@render flag('0-9', gen.digits, () => (gen.digits = !gen.digits))}
@@ -54,7 +57,7 @@
     {@render slider('Words', gen.words, 3, 12, (v) => (gen.words = v), reroll)}
     <div class="form-row">
       <span class="label">Between words</span>
-      <span class="gap wrap">
+      <span class="gap wrap" role="group" aria-label="Between words">
         {#each [['-', 'Dash'], [' ', 'Space'], ['.', 'Dot'], ['_', 'Underscore']] as [sep, name]}
           <button type="button" class="chip" aria-pressed={gen.separator === sep} onclick={() => { gen.separator = sep; reroll(); }}>{name}</button>
         {/each}
@@ -62,7 +65,7 @@
     </div>
     <div class="form-row">
       <span class="label">Also</span>
-      <span class="gap wrap">
+      <span class="gap wrap" role="group" aria-label="Also">
         {@render flag('Capitals', gen.capitalize, () => (gen.capitalize = !gen.capitalize))}
         {@render flag('Number', gen.includeDigit, () => (gen.includeDigit = !gen.includeDigit))}
       </span>
@@ -74,8 +77,8 @@
   {:else}
     <div class="form-row">
       <span class="label">Pattern</span>
-      <Field bind:value={gen.pattern} mono placeholder="Cvcv-9999" oninput={patternTyped} />
+      <Field bind:value={gen.pattern} mono placeholder="Cvcv-9999" label="Pattern" oninput={patternTyped} />
     </div>
-    <p class="dim small">C is a consonant, v a vowel, # a digit, ! a symbol. Anything else stays as typed.</p>
+    <p class="dim small">a is a small letter and A a capital, c a consonant and v a vowel (C and V as capitals), 9 a digit, # a symbol and ? anything. Anything else stays as typed; put \ before a letter to keep it.</p>
   {/if}
 </div>

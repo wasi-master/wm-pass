@@ -16,6 +16,7 @@ export const CHECK_NAMES: Record<string, string> = {
   old: 'Not changed in a year',
   twofactor: 'No second factor',
   duplicates: 'Duplicate items',
+  similar: 'Maybe the same account',
 };
 
 /** Items left out of one health check, by check, as the person chose them. */

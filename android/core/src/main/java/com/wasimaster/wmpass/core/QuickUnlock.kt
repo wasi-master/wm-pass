@@ -26,7 +26,9 @@ class QuickUnlock(private val context: Context) {
     private val folder get() = File(context.filesDir, "quick")
 
     /** The vault file quick unlock is set up for, or null. */
-    fun enrolledFile(): String? = folder.listFiles()?.firstOrNull()?.name
+    // Not a write's temporary file, which a process killed part way through leaves behind: taken
+    // for the enrolment, its key would not be found and quick unlock would be switched off.
+    fun enrolledFile(): String? = folder.listFiles()?.firstOrNull { !it.name.startsWith(".") }?.name
 
     private fun alias(file: String) = "wmpass.quick.$file"
 
@@ -68,6 +70,12 @@ class QuickUnlock(private val context: Context) {
         vaultKey.consume { raw ->
             val sealed = cipher.doFinal(raw)
             File(folder, file).writeAtomically(cipher.iv + sealed)
+        }
+        // One vault at a time: an enrolment left for another file would leave the door to pick
+        // whichever the folder lists first.
+        folder.listFiles()?.filter { it.name != file }?.forEach {
+            keyStore.deleteEntry(alias(it.name))
+            it.delete()
         }
     }
 

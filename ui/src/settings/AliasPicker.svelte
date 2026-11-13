@@ -14,14 +14,17 @@
   let problem = $state<string | null>(null);
 
   async function make(id: string, title: string) {
+    // A second click while the first alias is being made would make two.
+    if (busy) return;
     busy = id;
     problem = null;
-    const secret = await serviceKey(title);
+    let secret: Uint8Array | null = null;
     try {
+      secret = await serviceKey(title);
       const made = await pass.engine<{ address: string }>('alias.create', { provider: id, note: hint }, { secret, online: online() });
       onpick(made.json.address);
     } catch (failure: any) {
-      problem = failure.message;
+      problem = failure?.message ?? 'The alias could not be made.';
     } finally {
       secret?.fill(0);
       busy = null;
@@ -39,7 +42,7 @@
           <Row title={busy === service.id ? 'Making it…' : service.name} sub="A new address that forwards to you" icon="alternate_email" onclick={() => make(service.id, service.keyTitle)} />
         {/each}
       </div>
-      {#if problem}<p class="danger-text">{problem}</p>{/if}
+      {#if problem}<p class="danger-text" role="alert">{problem}</p>{/if}
     </div>
   {/if}
   {#snippet foot()}

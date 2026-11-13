@@ -47,7 +47,7 @@ A slot record seals 34 bytes: `1`, an action byte (0 open, 1 wipe local, 2 hard 
 
 A hint record is sealed under the hint key with the same AAD, over 216 bytes of padded plaintext. It tells a client that holds the right password which second factor to ask for: `1` key file; `2` FIDO2 (`u16` credential id length, 32-byte salt, credential id); `3` YubiKey (slot number, 32-byte challenge); `4` FIDO2 through WebAuthn (`u16` credential id length, 32-byte PRF input, credential id).
 
-A tag `2` credential belongs to the relying party `wmpass.local` and its salt goes to hmac-secret as it is. A tag `4` credential belongs to `wmpass.pages.dev`, and hmac-secret is asked with `SHA-256("WebAuthn PRF" || 0x00 || input)`, which is exactly what a browser sends for that PRF input. Apps write tag `4` for every new key, so one key works in the apps, the extension and the web vault alike. A browser cannot ask a tag `2` key, since the relying party is not a domain it may claim.
+A tag `2` credential belongs to the relying party `wmpass.local` and its salt goes to hmac-secret as it is. A tag `4` credential belongs to `wmpass.pages.dev`, and hmac-secret is asked with `SHA-256("WebAuthn PRF" || 0x00 || input)`, which is exactly what a browser sends for that PRF input. Apps write tag `4` for every new FIDO2 key, so one key works in the apps, the extension and the web vault alike. A browser cannot ask a tag `2` key, since the relying party is not a domain it may claim.
 
 ## Body
 

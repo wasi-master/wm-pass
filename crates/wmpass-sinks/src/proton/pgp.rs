@@ -663,6 +663,10 @@ fn open_session(component: &Component, body: &[u8]) -> Option<(u8, Vec<u8>)> {
             padded[..padded.len() - pad].to_vec()
         }
         (Some(Private::Rsa { d }), Public::Rsa { n, .. }, RSA | RSA_ENCRYPT) => {
+            // A zero modulus, in a key that came from the server, would panic below.
+            if n.bits() == 0 {
+                return None;
+            }
             let c = BigUint::from_bytes_be(read_mpi(body, &mut at)?);
             let k = (n.bits() as usize).div_ceil(8);
             let m = left_pad(&c.modpow(d, n).to_bytes_be(), k)?;
@@ -1165,6 +1169,22 @@ mod tests {
 
     fn key(passphrase: &str) -> Key {
         Key::unlock(&generate_key(passphrase, NOW).unwrap(), passphrase.as_bytes()).unwrap()
+    }
+
+    #[test]
+    fn a_zero_rsa_modulus_is_refused_rather_than_panicking() {
+        let component = Component {
+            algorithm: RSA,
+            fingerprint: [0; 20],
+            id: [0; 8],
+            public: Public::Rsa { n: BigUint::ZERO, e: BigUint::from(65_537u32) },
+            private: Some(Private::Rsa { d: BigUint::from(3u8) }),
+        };
+        let mut body = vec![3];
+        body.extend_from_slice(&[0; 8]);
+        body.push(RSA);
+        body.extend_from_slice(&mpi(&[5]));
+        assert!(open_session(&component, &body).is_none());
     }
 
     #[test]

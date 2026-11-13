@@ -58,6 +58,9 @@ import kotlinx.serialization.json.putJsonArray
  *   needed, so the door it is) or `failed`.
  * - [LOCK]: locks the vault.
  *
+ * A call that fails carries [ERROR], a sentence to show, beside the state the vault is in, and
+ * nothing else. So does a call this version does not know.
+ *
  * Opening an item in WM Pass is not a call: the keyboard starts WM Pass with the extra
  * [ROUTE_EXTRA] set to [openRoute], and the item opens once the vault is.
  */
@@ -96,6 +99,7 @@ object VaultWire {
     const val INTENT = "intent"
     const val SECRET = "secret"
     const val OUTCOME = "outcome"
+    const val ERROR = "error"
 
     const val CODE = "code"
     const val NOTES = "notes"

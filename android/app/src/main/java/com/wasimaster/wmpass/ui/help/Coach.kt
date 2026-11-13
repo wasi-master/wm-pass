@@ -1,5 +1,7 @@
 package com.wasimaster.wmpass.ui.help
 
+import androidx.compose.ui.semantics.heading
+import androidx.compose.foundation.verticalScroll
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.VectorConverter
@@ -14,7 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -298,12 +300,16 @@ fun Coach(prefs: Prefs) {
 
 /** Takes every touch in [area], so the dimmed screen behind it cannot be used during a step. */
 @Composable
-private fun Blocker(area: Rect) {
+private fun androidx.compose.foundation.layout.BoxScope.Blocker(area: Rect) {
     if (area.width <= 0f || area.height <= 0f) return
     val density = LocalDensity.current
     Box(
         Modifier
-            .offset { IntOffset(area.left.roundToInt(), area.top.roundToInt()) }
+            // From the left whatever the language: [area] is measured from the left, and a start
+            // corner and plain offset would mirror it in a right-to-left one, blocking the hole and
+            // freeing the dim.
+            .align(androidx.compose.ui.AbsoluteAlignment.TopLeft)
+            .absoluteOffset { IntOffset(area.left.roundToInt(), area.top.roundToInt()) }
             .size(with(density) { area.width.toDp() }, with(density) { area.height.toDp() })
             .pointerInput(Unit) {
                 awaitEachGesture {
@@ -327,7 +333,10 @@ private fun CardPlacer(hole: Rect, placement: String?, card: @Composable () -> U
         val margin = 12.dp.roundToPx()
         val gap = 12.dp.toPx()
         val width = min(constraints.maxWidth - margin * 2, 360.dp.roundToPx())
-        val placeable = measurables.first().measure(Constraints(maxWidth = width.coerceAtLeast(0)))
+        // No taller than the safe area: at a large font size the note scrolls inside itself rather
+        // than running off the foot of the screen with its buttons.
+        val tallest = constraints.maxHeight - insets.getTop(density) - insets.getBottom(density) - margin * 2
+        val placeable = measurables.first().measure(Constraints(maxWidth = width.coerceAtLeast(0), maxHeight = tallest.coerceAtLeast(0)))
         val w = placeable.width.toFloat()
         val h = placeable.height.toFloat()
         val viewW = constraints.maxWidth.toFloat()
@@ -380,11 +389,16 @@ private fun CoachCard(
             liveRegion = LiveRegionMode.Polite
         },
     ) {
-        Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(
+            Modifier
+                .verticalScroll(androidx.compose.foundation.rememberScrollState())
+                .padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             Row(verticalAlignment = Alignment.Top) {
                 Column(Modifier.weight(1f).padding(top = 4.dp)) {
                     Text("${tour.title} · ${index + 1} of ${tour.steps.size}", color = colors.textMid, style = MaterialTheme.typography.labelMedium)
-                    Text(step.title, color = colors.text, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 2.dp))
+                    Text(step.title, color = colors.text, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 2.dp).semantics { heading() })
                 }
                 IconButton(onClick = onEnd) { Icon(PassIcons.Close, "End the tour", tint = colors.textMid, modifier = Modifier.size(20.dp)) }
             }

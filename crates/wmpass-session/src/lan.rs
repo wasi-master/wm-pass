@@ -27,9 +27,10 @@ struct Held {
     listener: Option<TcpListener>,
     advert: Option<Advert>,
     qr: Option<PairingQr>,
-    code: Option<PendingCode<TcpStream>>,
+    /// A pairing or handover by digits, with a second handle on its connection for the wait.
+    code: Option<(PendingCode<TcpStream>, TcpStream)>,
     /// A new device waiting for its person to compare digits.
-    joining: Option<PendingJoin<TcpStream>>,
+    joining: Option<(PendingJoin<TcpStream>, TcpStream)>,
     offers: HashMap<String, ShareReceiver>,
     cancelled: bool,
     /// Waiting for paired devices for as long as the vault is open, apart from the screens
@@ -49,6 +50,28 @@ fn held<T>(run: impl FnOnce(&mut Held) -> T) -> Result<T, SessionError> {
 
 fn lan_error(error: LanError) -> SessionError {
     failed("lan", error.to_string())
+}
+
+/// How long a device waits on the other person's answer: comparing digits or agreeing to a
+/// merge takes longer than the 30 seconds a connection otherwise allows for a reply.
+const DECISION_WAIT: Duration = Duration::from_secs(180);
+
+/// A second handle on a connection, kept so the wait can be lengthened once the other end is
+/// a person deciding rather than a device answering.
+fn second_handle(stream: &TcpStream) -> Result<TcpStream, SessionError> {
+    stream.try_clone().map_err(|e| failed("lan", e.to_string()))
+}
+
+/// Gives the other person [`DECISION_WAIT`] to answer. A clone shares its socket, so this
+/// reaches the connection a pending pairing holds.
+fn wait_for_person(stream: &TcpStream) -> Result<(), SessionError> {
+    stream.set_read_timeout(Some(DECISION_WAIT)).map_err(|e| failed("lan", e.to_string()))
+}
+
+/// The time once a wait is over: the caller's clock moved on by what passed since `started`,
+/// so a QR code's expiry is not judged by the moment before a two-minute wait.
+fn now_after(now_ms: u64, started: Instant) -> u64 {
+    now_ms.saturating_add(u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX))
 }
 
 /// A sync or merge that stopped, as a reply rather than an error, so the screen learns which
@@ -117,20 +140,37 @@ fn sync_reply(report: &sync::LanReport) -> Reply {
 /// Attachment blobs in a folder. They are already sealed under their own keys.
 struct FolderBlobs(std::path::PathBuf);
 
+/// A blob name that stays inside the folder: no separators, and nothing starting with a dot,
+/// so neither `..` nor a hidden file.
+fn plain_blob_name(name: &str) -> bool {
+    !name.is_empty() && !name.contains(['/', '\\']) && !name.starts_with('.')
+}
+
 impl BlobStore for FolderBlobs {
     fn get(&self, name: &str) -> Option<Vec<u8>> {
-        if name.contains(['/', '\\']) {
+        if !plain_blob_name(name) {
             return None;
         }
         std::fs::read(self.0.join(name)).ok()
     }
 
+    fn has(&self, name: &str) -> bool {
+        plain_blob_name(name) && self.0.join(name).is_file()
+    }
+
     fn put(&mut self, name: &str, bytes: &[u8]) -> Result<(), LanError> {
         // The name came from the other device.
-        if name.contains(['/', '\\']) || name.starts_with('.') {
+        if !plain_blob_name(name) {
             return Err(LanError::Decode);
         }
-        std::fs::write(self.0.join(name), bytes).map_err(LanError::from)
+        // Written aside and moved into place: a blob cut short by a crash or a full disk would
+        // otherwise count as present, never be asked for again, and never open.
+        let part = self.0.join(format!(".{name}.part"));
+        let written = std::fs::write(&part, bytes).and_then(|()| std::fs::rename(&part, self.0.join(name)));
+        if written.is_err() {
+            let _ = std::fs::remove_file(&part);
+        }
+        written.map_err(LanError::from)
     }
 }
 
@@ -265,7 +305,7 @@ pub fn is_lan_method(method: &str) -> bool {
 #[allow(clippy::too_many_lines)]
 pub fn call(service: &Mutex<Option<Service>>, method: &str, handle: u64, args: &str, secret: &[u8], now_ms: u64) -> Result<Reply, SessionError> {
     let with_service = |run: &mut dyn FnMut(&mut Service) -> Result<Reply, SessionError>| -> Result<Reply, SessionError> {
-        let mut guard = service.lock().map_err(|_| failed("busy", "try that again"))?;
+        let mut guard = crate::lock_service(service)?;
         let service = guard.as_mut().ok_or_else(|| failed("not_started", "the vault service has not started"))?;
         run(service)
     };
@@ -319,9 +359,10 @@ pub fn call(service: &Mutex<Option<Service>>, method: &str, handle: u64, args: &
         "lan.pair_wait" => {
             let a: LanArgs = parse(args)?;
             let me = identity(secret)?;
+            let started = Instant::now();
             let stream = accept()?;
             let qr = held(|h| h.qr.clone())?.ok_or_else(|| failed("invalid", "no code on show"))?;
-            let peer = qr.pair(stream, &me, &a.name, Role::Responder, now_ms).map_err(lan_error)?;
+            let peer = qr.pair(stream, &me, &a.name, Role::Responder, now_after(now_ms, started)).map_err(lan_error)?;
             held(|h| h.qr = None)?;
             Ok(view(peer_view(&peer)))
         }
@@ -339,14 +380,16 @@ pub fn call(service: &Mutex<Option<Service>>, method: &str, handle: u64, args: &
             } else {
                 (connect(&a.address)?, Role::Initiator)
             };
+            let handle = second_handle(&stream)?;
             let pending = begin_code_pairing(stream, &identity(secret)?, &a.name, role).map_err(lan_error)?;
             let reply = json!({"code": pending.code(), "peer": peer_view(pending.peer())});
-            held(|h| h.code = Some(pending))?;
+            held(|h| h.code = Some((pending, handle)))?;
             Ok(view(reply))
         }
         "lan.code_finish" => {
             let a: LanArgs = parse(args)?;
-            let pending = held(|h| h.code.take())?.ok_or_else(|| failed("invalid", "no pairing under way"))?;
+            let (pending, handle) = held(|h| h.code.take())?.ok_or_else(|| failed("invalid", "no pairing under way"))?;
+            wait_for_person(&handle)?;
             let peer = pending.finish(a.accepted).map_err(lan_error)?;
             Ok(view(peer_view(&peer)))
         }
@@ -397,13 +440,13 @@ pub fn call(service: &Mutex<Option<Service>>, method: &str, handle: u64, args: &
             let me = identity(secret)?;
             let peers = peers_from(&a.peers);
             let stream = accept_on(a.background)?;
-            let timeout = stream.try_clone().map_err(|e| failed("lan", e.to_string()))?;
+            let timeout = second_handle(&stream)?;
             let ready = match sync::answer(stream, &me, &peers) {
                 Ok(Incoming::Sync(ready)) => ready,
                 Ok(Incoming::Merge(pending)) => {
                     let reply = view(json!({"merge_asked": {"peer": peer_view(pending.peer()), "they_keep": pending.they_keep()}}));
                     // The person has a few minutes to answer before the asking device gives up.
-                    let _ = timeout.set_read_timeout(Some(Duration::from_secs(180)));
+                    let _ = wait_for_person(&timeout);
                     held(|h| h.merge = Some(pending))?;
                     return Ok(reply);
                 }
@@ -448,7 +491,7 @@ pub fn call(service: &Mutex<Option<Service>>, method: &str, handle: u64, args: &
             let peers = peers_from(&a.peers);
             let stream = connect(&a.address)?;
             // The other device's person has to say yes first.
-            stream.set_read_timeout(Some(Duration::from_secs(180))).map_err(|e| failed("lan", e.to_string()))?;
+            wait_for_person(&stream)?;
             let agreed = match merge::request(stream, &me, &peers, a.keep_mine) {
                 Ok(agreed) => agreed,
                 Err(failure) => return Ok(failure_reply(failure)),
@@ -483,21 +526,24 @@ pub fn call(service: &Mutex<Option<Service>>, method: &str, handle: u64, args: &
         "lan.join_wait" => {
             let a: LanArgs = parse(args)?;
             let me = identity(secret)?;
+            let started = Instant::now();
             let stream = accept()?;
+            let handle = second_handle(&stream)?;
             let qr = held(|h| h.qr.clone())?;
             let mut blobs = FolderBlobs(a.blob_dir.clone().into());
-            match join::arrive(stream, &me, &a.name, qr.as_ref(), now_ms, &mut blobs).map_err(lan_error)? {
+            match join::arrive(stream, &me, &a.name, qr.as_ref(), now_after(now_ms, started), &mut blobs).map_err(lan_error)? {
                 Arrival::Done(joined) => Ok(joined_reply(joined)),
                 Arrival::Code(pending) => {
                     let reply = json!({"code": pending.code(), "peer": peer_view(pending.peer())});
-                    held(|h| h.joining = Some(pending))?;
+                    held(|h| h.joining = Some((pending, handle)))?;
                     Ok(view(reply))
                 }
             }
         }
         "lan.join_finish" => {
             let a: LanArgs = parse(args)?;
-            let pending = held(|h| h.joining.take())?.ok_or_else(|| failed("invalid", "no device is waiting"))?;
+            let (pending, handle) = held(|h| h.joining.take())?.ok_or_else(|| failed("invalid", "no device is waiting"))?;
+            wait_for_person(&handle)?;
             let mut blobs = FolderBlobs(a.blob_dir.clone().into());
             Ok(joined_reply(pending.finish(a.accepted, &mut blobs).map_err(lan_error)?))
         }
@@ -518,15 +564,18 @@ pub fn call(service: &Mutex<Option<Service>>, method: &str, handle: u64, args: &
         }
         "lan.join_connect" => {
             let a: LanArgs = parse(args)?;
-            let pending = join::begin_send_by_code(connect(&a.address)?, &identity(secret)?, &a.name).map_err(lan_error)?;
+            let stream = connect(&a.address)?;
+            let handle = second_handle(&stream)?;
+            let pending = join::begin_send_by_code(stream, &identity(secret)?, &a.name).map_err(lan_error)?;
             let reply = json!({"code": pending.code(), "peer": peer_view(pending.peer())});
-            held(|h| h.code = Some(pending))?;
+            held(|h| h.code = Some((pending, handle)))?;
             Ok(view(reply))
         }
         "lan.join_send" => {
             let a: LanArgs = parse(args)?;
-            let pending = held(|h| h.code.take())?.ok_or_else(|| failed("invalid", "no device is waiting"))?;
+            let (pending, waiting) = held(|h| h.code.take())?.ok_or_else(|| failed("invalid", "no device is waiting"))?;
             let (file, names) = if a.accepted { vault_to_send(&with_service, handle)? } else { (Vec::new(), Vec::new()) };
+            wait_for_person(&waiting)?;
             let blobs = FolderBlobs(a.blob_dir.clone().into());
             let peer = join::finish_send(pending, a.accepted, &file, &names, &blobs).map_err(lan_error)?;
             Ok(view(json!({"peer": peer_view(&peer)})))
@@ -565,5 +614,80 @@ pub fn call(service: &Mutex<Option<Service>>, method: &str, handle: u64, args: &
             })
         }
         _ => Err(failed("invalid", format!("no such call: {method}"))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_wait_for_a_person_reaches_the_connection_a_pairing_holds() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let near = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (_far, _) = listener.accept().unwrap();
+        wmpass_lan::prepare(&near).unwrap();
+        assert_eq!(near.read_timeout().unwrap(), Some(Duration::from_secs(30)));
+        // The pairing owns `near`; the session keeps only the second handle.
+        let handle = second_handle(&near).unwrap();
+        wait_for_person(&handle).unwrap();
+        assert_eq!(near.read_timeout().unwrap(), Some(DECISION_WAIT));
+    }
+
+    #[test]
+    fn expiry_is_judged_by_the_time_after_the_wait() {
+        // A machine up for less than ten minutes cannot look that far back.
+        let (Some(started), Some(long_ago)) = (Instant::now().checked_sub(Duration::from_secs(100)), Instant::now().checked_sub(Duration::from_secs(600))) else {
+            return;
+        };
+        let later = now_after(1_000_000, started);
+        assert!((1_100_000..1_160_000).contains(&later), "{later}");
+        // A code shown at the start of a long wait has run out by the time someone connects.
+        let qr = PairingQr::new("127.0.0.1:1", 0).unwrap();
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let stream = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let me = Identity::generate().unwrap();
+        let waited = now_after(0, long_ago);
+        assert!(matches!(qr.pair(stream, &me, "me", Role::Responder, waited), Err(LanError::Expired)));
+    }
+
+    #[test]
+    fn blob_names_stay_inside_the_folder_and_presence_needs_no_read() {
+        let root = std::env::temp_dir().join(format!("wmpass-lan-blobs-{}", std::process::id()));
+        let inner = root.join("blobs");
+        std::fs::create_dir_all(&inner).unwrap();
+        std::fs::write(root.join("outside"), b"not a blob").unwrap();
+        let mut blobs = FolderBlobs(inner.clone());
+        blobs.put("abc123", b"sealed").unwrap();
+        assert!(blobs.has("abc123"));
+        assert_eq!(blobs.get("abc123").as_deref(), Some(&b"sealed"[..]));
+        assert!(!blobs.has("missing") && blobs.get("missing").is_none());
+        for name in ["", ".", "..", "../outside", "..\\outside", "/etc/passwd", ".hidden"] {
+            assert!(!blobs.has(name) && blobs.get(name).is_none(), "{name:?}");
+            assert!(blobs.put(name, b"x").is_err(), "{name:?}");
+        }
+        // A folder of that name is not a blob.
+        std::fs::create_dir_all(inner.join("dir")).unwrap();
+        assert!(!blobs.has("dir"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_blob_is_there_only_once_it_is_whole() {
+        let root = std::env::temp_dir().join(format!("wmpass-lan-whole-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let mut blobs = FolderBlobs(root.clone());
+        // What a crash part way through a write leaves behind is not the blob.
+        std::fs::write(root.join(".abc.part"), b"sea").unwrap();
+        assert!(!blobs.has("abc"), "a torn write must be asked for again");
+        blobs.put("abc", b"sealed").unwrap();
+        assert_eq!(blobs.get("abc").as_deref(), Some(&b"sealed"[..]));
+        let names: Vec<_> = std::fs::read_dir(&root).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(names, vec![std::ffi::OsString::from("abc")], "nothing is left aside");
+        // A write that cannot finish leaves no blob and nothing aside.
+        std::fs::create_dir_all(root.join("taken").join("inside")).unwrap();
+        assert!(blobs.put("taken", b"x").is_err());
+        assert!(!blobs.has("taken") && !root.join(".taken.part").exists());
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

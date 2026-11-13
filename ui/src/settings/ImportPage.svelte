@@ -42,17 +42,23 @@
       .catch(() => (nested = []));
   }
 
-  // Leaving the page part-way puts the vault back as it was.
+  // Leaving the page part-way puts the vault back as it was, and drops an import read but not
+  // added: the engine holds every item of it, passwords and all, until told.
   $effect(() => () => {
-    if (enteredFor !== null) void pass.leaveChild();
+    const pending = preview !== null;
+    const inside = enteredFor !== null;
+    void (async () => {
+      if (pending) await pass.engine('import.cancel', {}, { handle: pass.handle }).catch(() => undefined);
+      if (inside) await pass.leaveChild().catch(() => undefined);
+    })();
   });
 
   async function importInto(file: string | null) {
     if (file === enteredFor) return;
-    if (preview) await pass.engine('import.cancel', {}, { handle: pass.handle });
-    preview = null;
     error = null;
     try {
+      if (preview) await pass.engine('import.cancel', {}, { handle: pass.handle }).catch(() => undefined);
+      preview = null;
       if (enteredFor !== null) {
         await pass.leaveChild();
         enteredFor = null;
@@ -93,8 +99,12 @@
     scanning = true;
   }
 
+  // A KeePass database can take seconds to open, and a second click would only read it twice.
+  let reading = $state(false);
+
   async function read() {
-    if (!bytes) return;
+    if (!bytes || reading) return;
+    reading = true;
     const secret = bytesOf(password);
     let answer: Uint8Array | null = null;
     try {
@@ -115,14 +125,27 @@
     } finally {
       secret.fill(0);
       answer?.fill(0);
+      reading = false;
     }
   }
 
   const PICTURE = /\.(png|jpe?g|gif|webp|bmp|heic|heif|avif)$/i;
 
-  async function pick() {
-    const file = await host().pickFile('Choose a file to import');
+  /** `instead` is an import read but not added, dropped only once another file has been chosen. */
+  async function pick(instead = false) {
+    let file;
+    try {
+      file = await host().pickFile('Choose a file to import');
+    } catch (failure: any) {
+      error = failure?.message ?? 'That file could not be read.';
+      return;
+    }
     if (!file) return;
+    if (instead) {
+      await pass.engine('import.cancel', {}, { handle: pass.handle }).catch(() => undefined);
+      preview = null;
+      codes = [];
+    }
     error = null;
     // A screenshot or photo of an export code, rather than an export file.
     if (PICTURE.test(file.name)) {
@@ -149,17 +172,38 @@
   }
 
   async function chooseKeyFile() {
-    const file = await host().pickFile('Choose the key file');
+    let file;
+    try {
+      file = await host().pickFile('Choose the key file');
+    } catch (failure: any) {
+      error = failure?.message ?? 'That file could not be read.';
+      return;
+    }
     if (!file) return;
     keyFile?.bytes.fill(0);
     keyFile = { name: file.name, bytes: file.bytes };
     error = null;
   }
 
+  let applying = $state(false);
+
   async function apply() {
-    const reply = await pass.change<{ added: number; duplicates: number }>('import.apply');
+    if (applying) return;
+    applying = true;
+    error = null;
+    let reply: { added: number; duplicates: number };
+    try {
+      reply = await pass.applyImport();
+    } catch (failure: any) {
+      error = failure?.message ?? 'The import did not finish.';
+      return;
+    } finally {
+      applying = false;
+    }
     const into = nested.find((n) => n.file === enteredFor)?.name;
-    result = `Added ${reply.json.added}${into ? ` to ${into}` : ''}. Skipped ${reply.json.duplicates} already there.`;
+    const added = `Added ${reply.added} ${reply.added === 1 ? 'item' : 'items'}${into ? ` to ${into}` : ''}.`;
+    result = reply.duplicates > 0 ? `${added} Skipped ${reply.duplicates} already there.` : added;
+    password = '';
     bytes?.fill(0);
     bytes = null;
     keyFile?.bytes.fill(0);
@@ -169,11 +213,22 @@
     preview = null;
   }
 
-  async function another() {
-    await pass.engine('import.cancel', {}, { handle: pass.handle });
-    preview = null;
+  // A file picker closed without a choice leaves the import read so far as it was.
+  function another() {
+    return pick(true);
+  }
+
+  // Back out of a locked file to choose a different one.
+  function startOver() {
+    bytes?.fill(0);
+    bytes = null;
+    keyFile?.bytes.fill(0);
+    keyFile = null;
+    keySlot = 0;
+    password = '';
+    needsPassword = false;
+    error = null;
     codes = [];
-    await pick();
   }
 </script>
 
@@ -182,9 +237,9 @@
     <div class="stack" style="gap:6px">
       <span class="dim small" style="font-weight:600">Import into</span>
       <div class="gap" style="flex-wrap:wrap;gap:6px">
-        <button type="button" class="chip" aria-pressed={enteredFor === null} onclick={() => void importInto(null)}><Icon name="lock" size={14} />{home || 'This vault'}</button>
+        <button type="button" class="chip" aria-pressed={enteredFor === null} disabled={reading || applying} onclick={() => void importInto(null)}><Icon name="lock" size={14} />{home || 'This vault'}</button>
         {#each nested as link (link.file)}
-          <button type="button" class="chip" aria-pressed={enteredFor === link.file} onclick={() => void importInto(link.file)}><Icon name="layers" size={14} />{link.name}</button>
+          <button type="button" class="chip" aria-pressed={enteredFor === link.file} disabled={reading || applying} onclick={() => void importInto(link.file)}><Icon name="layers" size={14} />{link.name}</button>
         {/each}
       </div>
     </div>
@@ -193,17 +248,21 @@
   {/if}
   {#if result}
     <div class="gap"><span class="ok-text" style="display:flex"><Icon name="check_circle" size={22} /></span><span>{result}</span></div>
-    <div><Btn label="Import another file" onclick={pick} /></div>
+    <!-- A next file or picture that cannot be read says so here, rather than nowhere. -->
+    {#if error}<p class="danger-text" role="alert">{error}</p>{/if}
+    <div><Btn label="Import another file" onclick={() => pick()} /></div>
   {:else if preview}
-    <p style="font-size:var(--fs-l);font-weight:600">{preview.count} items from {preview.format}</p>
+    <p style="font-size:var(--fs-l);font-weight:600">{preview.count} {preview.count === 1 ? 'item' : 'items'} from {preview.format}</p>
     <p class="dim">{preview.titles.slice(0, 6).join(', ')}{preview.count > 6 ? ' and more' : ''}</p>
-    {#if preview.skipped.length > 0}<p class="warn-text">{preview.skipped.length} could not be read: {preview.skipped.slice(0, 3).join(', ')}</p>{/if}
+    {#if preview.count === 0}<p class="dim">Nothing in it could be imported. Check that it is the export file itself, from one of the apps listed.</p>{/if}
+    <!-- Some of these were read and kept in another form, such as a type that comes in as a note. -->
+    {#if preview.skipped.length > 0}<p class="warn-text">{preview.skipped.length === 1 ? '1 item comes' : `${preview.skipped.length} items come`} across changed or not at all: {preview.skipped.slice(0, 3).join(', ')}{preview.skipped.length > 3 ? ' and more' : ''}</p>{/if}
     {#if codes.length > 0}
       <p class="dim">{codes.length} {codes.length === 1 ? 'code' : 'codes'} read. Google splits a long list across several codes, so scan each one before importing.</p>
-      {#if error}<p class="danger-text">{error}</p>{/if}
     {/if}
+    {#if error}<p class="danger-text" role="alert">{error}</p>{/if}
     <div class="gap" style="flex-wrap:wrap">
-      <Btn label="Import {preview.count} items" icon="download" variant="primary" onclick={apply} />
+      <Btn label={applying ? 'Importing…' : preview.count === 1 ? 'Import 1 item' : `Import ${preview.count} items`} icon="download" variant="primary" disabled={applying || preview.count === 0} onclick={apply} />
       {#if codes.length > 0}<Btn label="Scan the next code" icon="qr_code_scanner" onclick={scanCode} />{/if}
       <Btn label="Choose another file" onclick={another} />
     </div>
@@ -211,18 +270,20 @@
     <p style="font-size:var(--fs-l);font-weight:600">{isKeePass ? 'This database is locked' : 'This file has a password'}</p>
     {#if isKeePass}<p class="dim">Enter its password. If it also uses a key file or a security key, add those too. A database locked by a key file or security key alone needs no password.</p>{/if}
     <PasswordField bind:value={password} placeholder={keyFile || keySlot ? 'The password, if it has one' : 'The file’s password'} autofocus onenter={read} />
-    {#if error}<p class="danger-text">{error}</p>{/if}
+    {#if error}<p class="danger-text" role="alert">{error}</p>{/if}
     <div class="gap" style="flex-wrap:wrap">
-      <Btn label="Open" variant="primary" disabled={!password && !keyFile && !keySlot} onclick={read} />
+      <Btn label={reading ? 'Opening…' : 'Open'} variant="primary" disabled={reading || (!password && !keyFile && !keySlot)} onclick={read} />
       {#if isKeePass}<Btn label={keyFile ? `Key file: ${keyFile.name}` : 'Add key file'} icon="key" onclick={chooseKeyFile} />{/if}
+      <Btn label="Choose another file" onclick={startOver} />
     </div>
     {#if isKeePass && yubikeyAvailable()}<SecurityKeySlot bind:slot={keySlot} wide={false} />{/if}
   {:else}
     <p style="font-size:var(--fs-l);font-weight:600">Bring everything over</p>
     <p class="dim">{FORMATS}</p>
-    {#if error}<p class="danger-text">{error}</p>{/if}
+    {#if error}<p class="danger-text" role="alert">{error}</p>{/if}
     <div class="gap" style="flex-wrap:wrap">
-      <Btn label="Choose a file" icon="file_open" variant="primary" onclick={pick} />
+      <!-- A large file or a KeePass database takes a moment to read, and says so meanwhile. -->
+      <Btn label={reading ? 'Reading…' : 'Choose a file'} icon="file_open" variant="primary" disabled={reading} onclick={() => pick()} />
       <Btn label="Scan Google Authenticator’s code" icon="qr_code_scanner" onclick={scanCode} />
       {#if host().savedWifi}<Btn label="Wi-Fi saved on this computer" icon="wifi" onclick={() => { error = null; savedWifi = true; }} />{/if}
     </div>

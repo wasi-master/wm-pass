@@ -32,6 +32,13 @@ impl<H: AsyncHttp> Client<H> {
         })
     }
 
+    /// Waits before a retry, the way this client's executor can: a blocked thread under
+    /// [`block_on`], a timer in a browser. Never `std::thread::sleep` in the async code
+    /// itself, which would stall a browser's only thread or have nothing to call there.
+    pub(crate) async fn pause(&self, ms: u64) {
+        self.http.pause(ms).await;
+    }
+
     /// Sends and refuses anything but success.
     pub(crate) async fn ok(&self, request: Request) -> Result<Response> {
         let response = self.send(request).await?;

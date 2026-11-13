@@ -5,6 +5,7 @@ import { host } from './host';
 import { prefs } from './prefs.svelte';
 import { bytesOf, consumeText, decodeReply, encodeRequest, EngineError, type Reply } from './frame';
 import { isVaultFile, makeBundle, unzip } from './bundle';
+import { isInternal, stopped, stoppedError } from './stopped.svelte';
 import type {
   CompareView,
   Detail,
@@ -21,12 +22,25 @@ import type {
   Summary,
   UnlockResult,
   VaultInfo,
+  VaultNotices,
 } from './types';
 
 const VAULTS = 'vaults';
 const LINKED = 'linked';
 const BLOBS = 'blobs';
 const DOOR = 'door';
+/**
+ * Copies a backup brought in at the door, held aside rather than written over this device's
+ * vault: an older backup must not replace newer items. They merge in when the vault next opens.
+ */
+const HELD = 'restored';
+
+/** Thrown out of a save that stopped because the file is now under another key. */
+class KeyChanged extends Error {
+  constructor() {
+    super('The master password was changed elsewhere.');
+  }
+}
 
 function randomHex(bytes: number) {
   const raw = crypto.getRandomValues(new Uint8Array(bytes));
@@ -47,6 +61,10 @@ class PassStore {
   /** Rises on every change, for screens that hold a detail view. */
   revision = $state(0);
   rollbackWarning = $state(false);
+  /** What the open vault has to tell its owner: a clock that looks wrong, a password changed on two devices at once. */
+  notices = $state<VaultNotices>({ clock_warning: null, password_conflict: null });
+  /** Told when the notices are read: after opening (`opened`), and after every merge or change. */
+  onNotices: ((notices: VaultNotices, opened: boolean) => void) | null = null;
   /** The account behind what is open, if it is not a vault in this folder. */
   account = $state<string | null>(null);
   /** The name of the nested or shared vault in use. */
@@ -71,6 +89,8 @@ class PassStore {
   afterSave: (() => void) | null = null;
   /** Also called after the vault in this folder has saved, for more than one listener. */
   onSaved: (() => void)[] = [];
+  /** Told when a save fails, so the person hears of it rather than losing the change unseen. */
+  onSaveError: ((message: string) => void) | null = null;
   /** Called after the lists reload, which follows every change and every merge. */
   afterRefresh: (() => void) | null = null;
   /** Run on a wipe, so what the app keeps beside the vault goes too. */
@@ -80,6 +100,7 @@ class PassStore {
   /** The vault file as last read or written, by its hash, to notice another program writing it. */
   private known: string | null = null;
   private watch: ReturnType<typeof setInterval> | null = null;
+  private unlisten: (() => void) | null = null;
 
   get device() {
     return this.door.device;
@@ -106,8 +127,27 @@ class PassStore {
     }
   }
 
-  private async writeDoor() {
+  /**
+   * `keepOthers`: another tab of the web vault may have noted a newer save since this one read
+   * the door, and the higher count stays, or a rollback to an older copy would pass unnoticed.
+   */
+  private async writeDoor(keepOthers = true) {
+    if (keepOthers) {
+      const kept = await this.storedDoor();
+      for (const [name, generation] of Object.entries(kept?.seen ?? {})) {
+        if (typeof generation === 'number' && generation > (this.door.seen[name] ?? 0)) this.door.seen[name] = generation;
+      }
+    }
     await host().saveSettings(DOOR, JSON.stringify(this.door));
+  }
+
+  private async storedDoor(): Promise<Partial<DoorState> | null> {
+    try {
+      const raw = await host().loadSettings(DOOR);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
   }
 
   private async vaultFiles() {
@@ -126,14 +166,26 @@ class PassStore {
     args?: unknown,
     options: { handle?: number; secret?: Uint8Array | null; blobs?: Uint8Array[]; online?: boolean } = {},
   ): Promise<Reply<T>> {
+    // Nothing reaches the session while the screens say it stopped: each call would fail the same
+    // way, and say so in a message of its own.
+    if (stopped.on) throw stoppedError();
     const frame = encodeRequest(
       { method, handle: options.handle ?? 0, args: args ?? {}, now_ms: Date.now(), online: options.online ?? false },
       options.secret,
       options.blobs ?? [],
     );
-    const reply = await host().call(frame);
-    frame.fill(0);
-    return decodeReply<T>(reply);
+    // Wiped whether or not the call goes through: it may carry a password.
+    try {
+      return decodeReply<T>(await host().call(frame));
+    } catch (failure) {
+      if (isInternal(failure)) {
+        this.internalError();
+        throw stoppedError();
+      }
+      throw failure;
+    } finally {
+      frame.fill(0);
+    }
   }
 
   async view<T = any>(method: string, args?: unknown, options: { secret?: Uint8Array | null; blobs?: Uint8Array[] } = {}): Promise<T> {
@@ -150,9 +202,30 @@ class PassStore {
     const reply = await this.engine<T>(method, args, { handle: this.handle, ...options });
     const gone = (reply.json as any)?.delete_blobs;
     if (Array.isArray(gone)) for (const name of gone) await this.deleteBlob(name);
-    await this.refresh();
+    if (this.batching) this.refreshOwed = true;
+    else await this.refresh();
     this.scheduleSave();
     return reply;
+  }
+
+  private batching = 0;
+  private refreshOwed = false;
+
+  /**
+   * Runs several changes with one reload of the lists at the end, not one after each: saving an
+   * item with fifty fields would otherwise list the whole vault fifty times over.
+   */
+  async batch<T>(run: () => Promise<T>): Promise<T> {
+    this.batching += 1;
+    try {
+      return await run();
+    } finally {
+      this.batching -= 1;
+      if (this.batching === 0 && this.refreshOwed) {
+        this.refreshOwed = false;
+        await this.refresh().catch(() => undefined);
+      }
+    }
   }
 
   private kdfMemoryCache = 0;
@@ -173,7 +246,25 @@ class PassStore {
     const memory = await this.kdfMemoryKib();
     const reply = await this.engine('vault.create', { name, kdf: { m_kib: memory } }, { secret: password });
     this.adopt(reply.json.handle, `${VAULTS}/${randomHex(16)}`, name, false);
-    await this.saveNow();
+    try {
+      await this.saveNow();
+    } catch (failure) {
+      // Written, the vault is kept: what failed after it (the decoys, the door's notes) can wait for
+      // the next save. Never written, it must not stay open as if it were kept, since its items
+      // would be lost on quitting: the door comes back with the reason.
+      const kept = await host()
+        .readFile(this.file!)
+        .then((bytes) => bytes.length > 0, () => false);
+      if (!kept) {
+        this.stopWatching();
+        await this.engine('vault.lock', {}, { handle: reply.json.handle }).catch(() => undefined);
+        this.handle = 0;
+        this.file = null;
+        await this.refreshDoorState().catch(() => (this.state = { kind: 'none' }));
+        host().stateChanged?.({ unlocked: false, name: '' });
+        throw failure;
+      }
+    }
     // One decoy that never changes, so a hidden vault's unchanging file is nothing unusual. Its
     // partner is made by saveNow and keeps pace with this vault.
     const length = (await host().readFile(this.file!)).length;
@@ -210,6 +301,8 @@ class PassStore {
     this.handle = handle;
     this.file = file;
     this.known = null;
+    this.keyLost = false;
+    this.savedChanges = this.changes;
     this.state = { kind: 'unlocked', name, file, readOnly };
     host().stateChanged?.({ unlocked: true, name, handle, file, read_only: readOnly });
     this.watchFile();
@@ -229,6 +322,14 @@ class PassStore {
    */
   private watchFile() {
     this.stopWatching();
+    // A second tab of the web vault on the same file says when it writes, and its change comes in
+    // here at once, rather than this tab showing what it had and its next save being the first to see it.
+    const listen = host().onFileChanged;
+    if (listen) {
+      this.unlisten = listen((path) => {
+        if (path === this.file) this.writing = this.writing.then(() => this.takeOutsideChanges()).catch(() => undefined);
+      });
+    }
     if (host().kind !== 'desktop') return;
     this.watch = setInterval(() => {
       this.writing = this.writing.then(() => this.takeOutsideChanges()).catch(() => undefined);
@@ -238,6 +339,8 @@ class PassStore {
   private stopWatching() {
     if (this.watch) clearInterval(this.watch);
     this.watch = null;
+    this.unlisten?.();
+    this.unlisten = null;
   }
 
   /** Merges in the file if another program wrote it since. Returns whether anything came in. */
@@ -257,10 +360,54 @@ class PassStore {
     }
     if (hash === this.known || file !== this.file) return false;
     const name = file.split('/').pop()!;
-    await this.engine('vault.merge', { seen_generation: this.door.seen[name] ?? 0 }, { handle: this.handle, blobs: [bytes] });
+    try {
+      await this.engine('vault.merge', { seen_generation: this.door.seen[name] ?? 0 }, { handle: this.handle, blobs: [bytes] });
+    } catch (failure) {
+      // The file is there and whole, but not under this vault's key: another window or program
+      // changed the master password and rekeyed it.
+      if (failure instanceof EngineError && failure.code === 'integrity' && file === this.file) {
+        this.keyChangedElsewhere();
+        throw new KeyChanged();
+      }
+      throw failure;
+    }
     this.known = hash;
     await this.refresh();
     return true;
+  }
+
+  /** Set once the file on disk is under a key this window no longer has: nothing more is written. */
+  private keyLost = false;
+  /** Changes asked to be saved, and how many of those are on disk, to tell whether any would be lost. */
+  private changes = 0;
+  private savedChanges = 0;
+  /**
+   * Told when this window is about to lock because the vault's key changed elsewhere. `lost` when
+   * changes made here since its last save cannot be kept.
+   */
+  onKeyChanged: ((lost: boolean) => void) | null = null;
+
+  /**
+   * Another window rekeyed the vault. Saving now would write this window's copy, under the old
+   * key, over the new file, and take the vault back to the old password. Nothing more is saved
+   * and this window locks, for the person to open it again with the new password.
+   *
+   * What changed here since the last save cannot be merged into the new file, which only the new
+   * key opens, and is not kept aside either: a copy under the old key would open with the old
+   * password, which a rekey is meant to retire. The person is told it was lost.
+   */
+  private keyChangedElsewhere() {
+    if (this.keyLost) return;
+    this.keyLost = true;
+    this.stopWatching();
+    if (this.saveTimer) clearTimeout(this.saveTimer);
+    this.saveTimer = null;
+    // Told before the lock, while the screens still say what was open, such as an edit under way.
+    this.onKeyChanged?.(this.changes > this.savedChanges);
+    // Not awaited: this runs inside the queue of writes, which the lock waits on.
+    void Promise.resolve()
+      .then(() => this.lock())
+      .catch(() => undefined);
   }
 
   /** When typing a password next becomes allowed, or 0. */
@@ -269,6 +416,9 @@ class PassStore {
   }
 
   private async noteFailure() {
+    // Counted with the other tabs' tries, so opening more tabs is no way around the wait.
+    const kept = await this.storedDoor();
+    this.door.fails = Math.max(this.door.fails, kept?.fails ?? 0);
     this.door.fails += 1;
     const fails = this.door.fails;
     // Five free tries, then thirty seconds doubling up to fifteen minutes.
@@ -313,7 +463,85 @@ class PassStore {
       case 'needs_factor':
         return { kind: 'needs_factor', factors: obj.factors as NeededFactor[] };
       default:
+        if (await this.openHeld(password, factors)) return { kind: 'opened' };
         return { kind: 'wrong', retryAtMs: await this.noteFailure() };
+    }
+  }
+
+  /**
+   * A password that opens nothing here may open a restored copy: the vault file here is damaged,
+   * or its master password changed since the backup. That copy becomes a vault of its own, under
+   * a new name, so the file already here stays as it is.
+   */
+  private async openHeld(password: Uint8Array, factors: { kind: string; bytes: Uint8Array }[]) {
+    const held = await this.heldFiles(VAULTS);
+    if (!held.length) return false;
+    const blobs = [...factors.map((f) => f.bytes)];
+    for (const f of held) blobs.push(await host().readFile(`${HELD}/${VAULTS}/${f.name}`));
+    let obj: any;
+    try {
+      obj = (await this.engine('vault.open', { factors: factors.map((f) => f.kind) }, { secret: password, blobs })).json;
+    } catch {
+      return false;
+    }
+    if (obj?.outcome !== 'opened') return false;
+    const chosen = held[obj.index].name;
+    const bytes = blobs[factors.length + obj.index];
+    const taken = new Set((await this.vaultFiles()).map((f) => f.name));
+    const name = taken.has(chosen) ? randomHex(16) : chosen;
+    await host().writeFile(`${VAULTS}/${name}`, bytes);
+    await host().removeFile(`${HELD}/${VAULTS}/${chosen}`);
+    await this.noteSuccess();
+    this.adopt(obj.handle, `${VAULTS}/${name}`, obj.name, obj.read_only === true);
+    this.known = await this.hashOf(bytes);
+    await this.afterOpen(name, obj.generation);
+    return true;
+  }
+
+  private async heldFiles(folder: string) {
+    return (await host().listFiles(`${HELD}/${folder}`).catch(() => [])).filter((f) => !f.name.startsWith('.') && f.size > 0);
+  }
+
+  /**
+   * Merges the restored copies of the vault just opened into it. Nothing is lost: a value that
+   * loses moves to history. A copy that is no part of this vault keeps waiting.
+   */
+  private async absorbHeld() {
+    const held = await this.heldFiles(VAULTS);
+    if (!held.length) return;
+    // The backup's copy of this vault's decoy holds nothing to merge.
+    const chaff = (await this.view('vault.chaff_name').catch(() => null))?.name;
+    let merged = 0;
+    for (const f of held) {
+      const path = `${HELD}/${VAULTS}/${f.name}`;
+      if (f.name === chaff) {
+        await host().removeFile(path);
+        continue;
+      }
+      const bytes = await host().readFile(path);
+      try {
+        await this.engine('vault.merge', {}, { handle: this.handle, blobs: [bytes] });
+        merged++;
+        await host().removeFile(path);
+      } catch {
+        // Another vault's copy, or a decoy. Put in place now, an older copy of a vault here could
+        // open before the newer one with the same password: it waits until its own vault opens,
+        // or until a password opens nothing here but it.
+      }
+    }
+    if (merged > 0) this.scheduleSave();
+  }
+
+  /** The same for a nested or shared vault, when it opens. */
+  private async absorbHeldLinked(id: string) {
+    const path = `${HELD}/${LINKED}/${id}`;
+    if (!(await this.heldFiles(LINKED)).some((f) => f.name === id)) return;
+    try {
+      await this.engine('vault.merge', {}, { handle: this.handle, blobs: [await host().readFile(path)] });
+      await host().removeFile(path);
+      this.scheduleSave();
+    } catch {
+      // Kept for the next time this vault opens.
     }
   }
 
@@ -352,31 +580,114 @@ class PassStore {
       this.door.seen[name] = generation;
       await this.writeDoor();
     }
+    // A restored copy that cannot be merged now is tried again the next time.
+    await this.absorbHeld().catch(() => undefined);
+    // This device's name, for a warning on another device about its clock.
+    if (this.state.kind === 'unlocked' && !this.state.readOnly) {
+      const named = await this.engine<{ changed: boolean }>('vault.device_name', { name: await this.deviceName() }, { handle: this.handle }).catch(() => null);
+      if (named?.json.changed) this.scheduleSave();
+    }
     const swept = (await this.engine('vault.sweep', {}, { handle: this.handle })).json.delete_blobs ?? [];
     for (const blob of swept) await this.deleteBlob(blob);
     if (swept.length) this.scheduleSave();
+    this.justOpened = true;
     await this.refresh();
   }
 
+  private locking: Promise<void> | null = null;
+
   /** Saves anything pending and forgets every key. */
-  async lock() {
+  lock() {
+    // The idle timer, a hidden window and the menu can all ask at once: one lock serves them all.
+    this.locking ??= this.lockOnce().finally(() => (this.locking = null));
+    return this.locking;
+  }
+
+  private async lockOnce() {
+    // The session is gone already, and the screens stay under the message until the person
+    // leaves it: a timer or a hidden window must not take what they typed away first.
+    if (stopped.on) return;
     if (this.desktop) {
       this.leaveDesktop();
       return;
     }
     this.stopWatching();
-    await this.leaveChild();
-    await this.flush();
-    await host().lockAll();
+    // A nested vault that cannot be left cleanly must not keep every key open: lockAll still runs.
+    await this.leaveChild().catch(() => undefined);
+    // The desktop app's own timer locks the engine before telling this page: with no change
+    // waiting there is nothing to save, and trying would only report the vault as locked.
+    const engineClosed = (await host().desktop?.currentHandle().catch(() => -1)) === 0;
+    if (!engineClosed || this.saveTimer) await this.flush();
+    // The screens leave the vault even when the shell answers with an error: the door shows rather
+    // than items whose keys may be gone, and the failure still reaches the caller.
+    let failure: unknown = null;
+    try {
+      await host().lockAll();
+    } catch (error) {
+      failure = error;
+    }
+    this.forgetOpen();
+    await this.refreshDoorState().catch(() => (this.state = { kind: 'locked' }));
+    host().stateChanged?.({ unlocked: false, name: '' });
+    if (failure) throw failure;
+  }
+
+  /** Drops everything about the vault that was open, for a lock. */
+  private forgetOpen() {
     this.handle = 0;
     this.file = null;
+    this.keyLost = false;
+    this.outer = null;
+    this.childWriter = null;
+    this.childBefore = null;
+    this.child = null;
     this.accountWriter = null;
     this.afterAccountSave = null;
     this.account = null;
+    this.rollbackWarning = false;
+    this.notices = { clock_warning: null, password_conflict: null };
+    // The sites asked about are the vault's own sites: they go with it.
+    this.changeAsked.clear();
     this.entries = [];
     this.folders = [];
-    await this.refreshDoorState();
+  }
+
+  // ---- an internal error ----
+
+  /**
+   * A bug in the session stopped a call, from this page or, on the desktop, from anything else
+   * that uses the session. The session is gone already, keys and all. Nothing is saved, as what it
+   * held may be half changed, and nothing more reaches it. The screens stay as they are, with
+   * anything typed there, under a message ([`stopped`]), until the person goes to the door with
+   * [`leaveInternal`]. The shell's menus, tray and quick search hear of the lock now.
+   */
+  internalError() {
+    if (stopped.on) return;
+    stopped.on = true;
+    this.stopWatching();
+    if (this.saveTimer) clearTimeout(this.saveTimer);
+    this.saveTimer = null;
+    host().internalError?.();
+    // What the shell keeps beside the session, such as the extension's note of what is open.
+    void host()
+      .lockAll()
+      .catch(() => undefined);
+    host().link?.detachVault();
     host().stateChanged?.({ unlocked: false, name: '' });
+  }
+
+  /** From the message about an internal error to the door. */
+  async leaveInternal() {
+    this.desktop = false;
+    this.forgetOpen();
+    this.locking = null;
+    // A browser has to load the session's module again, which this page's reload does.
+    if (host().restart) {
+      await host().restart!();
+      return;
+    }
+    stopped.on = false;
+    await this.refreshDoorState().catch(() => (this.state = { kind: 'locked' }));
   }
 
   /** A panic: locked at once, and every password refused for an hour. */
@@ -391,12 +702,15 @@ class PassStore {
 
   async wipe() {
     this.stopWatching();
+    // A save still waiting would fail on the keys just forgotten, and say so on screen.
+    if (this.saveTimer) clearTimeout(this.saveTimer);
+    this.saveTimer = null;
     await host().lockAll();
     await host().removeFolder(VAULTS);
     await host().removeFolder(BLOBS);
     await host().removeFolder(LINKED);
     this.door = { device: this.door.device, fails: 0, retry_at: 0, seen: {} };
-    await this.writeDoor();
+    await this.writeDoor(false);
     for (const run of this.onWipe) {
       try {
         run();
@@ -410,8 +724,12 @@ class PassStore {
     this.childWriter = null;
     this.childBefore = null;
     this.accountWriter = null;
+    this.afterAccountSave = null;
     this.child = null;
     this.account = null;
+    this.rollbackWarning = false;
+    this.notices = { clock_warning: null, password_conflict: null };
+    this.changeAsked.clear();
     this.entries = [];
     this.folders = [];
     this.state = { kind: 'none' };
@@ -421,12 +739,18 @@ class PassStore {
   // ---- saving ----
 
   private scheduleSave() {
+    this.changes += 1;
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => void this.queueSave(), this.saveDelayMs);
   }
 
   private queueSave() {
-    this.writing = this.writing.then(() => this.saveNow()).catch(() => undefined);
+    this.writing = this.writing
+      .then(() => this.saveNow())
+      // A key changed elsewhere is told once, by onKeyChanged, not as a failed save.
+      .catch((failure: any) => {
+        if (!(failure instanceof KeyChanged)) this.onSaveError?.(failure?.message ?? String(failure));
+      });
     return this.writing;
   }
 
@@ -445,15 +769,30 @@ class PassStore {
       await this.afterAccountSave?.();
       return;
     }
-    if (!this.file) return;
-    // Whatever another program wrote since goes in first, so this write keeps it.
-    await this.takeOutsideChanges().catch(() => false);
-    const reply = await this.engine('vault.save', {}, { handle: active });
-    await host().writeFile(this.file, reply.blobs[0]);
-    this.known = await this.hashOf(reply.blobs[0]);
-    this.door.seen[this.file.split('/').pop()!] = reply.json.generation;
-    await this.writeDoor();
-    await this.coverTracks(reply.blobs[0].length);
+    if (!this.file || this.keyLost) return;
+    const file = this.file;
+    const save = async () => {
+      // Whatever another program wrote since goes in first, so this write keeps it. A file under
+      // another key stops the save here, before anything is written over it.
+      await this.takeOutsideChanges().catch((failure) => {
+        if (failure instanceof KeyChanged) throw failure;
+        return false;
+      });
+      if (this.keyLost || file !== this.file) return;
+      const upTo = this.changes;
+      const reply = await this.engine('vault.save', {}, { handle: active });
+      await host().writeFile(file, reply.blobs[0]);
+      this.savedChanges = Math.max(this.savedChanges, upTo);
+      this.known = await this.hashOf(reply.blobs[0]);
+      this.door.seen[file.split('/').pop()!] = reply.json.generation;
+      await this.writeDoor();
+      await this.coverTracks(reply.blobs[0].length);
+    };
+    // Two tabs of the web vault saving at once could each read the file before the other wrote
+    // it, and the second write would drop the first's change: they take turns.
+    const locks = (globalThis.navigator as any)?.locks;
+    if (host().onFileChanged && locks?.request) await locks.request(`wmpass-save:${file}`, save);
+    else await save();
     this.afterSave?.();
     for (const run of this.onSaved) run();
   }
@@ -471,11 +810,54 @@ class PassStore {
   }
 
   private async refresh() {
-    if (!this.handle) return;
-    this.entries = await this.view<Summary[]>('entry.list', { sort: 'title' });
-    this.folders = await this.view<FolderView[]>('folder.list');
+    const handle = this.handle;
+    if (!handle) return;
+    const entries = (await this.engine<Summary[]>('entry.list', { sort: 'title' }, { handle })).json;
+    const folders = (await this.engine<FolderView[]>('folder.list', {}, { handle })).json;
+    // A lock or a switch to another vault while these were asked: their lists are not for it.
+    if (this.handle !== handle) return;
+    this.entries = entries;
+    this.folders = folders;
     this.revision += 1;
     this.afterRefresh?.();
+    await this.readNotices();
+  }
+
+  /** Set between opening and the first read of the notices, which then count as said on opening. */
+  private justOpened = false;
+
+  /** Reads what the vault has to say, and passes it on. A vault that cannot say keeps quiet. */
+  private async readNotices() {
+    const handle = this.handle;
+    const opened = this.justOpened;
+    this.justOpened = false;
+    if (!handle) return;
+    try {
+      const notices = (await this.engine<VaultNotices>('vault.notices', {}, { handle })).json;
+      if (this.handle !== handle) return;
+      this.notices = { clock_warning: notices.clock_warning ?? null, password_conflict: notices.password_conflict ?? null };
+      this.onNotices?.(this.notices, opened);
+    } catch {
+      // An older desktop app lending its vault does not know the call.
+    }
+  }
+
+  /** What this device is called in another device's warning about its clock. */
+  private async deviceName(): Promise<string> {
+    try {
+      const name = await host().lan?.deviceName();
+      if (name) return name;
+    } catch {
+      // Falls back to a plain description.
+    }
+    const os = { mac: 'Mac', windows: 'Windows', linux: 'Linux', other: '' }[host().os];
+    if (host().kind === 'desktop') return os ? `${os} computer` : 'Computer';
+    return os ? `Browser on ${os}` : 'Browser';
+  }
+
+  /** Marks a lost change of password, which the owner has now read about, as told on every device. */
+  async passwordLossSeen() {
+    await this.change('slot.conflict_seen');
   }
 
   /** Reloads the lists, after something changed the vault from outside these calls. */
@@ -553,10 +935,19 @@ class PassStore {
    * A secret goes straight to the clipboard. On the desktop it never reaches this page at all.
    */
   async copySecret(method: string, args: unknown, clearAfterSeconds: number) {
+    if (stopped.on) throw stoppedError();
     const frame = encodeRequest({ method, handle: this.handle, args, now_ms: Date.now() });
-    const reply = await host().callToClipboard(frame, clearAfterSeconds);
-    frame.fill(0);
-    decodeReply(reply);
+    try {
+      decodeReply(await host().callToClipboard(frame, clearAfterSeconds));
+    } catch (failure) {
+      if (isInternal(failure)) {
+        this.internalError();
+        throw stoppedError();
+      }
+      throw failure;
+    } finally {
+      frame.fill(0);
+    }
   }
 
   // ---- attachments ----
@@ -594,6 +985,15 @@ class PassStore {
     await host().writeFile(`${this.blobFolder()}/${reply.json.blob}`, reply.blobs[0]);
   }
 
+  /** Adds the import just read, and writes the attachments it brought along. */
+  async applyImport() {
+    const reply = await this.change<{ added: number; duplicates: number; blob_names?: string[] }>('import.apply');
+    const names = reply.json.blob_names ?? [];
+    const folder = this.blobFolder();
+    if (folder) for (const [i, name] of names.entries()) await host().writeFile(`${folder}/${name}`, reply.blobs[i]);
+    return reply.json;
+  }
+
   async openAttachment(id: string, blob: string): Promise<Uint8Array> {
     this.noAttachmentsHere();
     const sealed = await host().readFile(`${this.blobFolder()}/${blob}`);
@@ -608,15 +1008,50 @@ class PassStore {
     return host().readFile(this.file!);
   }
 
-  async verify(password: Uint8Array) {
-    return (await this.view('vault.verify', {}, { secret: password })).ok === true;
+  async verify(password: Uint8Array, factors: { kind: string; bytes: Uint8Array }[] = []) {
+    return (await this.view('vault.verify', { factors: factors.map((f) => f.kind) }, { secret: password, blobs: factors.map((f) => f.bytes) })).ok === true;
   }
 
-  async rekey(password: Uint8Array) {
+  /**
+   * Which slot this password opens, or null: a change then replaces that one. A slot that also
+   * needs its key file or security key says which, and is asked again with the answer, as at the
+   * door; the engine keeps that factor for the change that follows.
+   */
+  async passwordSlot(
+    password: Uint8Array,
+    factors: { kind: string; bytes: Uint8Array }[] = [],
+  ): Promise<{ slot: number } | { needs: NeededFactor[] } | null> {
+    const reply = await this.view('vault.verify', { factors: factors.map((f) => f.kind) }, { secret: password, blobs: factors.map((f) => f.bytes) });
+    if (reply.ok === true) {
+      if (typeof reply.slot === 'number') return { slot: reply.slot };
+      // An older desktop app, lending its vault to the browser, does not say which: the first, as before.
+      return { slot: (await this.slots())[0]?.index ?? 0 };
+    }
+    if (Array.isArray(reply.needs_factor) && reply.needs_factor.length > 0) return { needs: reply.needs_factor as NeededFactor[] };
+    return null;
+  }
+
+  /**
+   * A new vault key and a new password. Says whether quick unlock was turned off: what the
+   * keyring or a passkey keeps is the old key, which opens the file no more, so it goes, as on
+   * Android, to be turned on again.
+   */
+  async rekey(password: Uint8Array): Promise<{ quickOff: boolean }> {
     const before = (await this.view('vault.chaff_name')).name;
     await this.change('vault.rekey', {}, { secret: password });
     await this.flush();
     await host().removeFile(`${VAULTS}/${before}`);
+    const quick = host().quick;
+    const file = this.fileName;
+    if (!quick || !file || this.account !== null || this.child !== null) return { quickOff: false };
+    try {
+      if (!(await quick.enrolled(file))) return { quickOff: false };
+      await quick.forget(file);
+      return { quickOff: true };
+    } catch {
+      // Left enrolled, it fails at the door and the password is asked for instead: nothing lost.
+      return { quickOff: false };
+    }
   }
 
   /** Takes a vault file from elsewhere as this device's vault. */
@@ -650,17 +1085,55 @@ class PassStore {
     return makeBundle();
   }
 
-  /** Puts a vault file or a backup in place at the door. The password decides what opens. */
-  async restore(bytes: Uint8Array) {
+  /**
+   * Puts a vault file or a backup in place at the door. The password decides what opens. On a
+   * device that has a vault already, the copies are held aside and merged into it when it next
+   * opens, so an older backup cannot replace newer items. Says whether they were held.
+   */
+  async restore(bytes: Uint8Array): Promise<{ held: boolean }> {
+    const hasVault = (await this.vaultFiles()).length > 0;
     if (isVaultFile(bytes)) {
-      await this.adoptFile(bytes);
-      return;
+      if (!hasVault) {
+        await this.adoptFile(bytes);
+        return { held: false };
+      }
+      await host().writeFile(`${HELD}/${VAULTS}/${randomHex(16)}`, bytes);
+      return { held: true };
     }
     const files = await unzip(bytes);
     if (!files.some((f) => f.name.startsWith('vaults/'))) throw new EngineError('invalid', 'That is not a WM Pass backup.');
-    for (const f of files) await host().writeFile(f.name, f.bytes);
+    let held = false;
+    for (const f of files) {
+      const [folder, name] = f.name.split('/');
+      const here = await this.sameFile(f.name, f.bytes);
+      if (here === 'same') continue;
+      if (hasVault && folder === VAULTS) {
+        await host().writeFile(`${HELD}/${VAULTS}/${name}`, f.bytes);
+        held = true;
+      } else if (here === 'differs' && folder === LINKED) {
+        // A nested or shared vault here may be newer: the copy merges in when that vault opens.
+        await host().writeFile(`${HELD}/${LINKED}/${name}`, f.bytes);
+        held = true;
+      } else if (here === 'missing') {
+        // Attachments are named for what they hold, so one here already is the same.
+        await host().writeFile(f.name, f.bytes);
+      }
+    }
     for (const f of await this.vaultFiles()) await host().coverFile(`${VAULTS}/${f.name}`);
     if (!this.handle) this.state = { kind: 'locked' };
+    return { held };
+  }
+
+  private async sameFile(path: string, bytes: Uint8Array): Promise<'missing' | 'same' | 'differs'> {
+    let here: Uint8Array;
+    try {
+      here = await host().readFile(path);
+    } catch {
+      return 'missing';
+    }
+    if (here.length !== bytes.length) return 'differs';
+    for (let i = 0; i < here.length; i++) if (here[i] !== bytes[i]) return 'differs';
+    return 'same';
   }
 
   /**
@@ -669,6 +1142,8 @@ class PassStore {
    */
   async mergeIn(bytes: Uint8Array) {
     const files = isVaultFile(bytes) ? [{ name: 'vaults/x', bytes }] : await unzip(bytes);
+    // Any other file holds no vault at all, which is not the same as holding someone else's.
+    if (!files.some((f) => f.name.startsWith('vaults/'))) throw new EngineError('invalid', 'That is not a WM Pass backup or vault file.');
     let merged = 0;
     for (const f of files.filter((f) => f.name.startsWith('vaults/'))) {
       try {
@@ -736,8 +1211,15 @@ class PassStore {
   /** Opens with emergency shares and a vault file, sets a new password and keeps the file. */
   async recover(file: Uint8Array, shares: string[], password: Uint8Array) {
     const reply = await this.engine('emergency.recover', { shares }, { blobs: [file] });
+    // The new password first: a vault opened here with only its old owner's password would be
+    // saved to this device under a password nobody here knows.
+    try {
+      await this.engine('vault.change_password', { index: 0 }, { handle: reply.json.handle, secret: password });
+    } catch (failure) {
+      await this.engine('vault.lock', {}, { handle: reply.json.handle }).catch(() => undefined);
+      throw failure;
+    }
     this.adopt(reply.json.handle, `${VAULTS}/${randomHex(16)}`, reply.json.name, false);
-    await this.engine('vault.change_password', { index: 0 }, { handle: this.handle, secret: password });
     await this.saveNow();
     const length = (await host().readFile(this.file!)).length;
     await this.writeChaff(`${VAULTS}/${randomHex(16)}`, length);
@@ -752,7 +1234,7 @@ class PassStore {
     this.account = accountId;
     await this.noteSuccess();
     this.state = { kind: 'unlocked', name: reply.json.name, file: accountId, readOnly: false };
-    host().stateChanged?.({ unlocked: true, name: reply.json.name, handle: reply.json.handle });
+    host().stateChanged?.({ unlocked: true, name: reply.json.name, handle: reply.json.handle, writes: true });
     await this.refresh();
   }
 
@@ -783,6 +1265,8 @@ class PassStore {
       throw failure;
     }
     // Changes made in the app show here, and a lock there brings the door: the next call answers locked.
+    // One watch only, even if a second open raced the first.
+    this.stopWatching();
     this.watch = setInterval(() => {
       this.writing = this.writing.then(() => this.desktopChanges()).catch(() => undefined);
     }, 3000);
@@ -808,7 +1292,10 @@ class PassStore {
     this.file = null;
     this.entries = [];
     this.folders = [];
-    void this.refreshDoorState();
+    this.rollbackWarning = false;
+    this.notices = { clock_warning: null, password_conflict: null };
+    this.changeAsked.clear();
+    void this.refreshDoorState().catch(() => (this.state = { kind: 'locked' }));
   }
 
   // ---- nested and shared vaults ----
@@ -827,7 +1314,8 @@ class PassStore {
     this.childBefore = before ?? null;
     this.child = reply.json.name;
     this.state = { kind: 'unlocked', name: reply.json.name, file: id, readOnly: false };
-    host().stateChanged?.({ unlocked: true, name: reply.json.name, handle: reply.json.handle });
+    host().stateChanged?.({ unlocked: true, name: reply.json.name, handle: reply.json.handle, writes: true });
+    await this.absorbHeldLinked(id);
     await this.refresh();
   }
 
@@ -843,7 +1331,12 @@ class PassStore {
     this.file = back.file;
     this.child = null;
     this.state = back.state;
-    host().stateChanged?.({ unlocked: true, name: back.state.kind === 'unlocked' ? back.state.name : '', handle: back.handle });
+    // Said as it was when the vault behind first opened: the extension keeps the file to open again
+    // after its worker stops, and without it would bring back a vault with no file.
+    const name = back.state.kind === 'unlocked' ? back.state.name : '';
+    const readOnly = back.state.kind === 'unlocked' && back.state.readOnly;
+    // An account behind it is written from this window; the desktop app's vault is written there.
+    host().stateChanged?.({ unlocked: true, name, handle: back.handle, ...(back.file ? { file: back.file, read_only: readOnly } : { writes: this.account !== null }) });
     await this.refresh();
   }
 }

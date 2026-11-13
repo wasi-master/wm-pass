@@ -72,6 +72,7 @@ import com.wasimaster.wmpass.ui.parts.GlassCircle
 import com.wasimaster.wmpass.ui.parts.PrimaryButton
 import com.wasimaster.wmpass.ui.parts.QuietButton
 import com.wasimaster.wmpass.ui.theme.palette
+import androidx.lifecycle.repeatOnLifecycle
 import java.util.concurrent.Executors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -91,16 +92,12 @@ fun ScanDialog(onCode: (String) -> Unit, onClose: () -> Unit) {
 
 @Composable
 private fun ScanScreen(onCode: (String) -> Unit, onClose: () -> Unit) {
-    val colors = palette
     val shell = LocalShell.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var allowed by remember {
-        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
-    }
+    val camera = rememberCameraAccess()
+    val allowed = camera.allowed
     var problem by remember { mutableStateOf<String?>(null) }
-    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed = it }
-    LaunchedEffect(Unit) { if (!allowed) ask.launch(Manifest.permission.CAMERA) }
     val done: (String) -> Unit = { text ->
         shell.haptics.confirm()
         onCode(text)
@@ -116,7 +113,7 @@ private fun ScanScreen(onCode: (String) -> Unit, onClose: () -> Unit) {
     }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         if (allowed) {
-            CameraFeed(done)
+            CameraFeed(done) { problem = "The camera would not start. Pick a picture of the code instead." }
             Viewfinder()
         } else {
             Column(
@@ -126,11 +123,12 @@ private fun ScanScreen(onCode: (String) -> Unit, onClose: () -> Unit) {
             ) {
                 Text(
                     "The camera is only for reading the code. You can also pick a picture of it, or type the setup key by hand.",
-                    color = colors.text,
+                    // White, as everything else here: the ground is black in the light look too.
+                    color = Color.White,
                     style = MaterialTheme.typography.bodyLarge,
                     textAlign = TextAlign.Center,
                 )
-                PrimaryButton("Allow the camera", Modifier.padding(top = 20.dp)) { ask.launch(Manifest.permission.CAMERA) }
+                PrimaryButton(camera.buttonLabel, Modifier.padding(top = 20.dp)) { camera.request() }
             }
         }
         GlassCircle(PassIcons.Close, "Close", Modifier.statusBarsPadding().padding(14.dp), onClick = onClose)
@@ -140,7 +138,8 @@ private fun ScanScreen(onCode: (String) -> Unit, onClose: () -> Unit) {
         ) {
             Text(
                 problem ?: if (allowed) "Point at the QR code" else "",
-                color = if (problem != null) colors.danger else Color.White,
+                // The theme's red is made for its own ground; on the black here a light one reads.
+                color = if (problem != null) ScannerProblem else Color.White,
                 style = MaterialTheme.typography.titleMedium,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().padding(bottom = 18.dp),
@@ -153,8 +152,59 @@ private fun ScanScreen(onCode: (String) -> Unit, onClose: () -> Unit) {
     }
 }
 
+/**
+ * The camera permission for a scanner: asked for once on opening. Once refused, Android may not
+ * show its prompt again, so the button opens the app's page in Settings instead, where it can
+ * still be allowed; coming back from there is noticed.
+ */
+@androidx.compose.runtime.Stable
+internal class CameraAccess(allowed: Boolean, private val ask: () -> Unit, private val openSettings: () -> Unit) {
+    var allowed by mutableStateOf(allowed)
+    var refused by mutableStateOf(false)
+    val buttonLabel: String get() = if (refused) "Allow it in Settings" else "Allow the camera"
+    fun request() = if (refused) openSettings() else ask()
+}
+
 @Composable
-private fun CameraFeed(onCode: (String) -> Unit) {
+internal fun rememberCameraAccess(): CameraAccess {
+    val context = LocalContext.current
+    fun granted() = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+    lateinit var access: CameraAccess
+    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        access.allowed = it
+        // Android shows its prompt again after a first refusal; only once it says it will not
+        // (no rationale to show) does the button send the person to Settings instead.
+        var host: android.content.Context? = context
+        while (host is android.content.ContextWrapper && host !is android.app.Activity) host = host.baseContext
+        val again = (host as? android.app.Activity)?.let { androidx.core.app.ActivityCompat.shouldShowRequestPermissionRationale(it, Manifest.permission.CAMERA) } ?: false
+        access.refused = !it && !again
+    }
+    access = remember {
+        CameraAccess(
+            granted(),
+            ask = { ask.launch(Manifest.permission.CAMERA) },
+            openSettings = {
+                runCatching {
+                    context.startActivity(
+                        android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
+                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                }
+            },
+        )
+    }
+    LaunchedEffect(Unit) { if (!access.allowed) ask.launch(Manifest.permission.CAMERA) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            if (!access.allowed && granted()) access.allowed = true
+        }
+    }
+    return access
+}
+
+@Composable
+private fun CameraFeed(onCode: (String) -> Unit, onFailed: () -> Unit) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
     val worker = remember { Executors.newSingleThreadExecutor() }
@@ -176,7 +226,9 @@ private fun CameraFeed(onCode: (String) -> Unit) {
             future.addListener(
                 {
                     if (held.closed) return@addListener
-                    val provider = future.get()
+                    // A camera that will not open, or a tablet with none on its back, is said on the
+                    // screen with the picture to pick instead, rather than closing the app.
+                    val provider = runCatching { future.get() }.getOrNull() ?: return@addListener onFailed()
                     held.provider = provider
                     val preview = Preview.Builder().build().also { it.surfaceProvider = view.surfaceProvider }
                     val reader = MultiFormatReader().apply {
@@ -185,12 +237,17 @@ private fun CameraFeed(onCode: (String) -> Unit) {
                     val analysis = ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build()
                     analysis.setAnalyzer(worker) { image ->
                         image.use {
-                            val plane = it.planes[0]
-                            val buffer = plane.buffer
-                            val data = ByteArray(buffer.remaining())
-                            buffer.get(data)
-                            val source = PlanarYUVLuminanceSource(data, plane.rowStride, it.height, 0, 0, it.width, it.height, false)
-                            val text = runCatching { reader.decodeWithState(BinaryBitmap(HybridBinarizer(source))).text }.getOrNull()
+                            // A frame of an odd size, as some cameras give, is skipped: thrown on the
+                            // camera's thread, it would close the app. The last row may stop short of
+                            // the stride, so the buffer is padded out to whole rows first.
+                            val text = runCatching {
+                                val plane = it.planes[0]
+                                val buffer = plane.buffer
+                                val data = ByteArray(maxOf(buffer.remaining(), plane.rowStride * it.height))
+                                buffer.get(data, 0, buffer.remaining())
+                                val source = PlanarYUVLuminanceSource(data, plane.rowStride, it.height, 0, 0, it.width, it.height, false)
+                                reader.decodeWithState(BinaryBitmap(HybridBinarizer(source))).text
+                            }.getOrNull()
                             reader.reset()
                             if (text != null && !found) {
                                 found = true
@@ -198,8 +255,13 @@ private fun CameraFeed(onCode: (String) -> Unit) {
                             }
                         }
                     }
-                    provider.unbindAll()
-                    provider.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
+                    // The front camera where there is no other, as on some tablets and Chromebooks.
+                    val back = runCatching { provider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA) }.getOrDefault(true)
+                    val camera = if (back) CameraSelector.DEFAULT_BACK_CAMERA else CameraSelector.DEFAULT_FRONT_CAMERA
+                    runCatching {
+                        provider.unbindAll()
+                        provider.bindToLifecycle(owner, camera, preview, analysis)
+                    }.onFailure { onFailed() }
                 },
                 ContextCompat.getMainExecutor(ctx),
             )
@@ -208,16 +270,24 @@ private fun CameraFeed(onCode: (String) -> Unit) {
     )
 }
 
+/** A problem said over a scanner's black ground, whatever the theme. */
+internal val ScannerProblem = Color(0xFFFFB95C)
+
 /** A window cut out of a dimmed picture, with a line sweeping it. Square, or [aspect] wide to one tall. */
 @Composable
 internal fun Viewfinder(aspect: Float = 1f) {
     val colors = palette
-    val sweep by rememberInfiniteTransition(label = "sweep").animateFloat(
-        0f,
-        1f,
-        infiniteRepeatable(tween(1800), RepeatMode.Reverse),
-        label = "line",
-    )
+    // The sweeping line is ornament: with motion reduced it rests across the middle of the window.
+    val sweep by if (com.wasimaster.wmpass.ui.theme.LocalReduceMotion.current) {
+        androidx.compose.runtime.remember { androidx.compose.runtime.mutableFloatStateOf(0.5f) }
+    } else {
+        rememberInfiniteTransition(label = "sweep").animateFloat(
+            0f,
+            1f,
+            infiniteRepeatable(tween(1800), RepeatMode.Reverse),
+            label = "line",
+        )
+    }
     Canvas(Modifier.fillMaxSize().graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }) {
         val window = finderSize(size.width, size.height, aspect)
         val at = Offset((size.width - window.width) / 2, (size.height - window.height) / 2)

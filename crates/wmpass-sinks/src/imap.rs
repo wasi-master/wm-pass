@@ -5,8 +5,8 @@
 //! nothing else; reading fetches one body. Deleting flags a message and expunges it.
 //!
 //! An append is atomic: a message is in the folder whole or not at all, so there is no
-//! temporary name. Writing a name again adds a second message rather than replacing the
-//! first.
+//! temporary name. Writing a name again adds a second message, then removes the older ones
+//! of that name; listing shows only the newest of each name.
 //!
 //! TLS certificates are checked against the public roots and the host name.
 
@@ -226,6 +226,16 @@ fn literal_at_end(line: &str) -> Option<usize> {
     digits.parse().ok()
 }
 
+/// Whether a refused LOGIN says the connection must be encrypted first, rather than that the
+/// password is wrong.
+fn wants_encryption(text: &str) -> bool {
+    let upper = text.to_ascii_uppercase();
+    if upper.contains("[AUTHENTICATIONFAILED]") || upper.contains("[AUTHORIZATIONFAILED]") {
+        return false;
+    }
+    ["[PRIVACYREQUIRED]", "PLAINTEXT", "SSL/TLS", "STARTTLS", "ENCRYPT"].iter().any(|word| upper.contains(word))
+}
+
 fn capabilities_in(line: &str) -> Option<BTreeSet<String>> {
     let upper = line.to_ascii_uppercase();
     let start = upper.find("CAPABILITY ")? + "CAPABILITY ".len();
@@ -314,9 +324,16 @@ impl<S: Read + Write> ImapClient<S> {
     }
 
     pub(crate) fn login(&mut self, user: &str, password: &Secret) -> std::result::Result<(), ImapError> {
+        // RFC 3501: a server that advertises LOGINDISABLED refuses LOGIN on this connection,
+        // which happens only on a plain one. The password is not sent to find that out.
+        if self.capabilities.contains("LOGINDISABLED") {
+            return Err(ImapError::Io(Fault::NeedsEncryption));
+        }
         let replies = match self.run(&[Arg::Raw("LOGIN"), Arg::Str(user), Arg::Str(password.expose())]) {
             Ok(replies) => replies,
-            // Whatever the server's words, a refused LOGIN is the credentials.
+            // A refused LOGIN is the credentials, unless the server says it wants encryption
+            // first (RFC 5530's PRIVACYREQUIRED, or Dovecot's and others' plain words).
+            Err(ImapError::Refused { text, .. }) if wants_encryption(&text) => return Err(ImapError::Io(Fault::NeedsEncryption)),
             Err(ImapError::Refused { .. }) => return Err(ImapError::Auth),
             Err(other) => return Err(other),
         };
@@ -456,9 +473,16 @@ impl<S: Read + Write> ImapClient<S> {
             Self::io(self.lines.write_all(pending))?;
             Self::io(self.lines.flush())?;
             pending.clear();
-            let go = self.read_reply()?.text;
-            if !go.starts_with('+') {
-                return Err(ImapError::Refused { kind: "NO".into(), text: go });
+            loop {
+                let go = self.read_reply()?.text;
+                if go.starts_with('+') {
+                    break;
+                }
+                // A server may send untagged news first, such as `* 3 EXISTS` when another
+                // device appended meanwhile; only a tagged answer or a BYE ends the wait.
+                if !go.starts_with("* ") || go.to_ascii_uppercase().starts_with("* BYE") {
+                    return Err(ImapError::Refused { kind: "NO".into(), text: go });
+                }
             }
         }
         pending.extend_from_slice(bytes);
@@ -518,6 +542,31 @@ pub(crate) fn entry_of(reply: &Reply) -> Option<Stored> {
         .map(|line| line[prefix.len()..].trim().to_owned())
         .filter(|name| !name.is_empty())?;
     Some(Stored { id: uid, name, size: 0 })
+}
+
+/// The body a `UID FETCH (BODY.PEEK[TEXT])` brought: the FETCH that carries a literal.
+/// Others may be the server's news about other messages, such as a flag another device
+/// changed. No FETCH at all means the message is gone.
+fn body_of(replies: Vec<Reply>) -> std::result::Result<Vec<u8>, ImapError> {
+    if replies.is_empty() {
+        return Err(ImapError::Io(Fault::TargetMissing));
+    }
+    replies.into_iter().find_map(|reply| reply.literals.into_iter().next()).ok_or(ImapError::Io(Fault::Io))
+}
+
+/// One file per name, the message with the highest UID, which is the one appended last.
+/// Older copies of a name are what a write left behind before it could remove them.
+fn newest_of_each(files: impl Iterator<Item = Stored>) -> Vec<Stored> {
+    let mut newest: Vec<(u64, Stored)> = Vec::new();
+    for file in files {
+        let uid: u64 = file.id.parse().unwrap_or(0);
+        match newest.iter_mut().find(|(_, kept)| kept.name == file.name) {
+            Some(slot) if slot.0 < uid => *slot = (uid, file),
+            Some(_) => {}
+            None => newest.push((uid, file)),
+        }
+    }
+    newest.into_iter().map(|(_, file)| file).collect()
 }
 
 // ---- The sink ----
@@ -606,15 +655,35 @@ impl Sink for Imap {
         let id = random_id()?;
         let message = compose_message(name, bytes, &self.config.user, now, &id);
         let uid = self.session(|client| {
-            client.select_or_create(self.mailbox())?;
-            if let Some(uid) = client.append(self.mailbox(), &message)? {
-                return Ok(uid);
+            let before = client.select_or_create(self.mailbox())?;
+            let uid = match client.append(self.mailbox(), &message)? {
+                Some(uid) => uid,
+                None => {
+                    // Without UIDPLUS the server does not say where the message went; its
+                    // Message-ID, made here and unique, finds it.
+                    client.run(&[Arg::Raw("NOOP")])?;
+                    let found = client.uid_search(&[Arg::Raw("HEADER Message-ID"), Arg::Str(&format!("<{id}@wmpass>"))])?;
+                    found.into_iter().max().ok_or(ImapError::Io(Fault::NotVerified))?
+                }
+            };
+            // A write replaces, as at every other place: older messages of this name go once
+            // the new one is in. Only older ones, so a newer copy another device appended
+            // meanwhile stays. Best effort: a leftover is hidden by `list` and goes next time.
+            if before > 0
+                && let Ok(replies) = client.uid_fetch("1:*", &format!("(UID BODY.PEEK[HEADER.FIELDS ({HEADER})])"))
+            {
+                let older: Vec<u64> = replies
+                    .iter()
+                    .filter_map(entry_of)
+                    .filter(|file| file.name == name)
+                    .filter_map(|file| file.id.parse().ok())
+                    .filter(|old| *old < uid)
+                    .collect();
+                for old in older {
+                    let _ = client.delete_uid(old);
+                }
             }
-            // Without UIDPLUS the server does not say where the message went; its
-            // Message-ID, made here and unique, finds it.
-            client.run(&[Arg::Raw("NOOP")])?;
-            let found = client.uid_search(&[Arg::Raw("HEADER Message-ID"), Arg::Str(&format!("<{id}@wmpass>"))])?;
-            found.into_iter().max().ok_or(ImapError::Io(Fault::NotVerified))
+            Ok(uid)
         })?;
         Ok(Stored { id: uid.to_string(), name: name.to_owned(), size: bytes.len() as u64 })
     }
@@ -625,7 +694,7 @@ impl Sink for Imap {
                 return Ok(Vec::new());
             }
             let replies = client.uid_fetch("1:*", &format!("(UID BODY.PEEK[HEADER.FIELDS ({HEADER})])"))?;
-            Ok(replies.iter().filter_map(entry_of).collect())
+            Ok(newest_of_each(replies.iter().filter_map(entry_of)))
         })
     }
 
@@ -633,9 +702,7 @@ impl Sink for Imap {
         let uid: u64 = file.id.parse().map_err(|_| Fault::TargetMissing)?;
         let text = self.session(|client| {
             client.select_or_create(self.mailbox())?;
-            let replies = client.uid_fetch(&uid.to_string(), "(BODY.PEEK[TEXT])")?;
-            let reply = replies.into_iter().next().ok_or(ImapError::Io(Fault::TargetMissing))?;
-            reply.literals.into_iter().next().ok_or(ImapError::Io(Fault::Io))
+            body_of(client.uid_fetch(&uid.to_string(), "(BODY.PEEK[TEXT])")?)
         })?;
         let compact: Vec<u8> = text.into_iter().filter(|b| !b.is_ascii_whitespace()).collect();
         base64::engine::general_purpose::STANDARD.decode(compact).map_err(|_| Fault::Io)
@@ -721,6 +788,24 @@ mod tests {
     }
 
     #[test]
+    fn a_flag_change_reported_alongside_is_not_taken_for_the_body() {
+        let mut client = script(&["* OK hi\r\n", "* 3 FETCH (FLAGS (\\Seen))\r\n", "* 1 FETCH (UID 7 BODY[TEXT] {4}\r\n", "aGk=", ")\r\n", "w1 OK\r\n"]);
+        client.greeting().unwrap();
+        assert_eq!(body_of(client.uid_fetch("7", "(BODY.PEEK[TEXT])").unwrap()).unwrap(), b"aGk=");
+        assert!(matches!(body_of(Vec::new()), Err(ImapError::Io(Fault::TargetMissing))));
+    }
+
+    #[test]
+    fn untagged_news_before_the_go_ahead_is_waited_past() {
+        let mut client = script(&["* OK hi\r\n", "* 4 EXISTS\r\n", "+ go ahead\r\n", "w1 OK appended\r\n"]);
+        client.greeting().unwrap();
+        assert_eq!(client.append("B", b"hi").unwrap(), None);
+        let mut refused = script(&["* OK hi\r\n", "w1 NO [OVERQUOTA] too big\r\n"]);
+        refused.greeting().unwrap();
+        assert_eq!(fault_of(&refused.append("B", b"hi").unwrap_err()), Fault::OutOfSpace);
+    }
+
+    #[test]
     fn literal_plus_still_sends_the_line_break_and_does_not_wait() {
         let mut client = script(&["* OK [CAPABILITY IMAP4rev1 LITERAL+] hi\r\n", "w1 OK appended\r\n"]);
         client.greeting().unwrap();
@@ -747,6 +832,29 @@ mod tests {
         assert!(!format!("{failure:?}").contains("nope"));
         let quota = ImapError::Refused { kind: "NO".into(), text: "[OVERQUOTA] full".into() };
         assert_eq!(fault_of(&quota), Fault::OutOfSpace);
+    }
+
+    #[test]
+    fn a_server_that_wants_encryption_says_so_rather_than_wrong_password() {
+        // LOGINDISABLED: the password never goes out on the plain connection.
+        let mut disabled = script(&["* OK [CAPABILITY IMAP4rev1 STARTTLS LOGINDISABLED] hi\r\n"]);
+        disabled.greeting().unwrap();
+        let failure = disabled.login("me", &"secret".into()).unwrap_err();
+        assert_eq!(fault_of(&failure), Fault::NeedsEncryption);
+        assert_eq!(sent(disabled), "", "nothing sent, least of all the password");
+        // Refused with RFC 5530's code, or with Dovecot's words.
+        for refusal in [
+            "w1 NO [PRIVACYREQUIRED] Plaintext authentication disallowed on non-secure (SSL/TLS) connections.\r\n",
+            "w1 BAD Plaintext authentication not allowed without SSL/TLS\r\n",
+        ] {
+            let mut client = script(&["* OK hi\r\n", refusal]);
+            client.greeting().unwrap();
+            assert_eq!(fault_of(&client.login("me", &"pw".into()).unwrap_err()), Fault::NeedsEncryption, "{refusal}");
+        }
+        // A wrong password stays a wrong password, whatever else the words mention.
+        let mut wrong = script(&["* OK hi\r\n", "w1 NO [AUTHENTICATIONFAILED] Invalid credentials (TLS session)\r\n"]);
+        wrong.greeting().unwrap();
+        assert_eq!(fault_of(&wrong.login("me", &"pw".into()).unwrap_err()), Fault::PermissionLost);
     }
 
     #[test]
@@ -976,6 +1084,29 @@ mod tests {
         assert!(log[2].starts_with("w2 LOGIN"));
         assert!(log.iter().any(|l| l.contains("UID SEARCH HEADER Message-ID")));
         assert!(log.iter().any(|l| l.ends_with(" EXPUNGE")));
+    }
+
+    #[test]
+    fn writing_a_name_again_replaces_it_so_readers_see_the_newest() {
+        for uidplus in [true, false] {
+            let mailbox = Arc::new(Mutex::new(Mailbox::default()));
+            let port = serve(Behaviour { security: ImapSecurity::None, uidplus }, mailbox.clone(), Arc::default());
+            let config = ImapConfig { host: "127.0.0.1".into(), port, security: ImapSecurity::None, user: "me".into(), password: "pw".into(), ..ImapConfig::default() };
+            let sink = Imap::new(NetPolicy::Any, config);
+            block_on(sink.write("other.wmsync", b"theirs")).unwrap();
+            block_on(sink.write("mine.wmsync", b"first")).unwrap();
+            let newest = block_on(sink.write("mine.wmsync", b"second")).unwrap();
+            let listed = block_on(sink.list()).unwrap();
+            let mine: Vec<&Stored> = listed.iter().filter(|f| f.name == "mine.wmsync").collect();
+            assert_eq!(mine.len(), 1, "one file per name");
+            assert_eq!(mine[0].id, newest.id);
+            assert_eq!(block_on(sink.read(mine[0])).unwrap(), b"second");
+            assert_eq!(mailbox.lock().unwrap().messages.len(), 2, "the older copy is gone, the other name stays");
+        }
+        // Copies left behind before this, or by a write that could not clean up, stay hidden.
+        let fetched = |uid: u64, name: &str| Stored { id: uid.to_string(), name: name.into(), size: 0 };
+        let kept = newest_of_each([fetched(3, "a"), fetched(9, "a"), fetched(4, "b"), fetched(5, "a")].into_iter());
+        assert_eq!(kept, vec![fetched(9, "a"), fetched(4, "b")]);
     }
 
     #[test]

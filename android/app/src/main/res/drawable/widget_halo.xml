@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The soft dark halo behind a widget's text when the widget has no background. RemoteViews has no
+    text shadow or blur, so the feather is five rounded layers of 12% black, each set in a little
+    further: the edges fade in steps and the middle, under the text, is about 47% dark.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#1F000000" />
+            <corners android:radius="14dp" />
+        </shape>
+    </item>
+    <item android:left="1.5dp" android:right="1.5dp" android:top="0.75dp" android:bottom="0.75dp">
+        <shape android:shape="rectangle">
+            <solid android:color="#1F000000" />
+            <corners android:radius="13dp" />
+        </shape>
+    </item>
+    <item android:left="3dp" android:right="3dp" android:top="1.5dp" android:bottom="1.5dp">
+        <shape android:shape="rectangle">
+            <solid android:color="#1F000000" />
+            <corners android:radius="12dp" />
+        </shape>
+    </item>
+    <item android:left="4.5dp" android:right="4.5dp" android:top="2.25dp" android:bottom="2.25dp">
+        <shape android:shape="rectangle">
+            <solid android:color="#1F000000" />
+            <corners android:radius="11dp" />
+        </shape>
+    </item>
+    <item android:left="6dp" android:right="6dp" android:top="3dp" android:bottom="3dp">
+        <shape android:shape="rectangle">
+            <solid android:color="#1F000000" />
+            <corners android:radius="10dp" />
+        </shape>
+    </item>
+</layer-list>

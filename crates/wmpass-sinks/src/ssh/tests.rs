@@ -258,6 +258,40 @@ fn first_key_is_taken_then_held_to() {
 }
 
 #[test]
+fn a_full_server_is_not_a_refused_sign_in() {
+    let disconnect = |reason: u32| Wire::msg(DISCONNECT).u32(reason).text("").text("").0;
+    assert_eq!(disconnect_fault(&disconnect(12), true), Fault::Io, "too many connections");
+    assert_eq!(disconnect_fault(&disconnect(14), false), Fault::PermissionLost);
+    assert_eq!(disconnect_fault(&disconnect(15), false), Fault::PermissionLost, "illegal user name");
+    assert_eq!(disconnect_fault(&disconnect(2), true), Fault::PermissionLost, "too many failures, as OpenSSH words it");
+    assert_eq!(disconnect_fault(&disconnect(2), false), Fault::Io);
+}
+
+#[test]
+fn a_damaged_rsa_key_is_refused_rather_than_dividing_by_zero() {
+    // DER for RSAPrivateKey with a 100-byte modulus and zero primes.
+    let int = |value: &[u8]| {
+        let mut out = vec![0x02, value.len() as u8];
+        out.extend_from_slice(value);
+        out
+    };
+    let mut modulus = vec![0x7f];
+    modulus.extend_from_slice(&[0xff; 99]);
+    let mut body = Vec::new();
+    for value in [&[0u8][..], &modulus, &[1, 0, 1], &[5], &[0], &[0], &[0], &[0], &[0]] {
+        body.extend_from_slice(&int(value));
+    }
+    let mut der = vec![0x30, 0x81, body.len() as u8];
+    der.extend_from_slice(&body);
+    assert!(parse_pkcs1(&der).is_err());
+    let pem = format!(
+        "-----BEGIN RSA PRIVATE KEY-----\n{}\n-----END RSA PRIVATE KEY-----",
+        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &der)
+    );
+    assert_eq!(parse_private_key(&pem, "").err(), Some(Fault::PermissionLost));
+}
+
+#[test]
 fn refusals_are_named() {
     let none = Secret::default();
     let port = fake::spawn(Options::default(), echo());

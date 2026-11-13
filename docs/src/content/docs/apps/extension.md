@@ -19,11 +19,11 @@ If the form is inside a frame from another site, the menu tells you before you c
 
 ## Saving
 
-After you sign in somewhere new, or with a changed password, a small bar offers to save or update it. Turn this off under Settings, Desktop app.
+After you sign in somewhere new, or with a changed password, a small bar offers to save or update it. It saves into the extension's own vault, and only while that vault is open. **Never here** stops it offering on that site; to turn it off everywhere, use **Offer to save logins** under Settings, Desktop app.
 
 ## Passkeys
 
-Sites can create and use passkeys held in your vault. A window asks you first, and the site is told you were verified only if you typed your master password there. If you have no passkey for that site, the browser's own handling carries on as usual.
+Sites can create and use passkeys held in the extension's own vault, while it is open. A window asks you first, and the site is told you were verified only if you typed your master password there. If you have no passkey for that site, the browser's own handling carries on as usual. When a site asks for a new passkey for an account that already has one in your vault, the window says **Passkey already saved**, and **Continue** tells the site so without making a second one.
 
 ## Connecting to the desktop app
 
@@ -31,13 +31,13 @@ Sites can create and use passkeys held in your vault. A window asks you first, a
 2. In the extension, open Settings, Desktop app, and choose **Connect**.
 3. Both show a six-digit code. If they match, say so on both.
 
-From then on the extension uses the vault open in the app, so you unlock once. The first fill on each site asks in the app, unless you turn that off. The relay program in between only moves sealed bytes and holds no keys.
+From then on the extension uses the vault open in the app, so you unlock once. The first time it opens that vault, the app asks whether to allow it. While the extension's own vault is locked, filling uses the app's vault, and the first fill on each site asks in the app, unless you turn that off. **Disconnect**, under Settings, Desktop app, asks first and then forgets the app; connecting again means comparing a code again. The relay program in between only moves sealed bytes and holds no keys.
 
 While connected, the app also does what a browser cannot for the extension's own vault. Backups and sync can go to SFTP, FTP, SMB, NFS, IMAP and iCloud Drive through the app, which asks you once for each place. A YubiKey's challenge-response slot, and a security key set up by an older version of the app, work through it too, after one question.
 
 ## The full app in a tab
 
-Click the arrow at the top of the popup to open WM Pass in a tab: the same screens and settings as the desktop app. The popup is the quick search. Type to search the whole vault, use the arrow keys, and press Enter to fill the page or copy the password; Mod+Enter copies the username.
+Click **Open WM Pass in a tab**, the arrow at the top of the popup, for the same screens and settings as the desktop app. The popup is the quick search. Type to search the whole vault, use the arrow keys, and press Enter to fill the page or copy the password; Ctrl+Enter (⌘Enter on a Mac) copies the username.
 
 Network features work from the extension itself once you allow them: breach checks, aliases, the disposable inbox, the username checker, and Bitwarden or Vaultwarden accounts. Their requests leave from the extension's background, never from a page you are visiting.
 

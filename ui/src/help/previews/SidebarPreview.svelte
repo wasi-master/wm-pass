@@ -2,6 +2,7 @@
   import Icon from '../../parts/Icon.svelte';
   import { prefs } from '../../engine/prefs.svelte';
   import { TAB_INFO } from '../../vault/tabs';
+  import { host } from '../../engine/host';
 
   // The sidebar with its parts as they are now, and the setting being explained as shown.
   let { value, pref }: { value?: unknown; pref?: string } = $props();
@@ -39,5 +40,11 @@
     <div class="side-foot" style="margin-top:6px"><span class="name ell">Personal</span>{#if lock}<span class="icon-btn"><Icon name="lock" size={16} /></span>{/if}<span class="icon-btn"><Icon name="settings" size={16} /></span></div>
   </div>
 {:else}
-  <p class="dim">The sidebar is hidden. {prefs.shortcuts.toggle_sidebar ? 'Its shortcut, or the View menu, brings it back.' : 'The View menu brings it back.'}</p>
+  <p class="dim">The sidebar is hidden. {host().desktop
+      ? prefs.shortcuts.toggle_sidebar
+        ? 'Its shortcut, or the View menu, brings it back.'
+        : 'The View menu brings it back.'
+      : prefs.shortcuts.toggle_sidebar
+        ? 'Its shortcut, or Show the sidebar under Settings, Sidebar, brings it back.'
+        : 'Show the sidebar, under Settings, Sidebar, brings it back.'}</p>
 {/if}

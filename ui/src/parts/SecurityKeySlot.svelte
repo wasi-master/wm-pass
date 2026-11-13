@@ -13,7 +13,7 @@
   <div class="stack" style="gap:6px">
     <div class="gap" style="justify-content:space-between;flex-wrap:wrap;gap:6px">
       <span class="dim small">Security key, challenge-response slot</span>
-      <Segmented value={slot} options={[[1, 'Slot 1'], [2, 'Slot 2']]} onchange={(chosen) => (slot = chosen)} />
+      <Segmented label="Challenge-response slot" value={slot} options={[[1, 'Slot 1'], [2, 'Slot 2']]} onchange={(chosen) => (slot = chosen)} />
     </div>
     <p class="dimmer small">Plug the key in. Touch it if it blinks.</p>
     <Btn label="Don’t use a security key" variant="quiet" {wide} onclick={() => (slot = 0)} />

@@ -1,11 +1,13 @@
 <script lang="ts">
   import Overlays from './parts/Overlays.svelte';
+  import InternalError from './parts/InternalError.svelte';
+  import { stopped } from './engine/stopped.svelte';
   import HelpSheet from './help/HelpSheet.svelte';
   import Coach from './help/Coach.svelte';
   import Welcome from './help/Welcome.svelte';
   import { help } from './help/help.svelte';
   import { overlays } from './parts/floating.svelte';
-  import { chordOf } from './engine/text';
+  import { chordsOf } from './engine/text';
   import Door from './door/Door.svelte';
   import Main from './vault/Main.svelte';
   import { pass } from './engine/pass.svelte';
@@ -41,6 +43,8 @@
     host().onCommand?.((name) => {
       // A widget's panic lock: the wait is set before the door opens, whatever is on screen.
       if (name === 'panic') void pass.panic();
+      // A bug in the session, met by something other than this page: the shell has locked it.
+      else if (name === 'internal') pass.internalError();
       // At the door there is no window to explain but the door itself.
       else if (!main && (name === 'help' || name === 'guide')) void help.open('screen.door');
       // A page asked for from a widget waits for the vault to open, as on the phone.
@@ -109,17 +113,27 @@
 
   $effect(() => {
     if (pass.state.kind !== 'unlocked') return;
+    // The idle clock starts when the vault opens, however it was opened: a vault opened with no
+    // key or click in this window, such as one the desktop app lends, must not lock at once.
+    lastActive = Date.now();
     let last = Date.now();
+    let hiddenBefore = document.hidden;
+    // A lock that fails still leaves the vault, and the next tick tries again: nothing to report here.
+    const lock = () => void pass.lock().catch(() => undefined);
     const timer = setInterval(() => {
       const now = Date.now();
-      // A timer that was held up for a long time means the machine was asleep.
-      const slept = now - last > 30_000;
+      // A timer that was held up for a long time means the machine was asleep. A browser holds up
+      // a hidden tab's timers by itself, to once a minute, which is not sleep: a wait that began
+      // or ended hidden has to be longer to count.
+      const wasHidden = document.hidden || hiddenBefore;
+      hiddenBefore = document.hidden;
+      const slept = now - last > (wasHidden ? 150_000 : 30_000);
       last = now;
       const after = prefs.v.lock_after;
-      if ((slept && prefs.v.lock_on_sleep) || (after >= 0 && now - lastActive > Math.max(after, 5) * 1000)) void pass.lock();
+      if ((slept && prefs.v.lock_on_sleep) || (after >= 0 && now - lastActive > Math.max(after, 5) * 1000)) lock();
     }, 2000);
     const hidden = () => {
-      if (document.hidden && prefs.v.lock_on_hide) void pass.lock();
+      if (document.hidden && prefs.v.lock_on_hide) lock();
     };
     document.addEventListener('visibilitychange', hidden);
     return () => {
@@ -151,6 +165,53 @@
     return () => void lan.stopListening();
   });
 
+  // A question or menu asked about the open vault goes with it: answered after a lock, it would
+  // act on nothing, and it would sit over the door. So does a message's Undo.
+  $effect(() => {
+    if (pass.state.kind === 'unlocked') return;
+    untrack(() => {
+      if (overlays.question) overlays.answer(false);
+      if (overlays.menu) overlays.closeMenu(null);
+      overlays.forgetVault();
+    });
+  });
+
+  // What the vault has to tell its owner: a password changed on two devices at once, a clock that
+  // looks wrong. Said on every unlock, and again when a sync brings something it had not said.
+  let noticesSaid = '';
+  pass.onNotices = (notices, opened) => {
+    const said = [notices.password_conflict?.message, notices.clock_warning?.message].filter(Boolean).join('\n');
+    if (!said || (!opened && said === noticesSaid)) {
+      noticesSaid = said;
+      return;
+    }
+    noticesSaid = said;
+    const conflict = notices.password_conflict;
+    if (conflict) {
+      overlays.toast(conflict.message, {
+        action: 'Go to Unlock methods',
+        run: () => {
+          ui.go('settings/security');
+          // Only the later change stayed: there is nothing to remove, and having looked is enough.
+          if (!conflict.both_open) void pass.passwordLossSeen().catch(() => undefined);
+        },
+        ms: 30000,
+      });
+    }
+    if (notices.clock_warning) overlays.toast(notices.clock_warning.message, { ms: 20000 });
+  };
+
+  // A save that fails would otherwise lose the change without a word.
+  pass.onSaveError = (message) => overlays.toast(`Your changes could not be saved: ${message}`, { ms: 10000 });
+  // Another window or program rekeyed the vault: this one locks rather than write the old key back.
+  pass.onKeyChanged = (lost) => {
+    const unsaved = lost || (ui.editing !== null && ui.editorDirty);
+    overlays.toast(
+      `The master password was changed in another window, so this one locked. Unlock with the new password.${unsaved ? ' Changes made here since its last save could not be kept: make them again after unlocking.' : ''}`,
+      { ms: 20000 },
+    );
+  };
+
   // ---- the guide ----
 
   // A new vault, or the first one opened on this install, gets the welcome once. Someone who used
@@ -169,8 +230,8 @@
   function doorKey(event: KeyboardEvent) {
     active();
     if (pass.state.kind === 'unlocked') return;
-    const chord = chordOf(event, host().os);
-    if (chord && chord === prefs.shortcuts.help) {
+    const helpChord = prefs.shortcuts.help;
+    if (helpChord && chordsOf(event, host().os).includes(helpChord)) {
       event.preventDefault();
       void help.open('screen.door');
     }
@@ -201,3 +262,4 @@
   {#if help.welcome}<Welcome />{/if}
 {/if}
 <Overlays />
+{#if stopped.on}<InternalError />{/if}

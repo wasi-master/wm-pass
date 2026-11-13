@@ -95,8 +95,8 @@ A password manager is opened a dozen times a day for about five seconds at a tim
 |---|---|---|
 | Ground | `#061311` | `#F4F9F7` |
 | Surface 1, 2, 3 | `#0D1C19` `#132522` `#1A2F2A` | `#FFFFFF` `#EEF5F2` `#E4EEEA` |
-| Text high, mid, low | `#EAFBF4` `#A3BDB5` `#6C8A81` | `#0A1F1A` `#46605A` `#75908A` |
-| Primary | `#34D399` | `#059669` |
+| Text high, mid, low | `#EAFBF4` `#A3BDB5` `#6C8A81` | `#0A1F1A` `#46605A` `#5A736D` |
+| Primary | `#34D399` | `#047857` |
 | Brand gradient | `#10B981` to `#0D9488` | same |
 | Digit, symbol | `#5EEAD4` `#FBBF24` | `#0D9488` `#B45309` |
 | Warn, danger | `#FBBF24` `#FB7185` | `#B45309` `#E11D48` |

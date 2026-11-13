@@ -79,6 +79,97 @@ await page.keyboard.press('Enter');
 check('the vault is still here after a reload', await page.waitForFunction(() => !document.querySelector('.door-card'), null, { timeout: 60_000 }).then(() => true, () => false));
 await page.getByRole('button', { name: 'Not now' }).click({ timeout: 3000 }).catch(() => {});
 
+// Two tabs on one vault: what one saves shows in the other, and the other's next save keeps it
+// rather than writing its older copy over it.
+const second = await context.newPage();
+second.on('pageerror', (e) => errors.push(e.message));
+await second.goto(`${ORIGIN}/vault/`);
+await second.locator('input[type=password]').first().fill(password);
+await second.keyboard.press('Enter');
+await second.waitForFunction(() => !document.querySelector('.door-card'), null, { timeout: 60_000 });
+await second.getByRole('button', { name: 'Not now' }).click({ timeout: 3000 }).catch(() => {});
+async function addLogin(tab, title) {
+  await tab.bringToFront();
+  await tab.getByRole('button', { name: 'Add an item' }).click();
+  await tab.getByRole('menuitem', { name: 'Login', exact: true }).click({ timeout: 2000 }).catch(() => {});
+  await tab.getByRole('textbox', { name: 'Name', exact: true }).fill(title);
+  await tab.getByRole('button', { name: 'Save', exact: true }).click();
+  await tab.locator('.list-pane').getByText(title, { exact: true }).waitFor({ timeout: 10_000 });
+}
+const shows = (tab, title) => tab.locator('.list-pane').getByText(title, { exact: true }).waitFor({ timeout: 10_000 }).then(() => true, () => false);
+await addLogin(page, 'From the first tab');
+check('a change in one tab shows in another on the same vault', await shows(second, 'From the first tab'));
+await addLogin(second, 'From the second tab');
+check('and the other tab’s change comes back', await shows(page, 'From the second tab'));
+await second.close();
+await page.reload();
+await page.locator('input[type=password]').first().fill(password);
+await page.keyboard.press('Enter');
+await page.waitForFunction(() => !document.querySelector('.door-card'), null, { timeout: 60_000 });
+await page.getByRole('button', { name: 'Not now' }).click({ timeout: 3000 }).catch(() => {});
+check('neither tab’s save lost the other’s', (await shows(page, 'From the first tab')) && (await shows(page, 'From the second tab')));
+
+// The list from the keyboard alone. Shift and the arrows choose a range, as Shift-click does.
+await addLogin(page, 'Range three');
+const list = page.locator('.list-body[role=listbox]');
+await list.focus();
+await page.keyboard.press('Home');
+await page.keyboard.press('Shift+ArrowDown');
+await page.keyboard.press('Shift+ArrowDown');
+const chosen = await page.locator('.list-body [role=option][aria-selected=true]').count();
+check('Shift and the arrow keys choose a range in the list', chosen === 3 && (await page.getByText('3 selected').isVisible()), `${chosen} chosen`);
+await page.keyboard.press('ArrowUp');
+
+// A site's logins fold into one stack, which the arrows reach and open and close.
+async function addSiteLogin(title, site) {
+  await page.getByRole('button', { name: 'Add an item' }).click();
+  await page.getByRole('menuitem', { name: 'Login', exact: true }).click({ timeout: 2000 }).catch(() => {});
+  const name = page.getByRole('textbox', { name: 'Name', exact: true });
+  // The form puts the focus in the name a moment after it opens; typing elsewhere before then would land there.
+  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Name', null, { timeout: 3000 }).catch(() => {});
+  await name.fill(title);
+  const website = page.getByRole('textbox', { name: 'Website', exact: true });
+  if (!(await website.isVisible())) await page.getByRole('button', { name: /^Websites and apps/ }).click();
+  await website.fill(site);
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.locator('.detail h1', { hasText: title }).waitFor({ timeout: 10_000 });
+}
+await addSiteLogin('Stacked one', 'stack.example');
+await addSiteLogin('Stacked two', 'stack.example');
+await list.focus();
+await page.keyboard.press('Home');
+let onStack = false;
+for (let i = 0; i < 8 && !onStack; i++) {
+  onStack = ((await list.getAttribute('aria-activedescendant')) ?? '').startsWith('stack-');
+  if (!onStack) await page.keyboard.press('ArrowDown');
+}
+const options = () => page.locator('.list-body [role=option]').count();
+const stackSays = () => page.locator('.list-body [id^="stack-"]').first().textContent();
+const closedCount = await options();
+const closedWords = await stackSays();
+await page.keyboard.press('ArrowRight');
+const openCount = await options();
+const openWords = await stackSays();
+await page.keyboard.press('ArrowLeft');
+check(
+  'the arrow keys reach a site’s stack, and open and close it',
+  onStack && openCount === closedCount + 2 && (await options()) === closedCount && /closed/.test(closedWords ?? '') && /open/.test(openWords ?? ''),
+  `${onStack} ${closedCount}/${openCount}`,
+);
+
+// A message with an Undo waits while the keyboard is on it, and goes once the keyboard leaves.
+await page.locator('.list-pane').getByText('Range three', { exact: true }).click();
+await page.getByRole('button', { name: 'More', exact: true }).click();
+await page.getByRole('menuitem', { name: 'Move to trash' }).click();
+const undo = page.locator('.toast button', { hasText: 'Undo' });
+await undo.waitFor({ timeout: 5000 });
+await undo.focus();
+await sleep(7000);
+const stayed = await undo.isVisible();
+await page.getByRole('textbox', { name: 'Search' }).focus();
+await sleep(6800);
+check('a message stays while the keyboard is on its button, and goes after', stayed && (await page.locator('.toast').count()) === 0);
+
 // A folder place, on a folder handle from the browser's private file system: the same handle type
 // the folder picker gives, without the picker. It is kept as the app keeps one, and the place is
 // sealed as the app seals it.
@@ -172,6 +263,7 @@ await page.getByRole('button', { name: /^Add a security key/ }).click();
 await page.getByRole('button', { name: /^A FIDO2 security key/ }).click();
 await page.getByPlaceholder('A name for the key').fill('Test key');
 await page.getByPlaceholder('Password to use with it').fill(keyPassword);
+await page.getByPlaceholder('The same password again').fill(keyPassword);
 await page.getByRole('button', { name: 'Next' }).click();
 check('a security key is added in the web vault', await page.getByText('The key is added').waitFor({ timeout: 15_000 }).then(() => true, () => false), (await page.locator('.danger-text').allTextContents()).join(' '));
 await page.getByRole('button', { name: 'Done' }).click();
@@ -186,6 +278,78 @@ await page.locator('input[type=password]').first().fill(keyPassword);
 await page.keyboard.press('Enter');
 check('the key and its password open the web vault', await page.waitForFunction(() => !document.querySelector('.door-card'), null, { timeout: 60_000 }).then(() => true, () => false), (await page.locator('.danger-text').allTextContents()).join(' '));
 if (shots) await page.screenshot({ path: join(shots, 'web-vault.png') });
+
+// A rekey in one tab: the other tab locks and says why, rather than writing its copy under the old
+// key back over the file, and the new password opens it there.
+const other = await context.newPage();
+other.on('pageerror', (e) => errors.push(e.message));
+await other.goto(`${ORIGIN}/vault/`);
+await other.locator('input[type=password]').first().fill(password);
+await other.keyboard.press('Enter');
+await other.waitForFunction(() => !document.querySelector('.door-card'), null, { timeout: 60_000 });
+await other.getByRole('button', { name: 'Not now' }).click({ timeout: 3000 }).catch(() => {});
+await page.bringToFront();
+await page.getByRole('button', { name: 'Settings', exact: true }).click();
+await page.getByRole('button', { name: 'Security', exact: true }).first().click();
+await page.getByRole('button', { name: /^Change it and rekey/ }).click();
+const rekeyed = crypto.randomUUID() + crypto.randomUUID();
+await page.getByPlaceholder('Current password').fill(password);
+await page.getByPlaceholder('New password', { exact: true }).fill(rekeyed);
+await page.getByPlaceholder('New password again').fill(rekeyed);
+await page.getByRole('button', { name: 'Change', exact: true }).click();
+check('a rekey turns passkey unlock off, since the passkey kept the old key', await page.waitForFunction(() => document.querySelector('[role=switch][aria-label="Unlock with a passkey"]')?.getAttribute('aria-checked') === 'false', null, { timeout: 15_000 }).then(() => true, () => false));
+check('a tab locks when another rekeys the vault', await other.waitForSelector('.door-card', { timeout: 15_000 }).then(() => true, () => false));
+check('and says the password changed elsewhere', await other.getByText(/master password was changed in another window/).first().waitFor({ timeout: 5000 }).then(() => true, () => false));
+await other.locator('input[type=password]').first().fill(rekeyed);
+await other.keyboard.press('Enter');
+check('the new password opens it there, the file not written back under the old key', await other.waitForFunction(() => !document.querySelector('.door-card'), null, { timeout: 60_000 }).then(() => true, () => false), (await other.locator('.danger-text').allTextContents()).join(' '));
+await other.close();
+
+// A bug in the session. A wasm module traps on a panic, so the trap is made here, as one looks from
+// the page: a call that never answers, and a RuntimeError thrown from the module's own queue. The
+// release build has no way to panic on purpose. The page's own scripts are as shipped.
+const trap = await context.newPage();
+await trap.addInitScript(() => {
+  const instantiate = WebAssembly.instantiateStreaming;
+  WebAssembly.instantiateStreaming = async (...args) => {
+    const { instance, module } = await instantiate(...args);
+    const exports = { ...instance.exports };
+    const real = exports.call_async;
+    exports.call_async = (...inner) => {
+      if (!window.__wmpassTrap) return real(...inner);
+      queueMicrotask(() => {
+        throw new WebAssembly.RuntimeError('unreachable');
+      });
+      return new Promise(() => {});
+    };
+    window.__wmpassMemory = instance.exports.memory;
+    return { instance: { exports }, module };
+  };
+});
+await trap.goto(`${ORIGIN}/vault/`);
+await trap.locator('input[type=password]').first().fill(rekeyed);
+await trap.keyboard.press('Enter');
+await trap.waitForFunction(() => !document.querySelector('.door-card'), null, { timeout: 60_000 });
+await trap.getByRole('button', { name: 'Not now' }).click({ timeout: 3000 }).catch(() => {});
+await trap.getByRole('button', { name: 'Add an item' }).click();
+await trap.getByRole('menuitem', { name: 'Login', exact: true }).click({ timeout: 2000 }).catch(() => {});
+const halfTyped = trap.getByRole('textbox', { name: 'Name', exact: true });
+await halfTyped.fill('Typed before the error');
+await trap.evaluate(() => (window.__wmpassTrap = true));
+await trap.getByRole('button', { name: 'Save', exact: true }).click();
+const notice = trap.getByRole('alertdialog', { name: 'Something went wrong' });
+check('an internal error says so over the screen', await notice.waitFor({ timeout: 10_000 }).then(() => true, () => false));
+check('with the words it should', /locked the vault to keep it safe\. Anything you were typing is still on this screen/.test((await notice.textContent()) ?? ''));
+check('what was typed is still there, and can be selected to copy', (await halfTyped.inputValue().catch(() => '')) === 'Typed before the error' && (await trap.evaluate(() => !document.querySelector('input[aria-label="Name"]')?.closest('[inert]') && !document.querySelector('dialog:modal'))));
+check('no message besides it', (await trap.locator('.toast').count()) === 0);
+check('the module’s memory, keys and all, is wiped', await trap.evaluate(() => new Uint8Array(window.__wmpassMemory.buffer).every((byte) => byte === 0)));
+await trap.keyboard.press('Escape');
+await trap.waitForSelector('.door-card', { timeout: 15_000 }).catch(() => {});
+check('Escape goes to the door, with a fresh session', !(await notice.isVisible().catch(() => false)) && (await trap.locator('input[type=password]').count()) > 0);
+await trap.locator('input[type=password]').first().fill(rekeyed);
+await trap.keyboard.press('Enter');
+check('and the vault opens again, nothing saved lost', await trap.waitForFunction(() => !document.querySelector('.door-card'), null, { timeout: 60_000 }).then(() => true, () => false) && (await shows(trap, 'From the first tab')));
+await trap.close();
 
 check('no script errors and nothing the policy blocked', errors.length === 0, errors.slice(0, 3).join(' | ').slice(0, 300));
 await context.close();

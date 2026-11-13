@@ -138,29 +138,49 @@ pub struct Throttle {
 
 const FREE_TRIES: u32 = 5;
 
+fn wait_after(failures: u32, last: Instant) -> Option<u64> {
+    if failures < FREE_TRIES {
+        return None;
+    }
+    let doubling = (failures - FREE_TRIES).min(5);
+    let wait = Duration::from_secs(30 << doubling).min(Duration::from_secs(900));
+    wait.checked_sub(last.elapsed()).map(|left| left.as_secs().max(1))
+}
+
+fn note_failure(state: &mut HashMap<String, (u32, Instant)>, key: &str) {
+    // Bounded, so a flood of invented addresses cannot grow this without limit.
+    if state.len() > 100_000 {
+        state.retain(|_, (_, last)| last.elapsed() < Duration::from_secs(900));
+    }
+    let slot = state.entry(key.to_owned()).or_insert((0, Instant::now()));
+    slot.0 = slot.0.saturating_add(1);
+    slot.1 = Instant::now();
+}
+
 impl Throttle {
     /// Seconds to wait before another try, if any.
     pub fn wait(&self, key: &str) -> Option<u64> {
         let state = self.state.lock().ok()?;
         let (failures, last) = state.get(key)?;
-        if *failures < FREE_TRIES {
-            return None;
+        wait_after(*failures, *last)
+    }
+
+    /// Starts a password check: the seconds to wait if it must not run, or else counts it as a
+    /// failure until [`Self::succeeded`] says otherwise. Checking and counting under one lock
+    /// means many guesses sent at once cannot all pass while the first are still hashing.
+    pub fn attempt(&self, key: &str) -> Option<u64> {
+        let mut state = self.state.lock().ok()?;
+        if let Some(wait) = state.get(key).and_then(|(failures, last)| wait_after(*failures, *last)) {
+            return Some(wait);
         }
-        let doubling = (*failures - FREE_TRIES).min(5);
-        let wait = Duration::from_secs(30 << doubling).min(Duration::from_secs(900));
-        wait.checked_sub(last.elapsed()).map(|left| left.as_secs().max(1))
+        note_failure(&mut state, key);
+        None
     }
 
     /// Notes a failure.
     pub fn failed(&self, key: &str) {
         if let Ok(mut state) = self.state.lock() {
-            // Bounded, so a flood of invented addresses cannot grow this without limit.
-            if state.len() > 100_000 {
-                state.retain(|_, (_, last)| last.elapsed() < Duration::from_secs(900));
-            }
-            let slot = state.entry(key.to_owned()).or_insert((0, Instant::now()));
-            slot.0 = slot.0.saturating_add(1);
-            slot.1 = Instant::now();
+            note_failure(&mut state, key);
         }
     }
 
@@ -280,5 +300,19 @@ mod tests {
         assert_eq!(throttle.wait("b"), None);
         throttle.succeeded("a");
         assert_eq!(throttle.wait("a"), None);
+    }
+
+    #[test]
+    fn an_attempt_counts_before_it_is_judged() {
+        let throttle = Throttle::default();
+        // Five guesses in flight at once, none finished: the sixth must already wait.
+        for _ in 0..FREE_TRIES {
+            assert_eq!(throttle.attempt("a"), None);
+        }
+        assert!(throttle.attempt("a").is_some());
+        assert!(throttle.wait("a").is_some());
+        throttle.succeeded("a");
+        assert_eq!(throttle.attempt("a"), None);
+        assert_eq!(throttle.attempt("b"), None);
     }
 }

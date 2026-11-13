@@ -18,6 +18,10 @@ What an item's page shows: the buttons at the top, how its fields behave, and ho
 
 **Buttons at the top** are the copy and open buttons under the item's name. **Fields** changes how secrets are shown and copied. **History** is kept in the vault itself, so it applies on every device that opens it.
 
+#### On Android
+
+**Buttons at the top**, shown only in the Standard style, are the copy and open buttons under the item's name. **Fields** changes how secrets are shown and copied. **History** is kept in the vault itself, so it applies on every device that opens it.
+
 See also [Item view](/guide/screens/#screen-item), [Codes](/guide/settings/codes/), [Clear the clipboard after](/guide/settings/security/#setting-clipboard-seconds).
 
 <a id="setting-entry-actions"></a>
@@ -155,6 +159,12 @@ The number counts for each field. When an item has more than that, its oldest va
 
 This is stored in the vault, not on this device, so it applies on every device that opens the vault.
 
-A new vault keeps every old value. That shows here as 0 until you choose a number.
+A new vault keeps every old value, which shows here as **All**. Once you choose a number, **All** is no longer offered.
+
+#### On Android
+
+This is stored in the vault, not on this device, so it applies on every device that opens the vault.
+
+A new vault keeps every old value, which shows here as 0. Once you choose another number, 0 is no longer offered.
 
 See also [Item view](/guide/screens/#screen-item), [Keeping devices in sync](/guide/how-it-works/#feature-sync).

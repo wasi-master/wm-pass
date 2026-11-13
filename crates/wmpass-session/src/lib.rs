@@ -23,5 +23,5 @@ mod service;
 mod views;
 pub mod wire;
 
-pub use service::{Call, Reply, Service, SessionError, factor_of};
+pub use service::{Call, INTERNAL, Reply, Service, SessionError, factor_of, internal_error, lock_service};
 pub use views::*;

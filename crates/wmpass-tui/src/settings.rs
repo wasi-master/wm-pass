@@ -92,7 +92,7 @@ impl Setting {
     /// A sentence or two on what it does.
     pub fn about(self) -> &'static str {
         match self {
-            Self::Theme => "The colours the terminal app is drawn in. Plain uses none, for terminals that show them badly.",
+            Self::Theme => "The colors the terminal app is drawn in. Plain uses none, for terminals that show them badly.",
             Self::Icons => "Icons from a Nerd Font for kinds, tabs and the sidebar. Turn it off if they show as boxes: the terminal's font has none.",
             Self::LockAfter => "The vault locks after this long without a key press, and everything shown is cleared from the screen.",
             Self::ClipSeconds => "A copied password or code is wiped from the clipboard after this long, unless something else was copied since.",

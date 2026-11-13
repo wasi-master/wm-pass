@@ -15,7 +15,7 @@ use wmpass_core::model::{Entry, Field, Kind, LinkedVault, Lww, Reminders, Shared
 use wmpass_core::otp::OtpConfig;
 use wmpass_core::sharing::{self, Manifest, MemberKeys, MemberPublic};
 use wmpass_core::search::{self, Context, Flags, FolderNames, Query};
-use wmpass_core::vault::{Freshness, OpenOutcome, Vault, check_freshness, hex, new_id, open_set, unhex};
+use wmpass_core::vault::{CheckedSlot, Freshness, OpenOutcome, SlotCheck, Vault, check_freshness, hex, new_id, open_set, unhex};
 use wmpass_core::{Error, Secret, categorise, emergency, health, io, passkey, recovery, related, ssh, strength, wifi};
 use zeroize::Zeroizing;
 
@@ -87,6 +87,26 @@ pub struct SessionError {
     pub message: String,
 }
 
+/// The code of an internal error: a bug (a Rust panic) stopped a call part way. Every shell
+/// catches the panic at its boundary, throws away the whole service, whose keys are wiped as it
+/// drops, and starts a fresh one; the files on disk are whole, as every save is atomic. The shell
+/// shows the vault as locked. Not the panic lock a person asks for, which is an ordinary lock.
+pub const INTERNAL: &str = "internal";
+
+/// What a call gets when an internal error stopped the service it would have used.
+pub fn internal_error() -> SessionError {
+    SessionError {
+        code: INTERNAL,
+        message: "WM Pass hit an internal error and locked the vault to keep it safe. Unlock it again".to_owned(),
+    }
+}
+
+/// The service behind `service`, or [`internal_error`] when a panic poisoned its lock: what a
+/// panic left half changed is never used again. The boundary that caught the panic replaces it.
+pub fn lock_service(service: &std::sync::Mutex<Option<Service>>) -> Result<std::sync::MutexGuard<'_, Option<Service>>, SessionError> {
+    service.lock().map_err(|_| internal_error())
+}
+
 impl From<Error> for SessionError {
     fn from(error: Error) -> Self {
         let code = match &error {
@@ -146,9 +166,23 @@ struct Session {
     dirty: bool,
     shelf_open: bool,
     health: Option<health::HealthReport>,
+    /// What the health screen last asked for: its age limit, breach counts, the items left out
+    /// of each check and whether local addresses count. A search for `weak` and the like keeps
+    /// to the same, so the two never disagree.
+    health_input: health::HealthInput,
     pending_import: Option<io::Imported>,
     remote: Option<crate::remote::Remote>,
     unreadable: usize,
+    /// The slot `vault.verify` last found, with the key file or hardware key answer that opened
+    /// it, for a `vault.change_password` that follows: the new password keeps that factor.
+    checked: Option<CheckedSlot>,
+    /// Opened by emergency recovery, without the owner's password: a password change may
+    /// take over a slot without checking the old one, whose factor is out of reach.
+    recovered: bool,
+    /// While an account is away at its server: each item's latest write as it left, so what
+    /// is edited meanwhile is kept when it comes back.
+    #[cfg_attr(not(feature = "online"), allow(dead_code))]
+    away: Option<std::collections::BTreeMap<String, wmpass_core::clock::Hlc>>,
 }
 
 impl Session {
@@ -158,9 +192,13 @@ impl Session {
             dirty: false,
             shelf_open: false,
             health: None,
+            health_input: health::HealthInput::default(),
             pending_import: None,
             remote: None,
             unreadable: 0,
+            checked: None,
+            recovered: false,
+            away: None,
         }
     }
 
@@ -190,17 +228,13 @@ impl Session {
         Ok(())
     }
 
-    fn report(&mut self, now_ms: u64, old_after_days: u32) -> &health::HealthReport {
+    /// The health report under the settings the health screen last used.
+    fn report(&mut self, now_ms: u64) -> &health::HealthReport {
         let vault = &self.vault;
+        let input = &mut self.health_input;
         self.health.get_or_insert_with(|| {
-            health::report(
-                vault,
-                &health::HealthInput {
-                    now_ms,
-                    old_after_days,
-                    ..health::HealthInput::default()
-                },
-            )
+            input.now_ms = now_ms;
+            health::report(vault, input)
         })
     }
 }
@@ -385,9 +419,12 @@ fn blob<'a>(call: &Call<'a>, at: usize) -> Result<&'a [u8], SessionError> {
         .ok_or_else(|| invalid("a file is missing"))
 }
 
+/// A key file and a YubiKey's answer, either of which may be missing.
+type KdbxKeys<'a> = (Option<&'a [u8]>, Option<&'a [u8]>);
+
 /// A KeePass database's key file and YubiKey answer, after the database itself: the key
 /// file next when there is one, the answer last when `response` says there is one.
-fn kdbx_keys<'a>(call: &Call<'a>, response: bool) -> Result<(Option<&'a [u8]>, Option<&'a [u8]>), SessionError> {
+fn kdbx_keys<'a>(call: &Call<'a>, response: bool) -> Result<KdbxKeys<'a>, SessionError> {
     let rest = call.blobs.get(1..).unwrap_or_default();
     match (rest, response) {
         ([], false) => Ok((None, None)),
@@ -396,6 +433,36 @@ fn kdbx_keys<'a>(call: &Call<'a>, response: bool) -> Result<(Option<&'a [u8]>, O
         ([key_file, answer], true) => Ok((Some(*key_file), Some(*answer))),
         _ => Err(invalid("unexpected files with the database")),
     }
+}
+
+/// Tags as typed: trimmed, a leading `#` dropped, empty ones gone and each once.
+fn clean_tags(tags: Vec<String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::with_capacity(tags.len());
+    for tag in tags {
+        let tag = tag.trim().trim_start_matches('#').trim();
+        if !tag.is_empty() && !out.iter().any(|t| t == tag) {
+            out.push(tag.to_owned());
+        }
+    }
+    out
+}
+
+/// A folder named for an item must be one the vault has, or the item drops out of every
+/// folder's list and shows under none.
+fn check_folder(vault: &Vault, folder: Option<&str>) -> Result<(), SessionError> {
+    match folder {
+        Some(id) if !vault.doc.folders.contains_key(id) => Err(invalid("that folder is gone")),
+        _ => Ok(()),
+    }
+}
+
+/// A folder's name as typed, which must have something in it.
+fn folder_name(name: &str) -> Result<String, SessionError> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(invalid("a folder has a name"));
+    }
+    Ok(name.to_owned())
 }
 
 fn text(bytes: &[u8]) -> Result<&str, SessionError> {
@@ -420,16 +487,60 @@ fn health_flags(report: &health::HealthReport) -> Flags {
     }
 }
 
-/// Which words in a query need the password checks, which take a moment to run.
-fn wants_health(query: &str) -> bool {
-    query
-        .split_whitespace()
-        .any(|word| ["weak", "reused", "breached", "old", "duplicate"].contains(&word.to_lowercase().as_str()))
+/// Compares two folded names as people read them: a run of digits by its value, so "Item 2"
+/// comes before "Item 10", as the apps' own lists sort with a numeric collator. Digits sort
+/// before letters, and of two names otherwise the same, fewer leading zeros come first.
+fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    let (mut a, mut b) = (a.chars().peekable(), b.chars().peekable());
+    // Leading zeros decide only between names otherwise the same.
+    let mut zeros = Ordering::Equal;
+    loop {
+        match (a.peek().copied(), b.peek().copied()) {
+            (None, None) => return zeros,
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
+            (Some(x), Some(y)) if x.is_ascii_digit() && y.is_ascii_digit() => {
+                let take = |it: &mut std::iter::Peekable<std::str::Chars<'_>>| {
+                    let mut run = String::new();
+                    while let Some(c) = it.peek().copied().filter(char::is_ascii_digit) {
+                        run.push(c);
+                        it.next();
+                    }
+                    run
+                };
+                let (left, right) = (take(&mut a), take(&mut b));
+                let (l, r) = (left.trim_start_matches('0'), right.trim_start_matches('0'));
+                let order = l.len().cmp(&r.len()).then_with(|| l.cmp(r));
+                if order != Ordering::Equal {
+                    return order;
+                }
+                zeros = zeros.then_with(|| left.len().cmp(&right.len()));
+            }
+            (Some(x), Some(y)) => {
+                if x != y {
+                    return x.cmp(&y);
+                }
+                a.next();
+                b.next();
+            }
+        }
+    }
 }
 
+/// Which words in a query need the password checks, which take a moment to run.
 fn sort_rows(rows: &mut [views::Summary], sort: &str) {
     match sort {
-        "title" => rows.sort_by_key(|r| r.title.to_lowercase()),
+        // As search folds them, so Écran sorts with the e's and not after Zebra.
+        "title" => {
+            let mut keyed: Vec<(String, views::Summary)> = rows.iter().map(|r| (search::fold(&r.title), r.clone())).collect();
+            // Stable, and ties broken by the title as written and then the id, so two
+            // devices list the same vault in the same order.
+            keyed.sort_by(|(a, x), (b, y)| natural_cmp(a, b).then_with(|| a.cmp(b)).then_with(|| x.title.cmp(&y.title)).then_with(|| x.id.cmp(&y.id)));
+            for (slot, (_, row)) in rows.iter_mut().zip(keyed) {
+                *slot = row;
+            }
+        }
         "modified" => rows.sort_by_key(|r| std::cmp::Reverse(r.modified_ms)),
         _ => {}
     }
@@ -525,7 +636,7 @@ impl Service {
         let handle = self.mirror(name, remote, now)?;
         let session = self.session(handle)?;
         session.unreadable = unreadable;
-        Ok(Reply::view(Self::opened(handle, 0, &session.vault)))
+        Ok(Reply::view(Self::opened(handle, 0, &session.vault, now)))
     }
 
     /// Passes changes on to a Bitwarden account and takes it out for a trip to the server.
@@ -540,6 +651,7 @@ impl Service {
         let Some(crate::remote::Remote { account: crate::remote::Account::Bitwarden(account), .. }) = session.remote.take() else {
             return Err(invalid("this is not a Bitwarden account"));
         };
+        session.away = Some(crate::remote::snapshot(&session.vault));
         Ok(account)
     }
 
@@ -547,8 +659,12 @@ impl Service {
     #[cfg(feature = "online")]
     pub fn return_bitwarden(&mut self, handle: u64, account: Box<wmpass_bw::account::Account>, now: u64) -> Result<(), SessionError> {
         let session = self.session(handle)?;
+        let meanwhile = session.away.take().map(|away| crate::remote::meanwhile(&session.vault, &away));
         let mut remote = crate::remote::Remote::new(crate::remote::Account::Bitwarden(account));
         remote.refresh(&mut session.vault, now);
+        if let Some(meanwhile) = meanwhile {
+            crate::remote::put_back(&mut session.vault, meanwhile);
+        }
         session.unreadable = match &remote.account {
             crate::remote::Account::Bitwarden(account) => account.unreadable(),
             crate::remote::Account::Kdbx(_) => 0,
@@ -575,7 +691,7 @@ impl Service {
         }
     }
 
-    fn opened(handle: u64, index: usize, vault: &Vault) -> Value {
+    fn opened(handle: u64, index: usize, vault: &Vault, now: u64) -> Value {
         json!({
             "outcome": "opened",
             "handle": handle,
@@ -583,6 +699,8 @@ impl Service {
             "name": vault.doc.name,
             "generation": vault.doc.generation,
             "read_only": vault.is_read_only(),
+            "clock_warning": views::clock_warning_view(vault, now),
+            "password_conflict": views::password_conflict_view(vault),
         })
     }
 
@@ -593,6 +711,10 @@ impl Service {
         match method {
             // ---- files, keys, slots ----
             "qr.encode" => qr_view(call.secret),
+            // Only in debug builds and tests, never in a release: a way to see what a bug in
+            // here does to each shell.
+            #[cfg(debug_assertions)]
+            "debug.panic" => panic!("debug.panic asked for an internal error"),
             "kinds" => {
                 let kinds: Vec<Value> = fields::KINDS
                     .iter()
@@ -616,7 +738,7 @@ impl Service {
                 let handle = self.adopt(vault);
                 let session = self.session(handle)?;
                 session.dirty = true;
-                Ok(Reply::view(Self::opened(handle, 0, &session.vault)))
+                Ok(Reply::view(Self::opened(handle, 0, &session.vault, now)))
             }
             "vault.open" => {
                 #[derive(Deserialize, Default)]
@@ -630,7 +752,7 @@ impl Service {
                     OpenOutcome::Opened { index, vault } => {
                         let handle = self.adopt(*vault);
                         let session = self.session(handle)?;
-                        Ok(Reply::view(Self::opened(handle, index, &session.vault)))
+                        Ok(Reply::view(Self::opened(handle, index, &session.vault, now)))
                     }
                     OpenOutcome::Duress { action } => Ok(Reply::view(json!({
                         "outcome": "duress",
@@ -667,7 +789,7 @@ impl Service {
                     _ => self.adopt(vault),
                 };
                 let session = self.session(handle)?;
-                Ok(Reply::view(Self::opened(handle, 0, &session.vault)))
+                Ok(Reply::view(Self::opened(handle, 0, &session.vault, now)))
             }
             // Quick unlock in a browser: the vault key, sealed by `vault.quick_seal` under what a
             // passkey's PRF answered, opened again with a fresh answer. The key never leaves here.
@@ -681,7 +803,7 @@ impl Service {
                 let vault = Vault::from_file(blob(&call, 1)?, VaultKey::from_bytes(raw), self.device)?;
                 let handle = self.adopt(vault);
                 let session = self.session(handle)?;
-                Ok(Reply::view(Self::opened(handle, 0, &session.vault)))
+                Ok(Reply::view(Self::opened(handle, 0, &session.vault, now)))
             }
             "vault.chaff" => {
                 #[derive(Deserialize, Default)]
@@ -732,7 +854,7 @@ impl Service {
                 let remote = crate::remote::Remote::new(crate::remote::Account::Kdbx(Box::new(backend)));
                 let handle = self.mirror(&a.name, remote, now)?;
                 let session = self.session(handle)?;
-                let mut view = Self::opened(handle, 0, &session.vault);
+                let mut view = Self::opened(handle, 0, &session.vault, now);
                 view["kdbx_upgrade"] = json!(upgrade);
                 Ok(Reply::view(view))
             }
@@ -747,7 +869,8 @@ impl Service {
                 let vault = emergency::recover(blob(&call, 0)?, &shares, self.device)?;
                 let handle = self.adopt(vault);
                 let session = self.session(handle)?;
-                Ok(Reply::view(Self::opened(handle, 0, &session.vault)))
+                session.recovered = true;
+                Ok(Reply::view(Self::opened(handle, 0, &session.vault, now)))
             }
             // A new key for the editor to fill in, before the item exists.
             "ssh.new" => {
@@ -961,7 +1084,7 @@ impl Service {
             let vault = Vault::from_file(blob(&call, 1)?, key, device)?;
             let handle = self.adopt(vault);
             let session = self.session(handle)?;
-            return Ok(Reply::view(Self::opened(handle, 0, &session.vault)));
+            return Ok(Reply::view(Self::opened(handle, 0, &session.vault, now)));
         }
         if method == "linked.open" {
             #[derive(Deserialize, Default)]
@@ -983,7 +1106,7 @@ impl Service {
             let vault = Vault::from_file(blob(&call, 0)?, VaultKey::from_bytes(key), device)?;
             let handle = self.adopt(vault);
             let session = self.session(handle)?;
-            return Ok(Reply::view(Self::opened(handle, 0, &session.vault)));
+            return Ok(Reply::view(Self::opened(handle, 0, &session.vault, now)));
         }
         let session = self.session(call.handle)?;
         match method {
@@ -998,6 +1121,8 @@ impl Service {
                     "entries": vault.doc.entries.len(),
                     "trash_days": vault.doc.prefs.trash_days,
                     "history_limit": vault.doc.prefs.history_limit,
+                    "clock_warning": views::clock_warning_view(vault, now),
+                    "password_conflict": views::password_conflict_view(vault),
                     "kdf": {
                         "m_kib": vault.kdf_config()?.params.m_kib,
                         "t": vault.kdf_config()?.params.t,
@@ -1012,7 +1137,11 @@ impl Service {
                     name: String,
                 }
                 let a: A = parse(call.args)?;
-                session.vault.doc.name = a.name;
+                let name = a.name.trim();
+                if name.is_empty() {
+                    return Err(invalid("a vault has a name"));
+                }
+                name.clone_into(&mut session.vault.doc.name);
                 session.dirty = true;
                 Ok(Reply::ok())
             }
@@ -1024,11 +1153,12 @@ impl Service {
                     history_limit: Option<u32>,
                 }
                 let a: A = parse(call.args)?;
+                // Through the vault, with a time, so the setting reaches every device.
                 if let Some(days) = a.trash_days {
-                    session.vault.doc.prefs.trash_days = days;
+                    session.vault.set_trash_days(days, now);
                 }
                 if let Some(limit) = a.history_limit {
-                    session.vault.doc.prefs.history_limit = limit;
+                    session.vault.set_history_limit(limit, now);
                 }
                 session.dirty = true;
                 Ok(Reply::ok())
@@ -1066,7 +1196,38 @@ impl Service {
                     check_freshness(a.seen_generation, generation),
                     Freshness::Rollback { .. }
                 );
-                Ok(Reply::view(json!({"generation": generation, "rollback": rollback})))
+                Ok(Reply::view(json!({
+                    "generation": generation,
+                    "rollback": rollback,
+                    "clock_warning": views::clock_warning_view(&session.vault, now),
+                    "password_conflict": views::password_conflict_view(&session.vault),
+                })))
+            }
+            // What the vault has to tell its owner: a clock that looks wrong, a password changed
+            // on two devices at once. Shells ask after opening and after each sync.
+            "vault.notices" => Ok(Reply::view(json!({
+                "clock_warning": views::clock_warning_view(&session.vault, now),
+                "password_conflict": views::password_conflict_view(&session.vault),
+            }))),
+            // What this device calls itself, kept in the vault so other devices can name it.
+            "vault.device_name" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    name: String,
+                }
+                let a: A = parse(call.args)?;
+                let changed = !session.vault.is_read_only() && session.vault.set_device_name(&a.name, now);
+                if changed {
+                    session.touched();
+                }
+                Ok(Reply::view(json!({"changed": changed})))
+            }
+            // The owner has read that a change of password was lost to another made at once.
+            "slot.conflict_seen" => {
+                session.vault.password_dropped_seen();
+                session.dirty = true;
+                Ok(Reply::ok())
             }
             "remote.save" => {
                 let vault = &mut session.vault;
@@ -1113,8 +1274,24 @@ impl Service {
                 }
                 let a: A = parse(call.args)?;
                 let (factors, _) = split_factors(&a.factors, call.blobs)?;
-                let ok = session.vault.verify_password(call.secret, &factors)?;
-                Ok(Reply::view(json!({"ok": ok})))
+                // The slot it opens, so a password change can replace that one and not the first,
+                // kept with its factor so the change keeps that too.
+                let (slot, needed) = match session.vault.check_slot(call.secret, &factors)? {
+                    SlotCheck::Opens(checked) => {
+                        let slot = checked.index();
+                        session.checked = Some(checked);
+                        (Some(slot), Vec::new())
+                    }
+                    SlotCheck::NeedsFactor(kinds) => {
+                        session.checked = None;
+                        (None, kinds.iter().map(views::factor_view).collect())
+                    }
+                    SlotCheck::NoMatch => {
+                        session.checked = None;
+                        (None, Vec::new())
+                    }
+                };
+                Ok(Reply::view(json!({"ok": slot.is_some(), "slot": slot, "needs_factor": needed})))
             }
             "vault.change_password" => {
                 #[derive(Deserialize, Default)]
@@ -1123,7 +1300,19 @@ impl Service {
                     index: usize,
                 }
                 let a: A = parse(call.args)?;
-                session.vault.change_password(a.index, call.secret, now)?;
+                match session.checked.take() {
+                    Some(checked) if checked.index() == a.index => {
+                        session.vault.change_password(&checked, call.secret, now)?;
+                    }
+                    _ if session.recovered => session.vault.replace_password(a.index, call.secret, now)?,
+                    // Without the check, nothing says whether the slot needs a key file or
+                    // hardware key, and writing it without one would quietly drop it.
+                    _ => {
+                        return Err(invalid(
+                            "enter the current password first, with its key file or security key if it has one",
+                        ));
+                    }
+                }
                 session.dirty = true;
                 Ok(Reply::ok())
             }
@@ -1139,14 +1328,26 @@ impl Service {
                 Ok(Reply::ok())
             }
             "slot.list" => {
-                let slots: Vec<Value> = session
-                    .vault
+                let vault = &session.vault;
+                let conflict = vault.doc.password_conflict();
+                let slots: Vec<Value> = vault
                     .doc
                     .slots
                     .iter()
                     .enumerate()
                     .filter(|(_, s)| s.used)
-                    .map(|(index, s)| json!({"index": index, "label": s.label}))
+                    .map(|(index, s)| {
+                        let at = vault.doc.slot_time(index);
+                        json!({
+                            "index": index,
+                            "label": s.label,
+                            "opens": s.opens,
+                            // One of two passwords changed from one on two devices at once.
+                            "conflict": conflict.contains(&index),
+                            "changed_ms": at.ms,
+                            "changed_on": vault.device_name(at.device),
+                        })
+                    })
                     .collect();
                 Ok(Reply::view(json!(slots)))
             }
@@ -1386,11 +1587,12 @@ impl Service {
                     sort: String,
                 }
                 let a: A = parse(call.args)?;
-                let mut flags = None;
-                if wants_health(&a.query) {
-                    flags = Some(health_flags(session.report(now, 365)));
-                }
                 let query = Query::parse(&a.query);
+                // `-weak` and `"weak"` need the report as much as `weak` does.
+                let mut flags = None;
+                if query.wants_health() {
+                    flags = Some(health_flags(session.report(now)));
+                }
                 let names = Names(&session.vault);
                 let context = Context {
                     now_ms: now,
@@ -1497,24 +1699,30 @@ impl Service {
                     };
                     let view = views::otp_view(config);
                     // A code on screen is meant to be read, and it lasts seconds. HOTP
-                    // has to be asked for, since showing it uses it up.
-                    let code = if view.kind == "hotp" {
-                        None
+                    // has to be asked for, since showing it uses it up. A seed that makes no
+                    // code, as a sync or an old import can leave, costs that one row its code
+                    // and says why, rather than the whole list.
+                    let (code, error) = if view.kind == "hotp" {
+                        (None, None)
                     } else {
-                        Some(config.code(seconds)?.expose().to_owned())
+                        match config.code(seconds) {
+                            Ok(code) => (Some(code.expose().to_owned()), None),
+                            Err(e) => (None, Some(e.to_string())),
+                        }
                     };
                     let left = config.seconds_left(seconds);
                     // Near the end the next code is shown too, so a late copy still works.
                     let next_code = match left {
-                        Some(left) if left <= 10 => {
-                            Some(config.code(seconds + u64::from(left))?.expose().to_owned())
+                        Some(left) if left <= 10 && error.is_none() => {
+                            config.code(seconds + u64::from(left)).ok().map(|c| c.expose().to_owned())
                         }
                         _ => None,
                     };
                     out.push(json!({
+                        "error": error,
                         "id": entry.id,
                         "title": entry.common.title.v,
-                        "site": health::entry_domains(entry).into_iter().next(),
+                        "site": health::first_domain(entry),
                         "icon": entry.common.icon.v,
                         "otp": view,
                         "code": code,
@@ -1582,17 +1790,15 @@ impl Service {
                     skip_local: bool,
                 }
                 let a: A = parse(call.args)?;
-                session.health = Some(health::report(
-                    &session.vault,
-                    &health::HealthInput {
-                        now_ms: now,
-                        old_after_days: a.old_after_days.unwrap_or(365),
-                        breached: a.breached,
-                        ignored: a.ignored,
-                        skip_local: a.skip_local,
-                    },
-                ));
-                let report = session.report(now, 365);
+                session.health_input = health::HealthInput {
+                    now_ms: now,
+                    old_after_days: a.old_after_days.unwrap_or(365),
+                    breached: a.breached,
+                    ignored: a.ignored,
+                    skip_local: a.skip_local,
+                };
+                session.health = None;
+                let report = session.report(now);
                 Ok(Reply::view(json!({
                     "weak": report.weak,
                     "reused": report.reused,
@@ -1739,6 +1945,20 @@ impl Service {
                 let a: A = parse(call.args)?;
                 Ok(match_rows(&session.vault, Target::Web { url: &a.url }))
             }
+            // Whether two hosts belong to one site, by the public suffix list: accounts.example.com
+            // and www.example.com do, example.co.uk and other.co.uk do not.
+            "match.same_site" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    a: String,
+                    b: String,
+                }
+                let a: A = parse(call.args)?;
+                let same = !a.a.is_empty()
+                    && matching::registrable_domain(&a.a) == matching::registrable_domain(&a.b);
+                Ok(Reply::view(json!({ "same": same })))
+            }
             // Only for an entry that really matches the page, so a request cannot name any login
             // and carry its password off to some other site.
             "match.fill" => {
@@ -1813,6 +2033,7 @@ impl Service {
                     color: Option<String>,
                 }
                 let a: A = parse(call.args)?;
+                check_folder(&session.vault, a.folder.as_deref())?;
                 let at = session.vault.tick(now);
                 let mut entry = Entry {
                     kind: fields::new_kind(&a.kind)?,
@@ -1894,9 +2115,24 @@ impl Service {
                     reminders: Option<views::RemindersView>,
                     sites: Option<Vec<SiteMatcher>>,
                 }
-                let a: A = parse(call.args)?;
+                let mut a: A = parse(call.args)?;
                 session.entry(&a.id)?;
+                if let Some(Some(folder)) = &a.folder {
+                    check_folder(&session.vault, Some(folder))?;
+                }
+                a.tags = a.tags.map(clean_tags);
                 session.vault.edit(&a.id, now, |entry, at| {
+                    // A code item's issuer that was its name follows a rename, or other apps
+                    // shown the code would still call it by the old one.
+                    if let (Some(v), Kind::Otp(otp)) = (&a.title, &mut entry.kind)
+                        && let Some(config) = otp.config.v.as_ref()
+                        && config.issuer == entry.common.title.v
+                        && config.issuer != *v
+                    {
+                        let mut config = config.clone();
+                        config.issuer.clone_from(v);
+                        otp.config = Lww::new(Some(config), at);
+                    }
                     let common = &mut entry.common;
                     if let Some(v) = a.title {
                         common.title = Lww::new(v, at);
@@ -1984,11 +2220,15 @@ impl Service {
                 }
                 let a: A = parse(call.args)?;
                 session.entry(&a.id)?;
+                let name = a.name.trim();
+                if name.is_empty() {
+                    return Err(invalid("a field has a name"));
+                }
                 let value = Secret::new(text(call.secret)?);
                 session.vault.edit(&a.id, now, |entry, at| {
                     let mut list = entry.common.custom_fields.v.clone();
                     let field = Field {
-                        name: a.name,
+                        name: name.to_owned(),
                         value,
                         kind: views::field_kind_from(&a.kind),
                     };
@@ -2067,23 +2307,45 @@ impl Service {
                     id: String,
                     index: Option<usize>,
                     question: String,
+                    /// New wording for a saved question, which keeps its answer.
+                    keep_answer: bool,
                 }
                 let a: A = parse(call.args)?;
                 session.entry(&a.id)?;
-                let value = Secret::new(text(call.secret)?);
+                let value = if a.keep_answer { None } else { Some(Secret::new(text(call.secret)?)) };
                 session.vault.edit(&a.id, now, |entry, at| {
                     if let Some(login) = entry.login_mut() {
                         let mut list = login.questions.v.clone();
-                        let field = Field {
-                            name: a.question,
-                            value,
-                            kind: wmpass_core::model::FieldKind::Hidden,
-                        };
-                        match a.index.and_then(|i| list.get_mut(i)) {
-                            Some(slot) => *slot = field,
-                            None => list.push(field),
+                        match (a.index.and_then(|i| list.get_mut(i)), value) {
+                            (Some(slot), Some(value)) => {
+                                *slot = Field { name: a.question, value, kind: wmpass_core::model::FieldKind::Hidden };
+                            }
+                            (Some(slot), None) => slot.name = a.question,
+                            (None, Some(value)) => list.push(Field { name: a.question, value, kind: wmpass_core::model::FieldKind::Hidden }),
+                            (None, None) => return,
                         }
                         login.questions = Lww::new(list, at);
+                    }
+                })?;
+                session.touched();
+                Ok(Reply::ok())
+            }
+            "entry.question_remove" => {
+                #[derive(Deserialize, Default)]
+                #[serde(default)]
+                struct A {
+                    id: String,
+                    index: usize,
+                }
+                let a: A = parse(call.args)?;
+                session.entry(&a.id)?;
+                session.vault.edit(&a.id, now, |entry, at| {
+                    if let Some(login) = entry.login_mut() {
+                        let mut list = login.questions.v.clone();
+                        if a.index < list.len() {
+                            list.remove(a.index);
+                            login.questions = Lww::new(list, at);
+                        }
                     }
                 })?;
                 session.touched();
@@ -2102,14 +2364,27 @@ impl Service {
                 session.entry(&a.id)?;
                 let config = if a.clear {
                     None
+                } else if call.secret.iter().all(u8::is_ascii_whitespace) && (a.issuer.is_some() || a.account.is_some()) {
+                    // Only the names: the seed stays as it is, and need not be sent again.
+                    let entry = session.entry(&a.id)?;
+                    let mut config = otp_of(entry).cloned().ok_or_else(|| invalid("enter the setup key the site shows"))?;
+                    if let Some(issuer) = a.issuer {
+                        config.issuer = issuer;
+                    }
+                    if let Some(account) = a.account {
+                        config.account = account;
+                    }
+                    Some(config)
                 } else {
                     let raw = text(call.secret)?.trim();
                     let mut config = if raw.contains("://") {
                         OtpConfig::from_uri(raw)?
                     } else {
-                        let seed: String = raw.split_whitespace().collect();
+                        let seed = wmpass_core::otp::normalize_secret(raw);
                         // Checked now so a mistyped seed fails here, not at login time.
-                        wmpass_core::otp::base32_decode(&seed)?;
+                        if wmpass_core::otp::base32_decode(&seed)?.is_empty() {
+                            return Err(invalid("enter the setup key the site shows"));
+                        }
                         OtpConfig::totp(seed)
                     };
                     if let Some(issuer) = a.issuer {
@@ -2165,6 +2440,14 @@ impl Service {
                 // and purging either would take the other's file.
                 let at = session.vault.tick(now);
                 copy.common.attachments = Lww::new(Vec::new(), at);
+                // A passkey is one credential with one signature counter. Two items holding it
+                // would both be offered for it, and the counters would part, which a site can
+                // take for a cloned key and lock the account.
+                if let Some(login) = copy.login_mut()
+                    && !login.passkeys.v.is_empty()
+                {
+                    login.passkeys = Lww::new(Vec::new(), at);
+                }
                 let id = session.vault.add(copy, now)?;
                 session.touched();
                 Ok(Reply::view(json!({"id": id})))
@@ -2182,13 +2465,24 @@ impl Service {
                     to: String,
                     flag: bool,
                 }
-                let a: A = parse(call.args)?;
-                if a.op == "tag_rename" && a.to.trim().is_empty() {
+                let mut a: A = parse(call.args)?;
+                // A tag as typed: " #work " is the tag work.
+                a.tag = a.tag.trim().trim_start_matches('#').trim().to_owned();
+                a.to = a.to.trim().trim_start_matches('#').trim().to_owned();
+                if (a.op == "tag_rename" && a.to.is_empty()) || (matches!(a.op.as_str(), "tag_add" | "tag_rename") && a.tag.is_empty()) {
                     return Err(invalid("a tag has a name"));
+                }
+                if a.op == "folder" {
+                    check_folder(&session.vault, a.folder.as_deref())?;
+                }
+                // Every id is checked before any is touched: a list gone stale, as when another
+                // device emptied the trash first, must not leave half its items purged, unsaved,
+                // and their files' names lost.
+                for id in &a.ids {
+                    session.entry(id)?;
                 }
                 let mut delete_blobs = Vec::new();
                 for id in &a.ids {
-                    session.entry(id)?;
                     match a.op.as_str() {
                         "trash" => session.vault.trash(id, now)?,
                         "restore" => session.vault.restore(id, now)?,
@@ -2215,6 +2509,8 @@ impl Service {
                                 e.common.tags = Lww::new(tags, at);
                             }
                         })?,
+                        // Only items that have the tag change, so the rest keep their times.
+                        "tag_remove" | "tag_rename" if !session.entry(id)?.common.tags.v.contains(&a.tag) => {}
                         "tag_remove" => session.vault.edit(id, now, |e, at| {
                             let mut tags = e.common.tags.v.clone();
                             tags.retain(|t| *t != a.tag);
@@ -2276,7 +2572,9 @@ impl Service {
                     parent: Option<String>,
                 }
                 let a: A = parse(call.args)?;
-                let id = session.vault.add_folder(&a.name, a.parent, now)?;
+                let name = folder_name(&a.name)?;
+                check_folder(&session.vault, a.parent.as_deref())?;
+                let id = session.vault.add_folder(&name, a.parent, now)?;
                 session.touched();
                 Ok(Reply::view(json!({"id": id})))
             }
@@ -2288,6 +2586,10 @@ impl Service {
                     name: String,
                 }
                 let a: A = parse(call.args)?;
+                let name = folder_name(&a.name)?;
+                if !session.vault.doc.folders.contains_key(&a.id) {
+                    return Err(invalid("no such folder"));
+                }
                 let at = session.vault.tick(now);
                 let folder = session
                     .vault
@@ -2295,15 +2597,28 @@ impl Service {
                     .folders
                     .get_mut(&a.id)
                     .ok_or_else(|| invalid("no such folder"))?;
-                folder.name = Lww::new(a.name, at);
+                folder.name = Lww::new(name, at);
                 session.touched();
                 Ok(Reply::ok())
             }
             "folder.remove" => {
                 let a: Id = parse(call.args)?;
+                // A folder gone already may still be named by items, which are let go of it.
+                let named = session.vault.doc.entries.values().any(|e| e.common.folder.v.as_deref() == Some(a.id.as_str()));
+                if !session.vault.doc.folders.contains_key(&a.id) && !named {
+                    return Err(invalid("no such folder"));
+                }
                 let at = session.vault.tick(now);
-                session.vault.doc.folders.remove(&a.id);
+                let removed = session.vault.doc.folders.remove(&a.id);
                 session.vault.doc.tombstones.insert(a.id.clone(), at);
+                // Folders inside move up a level, to where this one was, rather than hang from a
+                // folder that is gone and drop out of every list.
+                let above = removed.and_then(|folder| folder.parent.v);
+                for folder in session.vault.doc.folders.values_mut() {
+                    if folder.parent.v.as_deref() == Some(a.id.as_str()) {
+                        folder.parent = Lww::new(above.clone(), at);
+                    }
+                }
                 let inside: Vec<String> = session
                     .vault
                     .doc
@@ -2383,7 +2698,9 @@ impl Service {
                     entry.common.attachments = Lww::new(list, at);
                 })?;
                 session.touched();
-                Ok(Reply::view(json!({"delete_blobs": [a.blob]})))
+                // Items merged together share their files: one still held elsewhere stays.
+                let delete: Vec<&str> = if session.vault.holds_blob(&a.blob) { Vec::new() } else { vec![a.blob.as_str()] };
+                Ok(Reply::view(json!({"delete_blobs": delete})))
             }
             // ---- import and export ----
             "import.read" => {
@@ -2399,7 +2716,7 @@ impl Service {
                 let format = match a.format.as_deref() {
                     Some(name) => format_by_name(name).ok_or_else(|| invalid("unknown format"))?,
                     None => io::detect(data)
-                        .ok_or_else(|| invalid("this file's format was not recognized"))?,
+                        .ok_or_else(|| invalid("this file's format was not recognized. Import the file the other app exported, as it saved it; the guide lists the apps WM Pass can read"))?,
                 };
                 let password = (!call.secret.is_empty())
                     .then(|| text(call.secret))
@@ -2580,7 +2897,7 @@ impl Service {
                     .map_err(|_| invalid("bad hash"))?
                     .try_into()
                     .map_err(|_| invalid("bad hash"))?;
-                let key = session
+                let mut key = session
                     .entry(&a.id)?
                     .login()
                     .and_then(|l| l.passkeys.v.iter().find(|k| k.credential_id == a.credential_id))
@@ -2588,6 +2905,21 @@ impl Service {
                     .clone();
                 if !passkey::rp_id_allowed(&a.origin_host, &key.rp_id) {
                     return Err(invalid("this site may not use that passkey"));
+                }
+                // A counter in use moves on, and is saved, before the signature leaves: a number
+                // sent twice would look to the site like a cloned authenticator.
+                if passkey::advance_counter(&mut key)? {
+                    let counter = key.counter;
+                    session.vault.edit(&a.id, now, |entry, at| {
+                        if let Some(login) = entry.login_mut() {
+                            let mut list = login.passkeys.v.clone();
+                            for stored in list.iter_mut().filter(|k| k.credential_id == a.credential_id) {
+                                stored.counter = counter;
+                            }
+                            login.passkeys = Lww::new(list, at);
+                        }
+                    })?;
+                    session.touched();
                 }
                 let assertion = passkey::sign(&key, &hash, a.user_verified)?;
                 Ok(Reply::view(json!({
@@ -2624,7 +2956,7 @@ impl Service {
                     .visible()
                     .filter_map(|entry| {
                         let Kind::SshKey(key) = &entry.kind else { return None };
-                        if !key.agent_allowed.v {
+                        if !key.agent_allowed.v || !ssh::agent_can_sign(&key.public_key.v) {
                             return None;
                         }
                         let public = ssh::public_blob(&key.public_key.v).ok()?;
@@ -2651,7 +2983,9 @@ impl Service {
                     .visible()
                     .find(|entry| {
                         let Kind::SshKey(key) = &entry.kind else { return false };
-                        key.agent_allowed.v && ssh::public_blob(&key.public_key.v).is_ok_and(|public| base64_encode(&public.0) == a.blob)
+                        key.agent_allowed.v
+                            && ssh::agent_can_sign(&key.public_key.v)
+                            && ssh::public_blob(&key.public_key.v).is_ok_and(|public| base64_encode(&public.0) == a.blob)
                     })
                     .ok_or_else(|| invalid("that key is not offered"))?;
                 let Kind::SshKey(key) = &entry.kind else {
@@ -2753,5 +3087,31 @@ mod tests {
         assert_eq!(base64_decode(&standard).unwrap(), bytes);
         assert_eq!(base64_decode(&B64.encode(&bytes)).unwrap(), bytes);
         assert!(base64_decode("not base64!").is_err());
+    }
+
+    #[test]
+    fn sorting_by_name_reads_accents_as_their_letters() {
+        let at = wmpass_core::clock::Hlc::default();
+        let mut rows: Vec<views::Summary> = ["Zebra", "Écran", "apple"]
+            .into_iter()
+            .map(|title| views::summary(&wmpass_core::vault::login_entry(title, "", "", at)))
+            .collect();
+        sort_rows(&mut rows, "title");
+        let titles: Vec<&str> = rows.iter().map(|r| r.title.as_str()).collect();
+        assert_eq!(titles, ["apple", "Écran", "Zebra"]);
+    }
+}
+
+#[cfg(test)]
+mod natural_sort_tests {
+    use super::natural_cmp;
+
+    #[test]
+    fn numbers_in_names_sort_by_value() {
+        let mut names = vec!["item 10", "item 2", "item 1", "item 02", "item", "item 2b", "item 2a", "1password", "10 things", "zebra"];
+        names.sort_by(|a, b| natural_cmp(a, b));
+        assert_eq!(names, ["1password", "10 things", "item", "item 1", "item 2", "item 02", "item 2a", "item 2b", "item 10", "zebra"]);
+        // Runs too long for any integer still compare.
+        assert!(natural_cmp("v99999999999999999999999", "v100000000000000000000000").is_lt());
     }
 }

@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Binder
 import android.os.Bundle
 import android.os.Process
+import com.wasimaster.wmpass.app.AutoLock
 import com.wasimaster.wmpass.app.Prefs
 import com.wasimaster.wmpass.core.LockState
 import com.wasimaster.wmpass.core.Pass
@@ -51,9 +52,29 @@ class KeyboardProvider : ContentProvider() {
             val done = Pass.state.value is LockState.Unlocked && FieldActions.run(extras?.getString(FieldWire.TOKEN).orEmpty(), arg.orEmpty())
             return Bundle().apply { putBoolean(FieldWire.DONE, done) }
         }
-        val prefs = Prefs(context)
+        // The one the settings screen shows, so a switch turned on here shows there at once.
+        val prefs = Prefs.of(context)
         prefs.switchOnFirstTime(prefs.keyboardAccess)
         if (!prefs.keyboardAccess.value) return status("off")
+        // The vault's background time may have run out while the phone slept.
+        // On the main thread, where everything else that changes the vault's state runs.
+        if (runCatching { runBlocking(if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) kotlin.coroutines.EmptyCoroutineContext else Dispatchers.Main) { AutoLock.lockIfOverdue() } }.isFailure) return status("locked")
+        // A call that fails (an item deleted meanwhile, a save that cannot be written) comes back
+        // as the vault's state with [VaultWire.ERROR], never as an exception: one thrown here would
+        // reach the keyboard as a crash in the middle of typing, or take this process down.
+        return try {
+            answer(context, prefs, method, arg, extras)
+        } catch (failure: Exception) {
+            val state = when (Pass.state.value) {
+                is LockState.Unlocked -> "open"
+                LockState.Locked -> "locked"
+                LockState.NoVault -> "none"
+            }
+            status(state).apply { putString(VaultWire.ERROR, failure.message ?: "That did not work.") }
+        }
+    }
+
+    private fun answer(context: android.content.Context, prefs: Prefs, method: String, arg: String?, extras: Bundle?): Bundle {
         // Opening the vault from the keyboard, and locking it: the calls that work while it is locked.
         runBlocking { KeyboardUnlock.call(context, method, extras) }?.let { return it }
         if (Pass.state.value == LockState.NoVault) return status("none")
@@ -74,7 +95,8 @@ class KeyboardProvider : ContentProvider() {
                 "code" -> status("open").apply { code(arg.orEmpty(), this) }
                 "api_keys" -> status("open").apply { putString("rows", apiKeys(arg.orEmpty())) }
                 "save_api_key" -> status("open").apply { saveApiKey(extras, this) }
-                else -> throw IllegalArgumentException("Unknown call.")
+                // A call from a newer keyboard than this app knows: said, not thrown.
+                else -> status("open").apply { putString(VaultWire.ERROR, "This version of WM Pass does not know that call. Update it to use it.") }
             }
         }
     }
@@ -97,10 +119,13 @@ class KeyboardProvider : ContentProvider() {
     /** An item the keyboard may see: not in the trash, and not on the hidden shelf. */
     private fun visible(id: String): Summary? = Pass.entries.value.firstOrNull { it.id == id && !it.trashed && !it.hidden }
 
-    /** The ids of what is saved for the app in front, best first; none for a guess. */
+    /** The ids of what is saved for the app in front, best first. */
     private suspend fun matched(focused: String): List<String> {
         val context = context ?: return emptyList()
         val cert = focused.takeIf { it.isNotEmpty() }?.let { Trust.certOf(context, it) } ?: return emptyList()
+        // A match by package name alone stays in: it only puts that login near the top of a list
+        // the person picks from, and the pick is the confirming tap. The code chip, which offers
+        // without a pick, leaves such matches out.
         return runCatching { Pass.matchApp(focused, cert).map { it.entry.id } }.getOrDefault(emptyList())
     }
 
@@ -156,7 +181,8 @@ class KeyboardProvider : ContentProvider() {
         val summary = visible(id) ?: return null
         return runCatching {
             when {
-                field == VaultWire.CODE -> if (summary.hasOtp) Found.Secret("Code", Pass.code(id)) else null
+                // Typed into the site on this tap, so a counter code moves its counter on.
+                field == VaultWire.CODE -> if (summary.hasOtp) codeToUse(id, Pass.detail(id).otp)?.let { Found.Secret("Code", it) } else null
                 field == VaultWire.NOTES -> if (Pass.detail(id).hasNotes) Found.Secret("Notes", Pass.reveal(id, VaultWire.NOTES)) else null
                 field.startsWith(VaultWire.SITE) -> {
                     val index = field.removePrefix(VaultWire.SITE).toIntOrNull() ?: return null
@@ -207,7 +233,7 @@ class KeyboardProvider : ContentProvider() {
         val app = extras?.getString(VaultWire.APP)?.trim().orEmpty()
         if (title.isEmpty() && username.isEmpty() && password.isEmpty() && website.isEmpty()) return null
         val linked = app.takeIf {
-            it.isNotEmpty() && it != context.packageName && it !in KEYBOARD_PACKAGES && !Trust.isVerifiedBrowser(context, it)
+            it.isNotEmpty() && it != context.packageName && it !in KEYBOARD_PACKAGES && !Trust.mayNameDomain(context, it)
         }
         val cert = linked?.let { Trust.certOf(context, it) }
         val appName = if (linked != null && cert != null) Trust.labelOf(context, linked) else ""
@@ -241,6 +267,11 @@ class KeyboardProvider : ContentProvider() {
                     put("id", id)
                     put("field", VaultWire.PASSWORD)
                 }
+            } catch (failure: Exception) {
+                // The keyboard is told it failed and will try again: the login made a moment ago
+                // goes, or the try would leave one more login with no password each time.
+                runCatching { Pass.change("entry.purge") { put("id", id) } }
+                throw failure
             } finally {
                 bytes.fill(0)
             }
@@ -309,7 +340,9 @@ class KeyboardProvider : ContentProvider() {
         val field = extras?.getString("field")?.takeIf { it == API_KEY || it == API_SECRET }
         val value = extras?.getString("value")?.trim().orEmpty()
         if (title.isEmpty() || value.isEmpty() || field == null) return
-        val existing = Pass.entries.value.firstOrNull { it.kind == "api" && !it.trashed && it.title == title }
+        // Not one on the hidden shelf, which the keyboard is never shown: its reply would give the
+        // item away, and the key would land somewhere the person cannot see from the keyboard.
+        val existing = Pass.entries.value.firstOrNull { it.kind == "api" && !it.trashed && !it.hidden && it.title == title }
         val id = existing?.id ?: Pass.change("entry.create") {
             put("kind", "api")
             put("title", title)
@@ -334,10 +367,15 @@ class KeyboardProvider : ContentProvider() {
     private suspend fun code(focused: String, out: Bundle) {
         val context = context ?: return
         val cert = Trust.certOf(context, focused) ?: return
-        val entry = Pass.matchApp(focused, cert).map { it.entry }.firstOrNull { it.hasOtp } ?: return
+        // Not a login saved by package name alone: any app may take that name, and the chip names
+        // nothing that would let the person see which login the code is from.
+        val entry = Pass.matchApp(focused, cert).filter { it.level != "unverified" }.map { it.entry }.firstOrNull { it.hasOtp } ?: return
         val row = Pass.codes(listOf(entry.id)).firstOrNull() ?: return
+        // Not a counter code: the chip is offered before anything is tapped, and showing one would
+        // use it up, or offer one the site has already taken.
+        if (row.otp.period == null) return
         out.putString("code", Pass.code(entry.id).consume { String(it) })
-        out.putInt("seconds_left", row.secondsLeft ?: 30)
+        out.putInt("seconds_left", row.secondsLeft ?: row.otp.period ?: 30)
     }
 
     override fun query(uri: Uri, projection: Array<out String>?, selection: String?, selectionArgs: Array<out String>?, sortOrder: String?): Cursor? = null

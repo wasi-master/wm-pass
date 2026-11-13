@@ -107,6 +107,12 @@
   const free = $derived(values.filter((a) => a === 'free').length);
   const unclear = $derived(values.filter((a) => a === 'unknown' || typeof a === 'object').length);
 
+  function visit(url: string) {
+    void host()
+      .openUrl(url)
+      .catch((failure: any) => (problem = sentence(failure?.message ?? 'That page could not be opened.')));
+  }
+
   const WORDS: Record<string, string> = { free: 'Free', taken: 'Taken', unknown: 'No clear answer' };
 </script>
 
@@ -119,7 +125,7 @@
     <div><Btn label={running ? 'Checking…' : 'Check'} icon="person_search" variant="primary" disabled={running || !name.trim()} onclick={checkAll} /></div>
     {#if !local && remote && known.length === 0 && problem}<p class="dim">Open the desktop app and connect it under Settings, Desktop app, to check names from here.</p>{/if}
     {#if pagesRemote && local}<p class="dimmer small">TikTok and Instagram are checked by the desktop app, so connect it under Settings, Desktop app, for those two.</p>{/if}
-    {#if problem}<p class="danger-text">{problem}</p>{/if}
+    {#if problem}<p class="danger-text" role="alert">{problem}</p>{/if}
     {#if values.length > 0}
       <div class="stack" style="gap:6px">
         <p class="dim">
@@ -143,7 +149,7 @@
         {@const failed = typeof answer === 'object' ? answer.failed : null}
         {@const opens = !!asked && answer !== undefined && answer !== 'checking'}
         <div class="set-row" class:act={opens}>
-          {#if opens}<button type="button" class="hit" aria-label="Open {shortPage(site, asked)}" onclick={() => void host().openUrl(page(site, asked))}></button>{/if}
+          {#if opens}<button type="button" class="hit" aria-label="Open {shortPage(site, asked)}" onclick={() => visit(page(site, asked))}></button>{/if}
           <span style="display:flex;pointer-events:none"><Tile title={site.name} icon={site.icon} size={30} /></span>
           <span class="text">
             <span class="ell" style="display:block">{site.name}</span>
@@ -170,7 +176,7 @@
     <Group title="Look for yourself" help="group.usernames.links">
       {#each linked as site (site.name)}
         <div class="set-row" class:act={!!asked}>
-          {#if asked}<button type="button" class="hit" aria-label="Open {shortPage(site, asked)} in your browser" onclick={() => void host().openUrl(page(site, asked))}></button>{/if}
+          {#if asked}<button type="button" class="hit" aria-label="Open {shortPage(site, asked)} in your browser" onclick={() => visit(page(site, asked))}></button>{/if}
           <span style="display:flex;pointer-events:none"><Tile title={site.name} icon={site.icon} size={30} /></span>
           <span class="text">
             <span class="ell" style="display:block">{site.name}</span>

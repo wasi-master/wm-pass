@@ -41,6 +41,13 @@ export function kindName(kind: string): string {
   return table[kind] ?? kind;
 }
 
+/** The kind's name inside a sentence, as in "New login", keeping SSH, API and Wi-Fi as they are. */
+export function kindInSentence(kind: string): string {
+  const name = kindName(kind);
+  const first = name.split(' ')[0];
+  return /[A-Z]/.test(first.slice(1)) ? name : name.charAt(0).toLowerCase() + name.slice(1);
+}
+
 export function kindPlural(kind: string): string {
   const table: Record<string, string> = {
     login: 'Logins',

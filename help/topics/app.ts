@@ -15,7 +15,7 @@ export const app = [
     how: [
       'The file holds every customization: appearance and themes, icons, the vault list, the sidebar, the editor, the item page, codes, the generator, health checks and keyboard shortcuts. Nothing from your vault is in it.',
       'A file saved on the phone works on the computer, and the other way round. Settings one of them does not have are skipped.',
-      'Protection settings never travel in a settings file. Lock timers, clipboard clearing, screenshot blocking, the network switch, the tray and start-up choices, the browser extension\'s connection, the SSH agent, auto-type, update checks and the quick search shortcut are left out when you save, and ignored when you import. A file from someone else cannot weaken them.',
+      'Protection settings never travel in a settings file. Lock timers, clipboard clearing, screenshot blocking, the network switch, the tray and start-up choices, the browser extension\'s connection, the SSH agent, auto-type, update checks, the quick search shortcut and what widgets may show are left out when you save, and ignored when you import. A file from someone else cannot weaken them.',
     ],
     caveats: [
       'How long the trash keeps items is saved in the vault itself, so it is not in a settings file either.',
@@ -127,8 +127,11 @@ export const app = [
     on: {
       android: {
         how: [
+          'Type in **Search the guide** to find a topic by its words. The search at the top of Settings finds guide topics too.',
+          '**Start here** shows the welcome again or takes you round the app. **Tours** lists the other tours, and marks the ones you have finished.',
+          'Under each settings page, **About the page** explains the page, and opening its line lists the topics on it.',
           'The same topics open from the **?** beside a setting or a page title.',
-          'Two settings decide how the guide shows itself: [[setting.help_buttons]] and [[setting.help_hints]].',
+          'At the bottom, **The guide itself** has two settings: [[setting.help_buttons]] and [[setting.help_hints]].',
         ],
       },
     },
@@ -138,9 +141,9 @@ export const app = [
     kind: 'action',
     title: 'Show the welcome again',
     page: 'guide',
-    shells: ['desktop', 'extension'],
     what: 'Opens the short welcome from your first unlock again: how to find, add and copy things, and how to ask what anything does.',
     how: '**Show me around** in it starts the tour of the window.',
+    on: { android: { how: '**Show me around** in it starts the tour of the app.' } },
     related: ['action.guide_take_tour', 'page.guide'],
     words: 'onboarding introduction start',
   },
@@ -149,11 +152,17 @@ export const app = [
     kind: 'action',
     title: 'Take the tour',
     page: 'guide',
-    shells: ['desktop', 'extension'],
     what: 'Points out the parts of this window one at a time.',
     how: 'A narrow window gets its own version, since its parts are laid out differently.',
     tour: 'tour.window',
     related: ['screen.window', 'action.show_welcome'],
+    on: {
+      android: {
+        what: 'Points out the parts of the app one at a time: search, adding, your items, the tabs, the lock and Settings.',
+        how: 'Once finished, it shows as **Done**, and it can be taken again.',
+        tour: 'tour.home',
+      },
+    },
     words: 'tour walkthrough introduction window',
   },
   {
@@ -186,13 +195,14 @@ export const app = [
     title: 'Tips on new pages',
     page: 'guide',
     pref: 'help_hints',
-    what: 'Shows a one-line note at the top of Codes, Health and the Hidden shelf the first time you open each one.',
+    what: 'Shows a one-line note at the top of Codes and Health the first time you open each one.',
     how: 'The note says what the page is for. **More** opens its guide page, **Tour** starts its tour where it has one, and the cross, **Do not show this again**, hides it. After any of these, that note does not come back on this device.',
     related: ['page.guide', 'setting.help_buttons'],
     words: 'hints tips first time notes',
     on: {
       android: {
-        how: 'The note says what the page is for, with a way to read more. Once you have followed it or closed it, that note does not come back on this device.',
+        what: 'Shows a one-line note at the top of Codes, Health and the Hidden shelf the first time you open each one.',
+        how: 'The note says what the page is for. **More** opens its guide page, and the cross, **Do not show this again**, hides it. After either, that note does not come back on this device.',
       },
     },
   },

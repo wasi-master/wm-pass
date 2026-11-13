@@ -1,5 +1,6 @@
 package com.wasimaster.wmpass.ui.vault
 
+import androidx.compose.ui.semantics.heading
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
@@ -100,7 +101,10 @@ fun LockPatternGrid(value: String, modifier: Modifier = Modifier, size: Dp = 220
         }
     }
     val measurer = rememberTextMeasurer()
-    val labelStyle = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Bold, color = colors.ground)
+    // Grows with the font size only so far: each number sits inside a 24dp dot, and at the
+    // largest sizes it would spill over the dot's edge and the line.
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val labelStyle = TextStyle(fontSize = with(density) { (11.dp * fontScale.coerceAtMost(1.3f)).toSp() }, fontWeight = FontWeight.Bold, color = colors.ground)
     val description = remember(path) { lockSteps(path).joinToString(". ") }
     Box(
         modifier
@@ -160,9 +164,10 @@ fun LockPatternGuide(value: String, modifier: Modifier = Modifier) {
     val steps = remember(value) { lockSteps(lockPath(value)) }
     if (steps.isEmpty()) return
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("How to draw it", color = colors.text, style = MaterialTheme.typography.titleSmall)
+        Text("How to draw it", color = colors.text, style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
         steps.forEachIndexed { index, step ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // Each step one stop, its number with it.
+            Row(Modifier.semantics(mergeDescendants = true) { }, verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
                     Text("${index + 1}", color = colors.primary, style = MaterialTheme.typography.labelLarge)
                 }

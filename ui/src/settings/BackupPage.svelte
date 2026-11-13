@@ -7,6 +7,7 @@
   import { overlays } from '../parts/floating.svelte';
   import { pass } from '../engine/pass.svelte';
   import { host } from '../engine/host';
+  import { EngineError } from '../engine/frame';
   import { shownName } from '../hosts/folders';
   import Choice from './Choice.svelte';
   import CopiesDialog from './CopiesDialog.svelte';
@@ -42,9 +43,21 @@
     overlays.toast(problem ?? `Copied to ${place.label}.`);
   }
 
+  // Saving or merging by hand, so a second click waits for the first.
+  let handling = $state(false);
+
   async function saveFile() {
-    await host().saveFile('Save a backup', 'wm-pass.wmbackup', await pass.bundle());
-    message = 'The backup is saved. It opens with your vault’s password.';
+    if (handling) return;
+    handling = true;
+    try {
+      if (await host().saveFile('Save a backup', 'wm-pass.wmbackup', await pass.bundle())) {
+        message = 'The backup is saved. It opens with your vault’s password.';
+      }
+    } catch (failure: any) {
+      message = failure?.message ?? 'The backup could not be saved.';
+    } finally {
+      handling = false;
+    }
   }
 
   function mergedText(merged: number) {
@@ -52,8 +65,25 @@
   }
 
   async function mergeFile() {
-    const file = await host().pickFile('Choose a backup or vault file');
-    if (file) message = mergedText(await pass.mergeIn(file.bytes));
+    if (handling) return;
+    let file;
+    try {
+      file = await host().pickFile('Choose a backup or vault file');
+    } catch (failure: any) {
+      message = failure?.message ?? 'That file could not be read.';
+      return;
+    }
+    if (!file) return;
+    handling = true;
+    try {
+      message = mergedText(await pass.mergeIn(file.bytes));
+    } catch (failure) {
+      // The engine's own words where it gave some, such as a vault that cannot be written; a file
+      // too broken to read as a zip has only the browser's, which say nothing useful.
+      message = failure instanceof EngineError ? failure.message : 'That is not a WM Pass backup or vault file.';
+    } finally {
+      handling = false;
+    }
   }
 
   function openCopies(place: Place) {
@@ -62,14 +92,23 @@
   }
 
   async function bringBack(bytes: Uint8Array) {
-    message = mergedText(await pass.mergeIn(bytes));
+    try {
+      message = mergedText(await pass.mergeIn(bytes));
+    } catch (failure: any) {
+      message = failure?.message ?? 'That copy could not be read.';
+    }
     restoring = null;
   }
 
   async function stopUsing(place: Place) {
     acting = null;
     const yes = await overlays.ask({ title: `Stop using ${place.label}?`, body: 'WM Pass forgets this place and its login. Copies already there stay where they are.', action: 'Stop using it', danger: true });
-    if (yes) await places.remove(place.id);
+    if (!yes) return;
+    try {
+      await places.remove(place.id);
+    } catch (failure: any) {
+      overlays.toast(failure?.message ?? 'That place could not be forgotten.');
+    }
   }
 </script>
 
@@ -92,8 +131,8 @@
 
 <Group title="By hand" anchor="group:backup.manual">
   <div class="set-body gap wrap">
-    <Btn label="Save a file" icon="upload" onclick={saveFile} />
-    <Btn label="Merge a file" icon="download" onclick={mergeFile} />
+    <Btn label="Save a file" icon="upload" disabled={handling} onclick={saveFile} />
+    <Btn label="Merge a file" icon="download" disabled={handling} onclick={mergeFile} />
   </div>
 </Group>
 {#if message}<p class="dim">{message}</p>{/if}

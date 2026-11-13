@@ -56,7 +56,7 @@
             {/if}
           </span>
           {#if !compact && subtitle}
-            <span class="sub ell" style="display:block">{'stack' in item ? `${item.stack.length} logins` : row.subtitle}</span>
+            <span class="sub ell" style="display:block">{'stack' in item ? `${item.stack.length} accounts` : row.subtitle}</span>
           {/if}
         </span>
         {#if 'stack' in item}<span class="dimmer" style="display:flex"><Icon name="expand_more" size={18} /></span>{/if}

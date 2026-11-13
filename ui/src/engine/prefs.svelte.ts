@@ -12,6 +12,9 @@ interface Def {
   /** Settings that weaken protection never come from a file someone else made. */
   portable?: boolean;
   allowed?: readonly string[];
+  /** For a number: what a file, another device or an older version may set, inclusive. */
+  min?: number;
+  max?: number;
 }
 
 const SETTINGS = 'prefs';
@@ -45,7 +48,7 @@ const DEFS = {
   custom_themes: { value: '' },
   rich_motion: { value: true },
   colour_secrets: { value: true },
-  text_scale: { value: 100 },
+  text_scale: { value: 100, min: 50, max: 200 },
   density: { value: 'comfortable', allowed: ['compact', 'comfortable', 'spacious'] },
 
   // ---- icons ----
@@ -78,8 +81,8 @@ const DEFS = {
   sidebar_tags: { value: true },
   sidebar_counts: { value: true },
   sidebar_open: { value: true },
-  sidebar_width: { value: 216 },
-  list_width: { value: 320 },
+  sidebar_width: { value: 216, min: 160, max: 360 },
+  list_width: { value: 320, min: 240, max: 560 },
   start_tab: { value: 'first', allowed: ['first', 'last'] },
   last_tab: { value: '' },
   show_lock: { value: true },
@@ -97,7 +100,7 @@ const DEFS = {
   entry_action_username: { value: true },
   entry_action_open: { value: true },
   tap_copies: { value: true },
-  reveal_seconds: { value: 45 },
+  reveal_seconds: { value: 45, min: 0, max: 86_400 },
 
   // ---- codes ----
   code_groups: { value: true },
@@ -109,8 +112,8 @@ const DEFS = {
 
   // ---- generator ----
   gen_mode: { value: 'password', allowed: ['password', 'passphrase', 'pronounceable', 'pin', 'pattern'] },
-  gen_length: { value: 20 },
-  gen_words: { value: 4 },
+  gen_length: { value: 20, min: 4, max: 128 },
+  gen_words: { value: 4, min: 2, max: 20 },
   gen_symbols: { value: true },
   gen_no_ambiguous: { value: false },
   gen_show_bits: { value: true },
@@ -226,21 +229,28 @@ class Prefs {
     if (typeof value !== typeof def.value) return false;
     if (def.allowed && !def.allowed.includes(value as string)) return false;
     if (typeof value === 'number' && !Number.isFinite(value)) return false;
+    // A settings file from anyone could set the text to 1% or ask for a million words.
+    if (typeof value === 'number' && ((def.min !== undefined && value < def.min) || (def.max !== undefined && value > def.max))) return false;
     return true;
   }
 
   private persist() {
     if (!this.loaded) return;
-    void host().saveSettings(SETTINGS, JSON.stringify(this.v));
+    host()
+      .saveSettings(SETTINGS, JSON.stringify(this.v))
+      .catch((failure) => console.warn('Settings could not be saved', failure));
   }
 
-  /** Told about every setting someone changes, for the vault to carry it to other devices. */
-  onSet: ((key: PrefKey) => void) | null = null;
+  /**
+   * Told about every setting someone changes, for the vault to carry it to other devices. A
+   * settings file or a reset changes many at once, and they come together.
+   */
+  onSet: ((keys: PrefKey[]) => void) | null = null;
 
   set<K extends PrefKey>(key: K, value: PrefValues[K]) {
     (this.v as any)[key] = value;
     this.persist();
-    this.onSet?.(key);
+    this.onSet?.([key]);
   }
 
   // ---- settings that follow the vault ----
@@ -290,7 +300,11 @@ class Prefs {
     for (const theme of list) {
       try {
         const checked = readTheme(themeToText(theme));
-        clean.push(typeof theme.id === 'string' && /^custom_[\w-]{1,40}$/.test(theme.id) ? { ...checked, id: theme.id } : checked);
+        const id = typeof theme.id === 'string' && /^custom_[\w-]{1,40}$/.test(theme.id) ? theme.id : checked.id;
+        // A font file is named only by its key, and this person's own devices may have it. A
+        // stranger's theme drops it, but losing it here would reset it on every device that syncs.
+        const font = typeof theme.font === 'string' && /^file:[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}$/.test(theme.font) ? theme.font : checked.font;
+        clean.push({ ...checked, id, font });
       } catch {
         // A theme that fails the checks stays behind.
       }
@@ -412,24 +426,30 @@ class Prefs {
     }
     if (renamed[json.theme_id]) json.theme_id = renamed[json.theme_id];
     if (json.theme_id === 'system') delete json.theme_id;
-    let changed = 0;
+    const changed: PrefKey[] = [];
     for (const [key, def] of Object.entries(DEFS) as [PrefKey, Def][]) {
       if (def.portable === false || !(key in json)) continue;
       if (this.fits(def, json[key]) && json[key] !== this.v[key]) {
         (this.v as any)[key] = json[key];
-        changed++;
+        changed.push(key);
       }
     }
     this.persist();
-    return changed;
+    // Told like any other change, or the vault's older values would come back on the next sync.
+    if (changed.length) this.onSet?.(changed);
+    return changed.length;
   }
 
   /** Puts every customisation back. Your own themes and protection settings stay. */
   resetCustomisations() {
+    const changed: PrefKey[] = [];
     for (const [key, def] of Object.entries(DEFS) as [PrefKey, Def][]) {
-      if (def.portable !== false && key !== 'custom_themes') (this.v as any)[key] = def.value;
+      if (def.portable === false || key === 'custom_themes' || this.v[key] === def.value) continue;
+      (this.v as any)[key] = def.value;
+      changed.push(key);
     }
     this.persist();
+    if (changed.length) this.onSet?.(changed);
   }
 }
 

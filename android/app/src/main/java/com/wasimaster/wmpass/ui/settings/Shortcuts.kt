@@ -118,7 +118,17 @@ fun ShortcutsScreen() {
                     .focusable()
                     .onPreviewKeyEvent { event ->
                         if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                        // Back, and Escape on its own, still close the sheet rather than becoming the shortcut.
+                        val plain = !event.isCtrlPressed && !event.isAltPressed && !event.isShiftPressed && !event.isMetaPressed
+                        if (event.key == androidx.compose.ui.input.key.Key.Back || (plain && event.key == androidx.compose.ui.input.key.Key.Escape)) {
+                            return@onPreviewKeyEvent false
+                        }
                         val chord = chordOf(event) ?: return@onPreviewKeyEvent false
+                        // One action per chord: the one that had it loses it, which is said rather than
+                        // left to be found out when that shortcut does nothing.
+                        ShortcutNames.filter { (other, _) -> other != id && prefs.shortcuts[other] == chord }.forEach { (_, name) ->
+                            shell.notice("$chord was taken from $name")
+                        }
                         prefs.updateShortcut(id, chord)
                         editing = null
                         true

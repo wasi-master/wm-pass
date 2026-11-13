@@ -91,6 +91,8 @@ class HelpTest {
             "health_hidden",
             // Which folds on a settings page were left open.
             "folds_open",
+            // The signing certificates of the chosen panic apps, kept beside setting.panic_app.
+            "panic_app_certs",
             // No switch on the phone: a page that needs the network asks, and feature.network explains.
             "network_allowed",
             // Whether the vault list still offers, once, to be the autofill service.

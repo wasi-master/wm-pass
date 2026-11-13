@@ -2,6 +2,23 @@
 
 import type { Topic } from '../schema.ts';
 
+/** What each kind of place needs, the same on every platform that offers it. */
+const PLACE_KINDS = [
+  'Only the encrypted file goes there. What WM Pass needs to sign in stays on this device, sealed.',
+  '- A folder on this device. Syncthing, Nextcloud or a cloud provider\'s own app can carry it on from there.',
+  '- With Google Drive, Dropbox, OneDrive and Box you sign in on the service\'s own page, in your browser. WM Pass never sees that password, and can reach only its own folder there. Google Drive can use a hidden app folder or a folder you can see.',
+  '- With pCloud, MEGA and Proton Drive you sign in here, with a code afterwards if the account asks for one. WM Pass keeps the session the sign-in hands back, not your password.',
+  '- With iCloud Drive you sign in here, and Apple asks for a code from one of your devices. The sign-in lasts about a month, then WM Pass asks again.',
+  '- For WebDAV, such as Nextcloud, pick a service to have the address filled in, or type it.',
+  '- For S3, such as Backblaze or MinIO, pick a service for its endpoint and regions, or type the endpoint.',
+  '- SFTP signs in with a password or an OpenSSH private key. The server\'s key is remembered on the first connection, and if it ever changes WM Pass refuses to connect.',
+  '- FTP and SMB reach a server, or a Windows or Samba share.',
+  '- NFS reaches an export on your network. NFS without Kerberos takes the user and group ids on trust and does not encrypt, so use it only on a network you control.',
+  '- Synology and QNAP reach a NAS through its own file manager.',
+  '- Git keeps copies in a folder of a private repository on GitHub, GitLab or Gitea (which also covers Forgejo and Codeberg), with an access token. Each copy is a commit.',
+  '- Email keeps copies in a mailbox, over IMAP. Each copy is one message.',
+];
+
 export const backup = [
   // ---- backup ----
 
@@ -15,6 +32,7 @@ export const backup = [
     how: [
       'A backup is the encrypted vault file itself. It holds every vault on this device, nested vaults and attachments included, without showing how many there are. Only your password opens it, so it can sit on a server you do not trust.',
       '[[group.backup.places|Where they go]] lists your places. [[action.backup_schedule|How often]] makes copies on its own, [[action.backup_keep|How many to keep]] limits them, and [[action.backup_save_file|Save a file]] and [[action.backup_merge_file|Merge a file]] work by hand.',
+      'To get the vault back on a new device, or after a wipe, use **Restore from a file** or **Restore from a backup location** at the [[screen.door|door]]. On a device that has a vault already, the copy waits and merges in when you next unlock.',
     ],
     when: 'Set up at least one place soon after you make your vault, somewhere other than this device.',
     figure: 'fig.backup',
@@ -35,6 +53,15 @@ export const backup = [
       'Changing the details of an account place lets you keep its current sign-in, so you do not have to sign in again.',
     ],
     related: ['action.add_place', 'action.backup_now', 'action.restore_copy', 'feature.places'],
+    on: {
+      android: {
+        how: [
+          'Each row shows when the last copy was made there, or what went wrong.',
+          'The backup button on a row makes a copy there now. Tap the row itself to bring back a copy, change its details or stop using it. Stopping affects sync through that place too.',
+          'Changing the details of an account place offers **Keep the current sign-in**, so you do not have to sign in again.',
+        ],
+      },
+    },
   },
   {
     id: 'action.backup_now',
@@ -57,20 +84,8 @@ export const backup = [
     page: 'backup',
     what: 'Sets up somewhere new to keep copies: a folder, an account, a server, a Git repository or a mailbox.',
     how: [
-      'Choose the kind, give it a name and fill in what that kind needs. Before a server or account is saved, WM Pass checks that it answers with what you typed, and says what went wrong if it does not; nothing is kept until it works. A backup then runs straight away.',
-      'Only the encrypted file goes there. What WM Pass needs to sign in stays on this device, sealed.',
-      '- A folder on this device. Syncthing, Nextcloud or a cloud provider\'s own app can carry it on from there.',
-      '- With Google Drive, Dropbox, OneDrive and Box you sign in on the service\'s own page, in your browser. WM Pass never sees that password, and can reach only its own folder there. Google Drive can use a hidden app folder or a folder you can see.',
-      '- With pCloud, MEGA and Proton Drive you sign in here, with a code afterwards if the account asks for one. WM Pass keeps the session the sign-in hands back, not your password.',
-      '- With iCloud Drive you sign in here, and Apple asks for a code from one of your devices. The sign-in lasts about a month, then WM Pass asks again.',
-      '- For WebDAV, such as Nextcloud, pick a service to have the address filled in, or type it.',
-      '- For S3, such as Backblaze or MinIO, pick a service for its endpoint and regions, or type the endpoint.',
-      '- SFTP signs in with a password or an OpenSSH private key. The server\'s key is remembered on the first connection, and if it ever changes WM Pass refuses to connect.',
-      '- FTP and SMB reach a server, or a Windows or Samba share.',
-      '- NFS reaches an export on your network. NFS without Kerberos takes the user and group ids on trust and does not encrypt, so use it only on a network you control.',
-      '- Synology and QNAP reach a NAS through its own file manager.',
-      '- Git keeps copies in a folder of a private repository on GitHub, GitLab or Gitea (which also covers Forgejo and Codeberg), with an access token. Each copy is a commit.',
-      '- Email keeps copies in a mailbox, over IMAP. Each copy is one message.',
+      'Choose the kind, give it a name and fill in what that kind needs. An account or a NAS signs in before it is saved, and says what went wrong if the sign-in fails. Any other place is saved as you typed it. A backup then runs straight away, and the place\'s row says whether it worked.',
+      ...PLACE_KINDS,
     ],
     caveats: [
       'Saving any place but a folder turns on [[setting.network_allowed]], since reaching it is the reason you set it up.',
@@ -90,8 +105,13 @@ export const backup = [
         ],
       },
       android: {
+        how: [
+          'Choose the kind, give it a name and fill in what that kind needs. Before a place is saved, WM Pass checks that it answers with what you typed, and says what went wrong if it does not; nothing is kept until it works. A backup then runs straight away.',
+          'With WM Keyboard installed, **Use a place from WM Keyboard** copies one of its backup places here instead of typing it again.',
+          ...PLACE_KINDS,
+        ],
         caveats: [
-          'Any place but a folder needs [[setting.network_allowed]]. Until it is on, a backup there stops and says network features are turned off.',
+          'Saving any place but a folder turns on [[setting.network_allowed]], since reaching it is the reason you set it up. If you turn it off later, a backup there stops and says network features are turned off.',
           'Google Drive, Dropbox, OneDrive and Box are offered only by builds made with an app id for that service.',
         ],
       },
@@ -113,7 +133,6 @@ export const backup = [
     kind: 'action',
     title: 'Encrypt the connection',
     page: 'backup',
-    shells: ['desktop', 'android'],
     what: 'Uses TLS on an FTP connection, so the server\'s password crosses the network encrypted.',
     effects: [
       { value: true, label: 'On', text: 'TLS starts before the sign-in, and the password and the file travel inside it.' },
@@ -128,7 +147,6 @@ export const backup = [
     kind: 'action',
     title: 'Require encryption',
     page: 'backup',
-    shells: ['desktop', 'android'],
     what: 'Requires SMB 3 encryption for everything after the sign-in, and refuses a server that cannot do it.',
     effects: [
       { value: true, label: 'On', text: 'The file and everything else after the sign-in cross the network encrypted.' },
@@ -289,7 +307,6 @@ export const backup = [
     kind: 'concept',
     title: 'This account',
     page: 'sync',
-    shells: ['desktop', 'android'],
     what: 'The server account that is open now, and how its changes reach the server.',
     how: [
       'Changes go up after each edit. If the server cannot be reached, they wait on this device and go up on the next try.',
@@ -367,8 +384,9 @@ export const backup = [
     shells: ['desktop', 'android'],
     what: 'Introduces another device to this one, once, so the two can sync over this network.',
     how: [
-      'Choose one of four ways. Each ends with both devices holding the other\'s key.',
+      'Choose one of five ways. Each ends with both devices holding the other\'s key.',
       '- With **Show a code**, this computer shows a QR code for the other device to scan, and the same code as text for a computer that cannot scan. It works once and stops in two minutes.',
+      '- With **Scan a code**, the other device shows its code, and this computer\'s camera reads it.',
       '- With **Paste a code**, the other device shows its code, and you paste its text here.',
       '- With **Compare six digits**, this side waits and the other connects. Both screens show six digits, and if they match you choose **They match** on both.',
       '- **Compare six digits, finding the other** does the same from the side that connects to a device already waiting.',
@@ -423,6 +441,7 @@ export const backup = [
     what: 'Sends this vault to a phone or computer that has none yet, and pairs the two for syncing.',
     how: [
       'First, on the new device, choose **I already have a vault**, then [[action.join_device|Get it from another device]]. It shows a code and waits.',
+      '- **Scan its code** reads the QR code on the new device\'s screen with this computer\'s camera, or from a picture of it.',
       '- **Find it on this network** looks for it, then both screens show six digits. If they match, choose **They match** on both.',
       '- **Paste its code** takes the text under the new device\'s QR code, for a computer or the terminal app.',
       'The new device then asks for this vault\'s master password.',
@@ -441,6 +460,7 @@ export const backup = [
         how: [
           'First, on the new device, choose **I already have a vault**, then [[action.join_device|Get it from another device]]. It shows a code and waits.',
           '- **Scan its code** reads the QR code on the new device\'s screen, from a computer, a phone or the terminal app.',
+          '- **Paste its code** takes the text under the code, for a computer or the terminal app.',
           '- **Find it on this network** looks for it, then both screens show six digits. If they match, tap **They match** on both.',
           'The new device then asks for this vault\'s master password.',
         ],
@@ -559,7 +579,7 @@ export const backup = [
       'Adding one stores only where it is. You sign in at the door, where it opens in place of this vault.',
       'A KeePass file stays where it is, and WM Pass writes back to it on each save. It keeps one earlier copy beside its own files, in case a write is cut off.',
       'A server account keeps an offline copy here, encrypted as the server\'s is, so it opens without the network and catches up when it can.',
-      'Click an account to remove it. WM Pass forgets it on this device, with its offline copy. Nothing on the server or in the file changes.',
+      'The delete button beside an account removes it. WM Pass forgets it on this device, with its offline copy. Nothing on the server or in the file changes.',
     ],
     caveats: 'Bitwarden does not publish its API, so a change on their side can break this.',
     related: ['action.add_account', 'group.sync.account', 'screen.door'],
@@ -567,13 +587,17 @@ export const backup = [
     words: 'bitwarden vaultwarden keepass kdbx server account',
     on: {
       extension: {
-        what: 'Vaults that live somewhere other than this browser, such as a KeePass file. Each one appears on the door beside this vault.',
+        what: 'Vaults that live somewhere other than this browser: a KeePass file, or an account on Bitwarden, Vaultwarden or a WM Pass server. Each one appears on the door beside this vault.',
         how: [
-          'Adding one stores only where it is. You open it at the door, in place of this vault.',
-          'WM Pass writes changes back to the file on each save, and keeps one earlier copy beside its own files in case a write is cut off.',
-          'Click an account to remove it. WM Pass forgets it here. Nothing in the file changes.',
+          'Adding one stores only where it is. You sign in at the door, where it opens in place of this vault.',
+          'In Chrome and Edge, which let a page use a file you pick, a KeePass file stays where it is and WM Pass writes back to it on each save. Other browsers cannot, so WM Pass keeps its own copy of the file here, and changes go to that copy rather than the file you chose.',
+          'A server account keeps an offline copy here, encrypted as the server\'s is, so it opens without the network and catches up when it can.',
+          'The delete button beside an account removes it. WM Pass forgets it here, with its offline copy. Nothing on the server or in the file changes.',
         ],
-        caveats: 'A self-hosted server is reached through the browser, which cannot pin its certificate the way the desktop and phone apps do. It trusts whatever certificate the browser trusts.',
+        caveats: [
+          'Bitwarden does not publish its API, so a change on their side can break this.',
+          'A self-hosted server is reached through the browser, which cannot pin its certificate the way the desktop and phone apps do. It trusts whatever certificate the browser trusts.',
+        ],
       },
     },
   },
@@ -582,8 +606,11 @@ export const backup = [
     kind: 'action',
     title: 'Add an account',
     page: 'sync',
-    what: 'Adds a KeePass file or a server account to the door. Tap one in the list to open it, change its details or remove it.',
-    how: 'Signing in to a server sends your email address, a name and an id for this device, and a key derived from your password that proves who you are, as any Bitwarden client does. Your password itself is never sent. After that, your items travel encrypted.',
+    what: 'Adds a KeePass file or a server account to the door. The delete button beside it in the list removes it again.',
+    how: [
+      'Signing in to a server sends your email address, a name and an id for this device, and a key derived from your password that proves who you are, as any Bitwarden client does. Your password itself is never sent. After that, your items travel encrypted.',
+      'Once it is added, **Sign in now** locks this vault and takes you to the door with the account chosen. **Later** leaves it there for next time.',
+    ],
     effects: [
       { value: 'bitwarden', label: 'Bitwarden', text: 'An account at bitwarden.com.' },
       { value: 'eu', label: 'Bitwarden EU', text: 'An account at bitwarden.eu.' },
@@ -592,7 +619,7 @@ export const backup = [
     ],
     caveats: [
       'Adding a server account turns on [[setting.network_allowed]].',
-      'Before an account is added, WM Pass checks that the address answers as a Bitwarden server does. Whether the email and password are right shows only at the first sign-in; until then the door offers **Change the details** and **Remove this account** when it fails.',
+      'Nothing is checked when you add it. Whether the address, email and password are right shows at the first sign-in, at the door.',
       'WM Pass refuses a server that asks for weaker password protection than it accepts.',
       'The first sign-in from a new device can be held back until you confirm it: Bitwarden emails a code, and the door asks for it beside your password.',
     ],
@@ -601,18 +628,22 @@ export const backup = [
     words: 'bitwarden vaultwarden keepass kdbx login sign in',
     on: {
       extension: {
-        what: 'Adds a KeePass file to the door.',
-        how: 'Choose the file. It stays where it is, and you open it at the door with its own password.',
-        effects: [{ value: 'kdbx', label: 'KeePass file', text: 'A .kdbx file, opened where it is.' }],
-        caveats: 'The extension does not reach servers itself, so it offers KeePass files only. Use the desktop app or the phone for a server account.',
+        effects: [
+          { value: 'bitwarden', label: 'Bitwarden', text: 'An account at bitwarden.com.' },
+          { value: 'eu', label: 'Bitwarden EU', text: 'An account at bitwarden.eu.' },
+          { value: 'server', label: 'Own server', text: 'Vaultwarden, or the WM Pass server, at the address you type.' },
+          { value: 'kdbx', label: 'KeePass file', text: 'A .kdbx file. Chrome and Edge open it where it is; other browsers keep a copy of it here.' },
+        ],
       },
       android: {
         how: [
           'Signing in to a server sends your email address, a name and an id for this phone, and a key derived from your password that proves who you are, as any Bitwarden client does. Your password itself is never sent. After that, your items travel encrypted.',
           'Once it is added, **Sign in now** locks this vault and takes you to the door with the account chosen. **Later** leaves it there for next time.',
         ],
+        what: 'Adds a KeePass file or a server account to the door. Tap one in the list to open it, change its details or remove it.',
         caveats: [
-          'A server account needs [[setting.network_allowed]].',
+          'Adding a server account turns on [[setting.network_allowed]].',
+          'Before a server account is added, WM Pass checks that the address answers as a Bitwarden server does. Whether the email and password are right shows only at the first sign-in; until then the door offers **Change the details** and **Remove this account** when it fails.',
           'WM Pass refuses a server that asks for weaker password protection than it accepts.',
           'The first sign-in from a new device can be held back until you confirm it: Bitwarden emails a code, and the door asks for it beside your password.',
         ],
@@ -638,6 +669,15 @@ export const backup = [
     figure: 'fig.vaults',
     related: ['feature.vaults', 'action.nested_vault', 'action.shared_vault'],
     words: 'family share nested child vault team',
+    on: {
+      android: {
+        how: [
+          'A nested vault is its own encrypted file, opened from inside this one without asking again.',
+          'A shared vault is held at a place you and the others can all reach, such as a shared folder or a WebDAV server. Each person has their own key to it, and the owner decides who is in. No server is needed.',
+          'Under **Yours**, each one says what it is: nested, shared with you, shared and yours to manage, or waiting for the owner\'s invitation. Tap one to open it. **You are inside**, at the top, takes you back out.',
+        ],
+      },
+    },
   },
   {
     id: 'action.nested_vault',
@@ -711,6 +751,15 @@ export const backup = [
     ],
     related: ['action.shared_vault', 'action.join_shared_vault'],
     words: 'members add remove owner fingerprint',
+    on: {
+      android: {
+        how: [
+          'Each person shows with their name and a fingerprint of their key.',
+          'To add someone, paste the code they made to join and choose **Check it**, or choose **Scan it** and scan their code. Ask them to read their code out. If it matches the one shown, choose **It matches**, then give them the invitation that appears, to scan or paste. Anyone can see the invitation, but only that person can use it.',
+          'To remove someone, use the remove button beside their name.',
+        ],
+      },
+    },
   },
 
   // ---- receive ----

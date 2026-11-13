@@ -87,7 +87,10 @@
   }
 
   async function rename() {
+    // Enter pressed again while the name is on its way would send it twice.
+    if (busy) return;
     busy = true;
+    sheetProblem = null;
     try {
       await pass.net('inbox.rename', online(), { id, label: label.trim() });
       await pass.flush();
@@ -101,6 +104,7 @@
   }
 
   async function close(remove: boolean) {
+    if (busy) return;
     busy = true;
     sheetProblem = null;
     try {
@@ -154,7 +158,7 @@
       </span>
     {/snippet}
     {#if problem}
-      <div class="set-body"><p class="danger-text small">{problem}</p></div>
+      <div class="set-body"><p class="danger-text small" role="alert">{problem}</p></div>
     {/if}
     {#if mail && mail.length === 0}
       <div class="set-body"><p class="dim">Nothing yet. This page looks for new mail every few seconds while it is open.</p></div>
@@ -183,7 +187,7 @@
   <Dialog title="Name this address" onclose={() => !busy && (renaming = false)}>
     <div class="stack">
       <Field bind:value={label} placeholder="What it is for" autofocus onenter={rename} />
-      {#if sheetProblem}<p class="danger-text small">{sheetProblem}</p>{/if}
+      {#if sheetProblem}<p class="danger-text small" role="alert">{sheetProblem}</p>{/if}
     </div>
     {#snippet foot()}
       <Btn label="Cancel" disabled={busy} onclick={() => (renaming = false)} />
@@ -200,7 +204,7 @@
           ? `WM Pass forgets ${inbox.address} and its mail. Anything saved to the vault stays.`
           : `WM Pass forgets ${inbox.address}. Guerrilla Mail clears it on its own within the hour. Anything saved to the vault stays.`}
       </p>
-      {#if sheetProblem}<p class="danger-text small">{sheetProblem}</p>{/if}
+      {#if sheetProblem}<p class="danger-text small" role="alert">{sheetProblem}</p>{/if}
     </div>
     {#snippet foot()}
       <Btn label="Cancel" disabled={busy} onclick={() => (closing = false)} />

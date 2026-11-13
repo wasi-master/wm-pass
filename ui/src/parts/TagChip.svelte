@@ -20,8 +20,8 @@
 </script>
 
 <span class="chip tag-chip" class:on={selected} oncontextmenu={menu} role="presentation">
-  <button type="button" class="main" aria-pressed={selected} {onclick} title={onmanage ? 'Right-click to rename or delete' : undefined}>
-    <Icon name={tags.glyph(tag)} size={14} />{tag}
+  <button type="button" class="main" aria-pressed={selected} {onclick} title={onmanage ? `${tag}. Right-click to rename or delete` : tag}>
+    <Icon name={tags.glyph(tag)} size={14} /><span class="ell">{tag}</span>
   </button>
   {#if onremove}
     <button type="button" class="cross" aria-label="Take off {tag}" title="Take off {tag}" onclick={onremove}><Icon name="close" size={12} /></button>
@@ -30,6 +30,9 @@
 
 <style>
   .tag-chip { padding: 0; gap: 0; }
+  /* A long name is cut short, and the cross that takes it off stays in reach. */
+  .main { min-width: 0; }
+  .main > :global(svg), .cross { flex: none; }
   .tag-chip.on { background: var(--second-c); border-color: transparent; color: var(--text); }
   .main {
     display: inline-flex;
@@ -57,4 +60,7 @@
     padding: 0;
   }
   .cross:hover { background: var(--hover); }
+  /* Drawn at 20, pressed over 24 by 24. */
+  .cross { position: relative; }
+  .cross::after { content: ''; position: absolute; left: 50%; top: 50%; width: 24px; height: 24px; transform: translate(-50%, -50%); }
 </style>

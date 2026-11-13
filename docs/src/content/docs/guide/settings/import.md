@@ -20,9 +20,9 @@ Pick the file with **Choose a file**. WM Pass works out the format itself and sh
 
 It reads these files:
 
-- 1Password (1PUX), Bitwarden (JSON or CSV), and KeePass or KeePassXC (the .kdbx database itself, KeePass's XML export, or KeePassXC's CSV).
+- 1Password (1PUX, or the CSV 1Password 8 writes), Bitwarden (JSON or CSV), and KeePass or KeePassXC (the .kdbx database itself, KeePass's XML export, or KeePassXC's CSV).
 - SafeInCloud's own database file (SafeInCloud.db, or a backup its app made), or its XML export.
-- CSV from Apple Passwords, Avast, Avira, Buttercup, Chrome and other Chromium browsers, Dashlane, Firefox, LastPass, mSecure, NordPass, RoboForm and Zoho Vault.
+- CSV from Apple Passwords, Avast, Avira, Buttercup, Chrome and other Chromium browsers, Dashlane, Firefox, LastPass, mSecure, NordPass, Proton Pass, RoboForm and Zoho Vault.
 - JSON from Avast, Enpass, Keeper and Psono, Proton Pass's JSON or unencrypted ZIP, XML from Password Safe and Sticky Password, and Kaspersky Password Manager's text file.
 - Authenticators: Aegis, 2FAS, andOTP, Authenticator Pro (Stratum), Bitwarden Authenticator, FreeOTP+, LastPass Authenticator, Proton Authenticator and Raivo files, and a text file of otpauth links, one per line, which is what Ente Auth's plain-text export is.
 - Google Authenticator's export codes, with [Scan Google Authenticator's code](/guide/settings/import/#action-import-scan-google), or a screenshot of a code chosen as the file.
@@ -31,9 +31,9 @@ It reads these files:
 
 With nested vaults, **Import into** picks where the items go: this vault or one of them. The nested vault is opened for the import and closed again when you leave the page.
 
-Folders in the file become folders here, matched by name. Attachments come along from KeePass, SafeInCloud and 1Password files. A KeePass or SafeInCloud database, or a password-protected Proton Authenticator export, asks for its password. A KeePass database can also take its key file, and **Use security key** adds a YubiKey that KeePassXC set up for challenge-response, in slot 2 unless you chose slot 1.
+Folders in the file become folders here, matched by name. Attachments come along from KeePass, SafeInCloud and 1Password 1PUX files. A KeePass or SafeInCloud database, or a password-protected Proton Authenticator export, asks for its password. A KeePass database can also take its key file, and **Use security key** adds a YubiKey that KeePassXC set up for challenge-response, in slot 2 unless you chose slot 1.
 
-A login with the same site, username and password as one already in the vault is skipped, so importing the same file twice adds nothing.
+A login with the same site, username and password as one already in the vault is skipped, and so is a one-time code with the same key and settings, so importing the same file twice adds no login or code again. Notes, cards and other items are not compared, and come in again.
 
 The file is read on this device. Nothing is sent anywhere.
 
@@ -47,7 +47,7 @@ Once, when you move to WM Pass, or to bring in one-time codes from an authentica
 
 Most export files hold your passwords in plain text. Delete the file once WM Pass has read it, and empty the recycle bin.
 
-Encrypted exports from Bitwarden, Proton Pass, Aegis, 2FAS and Authenticator Pro cannot be read. Export them again without encryption. A KeePass database locked with a YubiKey opens only where WM Pass can reach the key: in the desktop app by USB, not in the browser extension.
+Encrypted exports from Bitwarden, Proton Pass, Aegis, 2FAS and Authenticator Pro cannot be read. Export them again without encryption. A KeePass database locked with a YubiKey opens only where WM Pass can reach the key by USB: in the desktop app, or in the browser extension while it is connected to the desktop app.
 
 The importers were tested against sample files written from each format's published or observed layout, not against exports from every real app. Compare the count afterwards.
 
@@ -57,19 +57,20 @@ Tap **Choose a file**. WM Pass works out the format itself and shows how many it
 
 It reads these files:
 
-- 1Password (1PUX), Bitwarden (JSON or CSV), and KeePass or KeePassXC (the .kdbx database itself, KeePass's XML export, or KeePassXC's CSV).
+- 1Password (1PUX, or the CSV 1Password 8 writes), Bitwarden (JSON or CSV), and KeePass or KeePassXC (the .kdbx database itself, KeePass's XML export, or KeePassXC's CSV).
 - SafeInCloud's own database file (SafeInCloud.db, or a backup its app made), or its XML export.
-- CSV from Apple Passwords, Avast, Avira, Buttercup, Chrome and other Chromium browsers, Dashlane, Firefox, LastPass, mSecure, NordPass, RoboForm and Zoho Vault.
+- CSV from Apple Passwords, Avast, Avira, Buttercup, Chrome and other Chromium browsers, Dashlane, Firefox, LastPass, mSecure, NordPass, Proton Pass, RoboForm and Zoho Vault.
 - JSON from Avast, Enpass, Keeper and Psono, Proton Pass's JSON or unencrypted ZIP, XML from Password Safe and Sticky Password, and Kaspersky Password Manager's text file.
 - Authenticators: Aegis, 2FAS, andOTP, Authenticator Pro (Stratum), Bitwarden Authenticator, FreeOTP+, LastPass Authenticator, Proton Authenticator and Raivo files, and a text file of otpauth links, one per line, which is what Ente Auth's plain-text export is.
 - Google Authenticator's export codes, with [Scan Google Authenticator's code](/guide/settings/import/#action-import-scan-google), or a screenshot of a code chosen as the file.
+- The Wi-Fi networks this phone has saved, with [Wi-Fi saved on this computer](/guide/settings/import/#action-import-saved-wifi).
 - A CSV that WM Pass exported.
 
 With nested vaults, **Import into** picks where the items go: this vault or one of them. The nested vault is opened for the import and closed again when you leave the page.
 
-Folders in the file become folders here, matched by name. Attachments come along from KeePass, SafeInCloud and 1Password files. A KeePass or SafeInCloud database, or a password-protected Proton Authenticator export, asks for its password. A KeePass database can also take its key file, and **Use security key** adds a YubiKey that KeePassXC set up for challenge-response, in slot 2 unless you chose slot 1.
+Folders in the file become folders here, matched by name. Attachments come along from KeePass, SafeInCloud and 1Password 1PUX files. A KeePass or SafeInCloud database, or a password-protected Proton Authenticator export, asks for its password. A KeePass database can also take its key file, and **Use security key** adds a YubiKey that KeePassXC set up for challenge-response, in slot 2 unless you chose slot 1.
 
-A login with the same site, username and password as one already in the vault is skipped, so importing the same file twice adds nothing.
+A login with the same site, username and password as one already in the vault is skipped, and so is a one-time code with the same key and settings, so importing the same file twice adds no login or code again. Notes, cards and other items are not compared, and come in again.
 
 The file is read on the phone. Nothing is sent anywhere.
 

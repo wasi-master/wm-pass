@@ -13,6 +13,10 @@ use serde_json::{Value, json};
 
 /// Chrome refuses a message from a host over 1 MiB.
 const LARGEST: usize = 1024 * 1024;
+/// The longest frame from the app that still fits one browser message once it is base64 in
+/// `{"f":"…"}`. The same figure as `wmpass_bridge::LARGEST_TO_BROWSER`, which the app keeps to;
+/// this program carries no keys and does not link that crate.
+const LARGEST_TO_BROWSER: usize = (LARGEST - r#"{"f":""}"#.len()) / 4 * 3;
 
 fn read_browser(input: &mut impl Read) -> io::Result<Vec<u8>> {
     let mut length = [0u8; 4];
@@ -113,11 +117,23 @@ fn main() {
     });
 
     while let Ok(frame) = read_frame(&mut from_app) {
-        if write_browser(&mut stdout, &json!({"f": B64.encode(&frame)})).is_err() {
+        // Too long to pass on: the browser would drop the connection with no word of why. A frame
+        // left out would leave every one after it unreadable, so the connection ends either way,
+        // but the extension is told the reason.
+        let message = browser_message(&frame);
+        if write_browser(&mut stdout, &message).is_err() || message.get("closed").is_some() {
             return;
         }
     }
     let _ = write_browser(&mut stdout, &json!({"closed": true}));
+}
+
+/// What goes to the browser for one frame from the app.
+fn browser_message(frame: &[u8]) -> Value {
+    if frame.len() > LARGEST_TO_BROWSER {
+        return json!({"closed": true, "problem": "The desktop app sent an answer too large for the browser to take, so the connection was reset."});
+    }
+    json!({"f": B64.encode(frame)})
 }
 
 #[cfg(test)]
@@ -146,6 +162,17 @@ mod tests {
         assert!(read_browser(&mut input.as_slice()).is_err());
         let input = u32::MAX.to_le_bytes();
         assert!(read_frame(&mut input.as_slice()).is_err());
+    }
+
+    #[test]
+    fn the_largest_frame_fits_and_a_longer_one_is_said_not_lost() {
+        let mut out = Vec::new();
+        write_browser(&mut out, &browser_message(&vec![7u8; LARGEST_TO_BROWSER])).unwrap();
+        assert!(out.len() - 4 <= LARGEST);
+        let over = browser_message(&vec![7u8; LARGEST_TO_BROWSER + 1]);
+        assert_eq!(over["closed"], true);
+        let mut out = Vec::new();
+        write_browser(&mut out, &over).unwrap();
     }
 
     #[test]

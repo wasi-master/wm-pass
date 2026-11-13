@@ -196,7 +196,14 @@ impl Db {
 
     /// Marks that an account's contents changed.
     pub async fn touch_user(&self, id: &str, now: i64) -> Result<(), sqlx::Error> {
-        sqlx::query("UPDATE users SET revision = $1 WHERE id = $2").bind(now).bind(id).execute(&self.pool).await?;
+        // Only ever forward. Two changes whose requests finish out of order, or a clock set
+        // back, would otherwise move it back, and a client that synced at the later time would
+        // read "nothing new" and miss the other change until the next one.
+        sqlx::query("UPDATE users SET revision = CASE WHEN revision >= $1 THEN revision + 1 ELSE $1 END WHERE id = $2")
+            .bind(now)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 }

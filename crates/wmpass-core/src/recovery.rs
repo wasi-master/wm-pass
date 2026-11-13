@@ -19,7 +19,10 @@ pub enum PhraseCheck {
 
 /// Checks a phrase against the English BIP-39 list.
 pub fn check_phrase(phrase: &str) -> PhraseCheck {
-    match Mnemonic::parse_normalized(&phrase.split_whitespace().collect::<Vec<_>>().join(" ")) {
+    // A phone capitalises the first word as it is typed; the list's words are lower case.
+    let lower = zeroize::Zeroizing::new(phrase.to_lowercase());
+    let words = zeroize::Zeroizing::new(lower.split_whitespace().collect::<Vec<_>>().join(" "));
+    match Mnemonic::parse_normalized(&words) {
         Ok(found) => PhraseCheck::Valid {
             words: found.word_count(),
         },
@@ -40,6 +43,7 @@ mod tests {
             check_phrase(&format!("  {good}\n")),
             PhraseCheck::Valid { words: 12 }
         );
+        assert_eq!(check_phrase(&good.replacen('a', "A", 1)), PhraseCheck::Valid { words: 12 });
         let bad = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon";
         assert_eq!(check_phrase(bad), PhraseCheck::BadChecksum);
         assert_eq!(

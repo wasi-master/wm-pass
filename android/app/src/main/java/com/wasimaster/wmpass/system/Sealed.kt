@@ -22,6 +22,9 @@ object Sealed {
     private const val ALIAS = "wmpass.local"
     private const val IV = 12
 
+    // One at a time: two first uses at once would each make a key, and whatever the first sealed
+    // could not be read again under the second.
+    @Synchronized
     private fun key(): SecretKey {
         val store = KeyStore.getInstance(STORE).apply { load(null) }
         (store.getKey(ALIAS, null) as? SecretKey)?.let { return it }
@@ -58,6 +61,9 @@ object Sealed {
         temp.writeBytes(cipher.iv + sealed)
         temp.renameTo(target)
     }
+
+    /** When [name] was last written, or 0 when there is no such file: a stat, nothing decrypted. */
+    fun modified(context: Context, name: String): Long = File(File(context.filesDir, "sealed"), name).lastModified()
 
     fun delete(context: Context, name: String) {
         file(context, name).delete()

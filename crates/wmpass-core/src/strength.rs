@@ -26,7 +26,7 @@ pub const STRONG_ENOUGH: u8 = 3;
 /// such as the site's name and the username.
 pub fn assess(password: &str, context: &[&str]) -> Strength {
     // zxcvbn's cost grows quickly past this length and strength has long plateaued.
-    let capped: String = password.chars().take(256).collect();
+    let capped = zeroize::Zeroizing::new(password.chars().take(256).collect::<String>());
     let entropy = zxcvbn::zxcvbn(&capped, context);
     let times = entropy.crack_times();
     let (warning, suggestions) = entropy.feedback().map_or((None, Vec::new()), |feedback| {

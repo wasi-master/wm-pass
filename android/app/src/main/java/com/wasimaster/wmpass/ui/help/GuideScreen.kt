@@ -7,7 +7,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.wasimaster.wmpass.ui.icons.PassIcons
@@ -44,7 +44,10 @@ fun GuideScreen() {
     val colors = palette
     val field = rememberTextFieldState()
     val query = field.text.toString()
-    val open = remember { mutableStateListOf<String>() }
+    // Which pages are open survives turning the phone, as the search does.
+    val open = androidx.compose.runtime.saveable.rememberSaveable(
+        saver = androidx.compose.runtime.saveable.listSaver(save = { it.toList() }, restore = { it.toMutableStateList() }),
+    ) { mutableStateListOf<String>() }
     WmScreen("Guide", route = "settings/guide", onBack = { shell.nav.popBackStack() }) {
         Text(
             "What every part of WM Pass does, and why. The same pages open from the ? beside a setting or a page title.",

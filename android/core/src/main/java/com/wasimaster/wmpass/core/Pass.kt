@@ -26,6 +26,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.int
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
@@ -62,6 +63,16 @@ sealed interface UnlockResult {
 
     /** A duress password asking for a hard lock. */
     data object HardLocked : UnlockResult
+}
+
+/** What the current password led to, before a change of password. */
+sealed interface SlotCheck {
+    data class Opens(val slot: Int) : SlotCheck
+
+    /** Right so far, and this slot also needs its key file or security key. */
+    data class NeedsFactor(val factors: List<NeededFactor>) : SlotCheck
+
+    data object Wrong : SlotCheck
 }
 
 data class NeededFactor(val kind: String, val credentialId: String? = null, val salt: String? = null, val challenge: String? = null, val slot: Int? = null)
@@ -132,6 +143,13 @@ object Pass {
 
     private val vaultDir: File get() = File(context.filesDir, "vaults")
     private val linkedDir: File get() = File(context.filesDir, "linked")
+
+    /**
+     * Vault files restored from a backup while vaults were already here. They wait beside the
+     * folder, never over a file in it, until a password shows what they are: a copy that merges
+     * into the vault it opens, or the only one a password still opens.
+     */
+    private val heldDir: File get() = File(context.filesDir, "restored")
     private fun blobDir(name: String) = File(File(context.filesDir, "blobs"), name)
     val handleForTests: Long get() = handle
 
@@ -144,6 +162,7 @@ object Pass {
             device = SecureRandom().nextInt().let { if (it == 0) 1 else it }
             prefs.edit().putInt("device", device).apply()
         }
+        Engine.onInternal = ::internalError
         Engine.start(device)
         vaultDir.mkdirs()
         mutableState.value = if (vaultFiles().isEmpty()) LockState.NoVault else LockState.Locked
@@ -151,6 +170,9 @@ object Pass {
 
     private fun vaultFiles(): List<File> =
         vaultDir.listFiles { f -> f.isFile && !f.name.startsWith(".") }?.sortedBy { it.name }.orEmpty()
+
+    private fun heldFiles(): List<File> =
+        heldDir.listFiles { f -> f.isFile && !f.name.startsWith(".") }?.sortedBy { it.name }.orEmpty()
 
     /** Memory for the password hash, by what this phone can spare. */
     private fun kdfMemoryKib(): Int {
@@ -166,8 +188,17 @@ object Pass {
 
     // ---- the door ----
 
+    /**
+     * An unlock is a fresh start after an internal error: one asked for from autofill, say, while
+     * the app's own screens still show the message about it.
+     */
+    private fun resumeForDoor() {
+        if (mutableState.value !is LockState.Unlocked) Engine.resume()
+    }
+
     /** Makes the first vault, with chaff files beside it so the folder gives nothing away. */
     suspend fun create(name: String, password: ByteArray): Unit = writing.withLock {
+        resumeForDoor()
         // Finished even if the caller goes away: a vault that opened on screen but never
         // reached the disk would go with the process.
         withContext(NonCancellable) {
@@ -265,24 +296,36 @@ object Pass {
     }
 
     suspend fun unlock(password: ByteArray, factors: List<Pair<String, ByteArray>> = emptyList()): UnlockResult {
+        resumeForDoor()
         retryAt().takeIf { it != 0L }?.let { return UnlockResult.Waiting(it) }
-        val files = vaultFiles()
-        val blobs = factors.map { it.second } + files.map { it.readBytes() }
-        val reply = Engine.call(
+        val local = vaultFiles()
+        val held = heldFiles()
+        suspend fun open(files: List<File>) = Engine.call(
             "vault.open",
             args = { putJsonArray("factors") { factors.forEach { add(it.first) } } },
             secret = password,
-            blobs = blobs,
+            blobs = factors.map { it.second } + files.map { it.readBytes() },
         )
+        // The files here come first, so a restored copy opens only when the password opens none
+        // of them: a password changed since the backup, or a local file that is damaged.
+        var files = local + held
+        val reply = try {
+            open(files)
+        } catch (failure: Exception) {
+            if (held.isEmpty() || failure is kotlinx.coroutines.CancellationException) throw failure
+            files = held
+            open(held)
+        }
         val obj = reply.obj
         return when (obj["outcome"]?.jsonPrimitive?.content) {
             "opened" -> {
                 noteSuccess()
                 val index = obj["index"]!!.jsonPrimitive.int
-                val target = files[index]
+                val target = files[index].let { if (it in held) takeInHeld(it) else it }
+                val readOnly = obj["read_only"]?.jsonPrimitive?.boolean == true
                 adopt(obj["handle"]!!.jsonPrimitive.long, target)
-                afterOpen(target.name, obj["generation"]!!.jsonPrimitive.long)
-                showOpen(obj["name"]!!.jsonPrimitive.content, target, obj["read_only"]?.jsonPrimitive?.boolean == true)
+                afterOpen(target.name, obj["generation"]!!.jsonPrimitive.long, readOnly)
+                showOpen(obj["name"]!!.jsonPrimitive.content, target, readOnly)
                 UnlockResult.Opened
             }
             "duress" -> when (obj["action"]?.jsonPrimitive?.content) {
@@ -296,76 +339,227 @@ object Pass {
                     UnlockResult.HardLocked
                 }
             }
-            "needs_factor" -> UnlockResult.NeedsFactor(
-                obj["factors"]!!.jsonArray.map {
-                    val f = it as kotlinx.serialization.json.JsonObject
-                    NeededFactor(
-                        f["kind"]!!.jsonPrimitive.content,
-                        f["credential_id"]?.jsonPrimitive?.contentOrNull,
-                        f["salt"]?.jsonPrimitive?.contentOrNull,
-                        f["challenge"]?.jsonPrimitive?.contentOrNull,
-                        f["slot"]?.jsonPrimitive?.int,
-                    )
-                },
-            )
+            "needs_factor" -> UnlockResult.NeedsFactor(neededFactors(obj["factors"]!!.jsonArray))
             else -> UnlockResult.Wrong(noteFailure())
         }
     }
 
     /** Opens with a key the phone's secure hardware just gave back. */
     suspend fun unlockWithKey(key: ByteArray, fileName: String) {
+        resumeForDoor()
+        // A panic or a lockout password refuses every way in for its hour, and a finger is easier
+        // to force than a password. A wait after wrong passwords holds the fingerprint back too.
+        check(retryAt() == 0L) { "Wait until the vault can be opened again." }
         val target = File(vaultDir, fileName)
         val reply = Engine.call("vault.open_key", secret = key, blobs = listOf(target.readBytes()))
         noteSuccess()
         val obj = reply.obj
+        val readOnly = obj["read_only"]?.jsonPrimitive?.boolean == true
         adopt(obj["handle"]!!.jsonPrimitive.long, target)
-        afterOpen(target.name, obj["generation"]!!.jsonPrimitive.long)
-        showOpen(obj["name"]!!.jsonPrimitive.content, target, obj["read_only"]?.jsonPrimitive?.boolean == true)
+        afterOpen(target.name, obj["generation"]!!.jsonPrimitive.long, readOnly)
+        showOpen(obj["name"]!!.jsonPrimitive.content, target, readOnly)
     }
 
-    private suspend fun afterOpen(name: String, generation: Long) {
+    private suspend fun afterOpen(name: String, generation: Long, readOnly: Boolean) {
         val seen = prefs.getLong("seen_$name", 0)
         rollbackWarning.value = generation < seen
         if (generation > seen) prefs.edit().putLong("seen_$name", generation).apply()
         val swept = Engine.call("vault.sweep", handle).obj["delete_blobs"]?.jsonArray.orEmpty()
         swept.forEach { deleteBlob(it.jsonPrimitive.content) }
         if (swept.isNotEmpty()) scheduleSave()
+        // A restored copy that cannot be dealt with now waits for the next unlock; it never keeps
+        // this vault from opening.
+        if (!readOnly) runCatching { absorbHeld() }
+        // This phone's name, so a warning on another device about its clock can name it.
+        if (!readOnly) {
+            val name = listOf(android.os.Build.MANUFACTURER, android.os.Build.MODEL)
+                .filter { !it.isNullOrBlank() && it != "unknown" }
+                .distinct()
+                .joinToString(" ") { it.replaceFirstChar(Char::uppercaseChar) }
+                .ifEmpty { "Android phone" }
+            val named = runCatching { Engine.call("vault.device_name", handle, { put("name", name) }) }.getOrNull()
+            if (named?.obj?.get("changed")?.jsonPrimitive?.boolean == true) scheduleSave()
+        }
         refresh()
+    }
+
+    /**
+     * A restored copy the password opened when it opened nothing here: moved into the folder
+     * under a new name, so a local file that shares its name is left as it was.
+     */
+    private fun takeInHeld(copy: File): File {
+        val target = File(vaultDir, randomHex(16))
+        check(copy.renameTo(target)) { "The restored vault could not be moved into place." }
+        target.setLastModified(FILE_TIME_MS)
+        // Its attachments go with it. A folder a local vault also uses is copied, not taken.
+        val blobs = blobDir(copy.name)
+        if (blobs.isDirectory) {
+            if (File(vaultDir, copy.name).exists() || !blobs.renameTo(blobDir(target.name))) carryBlobs(blobs, blobDir(target.name))
+        }
+        return target
+    }
+
+    /** Copies the attachments in [from] that [to] lacks. */
+    private fun carryBlobs(from: File, to: File) {
+        from.listFiles()?.filter { it.isFile && !it.name.startsWith(".") }?.forEach { blob ->
+            val target = File(to, blob.name)
+            if (!target.exists()) target.writeAtomically(blob.readBytes())
+        }
+    }
+
+    /**
+     * Deals with each restored copy once a vault here is open. A copy of this vault merges in
+     * and goes, as does one that is this vault's decoy or the same as a file here. Any other
+     * copy stays held: moved into the folder, an older copy could open before the newer file it
+     * shares a password with. It leaves only by merging into its own vault when that one opens,
+     * or by being the one a password opens when it opens nothing here.
+     */
+    private suspend fun absorbHeld() {
+        val held = heldFiles()
+        if (held.isEmpty()) return
+        val open = file ?: return
+        val local = vaultFiles().map { it.name }.toSet()
+        // This vault's own decoy: the backup's has the same name, and the one here replaces it.
+        val decoy = runCatching { Engine.call("vault.chaff_name", handle).obj["name"]!!.jsonPrimitive.content }.getOrNull()
+        val done = mutableListOf<File>()
+        var merged = false
+        held.forEach { copy ->
+            val bytes = copy.readBytes()
+            val twin = File(vaultDir, copy.name)
+            if (twin.isFile && twin.length() == bytes.size.toLong() && twin.readBytes().contentEquals(bytes)) {
+                done += copy
+            } else if (runCatching { Engine.call("vault.merge", handle, blobs = listOf(bytes)) }.isSuccess) {
+                merged = true
+                if (copy.name != open.name) {
+                    val blobs = blobDir(copy.name)
+                    if (blobs.isDirectory) {
+                        carryBlobs(blobs, blobDir(open.name))
+                        if (copy.name !in local) blobs.deleteRecursively()
+                    }
+                }
+                done += copy
+            } else if (copy.name == decoy) {
+                done += copy
+            }
+        }
+        // Saved before the copies go, so that what they brought is on disk first.
+        if (merged) flush()
+        done.forEach { it.delete() }
     }
 
     /** True when the file on disk is older than one this phone has already seen. */
     val rollbackWarning = MutableStateFlow(false)
 
+    private val mutableNotices = MutableStateFlow(VaultNotices())
+
+    /** What the open vault has to tell its owner, read again after every change and merge. */
+    val notices: StateFlow<VaultNotices> = mutableNotices.asStateFlow()
+
+    private suspend fun readNotices(active: Long) {
+        val obj = runCatching { Engine.call("vault.notices", active).obj }.getOrNull() ?: return
+        if (handle != active) return
+        val conflict = obj["password_conflict"] as? JsonObject
+        val clock = obj["clock_warning"] as? JsonObject
+        mutableNotices.value = VaultNotices(
+            passwordConflict = conflict?.get("message")?.jsonPrimitive?.contentOrNull,
+            bothOpen = conflict?.get("both_open")?.jsonPrimitive?.boolean == true,
+            clockWarning = clock?.get("message")?.jsonPrimitive?.contentOrNull,
+        )
+    }
+
+    /** Marks a lost change of password, which the owner has now read about, as told on every device. */
+    suspend fun passwordLossSeen() {
+        change("slot.conflict_seen")
+    }
+
     /** Saves anything pending and forgets every key. */
-    suspend fun lock() {
-        leaveChild()
-        flush()
+    // Not cancellable: a lock cut off part way (the app coming back, its caller's scope ending)
+    // would leave the vault open, or the engine locked behind a screen that still shows it.
+    suspend fun lock(): Unit = withContext(NonCancellable) {
+        // A save that fails here (a shared vault's server out of reach, a KeePass file whose
+        // provider is gone) must not leave the vault open: it locks all the same.
+        // A nested vault that could not be left failed its own save; the one behind it was saved on
+        // the way in, so a second try would only wait on the same failure.
+        if (runCatching { leaveChild() }.isSuccess) runCatching { flush() }
         Engine.lockAll()
-        handle = 0
-        file = null
-        accountWriter = null
-        afterAccountSave = null
-        mutableAccount.value = null
+        forgetOpen()
         mutableEntries.value = emptyList()
+        mutableNotices.value = VaultNotices()
         mutableFolders.value = emptyList()
         mutableTagIcons.value = emptyMap()
         mutableState.value = if (vaultFiles().isEmpty()) LockState.NoVault else LockState.Locked
     }
 
+    // ---- an internal error ----
+
+    private val mutableHeld = MutableStateFlow<LockState?>(null)
+
+    /**
+     * After an internal error, what the app's screens were showing, which they keep showing under
+     * a message until the person has read it and goes to the door ([leaveInternal]). Null
+     * otherwise. [state] is already locked by then, for everything else: widgets, tiles, autofill.
+     */
+    val internalHeld: StateFlow<LockState?> = mutableHeld.asStateFlow()
+
+    /**
+     * A bug in the core stopped a call, whoever made it (see [Engine.onInternal]). The core has
+     * already thrown its session away, wiping every key, so every vault is locked: this forgets
+     * the handles too. Nothing is saved, as what was open may be half changed; the files on disk
+     * are whole, since a save replaces a file at once.
+     */
+    private fun internalError() {
+        val was = mutableState.value
+        if (was is LockState.Unlocked) mutableHeld.value = was
+        saveJob?.cancel()
+        saveJob = null
+        forgetOpen()
+        // The lists stay for the screens kept under the message; leaving it empties them.
+        mutableState.value = if (vaultFiles().isEmpty()) LockState.NoVault else LockState.Locked
+    }
+
+    /** From the message about an internal error to the door. */
+    fun leaveInternal() {
+        mutableHeld.value = null
+        mutableEntries.value = emptyList()
+        mutableNotices.value = VaultNotices()
+        mutableFolders.value = emptyList()
+        mutableTagIcons.value = emptyMap()
+        Engine.resume()
+    }
+
+    /** What every vault had open, for a lock. */
+    private fun forgetOpen() {
+        handle = 0
+        file = null
+        outer = null
+        childWriter = null
+        childBefore = null
+        mutableChild.value = null
+        accountWriter = null
+        afterAccountSave = null
+        mutableAccount.value = null
+        mutableSaveProblem.value = null
+    }
+
     /** A panic: locked at once, and every password refused for an hour. */
     suspend fun panic() {
         lock()
+        // A panic takes a copied password off the clipboard too. An ordinary lock leaves it, since
+        // locking on leaving the app would otherwise wipe it before it could be pasted.
+        SecureClipboard.wipe(context, everything = true)
         prefs.edit().putLong("retry_at", System.currentTimeMillis() + 3_600_000L).apply()
     }
 
     suspend fun wipe() = wipeEverything()
 
     private suspend fun wipeEverything() {
+        SecureClipboard.wipe(context, everything = true)
         Engine.lockAll()
         vaultDir.deleteRecursively()
         File(context.filesDir, "blobs").deleteRecursively()
         File(context.filesDir, "quick").deleteRecursively()
         linkedDir.deleteRecursively()
+        heldDir.deleteRecursively()
         vaultDir.mkdirs()
         prefs.edit().clear().apply()
         onWipe.forEach { runCatching { it() } }
@@ -378,17 +572,37 @@ object Pass {
         mutableChild.value = null
         mutableAccount.value = null
         mutableEntries.value = emptyList()
+        mutableNotices.value = VaultNotices()
+        // The folder names went with the vault too.
+        mutableFolders.value = emptyList()
         mutableTagIcons.value = emptyMap()
+        mutableSaveProblem.value = null
         mutableState.value = LockState.NoVault
     }
 
     // ---- saving ----
 
+    /**
+     * Why the last save in the background failed, until a save works. What changed stays in
+     * memory, and the next save, or the one on leaving the app, takes it along.
+     */
+    private val mutableSaveProblem = MutableStateFlow<String?>(null)
+    val saveProblem: StateFlow<String?> = mutableSaveProblem.asStateFlow()
+
     private fun scheduleSave() {
         saveJob?.cancel()
         saveJob = scope.launch {
             delay(350)
-            writing.withLock { saveNow() }
+            // A place out of reach, such as a shared vault's server while offline or a KeePass
+            // file whose app has gone, must not take the whole process down with it.
+            try {
+                writing.withLock { saveNow() }
+                mutableSaveProblem.value = null
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                mutableSaveProblem.value = failure.message ?: "The vault could not be saved."
+            }
         }
     }
 
@@ -421,6 +635,7 @@ object Pass {
         saveJob?.cancel()
         saveJob = null
         writing.withLock { saveNow() }
+        mutableSaveProblem.value = null
     }
 
     private suspend fun refresh() {
@@ -435,6 +650,7 @@ object Pass {
         mutableTagIcons.value = Engine.view("tags.icons", MapSerializer(String.serializer(), String.serializer()), active)
         mutableRevision.value++
         afterRefresh?.invoke()
+        readNotices(active)
     }
 
     // ---- settings that follow the vault ----
@@ -593,6 +809,15 @@ object Pass {
         File(blobDir(file!!.name), blob).writeAtomically(reply.blobs[0])
     }
 
+    /** Adds the import just read, and writes the attachments it brought along. */
+    suspend fun applyImport(): EngineReply {
+        val reply = change("import.apply")
+        val names = reply.obj["blob_names"]?.jsonArray?.map { it.jsonPrimitive.content }.orEmpty()
+        val folder = file?.let { blobDir(it.name).apply { mkdirs() } }
+        if (folder != null) names.zip(reply.blobs).forEach { (name, sealed) -> File(folder, name).writeAtomically(sealed) }
+        return reply
+    }
+
     suspend fun openAttachment(id: String, blob: String): SecretBytes {
         val sealed = File(blobDir(file!!.name), blob).readBytes()
         return Engine.call(
@@ -614,6 +839,36 @@ object Pass {
 
     suspend fun verify(password: ByteArray): Boolean =
         Engine.call("vault.verify", handle, secret = password).obj["ok"]?.jsonPrimitive?.boolean == true
+
+    /**
+     * Which slot this password opens, with the key file or security key outputs in [factors] that
+     * slot also needs. A change then replaces that slot and keeps its factor; the engine allows it
+     * only right after this check succeeds.
+     */
+    suspend fun passwordSlot(password: ByteArray, factors: List<Pair<String, ByteArray>> = emptyList()): SlotCheck {
+        val reply = Engine.call(
+            "vault.verify",
+            handle,
+            { putJsonArray("factors") { factors.forEach { add(it.first) } } },
+            secret = password,
+            blobs = factors.map { it.second },
+        ).obj
+        val slot = reply["slot"]?.jsonPrimitive?.intOrNull
+        if (reply["ok"]?.jsonPrimitive?.boolean == true && slot != null) return SlotCheck.Opens(slot)
+        val needed = reply["needs_factor"]?.jsonArray?.let(::neededFactors).orEmpty()
+        return if (needed.isNotEmpty()) SlotCheck.NeedsFactor(needed) else SlotCheck.Wrong
+    }
+
+    private fun neededFactors(array: kotlinx.serialization.json.JsonArray): List<NeededFactor> = array.map {
+        val f = it as JsonObject
+        NeededFactor(
+            f["kind"]!!.jsonPrimitive.content,
+            f["credential_id"]?.jsonPrimitive?.contentOrNull,
+            f["salt"]?.jsonPrimitive?.contentOrNull,
+            f["challenge"]?.jsonPrimitive?.contentOrNull,
+            f["slot"]?.jsonPrimitive?.intOrNull,
+        )
+    }
 
     /** The key, right after an unlock, for wrapping in the phone's secure hardware. */
     suspend fun keyForWrapping(): SecretBytes = Engine.call("vault.key_for_wrapping", handle).secret!!
@@ -789,25 +1044,48 @@ object Pass {
     private fun isVaultFile(bytes: ByteArray) =
         bytes.size > 4 && bytes[0] == 'W'.code.toByte() && bytes[1] == 'M'.code.toByte() && bytes[2] == 'P'.code.toByte() && bytes[3] == 'V'.code.toByte()
 
-    /** Puts a vault file or a backup in place at the door. The password decides what opens. */
-    suspend fun restore(bytes: ByteArray) {
+    /**
+     * Puts a vault file or a backup in place at the door. The password decides what opens.
+     *
+     * With vaults already here, nothing here is written over, since an older backup must not
+     * take the place of newer files. Its vault files wait in [heldDir] for the next unlock,
+     * which merges each into its own vault, or opens it when the password opens nothing here.
+     * Only attachments and nested vaults this phone lacks are written. Returns true when the
+     * backup waits so.
+     */
+    suspend fun restore(bytes: ByteArray): Boolean {
+        val hold = vaultFiles().isNotEmpty()
         if (isVaultFile(bytes)) {
-            adoptFile(bytes)
-            return
+            if (!hold) {
+                adoptFile(bytes)
+                return false
+            }
+            File(heldDir, randomHex(16)).writeAtomically(bytes)
+            return true
         }
         val files = unbundle(bytes)
         require(files.any { it.first.startsWith("vaults/") }) { "That is not a WM Pass backup." }
+        // A copy still waiting from an earlier restore keeps its place, and this one takes a new
+        // name, with its attachments under that name too.
+        val renamed = mutableMapOf<String, String>()
+        if (hold) {
+            files.filter { it.first.startsWith("vaults/") }.forEach { (name, data) ->
+                val waiting = File(heldDir, name.substringAfter('/'))
+                if (waiting.exists() && !waiting.readBytes().contentEquals(data)) renamed[waiting.name] = randomHex(16)
+            }
+        }
         files.forEach { (name, data) ->
             val parts = name.split('/')
             val target = when (parts[0]) {
-                "vaults" -> File(vaultDir, parts[1])
+                "vaults" -> if (hold) File(heldDir, renamed[parts[1]] ?: parts[1]) else File(vaultDir, parts[1])
                 "linked" -> File(linkedDir, parts[1])
-                else -> File(blobDir(parts[1]), parts[2])
+                else -> File(blobDir(renamed[parts[1]] ?: parts[1]), parts[2])
             }
-            target.writeAtomically(data)
+            if (!hold || parts[0] == "vaults" || !target.exists()) target.writeAtomically(data)
         }
         vaultFiles().forEach { it.setLastModified(FILE_TIME_MS) }
         if (handle == 0L) mutableState.value = LockState.Locked
+        return hold
     }
 
     /**

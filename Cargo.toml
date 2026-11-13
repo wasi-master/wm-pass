@@ -52,16 +52,24 @@ incremental = false
 debug = "line-tables-only"
 incremental = false
 
+# A bug that panics must not close the app with unsaved work on screen. Each boundary (the JNI
+# exports, the desktop engine, the C interface) catches the unwind, throws the whole session
+# away and starts a fresh one; dropping it wipes every key, as they are all `Zeroizing`. What it
+# held may be half changed, so none of it is read again, and the files on disk are whole, since a
+# save replaces a file in one step. The app shows itself locked. See wmpass_session::INTERNAL.
 [profile.release]
 lto = true
 codegen-units = 1
 strip = true
-panic = "abort"
+panic = "unwind"
 
-# Size matters in an extension, and panics must not leave half-wiped state behind a catch.
+# Stable wasm32 cannot unwind, so a panic in the browser traps. The module notes it first and
+# answers every later call with `internal`; the page wipes the module's memory and loads it
+# again (crates/wmpass-wasm). Size matters in an extension.
 [profile.wasm]
 inherits = "release"
 opt-level = "s"
+panic = "abort"
 
 [profile.dev.package.argon2]
 opt-level = 3

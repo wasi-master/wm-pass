@@ -327,7 +327,7 @@ fn create_in_folder(root: &Path, name: &str, password: &[u8], device: u32) -> Re
     engine.save()?;
     // A decoy that never changes, so a hidden vault's unchanging file is nothing unusual. Its
     // partner, which keeps pace with this vault, came with the save.
-    let length = usize::try_from(std::fs::metadata(&engine.path).map_err(|e| e.to_string())?.len()).unwrap_or(0);
+    let length = usize::try_from(std::fs::metadata(&engine.path).map_err(|e| crate::store::io_text(&e))?.len()).unwrap_or(0);
     let decoy = engine.chaff(length)?;
     app_folder::write(&app_folder::vault_path(root, &app_folder::new_name()?), &decoy)?;
     app_folder::cover_times(root)?;
@@ -453,6 +453,19 @@ pub fn unlock(path: &Path, password: &[u8], key_file: Option<&[u8]>, device: u32
     }
 }
 
+/// What the current password opened, before a change of password.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Current {
+    /// This slot.
+    Slot(usize),
+    /// Nothing yet: the password is right but its key file is needed too.
+    NeedsKeyFile,
+    /// Nothing here: the password is right but it also needs a hardware key.
+    NeedsHardware,
+    /// Nothing.
+    Wrong,
+}
+
 impl Engine {
     /// The vault file.
     pub fn path(&self) -> &Path {
@@ -481,6 +494,28 @@ impl Engine {
         Ok(reply)
     }
 
+    /// What the vault has to tell its owner, in the words to show: a password changed on two
+    /// devices at once, then a clock that looks wrong. Empty when there is nothing.
+    pub fn notices(&mut self) -> Vec<String> {
+        let Ok(notices) = self.view::<Value>("vault.notices", &json!({})) else { return Vec::new() };
+        ["password_conflict", "clock_warning"]
+            .iter()
+            .filter_map(|key| notices[*key]["message"].as_str().map(str::to_owned))
+            .collect()
+    }
+
+    /// Tells the vault what this computer is called, so a warning on another device about its
+    /// clock can name it.
+    pub fn name_device(&mut self, name: &str) {
+        if self.read_only {
+            return;
+        }
+        let changed = self.view::<Value>("vault.device_name", &json!({"name": name})).is_ok_and(|reply| reply["changed"] == true);
+        if changed {
+            let _ = self.save();
+        }
+    }
+
     /// The desktop app's folder, when this is its vault.
     pub fn app_folder(&self) -> Option<&Path> {
         self.root.as_deref()
@@ -494,9 +529,9 @@ impl Engine {
         let path = app_folder::vault_path(root, &app_folder::new_name()?);
         if let Ok(dir) = std::fs::read_dir(&old_blobs) {
             let blobs = store::blob_dir(&path);
-            std::fs::create_dir_all(&blobs).map_err(|e| e.to_string())?;
+            std::fs::create_dir_all(&blobs).map_err(|e| crate::store::io_text(&e))?;
             for entry in dir.flatten() {
-                std::fs::copy(entry.path(), blobs.join(entry.file_name())).map_err(|e| e.to_string())?;
+                std::fs::copy(entry.path(), blobs.join(entry.file_name())).map_err(|e| crate::store::io_text(&e))?;
             }
         }
         let (old_path, old_known) = (std::mem::replace(&mut self.path, path), self.known.take());
@@ -508,7 +543,7 @@ impl Engine {
             return Err(e);
         }
         if first {
-            let length = usize::try_from(std::fs::metadata(&self.path).map_err(|e| e.to_string())?.len()).unwrap_or(0);
+            let length = usize::try_from(std::fs::metadata(&self.path).map_err(|e| crate::store::io_text(&e))?.len()).unwrap_or(0);
             let decoy = self.chaff(length)?;
             app_folder::write(&app_folder::vault_path(root, &app_folder::new_name()?), &decoy)?;
             app_folder::cover_times(root)?;
@@ -716,15 +751,58 @@ impl Engine {
     }
 
     /// Whether this is the vault's password.
+    #[cfg(test)]
     pub fn verify(&mut self, password: &[u8]) -> Result<bool, String> {
         let reply = self.call("vault.verify", &json!({}), password, &[])?;
         Ok(reply_json::<Value>(&reply)?["ok"].as_bool().unwrap_or(false))
     }
 
-    /// Changes the password that opens the vault, as the apps do: the first slot in use.
-    pub fn change_password(&mut self, password: &[u8]) -> Result<(), String> {
-        let slots: Vec<Value> = self.view("slot.list", &json!({}))?;
-        let index = slots.first().and_then(|s| s["index"].as_u64()).and_then(|i| usize::try_from(i).ok()).unwrap_or(0);
+    /// Adds another password that opens the vault, for tests of a vault with two.
+    #[cfg(test)]
+    pub fn add_password(&mut self, label: &str, password: &[u8]) -> Result<(), String> {
+        self.change("slot.add", &json!({"label": label, "action": "open"}), password).map(drop)
+    }
+
+    /// Adds a password that also needs a key file, for tests of such a slot.
+    #[cfg(test)]
+    pub fn add_password_with_key_file(&mut self, label: &str, password: &[u8], key_file: &[u8]) -> Result<(), String> {
+        let args = json!({"label": label, "action": "open", "factor": {"kind": "key_file"}});
+        self.call("slot.add", &args, password, &[key_file])?;
+        self.save()
+    }
+
+    /// Which slot this password opens, with the key file it needs if any. The session keeps
+    /// the key file's answer, so a change of password that follows keeps needing it.
+    pub fn password_slot(&mut self, password: &[u8], key_file: Option<&[u8]>) -> Result<Current, String> {
+        let (args, blobs): (Value, Vec<&[u8]>) = match key_file {
+            Some(key) => (json!({"factors": ["key_file"]}), vec![key]),
+            None => (json!({}), Vec::new()),
+        };
+        let reply = self.call("vault.verify", &args, password, &blobs)?;
+        let reply = reply_json::<Value>(&reply)?;
+        if reply["ok"].as_bool().unwrap_or(false) {
+            return Ok(reply["slot"]
+                .as_u64()
+                .and_then(|i| usize::try_from(i).ok())
+                .map_or(Current::Wrong, Current::Slot));
+        }
+        let needed: Vec<&Value> = reply["needs_factor"].as_array().map(|f| f.iter().collect()).unwrap_or_default();
+        let file = needed.iter().any(|f| f["kind"] == "key_file");
+        Ok(if needed.is_empty() {
+            Current::Wrong
+        } else if file && key_file.is_none() {
+            Current::NeedsKeyFile
+        } else if file {
+            // The key file given was not the one.
+            Current::Wrong
+        } else {
+            Current::NeedsHardware
+        })
+    }
+
+    /// Changes the password in one slot: the one the old password opened, so a second
+    /// password changes itself and not the first.
+    pub fn change_password(&mut self, index: usize, password: &[u8]) -> Result<(), String> {
         self.change("vault.change_password", &json!({"index": index}), password).map(drop)
     }
 
@@ -851,9 +929,9 @@ impl Engine {
             .collect();
         if !names.is_empty() {
             let dir = store::blob_dir(&self.path);
-            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            std::fs::create_dir_all(&dir).map_err(|e| crate::store::io_text(&e))?;
             for (name, sealed) in names.iter().zip(&reply.blobs) {
-                std::fs::write(dir.join(name), sealed).map_err(|e| e.to_string())?;
+                std::fs::write(dir.join(name), sealed).map_err(|e| crate::store::io_text(&e))?;
             }
         }
         self.save()?;
@@ -894,8 +972,8 @@ impl Engine {
         let made: Value = reply_json(&reply)?;
         let blob = made["blob"].as_str().ok_or("no name came back")?;
         let dir = store::blob_dir(&self.path);
-        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        std::fs::write(dir.join(blob), reply.blobs.first().ok_or("nothing came back")?).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(&dir).map_err(|e| crate::store::io_text(&e))?;
+        std::fs::write(dir.join(blob), reply.blobs.first().ok_or("nothing came back")?).map_err(|e| crate::store::io_text(&e))?;
         self.save()
     }
 }

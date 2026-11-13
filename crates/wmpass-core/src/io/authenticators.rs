@@ -6,7 +6,7 @@ use serde_json::Value;
 use super::json_formats::{list, parse, text};
 use zeroize::Zeroizing;
 
-use super::{Imported, otp_entry};
+use super::{Imported, checked_code};
 use crate::clock::Hlc;
 use crate::model::Lww;
 use crate::otp::{OtpAlgorithm, OtpConfig, OtpKind, base32_encode, percent_decode};
@@ -52,9 +52,18 @@ pub(super) fn aegis(json: &str, at: Hlc) -> Result<Imported> {
         .get("db")
         .ok_or_else(|| Error::Import("no entries in the file".into()))?;
     let mut out = Imported::default();
+    // Version 3 keeps groups apart and names them by id on each entry; earlier versions name
+    // the one group on the entry itself.
+    let groups: std::collections::HashMap<String, String> =
+        list(db, "groups").iter().map(|g| (text(g, "uuid"), text(g, "name"))).collect();
     for entry in list(db, "entries") {
         let info = entry.get("info").cloned().unwrap_or(Value::Null);
         let name = text(entry, "name");
+        let folder = list(entry, "groups")
+            .iter()
+            .filter_map(Value::as_str)
+            .find_map(|id| groups.get(id).cloned())
+            .or_else(|| super::non_empty(text(entry, "group")));
         let Some(kind) = kind_of(
             &text(entry, "type"),
             number(&info, "period", 30),
@@ -66,7 +75,7 @@ pub(super) fn aegis(json: &str, at: Hlc) -> Result<Imported> {
             ));
             continue;
         };
-        out.entries.push(otp_entry(
+        let Some(mut item) = checked_code(
             OtpConfig {
                 secret: Secret::from(text(&info, "secret")),
                 issuer: text(entry, "issuer"),
@@ -76,7 +85,15 @@ pub(super) fn aegis(json: &str, at: Hlc) -> Result<Imported> {
                 kind,
             },
             at,
-        ));
+            &mut out.skipped,
+        ) else {
+            continue;
+        };
+        item.folder = folder;
+        item.entry.common.notes = Lww::new(Secret::from(text(entry, "note")), at);
+        item.entry.common.favourite =
+            Lww::new(entry.get("favorite").and_then(Value::as_bool).unwrap_or(false), at);
+        out.entries.push(item);
     }
     Ok(out)
 }
@@ -89,6 +106,8 @@ pub(super) fn two_fas(json: &str, at: Hlc) -> Result<Imported> {
         ));
     }
     let mut out = Imported::default();
+    let groups: std::collections::HashMap<String, String> =
+        list(&root, "groups").iter().map(|g| (text(g, "id"), text(g, "name"))).collect();
     for service in list(&root, "services") {
         let otp = service.get("otp").cloned().unwrap_or(Value::Null);
         let name = text(service, "name");
@@ -108,7 +127,7 @@ pub(super) fn two_fas(json: &str, at: Hlc) -> Result<Imported> {
             continue;
         };
         let issuer = text(&otp, "issuer");
-        out.entries.push(otp_entry(
+        let Some(mut item) = checked_code(
             OtpConfig {
                 secret: Secret::from(text(service, "secret")),
                 issuer: if issuer.is_empty() { name } else { issuer },
@@ -118,7 +137,12 @@ pub(super) fn two_fas(json: &str, at: Hlc) -> Result<Imported> {
                 kind,
             },
             at,
-        ));
+            &mut out.skipped,
+        ) else {
+            continue;
+        };
+        item.folder = groups.get(&text(service, "groupId")).cloned();
+        out.entries.push(item);
     }
     Ok(out)
 }
@@ -139,7 +163,7 @@ pub(super) fn and_otp(json: &str, at: Hlc) -> Result<Imported> {
             ));
             continue;
         };
-        out.entries.push(otp_entry(
+        let Some(mut entry) = checked_code(
             OtpConfig {
                 secret: Secret::from(text(item, "secret")),
                 issuer: text(item, "issuer"),
@@ -149,7 +173,18 @@ pub(super) fn and_otp(json: &str, at: Hlc) -> Result<Imported> {
                 kind,
             },
             at,
-        ));
+            &mut out.skipped,
+        ) else {
+            continue;
+        };
+        let tags: Vec<String> = list(item, "tags")
+            .iter()
+            .filter_map(Value::as_str)
+            .filter(|tag| !tag.trim().is_empty())
+            .map(str::to_owned)
+            .collect();
+        entry.entry.common.tags = Lww::new(tags, at);
+        out.entries.push(entry);
     }
     Ok(out)
 }
@@ -176,16 +211,21 @@ pub(super) fn free_otp_plus(json: &str, at: Hlc) -> Result<Imported> {
             ));
             continue;
         };
-        out.entries.push(otp_entry(
+        out.entries.extend(checked_code(
             OtpConfig {
                 secret: Secret::from(base32_encode(&seed)),
-                issuer: text(token, "issuerExt"),
+                // The issuer as shown, or as the code's link named it when none is shown.
+                issuer: match text(token, "issuerExt") {
+                    shown if shown.is_empty() => text(token, "issuerInt"),
+                    shown => shown,
+                },
                 account: label,
                 algorithm: algorithm(&text(token, "algo")),
                 digits: u32::try_from(number(token, "digits", 6)).unwrap_or(6),
                 kind,
             },
             at,
+            &mut out.skipped,
         ));
     }
     Ok(out)
@@ -207,7 +247,7 @@ pub(super) fn raivo(json: &str, at: Hlc) -> Result<Imported> {
             ));
             continue;
         };
-        out.entries.push(otp_entry(
+        let Some(mut entry) = checked_code(
             OtpConfig {
                 secret: Secret::from(text(item, "secret")),
                 issuer: text(item, "issuer"),
@@ -217,7 +257,14 @@ pub(super) fn raivo(json: &str, at: Hlc) -> Result<Imported> {
                 kind,
             },
             at,
-        ));
+            &mut out.skipped,
+        ) else {
+            continue;
+        };
+        // Raivo writes every value as a string, `"pinned": "true"` among them.
+        let pinned = matches!(item.get("pinned"), Some(Value::Bool(true))) || text(item, "pinned") == "true";
+        entry.entry.common.favourite = Lww::new(pinned, at);
+        out.entries.push(entry);
     }
     Ok(out)
 }
@@ -258,7 +305,7 @@ pub(super) fn stratum(json: &str, at: Hlc) -> Result<Imported> {
             }
         };
         let secret = text(item, "Secret");
-        let mut entry = otp_entry(
+        let Some(mut entry) = checked_code(
             OtpConfig {
                 secret: Secret::from(secret.clone()),
                 issuer,
@@ -272,7 +319,10 @@ pub(super) fn stratum(json: &str, at: Hlc) -> Result<Imported> {
                 kind,
             },
             at,
-        );
+            &mut out.skipped,
+        ) else {
+            continue;
+        };
         entry.folder = folder_of.get(&secret).cloned();
         out.entries.push(entry);
     }
@@ -306,7 +356,9 @@ pub(super) fn proton(json: &str, password: Option<&str>, at: Hlc) -> Result<Impo
                 if config.issuer.is_empty() && config.account.is_empty() {
                     config.issuer = name;
                 }
-                let mut item = otp_entry(config, at);
+                let Some(mut item) = checked_code(config, at, &mut out.skipped) else {
+                    continue;
+                };
                 item.entry.common.notes = Lww::new(Secret::from(text(entry, "note")), at);
                 out.entries.push(item);
             }
@@ -365,7 +417,8 @@ pub(super) fn lastpass(json: &str, at: Hlc) -> Result<Imported> {
             name if name.is_empty() => text(account, "originalUserName"),
             name => name,
         };
-        out.entries.push(otp_entry(
+        let favourite = account.get("isFavorite").and_then(Value::as_bool).unwrap_or(false);
+        let Some(mut item) = checked_code(
             OtpConfig {
                 secret: Secret::from(text(account, "secret").replace(' ', "").to_uppercase()),
                 issuer,
@@ -377,7 +430,12 @@ pub(super) fn lastpass(json: &str, at: Hlc) -> Result<Imported> {
                 },
             },
             at,
-        ));
+            &mut out.skipped,
+        ) else {
+            continue;
+        };
+        item.entry.common.favourite = Lww::new(favourite, at);
+        out.entries.push(item);
     }
     Ok(out)
 }
@@ -388,12 +446,12 @@ pub(super) fn uri_list(text_body: &str, at: Hlc) -> Result<Imported> {
     for line in text_body.lines().map(str::trim).filter(|l| !l.is_empty()) {
         if line.starts_with("otpauth-migration://") {
             for config in google_migration(line)? {
-                out.entries.push(otp_entry(config, at));
+                out.entries.extend(checked_code(config, at, &mut out.skipped));
             }
             continue;
         }
         match OtpConfig::from_uri(line) {
-            Ok(config) => out.entries.push(otp_entry(config, at)),
+            Ok(config) => out.entries.extend(checked_code(config, at, &mut out.skipped)),
             Err(_) => out
                 .skipped
                 .push("a line that was not a one-time code link".to_owned()),
@@ -490,6 +548,18 @@ pub fn google_migration(link: &str) -> Result<Vec<OtpConfig>> {
         }
         if hotp {
             config.kind = OtpKind::Hotp { counter };
+        }
+        // The name is the label of the link the code was added from, `Issuer:account`, so
+        // the issuer often stands in it too.
+        let split = config
+            .account
+            .split_once(':')
+            .map(|(prefix, rest)| (prefix.trim().to_owned(), rest.trim().to_owned()));
+        if let Some((prefix, rest)) = split
+            && (config.issuer.is_empty() || config.issuer == prefix)
+        {
+            config.issuer = prefix;
+            config.account = rest;
         }
         out.push(config);
     }

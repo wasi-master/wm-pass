@@ -39,6 +39,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import kotlin.math.hypot
 
 /**
@@ -48,8 +50,14 @@ import kotlin.math.hypot
 @Composable
 fun Listening(icon: ImageVector, modifier: Modifier = Modifier, size: Dp = 200.dp) {
     val colors = palette
-    val time = rememberInfiniteTransition(label = "listening")
-    val phase by time.animateFloat(0f, 1f, infiniteRepeatable(tween(2600, easing = LinearEasing), RepeatMode.Restart), label = "phase")
+    // The rings are ornament: with motion reduced they hold still, spread out where they would pass.
+    val reduce = com.wasimaster.wmpass.ui.theme.LocalReduceMotion.current
+    val phase by if (reduce) {
+        remember { androidx.compose.runtime.mutableFloatStateOf(0.2f) }
+    } else {
+        rememberInfiniteTransition(label = "listening")
+            .animateFloat(0f, 1f, infiniteRepeatable(tween(2600, easing = LinearEasing), RepeatMode.Restart), label = "phase")
+    }
     Box(modifier.size(size), contentAlignment = Alignment.Center) {
         Canvas(Modifier.size(size)) {
             val centre = Offset(this.size.width / 2, this.size.height / 2)
@@ -100,7 +108,8 @@ fun qrFits(text: String): Boolean = qrOf(text) != null
 @Composable
 fun QrCode(text: String, modifier: Modifier = Modifier) {
     val modules = remember(text) { qrOf(text) } ?: return
-    val printed = remember(text) { Animatable(0f) }
+    val reduce = com.wasimaster.wmpass.ui.theme.LocalReduceMotion.current
+    val printed = remember(text) { Animatable(if (reduce) 1f else 0f) }
     LaunchedEffect(text) { printed.animateTo(1f, tween(760, easing = FastOutSlowInEasing)) }
     val dark = Color(0xFF0B3B33)
     val light = Color(0xFF0B6B5C)
@@ -112,7 +121,8 @@ fun QrCode(text: String, modifier: Modifier = Modifier) {
             .background(Color.White)
             .padding(18.dp),
     ) {
-        Canvas(Modifier.fillMaxWidth().aspectRatio(1f)) {
+        // Named for a screen reader, which otherwise passes over it as if nothing were there.
+        Canvas(Modifier.fillMaxWidth().aspectRatio(1f).semantics { contentDescription = "QR code" }) {
             val n = modules.size
             val cell = this.size.width / n
             val middle = (n - 1) / 2f

@@ -42,6 +42,8 @@ export const ROUTE_COLOURS: Record<string, string> = {
   ssh: '#546E7A',
   updates: '#00838F',
   desktop: '#6D4C41',
+  'desktop-link': '#6D4C41',
+  widgets: '#D81B60',
 };
 
 export function settingsAccent(): string | undefined {

@@ -156,10 +156,9 @@ fn read_login(cipher: &Value, key: &SymKey, at: Hlc, meta: &Meta) -> Result<Logi
 
 /// Bitwarden accepts a bare secret as well as a URI.
 fn read_otp(text: &str) -> Option<OtpConfig> {
-    if text.starts_with("otpauth://") {
+    if text.starts_with("otpauth://") || text.starts_with("steam://") {
+        // `from_uri` reads `steam://` as a Steam code; a `totp` link would show six digits.
         OtpConfig::from_uri(text).ok()
-    } else if let Some(secret) = text.strip_prefix("steam://") {
-        OtpConfig::from_uri(&format!("otpauth://totp/Steam?secret={secret}&issuer=Steam")).ok()
     } else {
         Some(OtpConfig::totp(text))
     }
@@ -337,6 +336,10 @@ fn login_json(login: &Login, base: Option<&Value>, key: &SymKey) -> Result<Value
     object.insert("username".into(), enc(&login.username.v, key)?);
     object.insert("password".into(), enc(login.password.v.expose(), key)?);
     let totp = match &login.otp.v {
+        // Bitwarden reads a Steam code only in its own `steam://` form.
+        Some(config) if matches!(config.kind, wmpass_core::otp::OtpKind::Steam) => {
+            enc(&format!("steam://{}", config.secret.expose()), key)?
+        }
         Some(config) => enc(config.to_uri().expose(), key)?,
         None => Value::Null,
     };
@@ -429,15 +432,21 @@ pub fn cipher_from_entry(entry: &Entry, server: Option<&Value>, key: &SymKey) ->
             2
         }
         Kind::Card(card) => {
-            let (month, year) = card.expiry.v.split_once('/').unwrap_or((card.expiry.v.as_str(), ""));
+            // `12/2030` goes as written; `2030-12` or `1230`, as imports leave them, would put
+            // the whole date in the month.
+            let (month, year) = match card.expiry.v.split_once('/') {
+                Some((month, year)) => (month.trim().to_owned(), year.trim().to_owned()),
+                None => wmpass_core::io::export::expiry_parts(&card.expiry.v)
+                    .unwrap_or_else(|| (card.expiry.v.clone(), String::new())),
+            };
             cipher.insert(
                 "card".into(),
                 json!({
                     "cardholderName": enc(&card.holder.v, key)?,
                     "brand": enc(&card.issuer.v, key)?,
                     "number": enc(card.number.v.expose(), key)?,
-                    "expMonth": enc(month, key)?,
-                    "expYear": enc(year, key)?,
+                    "expMonth": enc(&month, key)?,
+                    "expYear": enc(&year, key)?,
                     "code": enc(card.cvv.v.expose(), key)?,
                 }),
             );
@@ -601,6 +610,18 @@ mod tests {
 
     const AT: Hlc = Hlc { ms: 1_700_000_000_000, counter: 0, device: 0 };
 
+    #[test]
+    fn a_steam_secret_reads_as_a_steam_code() {
+        let otp = read_otp("steam://JBSWY3DPEHPK3PXP").unwrap();
+        assert!(matches!(otp.kind, wmpass_core::otp::OtpKind::Steam));
+        assert_eq!(otp.digits, 5);
+        let key = SymKey::generate().unwrap();
+        let login = Login { otp: Lww::new(Some(otp), AT), ..Login::default() };
+        let sent = login_json(&login, None, &key).unwrap();
+        let back = dec_text(&sent, "totp", &key).unwrap();
+        assert_eq!(back, "steam://JBSWY3DPEHPK3PXP");
+    }
+
     fn stamped(mut cipher: Value) -> Value {
         cipher["revisionDate"] = Value::String(format_date(AT.ms));
         cipher["id"] = Value::String("id-1".into());
@@ -741,6 +762,15 @@ mod tests {
             let got = round_trip(&entry);
             assert_eq!(got.kind, kind, "{}", kind.name());
             assert!(got.common.custom_fields.v.is_empty(), "{} left fields behind", kind.name());
+        }
+    }
+
+    #[test]
+    fn an_expiry_written_year_first_goes_as_month_and_year() {
+        let card = |expiry: &str| base(Kind::Card(Card { expiry: l(expiry.into()), ..Card::default() }));
+        for (saved, sent) in [("2030-12", "12/2030"), ("1230", "12/2030"), ("12 / 2030", "12/2030")] {
+            let Kind::Card(back) = round_trip(&card(saved)).kind else { panic!("a card") };
+            assert_eq!(back.expiry.v, sent, "{saved}");
         }
     }
 

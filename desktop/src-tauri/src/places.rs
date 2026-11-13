@@ -39,6 +39,30 @@ impl From<Stored> for PlaceFile {
     }
 }
 
+/// A listing as the page reads it. Only a folder on this computer can say when each file last
+/// changed, which lets a timed sync skip the copies it has already merged; the other kinds give 0,
+/// and the page reads those every time.
+pub fn listed(place: &Value, files: Vec<Stored>) -> Vec<PlaceFile> {
+    let folder = places::Place::from_json(place);
+    let folder = (folder.kind == "folder" && !folder.path.is_empty()).then(|| std::path::PathBuf::from(folder.path));
+    files
+        .into_iter()
+        .map(|file| {
+            let modified_ms = folder.as_ref().map_or(0, |dir| modified_ms(&dir.join(&file.id)));
+            PlaceFile { modified_ms, ..PlaceFile::from(file) }
+        })
+        .collect()
+}
+
+/// When a file last changed, in Unix milliseconds, or 0 when that cannot be told.
+fn modified_ms(path: &std::path::Path) -> u64 {
+    std::fs::metadata(path)
+        .and_then(|meta| meta.modified())
+        .ok()
+        .and_then(|at| at.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |since| u64::try_from(since.as_millis()).unwrap_or(u64::MAX))
+}
+
 impl From<&PlaceFile> for Stored {
     fn from(file: &PlaceFile) -> Self {
         Self { id: file.id.clone(), name: file.name.clone(), size: file.size }
@@ -76,7 +100,7 @@ fn run(place: &Place, online: bool, op: Op<'_>) -> Result<Done, String> {
 /// page. The browser extension's places run here through its link, and their changes are its own.
 pub fn run_for(place: &Value, online: bool, op: Op<'_>) -> (Result<Done, String>, Map<String, Value>) {
     let policy = if online { NetPolicy::Any } else { NetPolicy::Offline };
-    let http = NativeHttp::default();
+    let http = NativeHttp::for_places();
     let parsed = places::Place::from_json(place);
     let reach = places::Reach { client: || Client::new(Blocking(&http), policy), policy };
     let ran = block_on(places::run(&reach, &apps(), &parsed, op, crate::engine::now_ms()));
@@ -85,7 +109,7 @@ pub fn run_for(place: &Value, online: bool, op: Op<'_>) -> (Result<Done, String>
 
 pub fn list(place: &Place, online: bool) -> Result<Vec<PlaceFile>, String> {
     match run(place, online, Op::List)? {
-        Done::Files(files) => Ok(files.into_iter().map(PlaceFile::from).collect()),
+        Done::Files(files) => Ok(listed(&place.0, files)),
         _ => Ok(Vec::new()),
     }
 }
@@ -135,4 +159,25 @@ pub async fn places_sign_in(place: Value, step: Value, online: bool) -> Result<V
     tauri::async_runtime::spawn_blocking(move || crate::signin::step(&place, &step, online))
         .await
         .map_err(|error| error.to_string())?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_folder_listing_says_when_each_file_changed() {
+        let dir = std::env::temp_dir().join(format!("wmpass-places-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.wmsync"), b"x").unwrap();
+        let file = || vec![Stored { id: "a.wmsync".into(), name: "a.wmsync".into(), size: 1 }];
+        let folder = serde_json::json!({ "kind": "folder", "path": dir.to_string_lossy() });
+        let listed_here = listed(&folder, file());
+        assert!(listed_here[0].modified_ms > 0);
+        assert_eq!(listed_here[0].size, 1);
+        assert_eq!(listed(&serde_json::json!({ "kind": "webdav", "path": dir.to_string_lossy() }), file())[0].modified_ms, 0);
+        let gone = vec![Stored { id: "gone".into(), name: "gone".into(), size: 0 }];
+        assert_eq!(listed(&folder, gone)[0].modified_ms, 0);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

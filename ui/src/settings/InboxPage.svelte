@@ -91,7 +91,7 @@
     <div class="stack" style="padding-bottom:14px;max-width:480px">
       <p class="dim">Each address stays here, with its mail, until you close it. Good for one-off sign-ups, nothing more.</p>
       <div><Btn label="New address" icon="add" variant="primary" onclick={startMaking} /></div>
-      {#if problem}<p class="danger-text">{problem}</p>{/if}
+      {#if problem}<p class="danger-text" role="alert">{problem}</p>{/if}
       {#if kept && kept.length === 0 && !problem}<p class="dimmer">No addresses yet.</p>{/if}
     </div>
     {#if kept && kept.length > 0}
@@ -134,7 +134,7 @@
         <p class="dimmer small">Plain http works only for this computer and Tailscale addresses.</p>
       {/if}
       <Field bind:value={label} placeholder="What it is for (optional)" onenter={make} />
-      {#if makeProblem}<p class="danger-text small">{makeProblem}</p>{/if}
+      {#if makeProblem}<p class="danger-text small" role="alert">{makeProblem}</p>{/if}
     </div>
     {#snippet foot()}
       <Btn label="Cancel" disabled={busy} onclick={() => (making = false)} />

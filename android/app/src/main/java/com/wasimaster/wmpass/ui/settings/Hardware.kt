@@ -1,5 +1,7 @@
 package com.wasimaster.wmpass.ui.settings
 
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.Icon
@@ -34,6 +37,7 @@ import androidx.fragment.app.FragmentActivity
 import com.wasimaster.wmpass.core.NativeFailure
 import com.wasimaster.wmpass.core.Pass
 import com.wasimaster.wmpass.system.HardwareKeys
+import com.wasimaster.wmpass.ui.parts.announced
 import com.wasimaster.wmpass.ui.door.PasswordPill
 import com.wasimaster.wmpass.ui.icons.PassIcons
 import com.wasimaster.wmpass.ui.parts.Eyebrow
@@ -63,8 +67,16 @@ fun HardwareScreen() {
     var step by remember { mutableStateOf(KeyStep.CHOOSE) }
     var fido by remember { mutableStateOf(true) }
     val label = rememberTextFieldState()
-    val password = rememberTextFieldState()
+    // Not saved with the activity's state: a password must not land in a Bundle.
+    val password = remember { TextFieldState() }
+    val again = remember { TextFieldState() }
+    // Another go at the tap after a key that did not answer.
+    var attempt by remember { mutableStateOf(0) }
     var problem by remember { mutableStateOf<String?>(null) }
+    // Back goes a step back, as the Back button does, rather than off the page.
+    androidx.activity.compose.BackHandler(step == KeyStep.DETAILS || step == KeyStep.TAP) {
+        step = if (step == KeyStep.TAP) KeyStep.DETAILS else KeyStep.CHOOSE
+    }
     WmScreen("Hardware key", route = "settings/hardware", onBack = { shell.nav.popBackStack() }) {
         AnimatedContent(step, label = "step", transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(140)) }) { current ->
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -92,14 +104,23 @@ fun HardwareScreen() {
                     KeyStep.DETAILS -> {
                         Text("Choose the password that goes with this key. It can be a new one, used only with the key.", color = colors.textMid, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp))
                         SheetField(label, "A name for the key")
-                        PasswordPill(password, "Password to use with it")
+                        // Typed twice: a slip would set up a password nobody knows, and the key with it.
+                        PasswordPill(password, "Password to use with it", imeAction = androidx.compose.ui.text.input.ImeAction.Next)
+                        PasswordPill(again, "The same password again")
+                        val matches = again.text.toString() == password.text.toString()
+                        if (again.text.isNotEmpty() && !matches) {
+                            Text("Passwords do not match.", color = colors.danger, style = MaterialTheme.typography.bodySmall, modifier = Modifier.announced().padding(horizontal = 6.dp))
+                        }
                         Spacer(Modifier.height(6.dp))
-                        PrimaryButton("Next", Modifier.fillMaxWidth(), enabled = password.text.isNotEmpty()) { step = KeyStep.TAP }
+                        PrimaryButton("Next", Modifier.fillMaxWidth(), enabled = password.text.isNotEmpty() && matches) { step = KeyStep.TAP }
                     }
                     KeyStep.TAP -> {
-                        LaunchedEffect(Unit) {
+                        LaunchedEffect(attempt) {
                             problem = null
-                            val host = activity ?: return@LaunchedEffect
+                            val host = activity ?: run {
+                                problem = "Keys cannot be read from this screen."
+                                return@LaunchedEffect
+                            }
                             try {
                                 val (factor, output) = HardwareKeys.tap(host, fido, "")
                                 val secret = password.text.toString().toByteArray()
@@ -115,26 +136,30 @@ fun HardwareScreen() {
                                 }
                                 Pass.flush()
                                 password.clearText()
+                                again.clearText()
                                 shell.haptics.confirm()
                                 step = KeyStep.DONE
-                            } catch (failure: NativeFailure) {
+                            } catch (failure: Exception) {
+                                // A key pulled away mid-tap fails with an I/O error, not the core's: said, with Back, not a crash.
+                                if (failure is kotlinx.coroutines.CancellationException) throw failure
                                 shell.haptics.reject()
-                                problem = failure.message
+                                problem = failure.message ?: "The key did not answer. Try again."
                             }
                         }
                         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                             Spacer(Modifier.height(36.dp))
                             Listening(PassIcons.SecurityKey)
                             Spacer(Modifier.height(24.dp))
-                            Text("Hold your key to the back of the phone", color = colors.text, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
+                            Text("Hold your key to the back of the phone", color = colors.text, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center, modifier = Modifier.semantics { heading() })
                             Spacer(Modifier.height(8.dp))
                             Text("Or plug it in and touch it. Keep it there until the phone buzzes.", color = colors.textMid, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
                             problem?.let {
                                 Spacer(Modifier.height(14.dp))
-                                Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+                                Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, modifier = Modifier.announced())
                                 Spacer(Modifier.height(14.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                     QuietButton("Back", height = 48.dp) { step = KeyStep.DETAILS }
+                                    PrimaryButton("Try again") { attempt++ }
                                 }
                             }
                         }
@@ -146,7 +171,7 @@ fun HardwareScreen() {
                                 Icon(PassIcons.CheckCircleFilled, null, tint = colors.primary, modifier = Modifier.size(84.dp))
                             }
                             Spacer(Modifier.height(20.dp))
-                            Text("The key is added", color = colors.text, style = MaterialTheme.typography.titleLarge)
+                            Text("The key is added", color = colors.text, style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
                             Spacer(Modifier.height(8.dp))
                             Text("Next time, type this password and tap the key when asked.", color = colors.textMid, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
                             Spacer(Modifier.height(24.dp))

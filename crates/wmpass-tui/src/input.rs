@@ -97,6 +97,18 @@ impl Input {
         (start, end)
     }
 
+    fn word_right(&self) -> usize {
+        let chars: Vec<char> = self.text.chars().collect();
+        let mut at = self.cursor;
+        while at < chars.len() && chars[at].is_whitespace() {
+            at += 1;
+        }
+        while at < chars.len() && !chars[at].is_whitespace() {
+            at += 1;
+        }
+        at
+    }
+
     fn word_left(&self) -> usize {
         let chars: Vec<char> = self.text.chars().collect();
         let mut at = self.cursor;
@@ -154,7 +166,31 @@ impl Input {
                 self.remove_range(from, at);
                 Edit::Changed
             }
-            KeyCode::Char(ch) if !ctrl => {
+            KeyCode::Delete if alt || ctrl => {
+                let to = self.word_right();
+                let at = self.cursor;
+                self.remove_range(at, to);
+                Edit::Changed
+            }
+            // Alt with b, f and d moves and deletes by word, as in a shell; it is what a Mac
+            // terminal sends for Option and an arrow when Option is set to act as Meta.
+            KeyCode::Char('b') if alt && !ctrl => {
+                self.cursor = self.word_left();
+                Edit::Moved
+            }
+            KeyCode::Char('f') if alt && !ctrl => {
+                self.cursor = self.word_right();
+                Edit::Moved
+            }
+            KeyCode::Char('d') if alt && !ctrl => {
+                let to = self.word_right();
+                let at = self.cursor;
+                self.remove_range(at, to);
+                Edit::Changed
+            }
+            // Windows reports AltGr as Ctrl and Alt together: `@` on a German keyboard arrives
+            // that way, and a password typed with it must not lose the letter.
+            KeyCode::Char(ch) if !ctrl || alt => {
                 self.insert(ch);
                 Edit::Changed
             }
@@ -180,6 +216,10 @@ impl Input {
                 self.cursor = self.cursor.saturating_sub(1);
                 Edit::Moved
             }
+            KeyCode::Right if alt || ctrl => {
+                self.cursor = self.word_right();
+                Edit::Moved
+            }
             KeyCode::Right => {
                 self.cursor = (self.cursor + 1).min(len);
                 Edit::Moved
@@ -202,13 +242,43 @@ impl Input {
         std::mem::take(&mut self.text)
     }
 
-    /// The line and column of the cursor, for placing the terminal's cursor.
+    /// The line and column of the cursor, for placing the terminal's cursor. The column counts
+    /// terminal cells, so a wide letter such as 漢 or an emoji counts two.
     pub fn cursor_line_col(&self) -> (usize, usize) {
-        let before: String = self.text.chars().take(self.cursor).collect();
+        let before = &self.text[..self.byte_at(self.cursor)];
         let line = before.matches('\n').count();
-        let col = before.rsplit('\n').next().map_or(0, |l| l.chars().count());
+        let col = before.rsplit('\n').next().map_or(0, cells);
         (line, col)
     }
+
+    /// The cells the text before the cursor takes on one line, for a one-line box.
+    pub fn cursor_cells(&self) -> usize {
+        self.cursor_line_col().1
+    }
+}
+
+/// How many terminal cells `text` takes.
+pub fn cells(text: &str) -> usize {
+    ratatui::text::Span::raw(text).width()
+}
+
+/// The end of `text` that fits in `width` cells with the cursor `col` cells in, and where the
+/// cursor lands in it: a long line scrolls so the cursor stays in sight.
+pub fn scrolled(text: &str, col: usize, width: usize) -> (String, usize) {
+    let width = width.max(1);
+    // Leave a cell for the cursor itself past the last letter.
+    let skip = (col + 1).saturating_sub(width);
+    let mut skipped = 0;
+    let mut out = String::new();
+    for ch in text.chars() {
+        let w = cells(ch.encode_utf8(&mut [0; 4]));
+        if skipped < skip {
+            skipped += w;
+            continue;
+        }
+        out.push(ch);
+    }
+    (out, col.saturating_sub(skipped))
 }
 
 #[cfg(test)]
@@ -256,6 +326,43 @@ mod tests {
         assert_eq!(input.cursor_line_col(), (1, 1));
         ctrl(&mut input, 'u');
         assert_eq!(input.text(), "ab\n");
+    }
+
+    #[test]
+    fn altgr_letters_are_typed() {
+        let mut input = Input::new();
+        for ch in "@{€\\".chars() {
+            input.key(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::CONTROL | KeyModifiers::ALT));
+        }
+        assert_eq!(input.text(), "@{€\\");
+    }
+
+    #[test]
+    fn words_go_both_ways() {
+        let mut input = Input::with("one two three");
+        press(&mut input, KeyCode::Home);
+        input.key(KeyEvent::new(KeyCode::Right, KeyModifiers::CONTROL));
+        assert_eq!(input.cursor(), 3, "ctrl+right ends the word, as ctrl+left starts one");
+        input.key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::ALT));
+        assert_eq!(input.cursor(), 7, "alt+f, as a shell has it");
+        input.key(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::ALT));
+        assert_eq!(input.cursor(), 4);
+        input.key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::ALT));
+        assert_eq!(input.text(), "one  three", "alt+d deletes the next word, typing nothing");
+        input.key(KeyEvent::new(KeyCode::Delete, KeyModifiers::CONTROL));
+        assert_eq!(input.text(), "one ");
+    }
+
+    #[test]
+    fn the_cursor_counts_cells_and_long_lines_scroll() {
+        let input = Input::with("漢字ab");
+        assert_eq!(input.cursor_line_col(), (0, 6), "a wide letter takes two cells");
+        let (shown, at) = scrolled("abcdefghij", 10, 5);
+        assert_eq!((shown.as_str(), at), ("ghij", 4), "the end stays in sight, with a cell for the cursor");
+        let (shown, at) = scrolled("abc", 1, 5);
+        assert_eq!((shown.as_str(), at), ("abc", 1));
+        let (shown, at) = scrolled("漢字漢字", 8, 5);
+        assert_eq!((shown.as_str(), at), ("漢字", 4));
     }
 
     #[test]

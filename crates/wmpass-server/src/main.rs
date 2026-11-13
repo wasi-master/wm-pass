@@ -12,11 +12,13 @@ wmpass-server: self-hosted sync for WM Pass and Bitwarden clients
   --data FOLDER        Signing key and database. Default ./wmpass-data
   --database URL       sqlite://... or postgres://...
   --signups MODE       closed (default), open, or a comma-separated list of addresses
+  --public-url URL     The https:// address clients reach this server at. Without it,
+                       clients are told the address from their request's Host header
   --behind-proxy       Required to bind beyond this machine, and promises that a reverse
                        proxy terminates TLS in front of this server
 
 Every option can also be set in the environment as WMPASS_BIND, WMPASS_DATA,
-WMPASS_DATABASE, WMPASS_SIGNUPS and WMPASS_BEHIND_PROXY=1.
+WMPASS_DATABASE, WMPASS_SIGNUPS, WMPASS_PUBLIC_URL and WMPASS_BEHIND_PROXY=1.
 ";
 
 fn main() -> std::process::ExitCode {
@@ -34,6 +36,7 @@ fn run() -> Result<(), String> {
     let mut data = std::env::var("WMPASS_DATA").unwrap_or_else(|_| "wmpass-data".to_owned());
     let mut database = std::env::var("WMPASS_DATABASE").ok();
     let mut signups = std::env::var("WMPASS_SIGNUPS").unwrap_or_else(|_| "closed".to_owned());
+    let mut public_url = std::env::var("WMPASS_PUBLIC_URL").ok().filter(|v| !v.is_empty());
     let mut behind_proxy = std::env::var("WMPASS_BEHIND_PROXY").is_ok_and(|v| v == "1");
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -43,6 +46,7 @@ fn run() -> Result<(), String> {
             "--data" => data = value()?,
             "--database" => database = Some(value()?),
             "--signups" => signups = value()?,
+            "--public-url" => public_url = Some(value()?),
             "--behind-proxy" => behind_proxy = true,
             "--help" | "-h" => {
                 print!("{HELP}");
@@ -62,7 +66,12 @@ fn run() -> Result<(), String> {
         "open" => Signups::Open,
         list => Signups::Emails(list.split(',').map(|s| s.trim().to_lowercase()).collect()),
     };
-    let config = Config { data_dir: PathBuf::from(data), database_url: database, signups, public_url: None };
+    if let Some(url) = &public_url
+        && !(url.starts_with("https://") || url.starts_with("http://"))
+    {
+        return Err(format!("{url} is not an http:// or https:// address"));
+    }
+    let config = Config { data_dir: PathBuf::from(data), database_url: database, signups, public_url };
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().map_err(|e| e.to_string())?;
     runtime.block_on(async move {
         let app = wmpass_server::build(config).await?;

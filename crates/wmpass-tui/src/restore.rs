@@ -147,7 +147,7 @@ fn now_ms() -> u64 {
 /// One operation against a place, with what it learned (an SFTP server's first key) kept in
 /// the place for the next one.
 fn run(place: &mut Place, op: Op<'_>) -> Result<Done, String> {
-    let http = NativeHttp::default();
+    let http = NativeHttp::for_places();
     let reach = places::Reach { client: || Client::new(Blocking(&http), NetPolicy::Any), policy: NetPolicy::Any };
     let ran = block_on(places::run(&reach, &Apps::default(), place, op, now_ms()));
     for (key, value) in ran.update {
@@ -592,6 +592,11 @@ impl RestoreUi {
                 None
             }
         }
+    }
+
+    /// Whether a text box has the keyboard, to take pasted text.
+    pub fn typing(&self) -> bool {
+        matches!(self.stage, Stage::Form) && self.focus != Field::Kind
     }
 
     /// Whether the thread is still at work.

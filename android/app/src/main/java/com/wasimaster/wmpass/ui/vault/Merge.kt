@@ -1,5 +1,8 @@
 package com.wasimaster.wmpass.ui.vault
 
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -11,7 +14,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -31,9 +33,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.wasimaster.wmpass.core.NativeFailure
 import com.wasimaster.wmpass.core.Pass
 import com.wasimaster.wmpass.core.Summary
+import com.wasimaster.wmpass.ui.parts.announced
 import com.wasimaster.wmpass.ui.door.PasswordPill
 import com.wasimaster.wmpass.ui.icons.PassIcons
 import com.wasimaster.wmpass.ui.parts.Eyebrow
@@ -106,8 +108,11 @@ fun MergeSheet(ids: List<String>, onDismiss: () -> Unit, onDone: () -> Unit = {}
                 )
             }
             items to questions
-        } catch (failure: NativeFailure) {
-            problem = failure.message?.replaceFirstChar { it.uppercase() }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            // A plan missing a part it should have is said here too, rather than closing the app.
+            problem = failure.message?.replaceFirstChar { it.uppercase() } ?: "These items could not be compared"
             null
         }
     }
@@ -117,6 +122,8 @@ fun MergeSheet(ids: List<String>, onDismiss: () -> Unit, onDone: () -> Unit = {}
     val both = remember { mutableStateMapOf<String, Boolean>() }
     val revealed = remember { mutableStateMapOf<String, String>() }
     var merging by remember { mutableStateOf(false) }
+    // Why the merge itself failed, said above its button: the plan stays, so it can be tried again.
+    var mergeProblem by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(plan) {
         val items = plan?.first ?: return@LaunchedEffect
         if (keep == null) keep = items.maxByOrNull { it.changedMs }?.id
@@ -124,7 +131,7 @@ fun MergeSheet(ids: List<String>, onDismiss: () -> Unit, onDone: () -> Unit = {}
     PassSheet(onDismiss, "Merge ${ids.size} items") {
         val current = plan
         when {
-            problem != null -> Text(problem.orEmpty(), color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(4.dp))
+            problem != null -> Text(problem.orEmpty(), color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced().padding(4.dp))
             current == null -> Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.Center) {
                 CircularProgressIndicator(Modifier.size(24.dp), color = colors.primary, strokeWidth = 2.dp)
             }
@@ -181,7 +188,7 @@ fun MergeSheet(ids: List<String>, onDismiss: () -> Unit, onDone: () -> Unit = {}
                     }
                     when (question.both) {
                         "field", "joined" -> Row(
-                            Modifier.fillMaxWidth().clickable { both[question.key] = !(both[question.key] ?: false) }.padding(horizontal = 4.dp, vertical = 6.dp),
+                            Modifier.fillMaxWidth().toggleable(both[question.key] ?: false, role = androidx.compose.ui.semantics.Role.Switch) { both[question.key] = it }.padding(horizontal = 4.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
@@ -190,14 +197,16 @@ fun MergeSheet(ids: List<String>, onDismiss: () -> Unit, onDone: () -> Unit = {}
                                 style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier.weight(1f),
                             )
-                            PassSwitch(both[question.key] ?: false) { both[question.key] = it }
+                            PassSwitch(both[question.key] ?: false, null)
                         }
                     }
                 }
                 Spacer(Modifier.height(12.dp))
+                mergeProblem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.announced().padding(start = 4.dp, end = 4.dp, bottom = 8.dp)) }
                 PrimaryButton(if (merging) "Merging…" else "Merge into ${names[keep] ?: "the one picked"}", Modifier.fillMaxWidth(), enabled = keep != null && !merging, icon = PassIcons.Layers) {
                     val kept = keep ?: return@PrimaryButton
                     merging = true
+                    mergeProblem = null
                     scope.launch {
                         try {
                             Pass.change("entries.merge") {
@@ -216,8 +225,10 @@ fun MergeSheet(ids: List<String>, onDismiss: () -> Unit, onDone: () -> Unit = {}
                             shell.undo = UndoOffer(if (items.size == 2) "Merged. The other one is in the trash" else "Merged. The other ${items.size - 1} are in the trash")
                             onDismiss()
                             onDone()
-                        } catch (failure: NativeFailure) {
-                            problem = failure.message?.replaceFirstChar { it.uppercase() }
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            throw cancelled
+                        } catch (failure: Exception) {
+                            mergeProblem = failure.message?.replaceFirstChar { it.uppercase() } ?: "The items could not be merged"
                             merging = false
                             shell.haptics.reject()
                         }
@@ -232,10 +243,11 @@ fun MergeSheet(ids: List<String>, onDismiss: () -> Unit, onDone: () -> Unit = {}
 private fun Choice(selected: Boolean, title: String, subtitle: String?, trailing: (@Composable () -> Unit)? = null, onClick: () -> Unit) {
     val colors = palette
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 4.dp),
+        // One choice to a screen reader, named by its title: the row picks it, the button only shows it.
+        Modifier.fillMaxWidth().selectable(selected, role = androidx.compose.ui.semantics.Role.RadioButton, onClick = onClick).padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RadioButton(selected, onClick = onClick)
+        RadioButton(selected, onClick = null, modifier = Modifier.minimumInteractiveComponentSize())
         Spacer(Modifier.width(4.dp))
         Column(Modifier.weight(1f)) {
             Text(title, color = colors.text, style = MaterialTheme.typography.bodyLarge, maxLines = 3, overflow = TextOverflow.Ellipsis)
@@ -259,7 +271,8 @@ fun SetPasswordSheet(entry: Summary, changeUrl: String?, onDismiss: () -> Unit) 
     val colors = palette
     val shell = LocalShell.current
     val scope = rememberCoroutineScope()
-    val field = rememberTextFieldState()
+    // Not saved with the activity's state: a new password must not land in a Bundle.
+    val field = remember { androidx.compose.foundation.text.input.TextFieldState() }
     val generator = remember { GenState.fromPrefs(shell.prefs) }
     var strength by remember { mutableStateOf<com.wasimaster.wmpass.core.StrengthView?>(null) }
     var saving by remember { mutableStateOf(false) }
@@ -267,9 +280,10 @@ fun SetPasswordSheet(entry: Summary, changeUrl: String?, onDismiss: () -> Unit) 
     val context = LocalContext.current
     val target = changeUrl ?: entry.site?.takeIf { it.isNotBlank() }
     val launch = remember(entry.app) { entry.app?.let { context.packageManager.getLaunchIntentForPackage(it) } }
+    var problem by remember { mutableStateOf<String?>(null) }
+    // A generator that fails leaves the field to type in, rather than closing the app.
     LaunchedEffect(Unit) {
-        generator.roll()
-        field.setTextAndPlaceCursorAtEnd(generator.value)
+        if (runCatching { generator.roll() }.isSuccess) field.setTextAndPlaceCursorAtEnd(generator.value)
     }
     LaunchedEffect(field.text) {
         // Another password in the field is not the one copied.
@@ -289,8 +303,7 @@ fun SetPasswordSheet(entry: Summary, changeUrl: String?, onDismiss: () -> Unit) 
             PasswordPill(field, "New password", trailing = {
                 RowIconButton(PassIcons.Casino, "Make another") {
                     scope.launch {
-                        generator.roll()
-                        field.setTextAndPlaceCursorAtEnd(generator.value)
+                        if (runCatching { generator.roll() }.isSuccess) field.setTextAndPlaceCursorAtEnd(generator.value)
                     }
                 }
             })
@@ -316,8 +329,11 @@ fun SetPasswordSheet(entry: Summary, changeUrl: String?, onDismiss: () -> Unit) 
                     }
                 }
             }
+            // A save that failed says why: the button coming back alone would look like nothing happened.
+            problem?.let { Text(it, color = colors.danger, style = MaterialTheme.typography.bodySmall, modifier = Modifier.announced().padding(horizontal = 4.dp)) }
             PrimaryButton(if (saving) "Saving…" else "Save", Modifier.fillMaxWidth(), enabled = field.text.isNotEmpty() && !saving) {
                 saving = true
+                problem = null
                 val bytes = field.text.toString().toByteArray()
                 scope.launch {
                     try {
@@ -328,7 +344,10 @@ fun SetPasswordSheet(entry: Summary, changeUrl: String?, onDismiss: () -> Unit) 
                         shell.haptics.confirm()
                         shell.undo = UndoOffer("New password saved. The old one is in its history")
                         onDismiss()
-                    } catch (failure: NativeFailure) {
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        problem = failure.message?.replaceFirstChar { it.uppercase() } ?: "The password could not be saved"
                         saving = false
                         shell.haptics.reject()
                     } finally {
@@ -348,7 +367,8 @@ suspend fun switchToHttps(id: String): Int {
         val url = ((site as? JsonObject)?.get("Url") as? JsonPrimitive)?.contentOrNull
         if (url != null && url.startsWith("http://", ignoreCase = true)) {
             changed++
-            kotlinx.serialization.json.buildJsonObject { put("Url", "https://" + url.substring(7)) }
+            // Anything else saved with the address stays as it was.
+            JsonObject((site as JsonObject) + ("Url" to JsonPrimitive("https://" + url.substring(7))))
         } else {
             site
         }

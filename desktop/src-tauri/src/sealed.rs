@@ -19,16 +19,27 @@ fn keychain_allowed() -> bool {
 }
 
 fn key(store: &Store) -> Result<Zeroizing<[u8; 32]>, String> {
+    // Two first saves at once must not each make a key, or what the first sealed is lost.
+    static MAKING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _one_at_a_time = MAKING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if keychain_allowed()
         && let Ok(entry) = Entry::new(SERVICE, KEY_USER)
     {
         match entry.get_secret() {
             Ok(raw) => {
+                // The key itself, so the copy the keychain handed over is wiped too.
+                let raw = Zeroizing::new(raw);
                 if let Ok(found) = <[u8; 32]>::try_from(raw.as_slice()) {
                     return Ok(Zeroizing::new(found));
                 }
             }
             Err(keyring::Error::NoEntry) => {
+                // A key kept in the file, from a session that had no keychain, is the one what is
+                // sealed here was sealed with: a new one in the keychain would leave all of it
+                // unreadable, the browser link's key and backup places' logins among it.
+                if let Some(found) = file_key(store) {
+                    return Ok(found);
+                }
                 let made: [u8; 32] = crypto::random_array().map_err(|e| e.to_string())?;
                 if entry.set_secret(&made).is_ok() {
                     return Ok(Zeroizing::new(made));
@@ -37,15 +48,19 @@ fn key(store: &Store) -> Result<Zeroizing<[u8; 32]>, String> {
             Err(_) => {}
         }
     }
-    let path = "sealed/key";
-    if let Ok(raw) = store.read(path)
-        && let Ok(found) = <[u8; 32]>::try_from(raw.as_slice())
-    {
-        return Ok(Zeroizing::new(found));
+    if let Some(found) = file_key(store) {
+        return Ok(found);
     }
     let made: [u8; 32] = crypto::random_array().map_err(|e| e.to_string())?;
-    store.write(path, &made)?;
+    store.write(FILE_KEY, &made)?;
     Ok(Zeroizing::new(made))
+}
+
+const FILE_KEY: &str = "sealed/key";
+
+fn file_key(store: &Store) -> Option<Zeroizing<[u8; 32]>> {
+    let raw = store.read(FILE_KEY).map(Zeroizing::new).ok()?;
+    <[u8; 32]>::try_from(raw.as_slice()).ok().map(Zeroizing::new)
 }
 
 pub fn load(store: &Store, name: &str) -> Result<Option<String>, String> {

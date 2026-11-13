@@ -11,6 +11,9 @@ use crate::{Identity, LanError, Peer, Result, Role, decode, encode};
 
 /// How long a pairing QR stays good.
 pub const QR_TTL_MS: u64 = 120_000;
+/// Allowance for the scanning device's clock disagreeing with the one showing the code. The
+/// showing device holds the code to its own clock, which is the check that counts.
+const SKEW_MS: u64 = 600_000;
 const QR_PREFIX: &str = "wmpass-pair:1:";
 
 #[derive(Serialize, Deserialize)]
@@ -164,14 +167,15 @@ impl PairingQr {
 
     /// Reads a scanned code.
     pub fn parse(text: &str, now_ms: u64) -> Result<Self> {
-        let body = text.strip_prefix(QR_PREFIX).ok_or(LanError::BadCode)?;
+        // A code copied or pasted often brings a line break or a space with it.
+        let body = text.trim().strip_prefix(QR_PREFIX).ok_or(LanError::BadCode)?;
         let mut parts = body.split(':');
         let secret = decode(parts.next().ok_or(LanError::BadCode)?)?;
         let secret: [u8; 32] = secret.as_slice().try_into().map_err(|_| LanError::BadCode)?;
         let expires_ms: u64 = parts.next().ok_or(LanError::BadCode)?.parse().map_err(|_| LanError::BadCode)?;
         let address = decode(parts.next().ok_or(LanError::BadCode)?)?;
         let address = String::from_utf8(address).map_err(|_| LanError::BadCode)?;
-        if now_ms > expires_ms {
+        if now_ms > expires_ms.saturating_add(SKEW_MS) {
             return Err(LanError::Expired);
         }
         Ok(Self { secret: Zeroizing::new(secret), address, expires_ms })
@@ -184,8 +188,11 @@ impl PairingQr {
     }
 
     /// Like [`Self::pair`], keeping the connection for what comes next, such as a vault.
+    /// The device showing the code answers as [`Role::Responder`] and the one that scanned it
+    /// connects as [`Role::Initiator`]; only the first holds the expiry to its own clock.
     pub fn pair_open<S: Read + Write>(&self, stream: S, identity: &Identity, name: &str, role: Role, now_ms: u64) -> Result<(Peer, Channel<S>)> {
-        if now_ms > self.expires_ms {
+        let allowance = if role == Role::Initiator { SKEW_MS } else { 0 };
+        if now_ms > self.expires_ms.saturating_add(allowance) {
             return Err(LanError::Expired);
         }
         let mut channel = Channel::handshake(stream, identity, role, Some(&self.secret))?;

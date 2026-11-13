@@ -59,6 +59,13 @@ const FX_OK: u32 = 0;
 const FX_EOF: u32 = 1;
 const FX_NO_SUCH_FILE: u32 = 2;
 const FX_PERMISSION_DENIED: u32 = 3;
+/// SSH_FX_FAILURE: anything else, said in the status's message.
+const FX_FAILURE: u32 = 4;
+/// SSH_FX_NO_SPACE_ON_FILESYSTEM and SSH_FX_QUOTA_EXCEEDED, from version 5 on. A version 3
+/// server says the same in an SSH_FX_FAILURE's words, which [`SftpClient::status`] reads as
+/// the first.
+const FX_NO_SPACE_ON_FILESYSTEM: u32 = 14;
+const FX_QUOTA_EXCEEDED: u32 = 15;
 
 /// An SFTP server: SSH, with the SFTP subsystem.
 #[derive(Clone)]
@@ -165,11 +172,19 @@ impl From<Fault> for Failure {
 
 type Answer<T> = std::result::Result<T, Failure>;
 
+/// Whether a status message is the server saying the disk or the quota is full, in the words
+/// of `strerror` (ENOSPC, EDQUOT) on Unix servers and of Windows ones.
+fn says_no_space(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    ["no space", "not enough space", "disk full", "quota"].iter().any(|words| lower.contains(words))
+}
+
 /// What an SFTP failure means to the user.
 fn fault_of(failure: Failure) -> Fault {
     match failure {
         Failure::Status(FX_PERMISSION_DENIED) => Fault::PermissionLost,
         Failure::Status(FX_NO_SUCH_FILE) => Fault::TargetMissing,
+        Failure::Status(FX_NO_SPACE_ON_FILESYSTEM | FX_QUOTA_EXCEEDED) => Fault::OutOfSpace,
         Failure::Status(_) => Fault::Io,
         Failure::Broken(fault) => fault,
     }
@@ -280,8 +295,15 @@ impl<P: Pipe> SftpClient<P> {
         Ok((kind, body.split_off(4)))
     }
 
+    /// A status's code. A version 3 server has only SSH_FX_FAILURE for a full disk, with
+    /// the reason in its message, so a failure whose message says so counts as one.
     fn status(body: &[u8]) -> Result<u32> {
-        Parse::new(body).u32()
+        let mut parse = Parse::new(body);
+        let code = parse.u32()?;
+        if code == FX_FAILURE && parse.text().is_ok_and(says_no_space) {
+            return Ok(FX_NO_SPACE_ON_FILESYSTEM);
+        }
+        Ok(code)
     }
 
     fn expect_ok(&mut self, id: u32) -> Answer<()> {
@@ -328,12 +350,18 @@ impl<P: Pipe> SftpClient<P> {
         self.expect_ok(id)
     }
 
-    /// Moves `from` over `to`. The OpenSSH extension replaces atomically; plain v3 refuses
-    /// an existing target, so there the target goes first.
+    /// Moves `from` over `to`. The OpenSSH extension replaces atomically. Plain v3 may
+    /// refuse an existing target; only then does the target go first, so the old copy is
+    /// not lost to a failure in between on a server that would have replaced it.
     fn rename_replacing(&mut self, from: &str, to: &str) -> Answer<()> {
         if self.extensions.iter().any(|name| name == POSIX_RENAME) {
             let id = self.request(FXP_EXTENDED, Wire::default().text(POSIX_RENAME).text(from).text(to))?;
             return self.expect_ok(id);
+        }
+        let id = self.request(FXP_RENAME, Wire::default().text(from).text(to))?;
+        match self.expect_ok(id) {
+            Err(Failure::Status(_)) => {}
+            other => return other,
         }
         let _ = self.remove(to);
         let id = self.request(FXP_RENAME, Wire::default().text(from).text(to))?;
@@ -403,8 +431,19 @@ impl<P: Pipe> SftpClient<P> {
                 pending.push_back(self.request(FXP_WRITE, body)?);
                 offset += n;
             }
-            if let Some(id) = pending.pop_front() {
-                self.expect_ok(id)?;
+            if let Some(id) = pending.pop_front()
+                && let Err(failure) = self.expect_ok(id)
+            {
+                // The answers still in flight come first, or the close and the cleanup
+                // after this would read them as their own and fail too.
+                if matches!(failure, Failure::Status(_)) {
+                    for id in pending {
+                        if self.reply(id).is_err() {
+                            break;
+                        }
+                    }
+                }
+                return Err(failure);
             }
         }
         Ok(())
@@ -441,6 +480,10 @@ impl<P: Pipe> SftpClient<P> {
                 match kind {
                     FXP_DATA => {
                         let chunk = Parse::new(&body).bytes()?;
+                        if chunk.is_empty() {
+                            // Nothing read and no EOF would ask for the same bytes for ever.
+                            return Err(Fault::Io.into());
+                        }
                         out.extend_from_slice(chunk);
                         offset = at + chunk.len() as u64;
                         if chunk.len() < CHUNK {

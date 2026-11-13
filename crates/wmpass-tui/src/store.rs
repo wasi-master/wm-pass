@@ -199,9 +199,31 @@ pub fn remember_generation(file: &[u8], generation: u64) {
     }
 }
 
+/// A file error as a person reads it: "no such file", not "No such file or directory (os
+/// error 2)".
+pub fn io_text(error: &std::io::Error) -> String {
+    use std::io::ErrorKind;
+    match error.kind() {
+        ErrorKind::NotFound => "no such file or folder".to_owned(),
+        ErrorKind::PermissionDenied => "not allowed to open it".to_owned(),
+        ErrorKind::IsADirectory => "that is a folder, not a file".to_owned(),
+        ErrorKind::NotADirectory => "part of that path is a file, not a folder".to_owned(),
+        ErrorKind::AlreadyExists => "it already exists".to_owned(),
+        ErrorKind::StorageFull => "the disk is full".to_owned(),
+        ErrorKind::ReadOnlyFilesystem => "that disk is read-only".to_owned(),
+        _ => {
+            let text = error.to_string();
+            match text.rfind(" (os error ") {
+                Some(at) if text.ends_with(')') => text[..at].to_owned(),
+                _ => text,
+            }
+        }
+    }
+}
+
 /// Reads a file, with its name in any error.
 pub fn read(path: &Path) -> Result<Vec<u8>, String> {
-    fs::read(path).map_err(|e| format!("{}: {e}", path.display()))
+    fs::read(path).map_err(|e| format!("{}: {}", path.display(), io_text(&e)))
 }
 
 /// Writes through a temporary file and a rename, keeping the old file as `.bak`, so a crash
@@ -210,34 +232,48 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let mut temp = path.as_os_str().to_owned();
     temp.push(".tmp");
     let temp = PathBuf::from(temp);
-    fs::write(&temp, bytes).map_err(|e| format!("{}: {e}", temp.display()))?;
-    restrict(&temp);
+    // Made private from the start, so there is no moment anyone else may read it.
+    let _ = fs::remove_file(&temp);
+    write_private(&temp, bytes).map_err(|e| format!("{}: {}", temp.display(), io_text(&e)))?;
     if path.exists() {
         let mut backup = path.as_os_str().to_owned();
         backup.push(".bak");
-        fs::copy(path, PathBuf::from(backup)).map_err(|e| format!("could not keep a backup: {e}"))?;
+        fs::copy(path, PathBuf::from(backup)).map_err(|e| format!("could not keep a backup: {}", io_text(&e)))?;
     }
-    fs::rename(&temp, path).map_err(|e| format!("{}: {e}", path.display()))
+    fs::rename(&temp, path).map_err(|e| format!("{}: {}", path.display(), io_text(&e)))
 }
 
-/// Writes a new file nobody else may read. Refuses to replace one.
+/// Writes a new file nobody else may read. Refuses to replace one, even one that appears
+/// between a check and the write, since an export holds every secret in the clear.
 pub fn write_new(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    if path.exists() {
-        return Err(format!("{} already exists", path.display()));
+    write_private(path, bytes).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::AlreadyExists {
+            format!("{} already exists", path.display())
+        } else {
+            format!("{}: {}", path.display(), io_text(&e))
+        }
+    })
+}
+
+/// Creates `path`, which must not exist, readable only by its owner from the first byte, and
+/// writes `bytes` to it. A file left half written by a failure is taken away.
+fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
     }
-    fs::write(path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
-    restrict(path);
-    Ok(())
+    let mut file = options.open(path)?;
+    let written = file.write_all(bytes).and_then(|()| file.sync_all());
+    if written.is_err() {
+        drop(file);
+        let _ = fs::remove_file(path);
+    }
+    written
 }
-
-#[cfg(unix)]
-fn restrict(path: &Path) {
-    use std::os::unix::fs::PermissionsExt;
-    let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o600));
-}
-
-#[cfg(not(unix))]
-fn restrict(_path: &Path) {}
 
 /// Where a vault's attachments live: beside it, as the command line keeps them, or under
 /// `blobs/` for a vault in the desktop app's folder.
@@ -257,6 +293,11 @@ pub fn stamp(path: &Path) -> Option<(SystemTime, u64)> {
 /// Expands a leading `~`, which a shell would have done for an argument.
 pub fn expand(text: &str) -> PathBuf {
     let text = text.trim();
+    if text == "~"
+        && let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))
+    {
+        return PathBuf::from(home);
+    }
     if let Some(rest) = text.strip_prefix("~/").or_else(|| text.strip_prefix("~\\"))
         && let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))
     {
@@ -298,6 +339,9 @@ mod tests {
             assert_eq!(expand("~/a.wmvault"), PathBuf::from(home).join("a.wmvault"));
         }
         assert_eq!(expand(" /x/y "), PathBuf::from("/x/y"));
+        if let Some(home) = std::env::var_os("HOME") {
+            assert_eq!(expand("~"), PathBuf::from(home), "the home folder itself");
+        }
     }
 
     #[test]
@@ -309,5 +353,22 @@ mod tests {
         assert_eq!(fs::read(&path).expect("read"), b"two");
         assert_eq!(fs::read(dir.path().join("v.wmvault.bak")).expect("bak"), b"one");
         assert!(write_new(&path, b"x").is_err(), "never replaces a file");
+        assert_eq!(fs::read(&path).expect("read"), b"two", "and leaves it as it was");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_export_is_private_from_the_start() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().expect("dir");
+        let path = dir.path().join("export.csv");
+        write_new(&path, b"secret").expect("write");
+        let mode = fs::metadata(&path).expect("meta").permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+        let again = write_new(&path, b"other").expect_err("exists");
+        assert!(again.contains("already exists"), "{again}");
+        write_atomic(&dir.path().join("v.wmvault"), b"v").expect("vault");
+        let mode = fs::metadata(dir.path().join("v.wmvault")).expect("meta").permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
     }
 }

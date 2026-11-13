@@ -38,6 +38,8 @@ Logins without a password are not counted, and nor is anything in the trash. A v
 
 Turning checks off under [Problems to list](/guide/settings/health/#group-health-problems) hides them from the page but does not change the score. The other checks, such as unencrypted sites, never change it.
 
+A login you have told a check to leave out no longer counts against the score for that check, and logins left out by [Leave out local addresses](/guide/settings/health/#setting-health-skip-local) are not counted at all.
+
 See also [Problems to list](/guide/settings/health/#group-health-problems), [Health screen](/guide/screens/#screen-health).
 
 <a id="setting-health-skip-local"></a>
@@ -52,7 +54,9 @@ These sit behind your router, out of reach of the leaks and guessing the checks 
 
 #### How it works
 
-A login counts as local when every address saved on it is a private or loopback IP, or a name with no dot or one ending in .local, .lan, .home, .internal or .localhost.
+A login counts as local when every address saved on it is a private, loopback or link-local IP, or a name with no dot or one ending in .local, .lan, .home, .home.arpa, .internal, .localhost or .localdomain.
+
+A login with no address, or one saved for an app, is not local. Local logins are left out of the score and of every check but [Expiring soon](/guide/settings/health/#action-health-check-expiring).
 
 See also [Problems to list](/guide/settings/health/#group-health-problems), [Health screen](/guide/screens/#screen-health).
 
@@ -82,9 +86,9 @@ Lists logins whose password has turned up in a published leak. When there are an
 
 This list fills only after you run [Check every password](/guide/settings/breaches/#action-check-every-password) on the Breaches page. The results are never saved, so it empties when the vault locks.
 
-#### Limits
+#### On Android
 
-The browser extension cannot run that check, so there this list stays empty.
+This list fills only after you run [Check every password](/guide/settings/breaches/#action-check-every-password) on the Breaches page. The results are kept in memory only, so it empties when WM Pass closes.
 
 See also [Check every password](/guide/settings/breaches/#action-check-every-password), [Breaches](/guide/settings/breaches/).
 
@@ -121,6 +125,10 @@ Lists logins saved with a web address that starts with http:// rather than https
 #### Why it is there
 
 On a plain http page, a password can be read on its way to the site. If the site offers https, change the saved address.
+
+#### Limits
+
+An http address on the device itself, such as localhost, never crosses a network and is not listed. One on your home network is; [Leave out local addresses](/guide/settings/health/#setting-health-skip-local) leaves those out.
 
 <a id="action-health-check-expiring"></a>
 
@@ -174,7 +182,7 @@ See also [Used more than once](/guide/settings/health/#action-health-check-reuse
 
 ## Maybe the same account
 
-*Only in Android.*
+*Only in Android and the desktop app and the browser extension.*
 
 Lists logins that share a password and look like one account saved twice.
 

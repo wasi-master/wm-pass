@@ -10,7 +10,19 @@
   // A device with no vault yet waits here for one that has it. That device connects, the person
   // vouches for the connection with the QR code or six digits, and the sealed vault comes over.
   // It still opens only with its master password.
-  let { onclose, ondone }: { onclose: () => void; ondone: (from: string) => void } = $props();
+  let {
+    onclose,
+    ondone,
+    onarriving,
+  }: {
+    onclose: () => void;
+    ondone: (from: string) => void;
+    /**
+     * Just before the vault is put in place, which may replace the screen this sheet is on. Told
+     * null again if putting it in place fails, so the door does not say a vault came that did not.
+     */
+    onarriving?: (from: string | null) => void;
+  } = $props();
 
   type Phase = 'starting' | 'showing' | 'compare' | 'receiving';
   let phase = $state<Phase>('starting');
@@ -21,6 +33,7 @@
   const name = pass.freshVaultName();
   let blobDir = '';
   let finished = false;
+  let declining = $state(false);
 
   $effect(() => {
     void start();
@@ -51,9 +64,19 @@
       return;
     }
     phase = 'receiving';
-    await pass.adoptFile(reply.file, name);
-    await lan.addPeer({ key: reply.peer.key, name: reply.peer.name });
+    // Done before the vault lands: on a device with none, its arrival swaps the door for a new
+    // one, and this sheet goes with the old. Leaving must not stop the pairing still under way.
     finished = true;
+    onarriving?.(reply.peer.name);
+    try {
+      await pass.adoptFile(reply.file, name);
+    } catch (failure) {
+      onarriving?.(null);
+      // Nothing arrived, so leaving stops the pairing as before.
+      finished = false;
+      throw failure;
+    }
+    await lan.addPeer({ key: reply.peer.key, name: reply.peer.name });
     await lan.stop();
     ondone(reply.peer.name);
   }
@@ -69,14 +92,16 @@
   }
 
   function again() {
+    declining = false;
     void lan.stop().then(start);
   }
 </script>
 
 <Dialog title="Get it from another device" onclose={onclose}>
-  <div class="stack">
+  <!-- Each step is said as it comes, as the screen changes under someone who cannot see it. -->
+  <div class="stack" aria-live="polite">
     {#if problem}
-      <p class="danger-text">{problem}</p>
+      <p class="danger-text" role="alert">{problem}</p>
       <div><Btn label="Try again" variant="primary" onclick={again} /></div>
     {:else if phase === 'starting'}
       <p class="dim">Getting ready…</p>
@@ -95,9 +120,11 @@
       <p class="mono" style="font-size:36px;font-weight:600;line-height:1.2">{code}</p>
       <p class="dim">{from}</p>
       <div class="gap">
-        <Btn label="They differ" variant="danger" onclick={() => answer(false)} />
+        <Btn label="They differ" variant="danger" onclick={() => { declining = true; void answer(false); }} />
         <Btn label="They match" variant="primary" onclick={() => answer(true)} />
       </div>
+    {:else if declining}
+      <p class="dim">Stopping…</p>
     {:else}
       <p class="dim">Receiving the vault…</p>
     {/if}

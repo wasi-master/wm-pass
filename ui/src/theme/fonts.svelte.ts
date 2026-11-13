@@ -75,7 +75,8 @@ class ThemeFonts {
       .slice(-100);
     const ext = name.slice(name.lastIndexOf('.') + 1).toLowerCase();
     if (!name.includes('.') || !['ttf', 'otf'].includes(ext)) throw new Error('Choose a .ttf or .otf font file.');
-    if (file.bytes.length === 0 || file.bytes.length > LIMIT) throw new Error('That font file is too large.');
+    if (file.bytes.length === 0) throw new Error('That font file is empty.');
+    if (file.bytes.length > LIMIT) throw new Error('That font file is too large.');
     const key = `file:${name}`;
     this.families.delete(key);
     try {

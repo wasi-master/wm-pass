@@ -1,6 +1,5 @@
 import type { MenuItem } from '../engine/host';
 import { pass } from '../engine/pass.svelte';
-import { host } from '../engine/host';
 import type { Summary } from '../engine/types';
 import { overlays } from '../parts/floating.svelte';
 import { ui } from './ui.svelte';
@@ -33,20 +32,32 @@ export function entryMenu(entry: Summary): MenuItem[] {
 }
 
 export async function runEntryMenu(choice: string, entry: Summary) {
+  // A change the vault refuses, such as one opened read-only, says so rather than doing nothing.
+  try {
+    await run(choice, entry);
+  } catch (failure: any) {
+    overlays.toast(failure?.message ?? 'That could not be done.');
+  }
+}
+
+async function run(choice: string, entry: Summary) {
   switch (choice) {
     case 'restore':
       await pass.change('entry.restore', { id: entry.id });
+      // Gone from the trash list, so not left open there as a live item.
+      if (ui.section === 'trash') ui.deselect(entry.id);
+      overlays.toast(`“${entry.title || 'Untitled'}” is back.`);
       break;
     case 'purge': {
       const yes = await overlays.ask({
-        title: `Delete “${entry.title}” for good?`,
+        title: `Delete “${entry.title || 'Untitled'}” for good?`,
         body: 'Its password, history and attachments go with it. A backup made before now would still hold them.',
         action: 'Delete for good',
         danger: true,
       });
       if (yes) {
         await pass.change('entry.purge', { id: entry.id });
-        if (ui.selected === entry.id) ui.selected = null;
+        ui.deselect(entry.id);
       }
       break;
     }
@@ -60,10 +71,11 @@ export async function runEntryMenu(choice: string, entry: Summary) {
       break;
     case 'hide':
       await pass.change('entry.common', { id: entry.id, hidden: !entry.hidden });
-      if (!entry.hidden && ui.selected === entry.id) ui.selected = null;
+      if (!entry.hidden) ui.deselect(entry.id);
+      // It leaves the list either way, so it says where it went, as several at once do.
+      overlays.toast(entry.hidden ? `“${entry.title || 'Untitled'}” is off the hidden shelf.` : `“${entry.title || 'Untitled'}” moved to the hidden shelf.`);
       break;
     default:
       await ui.perform(choice, entry);
   }
-  void host;
 }

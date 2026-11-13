@@ -119,7 +119,7 @@ fn take<S: Read + Write, B: BlobStore>(opened: Opened<S>, vault: &mut Vault, own
     let Opened { mut channel, peer } = opened;
     let mut counts = LanReport::default();
     let gift: Gift = channel.recv_value()?;
-    let wanted: Vec<String> = gift.blobs().into_iter().filter(|name| own.get(name).is_none()).collect();
+    let wanted: Vec<String> = gift.blobs().into_iter().filter(|name| !own.has(name)).collect();
     channel.send_value(&wanted)?;
     recv_blobs(&mut channel, &wanted, own, &mut counts)?;
     let report = absorb(vault, gift, now_ms)?;
@@ -146,7 +146,7 @@ fn give<S: Read + Write, B: BlobStore, N: BlobStore>(opened: Opened<S>, vault: &
     let asked: Vec<String> = channel.recv_value()?;
     send_blobs(&mut channel, &names, &asked, own, &mut counts)?;
     let offer: Offer = channel.recv_value()?;
-    let wanted: Vec<String> = offer.blobs.iter().filter(|name| new_home.get(name).is_none()).cloned().collect();
+    let wanted: Vec<String> = offer.blobs.iter().filter(|name| !new_home.has(name)).cloned().collect();
     channel.send_value(&wanted)?;
     recv_blobs(&mut channel, &wanted, new_home, &mut counts)?;
     channel.send_value(&true)?;

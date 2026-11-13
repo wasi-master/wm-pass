@@ -1,0 +1,10 @@
+<!doctype html><title>Sign-up fixture</title>
+<form onsubmit="event.preventDefault()">
+<!-- A box for bots, off the page's edge, and a phone number between the email and the password. -->
+<input id="trap" name="username" type="text" tabindex="-1" style="position:absolute;left:-9999px;width:200px;height:30px">
+<input id="name" name="user[first_name]" style="display:block;width:280px;height:32px;margin:20px">
+<input id="user" name="user[email]" type="email" style="display:block;width:280px;height:32px;margin:20px">
+<input id="phone" name="user[phone]" type="tel" style="display:block;width:280px;height:32px;margin:20px">
+<input id="pass" name="user[password]" type="password" style="display:block;width:280px;height:32px;margin:20px">
+<button>Sign up</button></form>
+<form class="newsletter-form" onsubmit="event.preventDefault()"><input id="news" name="email" type="email" style="width:280px;height:32px;margin:20px"><button>Subscribe</button></form>

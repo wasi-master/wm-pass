@@ -12,8 +12,6 @@ Found under Settings, Tools, Disposable inbox.
 
 ## About this page
 
-*Only in the desktop app and Android.*
-
 Makes throwaway addresses on a mail service and keeps each one, with its mail, until you close it. For sign-ups that only need a confirmation mail.
 
 #### Why it is there
@@ -64,8 +62,6 @@ See also [mail.tm](/guide/settings/inbox/#concept-inbox-mailtm), [Guerrilla Mail
 
 ## mail.tm
 
-*Only in the desktop app and Android.*
-
 A free mailbox service. WM Pass makes a new account there for each address.
 
 #### How it works
@@ -81,8 +77,6 @@ See also [Disposable inbox](/guide/settings/inbox/), [Guerrilla Mail](/guide/set
 <a id="concept-inbox-guerrilla"></a>
 
 ## Guerrilla Mail
-
-*Only in the desktop app and Android.*
 
 A free throwaway mail service that hands out an address with no account.
 
@@ -103,8 +97,6 @@ See also [Disposable inbox](/guide/settings/inbox/), [mail.tm](/guide/settings/i
 <a id="group-inbox-arrived"></a>
 
 ## Arrived
-
-*Only in the desktop app and Android.*
 
 The mail sent to this address, newest first. A dot marks what came in since you opened the page. Click one to read it.
 

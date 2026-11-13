@@ -28,10 +28,10 @@ export const widgets = [
           'Touch and hold an empty spot on the home screen, choose **Widgets**, then WM Pass.',
           '- *Quick bar*: the buttons you choose under [[setting.widget_buttons]]. Search, add, codes, generator and health open WM Pass on that page, after the door if the vault is locked. Lock locks the vault without opening WM Pass, and while it is locked, unlocks it over the home screen.',
           '- *Lock status*: whether the vault is open, and its name while it is. A tap locks it, or unlocks it over the home screen: the fingerprint prompt alone when fingerprint unlock is set up, the door otherwise.',
-          '- *Health*: your score and how many passwords are weak, reused or in a known breach. The counts are kept from the last time the vault was open, with when that was.',
-          '- *Backups*: when each backup place last ran, and whether that failed or the next run is late.',
-          '- *Generator*: a tap copies a new password made the way the generator is set up. Nothing is shown, and the clipboard is cleared as usual.',
-          '- *Codes* and *Favorites*: only with [[setting.widget_access]] on, and only while the vault is open. Codes shows the codes chosen under [[setting.widget_codes]], and a tap copies one. Favorites shows a letter and a name for each favorite, and a tap opens it. Locked, a tap unlocks them where they are.',
+          '- *Health*: your score, unless [[setting.health_score]] is off, and how many passwords are weak, reused or in a known breach. The counts are kept from the last time the vault was open, with when that was.',
+          '- *Backups*: when each backup place last ran, and whether that failed or the next run is late. A tap opens the backup settings.',
+          '- *Generator*: a tap copies a new password made the way the generator is set up. Nothing is shown. The password stays on the clipboard until something else replaces it, since it is saved nowhere yet.',
+          '- *Codes* and *Favorites*: only with [[setting.widget_access]] on, and only while the vault is open. Codes shows the codes chosen under [[setting.widget_codes]], and a tap copies one. Favorites shows a letter and a name for each favorite, and a tap opens it. Nothing in the trash or on the hidden shelf is shown. Locked, a tap unlocks them where they are.',
           'If Android ends WM Pass while a widget shows codes or names, the widgets are drawn locked again within a few minutes.',
         ],
         related: ['feature.app_shortcuts', 'feature.lock_tile', 'feature.panic_tile', 'page.widgets'],
@@ -65,6 +65,11 @@ export const widgets = [
     shells: ['android', 'desktop'],
     what: 'How the widgets look, which buttons the quick bar has, what its lock button does, and which codes the Codes widget shows.',
     how: 'Which widget shows what is under [[feature.home_widget]]. Whether any widget may show codes or favorites is decided under Security, by [[setting.widget_access]].',
+    on: {
+      android: {
+        how: 'Which widget shows what is under [[feature.home_widget]]. Whether any widget may show codes or favorites is [[setting.widget_access]], on this page and under Security.',
+      },
+    },
     related: ['feature.home_widget', 'setting.widget_access'],
     words: 'widget home screen desktop notification centre center',
   },
@@ -109,7 +114,7 @@ export const widgets = [
     shells: ['android', 'desktop'],
     what: 'The buttons on the quick bar widget, in order.',
     how: [
-      'Drag a row by its handle to move it. The bin removes it, and its **Add** row brings it back.',
+      'Drag a row by its handle to move it. The bin removes it, and its own row below, such as **Add Health**, brings it back.',
       'A quick bar too narrow for all of them shows the first ones that fit.',
     ],
     related: ['feature.home_widget', 'setting.widget_lock'],
@@ -155,6 +160,7 @@ export const widgets = [
         how: [
           'Off, those two widgets say only that they are turned off. With the vault locked, they say only that it is locked, and name nothing.',
           'Locking, from anywhere, empties them at once. If Android ends WM Pass while they show something, they are drawn locked again within a few minutes.',
+          'Items in the trash or on the hidden shelf never appear on them.',
           'No other widget shows anything from inside the vault, whether this is on or not.',
         ],
       },

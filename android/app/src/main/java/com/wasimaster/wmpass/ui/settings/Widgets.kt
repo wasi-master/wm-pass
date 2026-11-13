@@ -1,6 +1,6 @@
 package com.wasimaster.wmpass.ui.settings
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -80,6 +80,8 @@ internal fun WidgetSettingsScreen() {
         SettingsGroup("Quick bar", info = infoFor("widget_buttons")) {
             item {
                 ReorderableColumn(
+                    // The rows run to their edges; the card around them wants the usual inset, as on the other pages.
+                    modifier = Modifier.padding(horizontal = 16.dp),
                     items = prefs.widgetButtons,
                     label = { ButtonNames[it] ?: it },
                     onReorder = { prefs.updateWidgetButtons(it); changed() },
@@ -87,7 +89,7 @@ internal fun WidgetSettingsScreen() {
                 )
             }
             Prefs.WIDGET_BUTTONS.filter { it !in prefs.widgetButtons }.forEach { id ->
-                item { NavRow("Add ${ButtonNames[id]}", icon = PassIcons.Add) { prefs.updateWidgetButtons(prefs.widgetButtons + id); changed() } }
+                item { NavRow("Add ${ButtonNames[id] ?: id}", icon = PassIcons.Add) { prefs.updateWidgetButtons(prefs.widgetButtons + id); changed() } }
             }
         }
         SettingsGroup("Buttons") {
@@ -149,14 +151,17 @@ private fun CodesPickSheet(prefs: Prefs, onDone: () -> Unit) {
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
             items(withCodes, key = { it.id }) { entry ->
                 val on = entry.id in chosen
+                // A tick box to a screen reader too, and greyed once eight are ticked rather than doing nothing.
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .clickable { chosen = if (on) chosen - entry.id else if (chosen.size < 8) chosen + entry.id else chosen }
+                        .toggleable(on, enabled = on || chosen.size < 8, role = androidx.compose.ui.semantics.Role.Checkbox) {
+                            chosen = if (on) chosen - entry.id else chosen + entry.id
+                        }
                         .padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Checkbox(checked = on, onCheckedChange = null)
+                    Checkbox(checked = on, onCheckedChange = null, enabled = on || chosen.size < 8)
                     Text(entry.title, color = colors.text, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 8.dp))
                 }
             }

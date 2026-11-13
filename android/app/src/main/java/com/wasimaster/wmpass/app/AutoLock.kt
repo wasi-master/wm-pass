@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.SystemClock
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
@@ -51,6 +52,9 @@ object AutoLock {
         }
         val wait = maxOf(after, KEYBOARD_GRACE_SECONDS)
         pending?.cancel()
+        // As on leaving the app: the timer below stops while the phone sleeps, and the keyboard,
+        // autofill and widgets check this one before they show anything.
+        lockAt = SystemClock.elapsedRealtime() + wait * 1000L
         pending = scope.launch {
             delay(wait * 1000L)
             Pass.lock()
@@ -67,6 +71,37 @@ object AutoLock {
     /** How long after the fingerprint opens the vault its screen has to close. */
     private const val KEYBOARD_HANDOFF_MS = 10_000L
 
+    /**
+     * While the app waits on a system picker it opened (a file to attach or import, a backup
+     * folder), it is in the background only because it asked to be. Locking then, at once with
+     * the "At once" setting, would drop the editor and leave the picked file nowhere to go.
+     */
+    @Volatile
+    private var awaitingResult = false
+
+    /** The longest a picker may stay open before the vault locks after all. */
+    private const val PICKER_GRACE_SECONDS = 300
+
+    fun awaitingResult(waiting: Boolean) {
+        awaitingResult = waiting
+    }
+
+    /**
+     * When the background timer is due, by the clock that counts deep sleep, or zero. The timer
+     * itself waits on the main thread's clock, which stops while the phone sleeps, so with the
+     * screen-off lock turned off it would come due long after the time chosen.
+     */
+    @Volatile
+    private var lockAt = 0L
+
+    /** Locks now if the vault has been in the background longer than the setting allows. */
+    suspend fun lockIfOverdue() {
+        val at = lockAt
+        if (at == 0L || SystemClock.elapsedRealtime() < at) return
+        lockAt = 0L
+        Pass.lock()
+    }
+
     fun install(app: Application) {
         val prefs = Prefs.of(app)
         SecureClipboard.clearAfterSeconds = prefs.clipboardSeconds
@@ -74,14 +109,26 @@ object AutoLock {
             object : DefaultLifecycleObserver {
                 override fun onStart(owner: LifecycleOwner) {
                     pending?.cancel()
+                    // Back on screen, so any picker is done, even one whose result never came.
+                    awaitingResult = false
+                    // Past due while the phone slept: lock before anything is shown open.
+                    val overdue = lockAt != 0L && SystemClock.elapsedRealtime() >= lockAt
+                    lockAt = 0L
+                    if (overdue) scope.launch { Pass.lock() }
                 }
 
                 override fun onStop(owner: LifecycleOwner) {
-                    scope.launch { Pass.flush() }
+                    // A save that fails here is retried with the next change; it must not crash the app.
+                    scope.launch { runCatching { Pass.flush() } }
                     val after = keyboardGrace(prefs.lockAfter)
-                    if (after < 0) return
+                    if (after < 0) {
+                        lockAt = 0L
+                        return
+                    }
+                    val wait = if (awaitingResult) maxOf(after, PICKER_GRACE_SECONDS) else after
+                    lockAt = SystemClock.elapsedRealtime() + wait * 1000L
                     pending = scope.launch {
-                        delay(after * 1000L)
+                        delay(wait * 1000L)
                         Pass.lock()
                     }
                 }
@@ -90,7 +137,9 @@ object AutoLock {
         app.registerReceiver(
             object : BroadcastReceiver() {
                 override fun onReceive(context: Context, intent: Intent) {
-                    if (prefs.lockAfter >= 0 && prefs.lockScreenOff.value) scope.launch { Pass.lock() }
+                    // Its own switch, whatever the background timer says: with that at Never, the
+                    // screen going off is the one thing left that locks by itself.
+                    if (prefs.lockScreenOff.value) scope.launch { Pass.lock() }
                 }
             },
             IntentFilter(Intent.ACTION_SCREEN_OFF),

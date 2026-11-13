@@ -218,7 +218,12 @@ fn parse_date(text: &str) -> Option<u64> {
     if !(1..=12).contains(&m) || !(1..=31).contains(&d) {
         return None;
     }
-    u64::try_from(days_from_civil(y, m, d) * 86_400_000).ok()
+    let days = days_from_civil(y, m, d);
+    // 2026-02-30 is no day at all, rather than the second of March.
+    if civil_from_days(days) != (y, m, d) {
+        return None;
+    }
+    u64::try_from(days * 86_400_000).ok()
 }
 
 fn site_text(site: &Value) -> Option<String> {
@@ -390,7 +395,18 @@ impl Editor {
         let mut sorted: Vec<&Folder> = folders.iter().collect();
         sorted.sort_by_key(|f| f.name.to_lowercase());
         let mut folder = Row::new(Slot::Folder, "folder", "Folder", "choice");
-        folder.choices = std::iter::once("No folder".to_owned()).chain(sorted.iter().map(|f| f.name.clone())).collect();
+        // A choice is found again by its words, so two folders of one name are told apart, or
+        // the item would land in the first of them on saving.
+        folder.choices = vec!["No folder".to_owned()];
+        for f in &sorted {
+            let mut label = f.name.clone();
+            let mut n = 1;
+            while folder.choices.contains(&label) {
+                n += 1;
+                label = format!("{} ({n})", f.name);
+            }
+            folder.choices.push(label);
+        }
         folder.choice_keys = std::iter::once(String::new()).chain(sorted.iter().map(|f| f.id.clone())).collect();
         let now = detail.and_then(|d| d.row.folder.as_deref()).and_then(|id| folder.choice_keys.iter().position(|k| k == id)).unwrap_or(0);
         let shown = folder.choices[now].clone();
@@ -571,8 +587,22 @@ impl Editor {
         })
     }
 
-    /// Writes what changed. Returns the entry's id.
+    /// Writes what changed. Returns the entry's id. A new entry that fails part way, as on a
+    /// one-time code that does not read, is taken out again, so Esc after the error leaves
+    /// nothing behind and the next save makes it afresh.
     pub fn save(&mut self, engine: &mut Engine) -> Result<String, String> {
+        let new = self.id.is_none();
+        let saved = self.write(engine);
+        if new
+            && saved.is_err()
+            && let Some(id) = self.id.take()
+        {
+            let _ = engine.bulk(&[id], "purge", json!({}));
+        }
+        saved
+    }
+
+    fn write(&mut self, engine: &mut Engine) -> Result<String, String> {
         let title = self.rows.iter().find(|r| r.slot == Slot::Title).map(|r| r.value.text().trim().to_owned()).unwrap_or_default();
         if title.is_empty() {
             return Err("give it a title".to_owned());
@@ -697,6 +727,27 @@ mod tests {
         }
         assert_eq!(date_text(1_767_139_200_000), "2025-12-31");
         assert_eq!(parse_date("2026-13-01"), None);
+        assert_eq!(parse_date("2026-02-30"), None, "no such day");
+        assert_eq!(parse_date("2026-04-31"), None);
+        assert!(parse_date("2028-02-29").is_some(), "a leap day is a day");
+    }
+
+    #[test]
+    fn two_folders_of_one_name_are_told_apart() {
+        let folders = [
+            Folder { id: "f1".into(), name: "Mail".into(), parent: None },
+            Folder { id: "f2".into(), name: "Mail".into(), parent: None },
+        ];
+        let detail = Detail {
+            row: crate::engine::Row { id: "x".into(), kind: "note".into(), title: "T".into(), folder: Some("f2".into()), ..Default::default() },
+            ..Detail::default()
+        };
+        let mut editor = Editor::edit(&detail);
+        editor.organize(&folders, Some(&detail));
+        let row = editor.rows.iter().find(|r| r.slot == Slot::Folder).expect("folder row");
+        assert_eq!(row.choices, ["No folder", "Mail", "Mail (2)"]);
+        assert_eq!(row.choice_key().as_deref(), Some("f2"), "the item stays in its own folder");
+        assert!(!row.changed());
     }
 
     #[test]

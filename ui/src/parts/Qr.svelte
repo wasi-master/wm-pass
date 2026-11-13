@@ -9,25 +9,29 @@
   let tooLong = $state(false);
 
   $effect(() => {
+    // A reply for what was asked before must not land over the one for what is asked now, and a
+    // text too long for a code must not leave the last one's code on show.
+    let current = true;
+    const shown = (view: { size: number; rows: string }) => {
+      if (!current) return;
+      matrix = view;
+      tooLong = false;
+    };
+    const failed = () => {
+      if (!current) return;
+      matrix = null;
+      tooLong = true;
+    };
     if (from) {
-      pass
-        .view<{ size: number; rows: string }>(from.method, from.args)
-        .then((view) => {
-          matrix = view;
-          tooLong = false;
-        })
-        .catch(() => (tooLong = true));
-      return;
+      pass.view<{ size: number; rows: string }>(from.method, from.args).then(shown, failed);
+      return () => (current = false);
     }
     const bytes = bytesOf(text);
     pass
       .engine<{ size: number; rows: string }>('qr.encode', {}, { secret: bytes })
-      .then((reply) => {
-        matrix = reply.json;
-        tooLong = false;
-      })
-      .catch(() => (tooLong = true))
+      .then((reply) => shown(reply.json), failed)
       .finally(() => bytes.fill(0));
+    return () => (current = false);
   });
 
   const path = $derived.by(() => {

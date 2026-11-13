@@ -42,13 +42,16 @@
   let tables = $state<Record<string, Record<string, string>>>({});
 
   $effect(() => {
-    for (const [style] of ICON_STYLES) void icons.tableOf(style).then((table) => (tables[style] = table));
+    // A style that would not load shows no sample, rather than another style's glyphs drawn its way.
+    for (const [style] of ICON_STYLES) void icons.load(style).then((got) => {
+      if (got.style === style) tables[style] = got.table;
+    });
   });
 </script>
 
 <Group title="App icons" help="setting.icon_style">
   {#each ICON_STYLES as [id, name, about] (id)}
-    <button type="button" class="set-row" style="align-items:flex-start" onclick={() => prefs.set('icon_style', id as never)}>
+    <button type="button" class="set-row" style="align-items:flex-start" aria-pressed={prefs.v.icon_style === id} onclick={() => prefs.set('icon_style', id as never)}>
       <span class="text stack" style="gap:8px">
         <span><span style="display:block">{name}</span><span class="sub" style="display:block">{about}</span></span>
         <span class="gap dim" style="gap:12px">
@@ -64,7 +67,7 @@
 
 <Group title="Site icons" help="setting.site_icon_style">
   {#each SITE_STYLES as [id, name, about] (id)}
-    <button type="button" class="set-row" style="align-items:flex-start" onclick={() => prefs.set('site_icon_style', id as never)}>
+    <button type="button" class="set-row" style="align-items:flex-start" aria-pressed={prefs.v.site_icon_style === id} onclick={() => prefs.set('site_icon_style', id as never)}>
       <span class="text stack" style="gap:8px">
         <span><span style="display:block">{name}</span><span class="sub" style="display:block">{about}</span></span>
         <span class="gap wrap">

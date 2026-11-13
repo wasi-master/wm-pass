@@ -6,20 +6,30 @@ use std::collections::HashMap;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, Runtime};
 
+/// A chord as the page saves it, `Mod+Shift+Plus`, in the key names the system's parsers know,
+/// with `Mod` as `modifier`. Neither the menu's nor the global shortcut's parser has a key named
+/// Plus, and both split on `+`. The `+` typed with Shift is the `=` key's, as on a US layout; one
+/// typed without it is taken as the number pad's.
+pub fn system_chord(chord: &str, modifier: &str) -> String {
+    let parts: Vec<&str> = chord.split('+').collect();
+    let shifted = parts.contains(&"Shift");
+    parts
+        .iter()
+        .map(|part| match *part {
+            "Mod" => modifier,
+            "Plus" if shifted => "Equal",
+            "Plus" => "NumpadAdd",
+            other => other,
+        })
+        .collect::<Vec<_>>()
+        .join("+")
+}
+
 fn accelerator(chord: &str) -> Option<String> {
     if !cfg!(target_os = "macos") || chord.is_empty() {
         return None;
     }
-    Some(
-        chord
-            .split('+')
-            .map(|part| match part {
-                "Mod" => "Cmd",
-                other => other,
-            })
-            .collect::<Vec<_>>()
-            .join("+"),
-    )
+    Some(system_chord(chord, "Cmd"))
 }
 
 pub fn build<R: Runtime>(app: &AppHandle<R>, shortcuts: &HashMap<String, String>, unlocked: bool) -> tauri::Result<Menu<R>> {
@@ -136,5 +146,22 @@ pub fn handle<R: Runtime>(app: &AppHandle<R>, id: &str) {
         app.exit(0);
     } else if id == "source" {
         crate::open_in_browser("https://github.com/wasi-master/wm-pass");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::system_chord;
+
+    #[test]
+    fn a_plus_key_is_named_as_the_parsers_know_it() {
+        assert_eq!(system_chord("Mod+Shift+Plus", "Cmd"), "Cmd+Shift+Equal");
+        assert_eq!(system_chord("Mod+Plus", "CommandOrControl"), "CommandOrControl+NumpadAdd");
+        assert_eq!(system_chord("Mod+Shift+Space", "CommandOrControl"), "CommandOrControl+Shift+Space");
+        // The menu's parser (muda) knows the same names, Equal and NumpadAdd, as this one.
+        for chord in ["CommandOrControl+Shift+Equal", "CommandOrControl+NumpadAdd"] {
+            assert!(chord.parse::<tauri_plugin_global_shortcut::Shortcut>().is_ok(), "{chord}");
+        }
+        assert!("CommandOrControl+Plus".parse::<tauri_plugin_global_shortcut::Shortcut>().is_err());
     }
 }

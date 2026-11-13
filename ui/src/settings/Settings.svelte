@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import Field from '../parts/Field.svelte';
   import Icon from '../parts/Icon.svelte';
   import IconBtn from '../parts/IconBtn.svelte';
@@ -110,7 +111,19 @@
 
   // The guide's words load with the first letter typed, so its pages can be found too.
   $effect(() => {
-    if (query.trim()) void help.load();
+    if (query.trim()) void help.load().catch(() => undefined);
+  });
+
+  let settled = $state('');
+  $effect(() => {
+    const words = query.trim();
+    const count = found.length;
+    if (!words) {
+      settled = '';
+      return;
+    }
+    const timer = setTimeout(() => (settled = count === 0 ? 'No settings match.' : count === 1 ? '1 match' : `${count} matches`), 400);
+    return () => clearTimeout(timer);
   });
 
   const found = $derived.by<Hit[]>(() => {
@@ -161,6 +174,17 @@
     ui.section = `settings/${id}`;
   }
 
+  /**
+   * Up a level. On a narrow window the list comes back in place of the page, and the keyboard goes
+   * to the page just left in it rather than to the top of the window.
+   */
+  function back() {
+    if (backTo) return go(backTo.id);
+    const left = listed;
+    ui.section = 'settings';
+    void tick().then(() => document.querySelector<HTMLElement>(`.settings-nav [data-page="${left}"]`)?.focus());
+  }
+
   function jump(route: string, title: string) {
     go(route);
     query = '';
@@ -193,9 +217,25 @@
       </div>
     {/if}
     <div class="list-head" style="padding-top:4px" data-help-anchor="settings.search">
-      <Field bind:value={query} placeholder="Search settings and the guide" />
+      <Field
+        bind:value={query}
+        placeholder="Search settings and the guide"
+        onenter={() => {
+          const first = found[0];
+          if (first) void (first.topic ? help.open(first.topic) : jump(first.route, first.title));
+        }}
+        onkeydown={(event) => {
+          // Escape empties the search, as it does in the vault's own.
+          if (event.key === 'Escape' && query) {
+            event.preventDefault();
+            query = '';
+          }
+        }}
+      />
     </div>
-    <div class="list-body scroll" data-help-anchor="settings.list">
+    <!-- How many the search found, said once it settles. -->
+    <div class="sr-only" role="status">{settled}</div>
+    <nav class="list-body scroll settings-nav" aria-label="Settings" data-help-anchor="settings.list">
       {#if query.trim()}
         {#if found.length === 0}
           <p class="empty">No settings match.</p>
@@ -214,7 +254,7 @@
           {#if pages.length > 0}
             <div class="side-title" style="padding-left:8px">{group}</div>
             {#each pages as info (info.id)}
-              <button type="button" class="side-item" style="height:32px" aria-current={listed === info.id} data-help-anchor={info.id === 'guide' ? 'settings.guide' : undefined} onclick={() => go(info.id)}>
+              <button type="button" class="side-item" style="height:32px" aria-current={listed === info.id} data-page={info.id} data-help-anchor={info.id === 'guide' ? 'settings.guide' : undefined} onclick={() => go(info.id)}>
                 {@render tile(info.id, info.icon)}
                 <span class="grow ell">{info.title}</span>
               </button>
@@ -222,7 +262,7 @@
           {/if}
         {/each}
       {/if}
-    </div>
+    </nav>
   </div>
 {/if}
 
@@ -231,9 +271,9 @@
     <div class="settings-inner">
       <div class="gap" style="padding-bottom:14px">
         {#if ui.narrow || backTo}
-          <IconBtn icon="arrow_back" label="Back" onclick={() => (backTo ? go(backTo.id) : (ui.section = 'settings'))} />
+          <IconBtn icon="arrow_back" label="Back" onclick={back} />
         {/if}
-        <h1 class="page-title">{page.title}</h1>
+        <h1 class="page-title" tabindex="-1">{page.title}</h1>
         <HelpButton id="page.{page.id}" title={page.title} />
       </div>
       {#key pageId}

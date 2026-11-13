@@ -236,11 +236,13 @@ fun ThemeColors.readableOn(): ThemeColors {
     return copy(
         text = worst(text, 7.0),
         textMid = worst(textMid, 4.5),
-        textLow = worst(textLow, 3.0),
-        primary = worst(primary, 3.0),
-        danger = worst(danger, 3.0),
-        warn = worst(warn, 3.0),
-        info = worst(info, 3.0),
+        // Each is set as small text somewhere, a hint, a link, an error, so each must read as it:
+        // 4.5:1, as small text needs. At 3:1 a theme's hint could fall to 2.5:1 on a raised surface.
+        textLow = worst(textLow, 4.5),
+        primary = worst(primary, 4.5),
+        danger = worst(danger, 4.5),
+        warn = worst(warn, 4.5),
+        info = worst(info, 4.5),
     )
 }
 
@@ -281,7 +283,9 @@ object ThemeCodec {
         val trimmed = text.trim()
         require(trimmed.length <= LIMIT * 2) { "That is too long to be a theme." }
         val body = if (trimmed.startsWith(PREFIX)) {
-            String(Base64.decode(trimmed.removePrefix(PREFIX), Base64.URL_SAFE))
+            // A code cut short or mistyped says what it is, not "bad base-64".
+            runCatching { String(Base64.decode(trimmed.removePrefix(PREFIX), Base64.URL_SAFE)) }
+                .getOrElse { throw IllegalArgumentException("That theme code is not complete. Copy all of it and try again.") }
         } else {
             trimmed
         }

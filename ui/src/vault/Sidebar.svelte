@@ -5,6 +5,7 @@
   import { pass } from '../engine/pass.svelte';
   import { prefs } from '../engine/prefs.svelte';
   import { kindIcon, kindPlural } from '../engine/face';
+  import { byName } from '../engine/text';
   import type { IconName } from '../engine/icons.svelte';
   import { ui } from './ui.svelte';
   import { TAB_INFO } from './tabs';
@@ -20,7 +21,7 @@
   const tags = $derived.by(() => {
     const counts = new Map<string, number>();
     for (const e of entries) for (const t of e.tags) counts.set(t, (counts.get(t) ?? 0) + 1);
-    return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    return [...counts.entries()].sort((a, b) => byName(a[0], b[0]));
   });
   const name = $derived(pass.state.kind === 'unlocked' ? pass.state.name : '');
   const tabs = $derived(prefs.listOf('tabs'));
@@ -32,8 +33,14 @@
     return null;
   }
 
+  // Counted in one pass over the items, not once per folder for each of two hundred folders.
+  const inFolders = $derived.by(() => {
+    const counts = new Map<string, number>();
+    for (const e of entries) if (e.folder) counts.set(e.folder, (counts.get(e.folder) ?? 0) + 1);
+    return counts;
+  });
   function folderCount(id: string) {
-    return entries.filter((e) => e.folder === id).length;
+    return inFolders.get(id) ?? 0;
   }
 
   function go(section: string) {
@@ -45,7 +52,7 @@
     const choice = await overlays.popup(
       [
         { id: 'rename', label: 'Rename…' },
-        { id: 'remove', label: 'Remove folder', danger: true },
+        { id: 'remove', label: 'Remove folder…', danger: true },
       ],
       event.clientX,
       event.clientY,
@@ -53,7 +60,15 @@
     if (choice === 'rename') ui.renamingFolder = { id, name: current };
     if (choice === 'remove') {
       const yes = await overlays.ask({ title: `Remove “${current}”?`, body: 'What is in it stays in the vault, in no folder.', action: 'Remove', danger: true });
-      if (yes) await pass.change('folder.remove', { id });
+      if (!yes) return;
+      try {
+        await pass.change('folder.remove', { id });
+      } catch (failure: any) {
+        overlays.toast(failure?.message ?? 'The folder could not be removed.');
+        return;
+      }
+      // Its items are still in the vault, so the list goes back to showing them all.
+      if (ui.section === `folder:${id}`) ui.go('all');
     }
   }
 </script>
@@ -89,7 +104,7 @@
         <span>Folders</span>
         <IconBtn icon="add" label="New folder" size={15} class="tiny" onclick={() => (ui.renamingFolder = { id: '', name: '' })} />
       </div>
-      {#each pass.folders as folder}
+      {#each pass.folders as folder (folder.id)}
         <div oncontextmenu={(e) => folderMenu(e, folder.id, folder.name)} role="presentation">
           {@render item(`folder:${folder.id}`, 'folder', folder.name, folderCount(folder.id))}
         </div>
@@ -98,7 +113,7 @@
 
     {#if prefs.v.sidebar_tags && tags.length > 0}
       <div class="side-title">Tags</div>
-      {#each tags as [tag, shown]}
+      {#each tags as [tag, shown] (tag)}
         <div oncontextmenu={(e) => { e.preventDefault(); ui.managingTag = tag; }} role="presentation">
           {@render item(`tag:${tag}`, tagLook.glyph(tag), tag, shown)}
         </div>
@@ -108,7 +123,7 @@
   <div class="side-foot">
     <span class="name ell" title={name}>{pass.child ?? name}</span>
     <HelpButton id="screen.window" title="this window" />
-    {#if prefs.v.show_lock}<span data-help-anchor="sidebar.lock" style="display:flex"><IconBtn icon="lock" label="Lock" onclick={() => void pass.lock()} /></span>{/if}
+    {#if prefs.v.show_lock}<span data-help-anchor="sidebar.lock" style="display:flex"><IconBtn icon="lock" label="Lock" onclick={() => void pass.lock().catch((error: Error) => overlays.toast(error?.message || 'The vault could not be locked.'))} /></span>{/if}
     <span data-help-anchor="sidebar.settings" style="display:flex"><IconBtn icon="settings" label="Settings" on={ui.section.startsWith('settings')} onclick={() => go('settings')} /></span>
   </div>
 </aside>

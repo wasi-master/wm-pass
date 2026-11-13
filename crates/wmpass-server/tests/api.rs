@@ -26,8 +26,12 @@ struct Server {
 }
 
 fn start(signups: Signups) -> Server {
+    start_with(signups, None)
+}
+
+fn start_with(signups: Signups, public_url: Option<&str>) -> Server {
     let dir = tempfile::tempdir().unwrap();
-    let config = Config { data_dir: dir.path().to_owned(), database_url: None, signups, public_url: None };
+    let config = Config { data_dir: dir.path().to_owned(), database_url: None, signups, public_url: public_url.map(str::to_owned) };
     let (sender, receiver) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
@@ -555,3 +559,348 @@ fn generate_key_pair_is_used_at_registration() {
     let swap = json!({"publicKey": public_key, "encryptedPrivateKey": private_key});
     assert_eq!(server.raw("POST", "/api/accounts/keys", Some(&token), Some(&swap)).0, 400);
 }
+
+#[test]
+fn guesses_sent_all_at_once_are_held_to_the_same_limit() {
+    let server = start(Signups::Open);
+    server.signup("me@example.com", "right-pass");
+    let wrong = MasterKey::derive(b"wrong", "me@example.com", KDF).unwrap().login_hash(b"wrong");
+    let answers: Vec<_> = std::thread::scope(|scope| {
+        let guesses: Vec<_> = (0..12)
+            .map(|_| scope.spawn(|| api::login(&server.endpoints, "me@example.com", &wrong, &device("x"), None).run(&NativeHttp::default(), POLICY)))
+            .collect();
+        guesses.into_iter().map(|guess| guess.join().unwrap()).collect()
+    });
+    let judged = answers.iter().filter(|answer| matches!(answer, Ok(Err(wmpass_bw::BwError::BadLogin)))).count();
+    let refused = answers.iter().filter(|answer| matches!(answer, Err(wmpass_net::NetError::RateLimited(_)))).count();
+    assert_eq!((judged, refused), (5, 7));
+}
+
+#[test]
+fn of_two_edits_from_the_same_copy_only_one_lands() {
+    let server = start(Signups::Open);
+    server.signup("me@example.com", "pw-pw-pw");
+    let (token, key) = server.session("me@example.com", "pw-pw-pw", "a");
+    let base = json!({"type": 2, "name": key.encrypt(b"x").unwrap()});
+    let (_, created) = server.raw("POST", "/api/ciphers", Some(&token), Some(&base));
+    let id = created["id"].as_str().unwrap().to_owned();
+    let path = format!("/api/ciphers/{id}");
+    let statuses: Vec<u16> = std::thread::scope(|scope| {
+        let edits: Vec<_> = (0..8)
+            .map(|n| {
+                let mut edit = json!({"type": 2, "name": key.encrypt(format!("edit {n}").as_bytes()).unwrap()});
+                edit["lastKnownRevisionDate"] = created["revisionDate"].clone();
+                let (server, token, path) = (&server, &token, &path);
+                scope.spawn(move || server.raw("PUT", path, Some(token), Some(&edit)).0)
+            })
+            .collect();
+        edits.into_iter().map(|edit| edit.join().unwrap()).collect()
+    });
+    assert_eq!(statuses.iter().filter(|&&s| s == 200).count(), 1, "{statuses:?}");
+    assert_eq!(statuses.iter().filter(|&&s| s == 400).count(), 7, "{statuses:?}");
+}
+
+#[test]
+fn moving_one_item_from_several_requests_at_once_never_fails() {
+    let server = start(Signups::Open);
+    server.signup("me@example.com", "pw-pw-pw");
+    let (token, key) = server.session("me@example.com", "pw-pw-pw", "a");
+    let (_, created) = server.raw("POST", "/api/ciphers", Some(&token), Some(&json!({"type": 2, "name": key.encrypt(b"x").unwrap()})));
+    let path = format!("/api/ciphers/{}/partial", created["id"].as_str().unwrap());
+    for _ in 0..5 {
+        let statuses: Vec<u16> = std::thread::scope(|scope| {
+            let moves: Vec<_> = (0..8)
+                .map(|n| {
+                    let (server, token, path) = (&server, &token, &path);
+                    scope.spawn(move || server.raw("PUT", path, Some(token), Some(&json!({"favorite": n % 2 == 0}))).0)
+                })
+                .collect();
+            moves.into_iter().map(|one| one.join().unwrap()).collect()
+        });
+        assert!(statuses.iter().all(|&s| s == 200), "{statuses:?}");
+    }
+}
+
+#[test]
+fn a_shared_file_write_with_an_absurd_revision_is_refused_not_crashed() {
+    let server = start(Signups::Open);
+    server.signup("owner@example.com", "owner-pass");
+    let (owner, _) = server.session("owner@example.com", "owner-pass", "o");
+    let (_, file) = server.raw("POST", "/wm/shared", Some(&owner), Some(&json!({"body": "c2VhbGVk"})));
+    let id = file["id"].as_str().unwrap();
+    let (status, _) = server.raw("PUT", &format!("/wm/shared/{id}"), Some(&owner), Some(&json!({"body": "x", "revision": i64::MAX})));
+    assert_eq!(status, 400);
+}
+
+#[test]
+fn purging_is_throttled_like_logging_in() {
+    let server = start(Signups::Open);
+    server.signup("me@example.com", "pw-pw-pw");
+    let (token, _) = server.session("me@example.com", "pw-pw-pw", "a");
+    let wrong = json!({"masterPasswordHash": "not the hash"});
+    for _ in 0..5 {
+        assert_eq!(server.raw("POST", "/api/ciphers/purge", Some(&token), Some(&wrong)).0, 400);
+    }
+    assert_eq!(server.raw("POST", "/api/ciphers/purge", Some(&token), Some(&wrong)).0, 429);
+}
+
+#[test]
+fn revoking_a_device_closes_its_live_socket_and_no_other() {
+    use futures_util_ws::*;
+    use tokio_tungstenite::tungstenite::{self, Message};
+    let server = start(Signups::Open);
+    server.signup("me@example.com", "pw-pw-pw");
+    let (phone, key) = server.session("me@example.com", "pw-pw-pw", "phone");
+    let (laptop, _) = server.session("me@example.com", "pw-pw-pw", "laptop");
+    let (tablet, _) = server.session("me@example.com", "pw-pw-pw", "tablet");
+    let open = |token: &str| {
+        let (mut socket, _) = start_ws(&server, token).unwrap();
+        if let tungstenite::stream::MaybeTlsStream::Plain(stream) = socket.get_ref() {
+            stream.set_read_timeout(Some(std::time::Duration::from_secs(10))).unwrap();
+        }
+        send_text(&mut socket, "{\"protocol\":\"json\",\"version\":1}\u{1e}");
+        assert_eq!(recv_text(&mut socket), "{}\u{1e}");
+        socket
+    };
+    let (mut phone_socket, mut laptop_socket) = (open(&phone), open(&laptop));
+    let kind = |message: &str| serde_json::from_str::<Value>(message.trim_end_matches('\u{1e}')).unwrap()["arguments"][0]["Type"].clone();
+
+    // Revoke the laptop from the tablet, so neither socket hears about it as its own change.
+    let (_, from_tablet) = server.raw("GET", "/wm/devices", Some(&tablet), None);
+    let (_, from_laptop) = server.raw("GET", "/wm/devices", Some(&laptop), None);
+    let laptop_id = from_laptop["data"].as_array().unwrap().iter().find(|d| d["current"] == true).unwrap()["id"].as_str().unwrap().to_owned();
+    assert_eq!(from_tablet["data"].as_array().unwrap().len(), 3);
+    assert_eq!(server.raw("DELETE", &format!("/wm/devices/{laptop_id}"), Some(&tablet), None).0, 200);
+
+    // The laptop is told to log out, then its socket ends.
+    assert_eq!(kind(&recv_text_skipping_pings(&mut laptop_socket)), 11);
+    loop {
+        match laptop_socket.read() {
+            Ok(Message::Close(_)) | Err(_) => break,
+            Ok(Message::Text(text)) => assert!(text.starts_with("{\"type\":6}"), "nothing but pings after the logout: {text}"),
+            Ok(_) => {}
+        }
+    }
+    assert!(start_ws(&server, &laptop).is_err(), "a revoked device cannot reconnect");
+
+    // The phone hears nothing about the revoke and still gets the next change.
+    let cipher = json!({"type": 2, "name": key.encrypt(b"x").unwrap()});
+    assert_eq!(server.raw("POST", "/api/ciphers", Some(&tablet), Some(&cipher)).0, 200);
+    assert_eq!(kind(&recv_text_skipping_pings(&mut phone_socket)), 5);
+}
+
+#[test]
+fn two_owners_removing_each_other_at_once_leave_one_owner() {
+    server_with_two_owners_racing(5);
+}
+
+fn server_with_two_owners_racing(rounds: usize) {
+    let server = start(Signups::Open);
+    server.signup("a@example.com", "a-pass-pass");
+    server.signup("b@example.com", "b-pass-pass");
+    let (a, _) = server.session("a@example.com", "a-pass-pass", "a");
+    let (b, _) = server.session("b@example.com", "b-pass-pass", "b");
+    for round in 0..rounds {
+        let (status, org) = server.raw("POST", "/api/organizations", Some(&a), Some(&json!({"name": format!("Org {round}"), "key": "2.x|y|z"})));
+        assert_eq!(status, 200);
+        let org = org["id"].as_str().unwrap().to_owned();
+        let invite = json!({"emails": ["b@example.com"], "type": 0});
+        assert_eq!(server.raw("POST", &format!("/api/organizations/{org}/users/invite"), Some(&a), Some(&invite)).0, 200);
+        let (_, users) = server.raw("GET", &format!("/api/organizations/{org}/users"), Some(&a), None);
+        let users = users["data"].as_array().unwrap().clone();
+        let id_of = |email: &str| users.iter().find(|u| u["email"] == email).unwrap()["id"].as_str().unwrap().to_owned();
+        let (a_member, b_member) = (id_of("a@example.com"), id_of("b@example.com"));
+        assert_eq!(server.raw("POST", &format!("/api/organizations/{org}/users/{b_member}/confirm"), Some(&a), Some(&json!({"key": "4.wrapped"}))).0, 200);
+
+        let barrier = std::sync::Barrier::new(2);
+        let statuses: Vec<u16> = std::thread::scope(|scope| {
+            let removals: Vec<_> = [(&a, &b_member), (&b, &a_member)]
+                .into_iter()
+                .map(|(token, target)| {
+                    let (server, barrier, org) = (&server, &barrier, &org);
+                    scope.spawn(move || {
+                        barrier.wait();
+                        server.raw("DELETE", &format!("/api/organizations/{org}/users/{target}"), Some(token), None).0
+                    })
+                })
+                .collect();
+            removals.into_iter().map(|one| one.join().unwrap()).collect()
+        });
+        assert_eq!(statuses.iter().filter(|&&s| s == 200).count(), 1, "round {round}: {statuses:?}");
+        let (status_a, left_a) = server.raw("GET", &format!("/api/organizations/{org}/users"), Some(&a), None);
+        let (status_b, left_b) = server.raw("GET", &format!("/api/organizations/{org}/users"), Some(&b), None);
+        let left = if status_a == 200 { left_a } else { left_b };
+        assert_eq!(u8::from(status_a == 200) + u8::from(status_b == 200), 1, "round {round}: exactly one of them is still in");
+        let owners = left["data"].as_array().unwrap().iter().filter(|u| u["type"] == 0 && u["status"] == 2).count();
+        assert_eq!(owners, 1, "round {round}: {left}");
+    }
+}
+
+#[test]
+fn every_route_including_shared_files_is_capped_at_32_mib() {
+    let server = start(Signups::Open);
+    server.signup("me@example.com", "pw-pw-pw");
+    let (token, _) = server.session("me@example.com", "pw-pw-pw", "a");
+    let big = "A".repeat(31 * 1024 * 1024);
+    assert_eq!(server.raw("POST", "/wm/shared", Some(&token), Some(&json!({"body": big}))).0, 200);
+    // Over the cap the server answers 413, or drops the connection before the upload ends.
+    let too_big = Request::json("POST", format!("http://{}/wm/shared", server.address), &json!({"body": "A".repeat(33 * 1024 * 1024)}))
+        .header("Authorization", format!("Bearer {token}"));
+    match wmpass_net::Http::send(&server.http, &too_big) {
+        Ok(response) => assert_eq!(response.status, 413),
+        Err(error) => eprintln!("the oversized upload was cut off: {error}"),
+    }
+    assert_eq!(server.raw("GET", "/wm/shared", Some(&token), None).1["data"].as_array().unwrap().len(), 1, "nothing over the cap is stored");
+}
+
+/// A GET with a chosen `Host` header, which the HTTP client would not let a test forge.
+fn get_with_host(server: &Server, path: &str, host: &str) -> Value {
+    use std::io::{Read, Write};
+    let mut stream = std::net::TcpStream::connect(server.address).unwrap();
+    write!(stream, "GET {path} HTTP/1.1\r\nHost: {host}\r\nX-Forwarded-Proto: https\r\nConnection: close\r\n\r\n").unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).unwrap();
+    let (head, body) = response.split_once("\r\n\r\n").unwrap();
+    assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+    serde_json::from_str(body).unwrap()
+}
+
+#[test]
+fn config_advertises_the_public_url_when_set_and_the_host_otherwise() {
+    let server = start_with(Signups::Closed, Some("https://pass.example.com/"));
+    let config = get_with_host(&server, "/api/config", "evil.example");
+    assert_eq!(config["environment"]["vault"], "https://pass.example.com");
+    assert_eq!(config["environment"]["api"], "https://pass.example.com/api");
+    assert_eq!(config["environment"]["identity"], "https://pass.example.com/identity");
+    assert_eq!(config["environment"]["notifications"], "https://pass.example.com/notifications");
+
+    let server = start(Signups::Closed);
+    let config = get_with_host(&server, "/api/config", "pass.local:8443");
+    assert_eq!(config["environment"]["vault"], "https://pass.local:8443");
+    assert_eq!(config["environment"]["api"], "https://pass.local:8443/api");
+}
+
+/// Runs one statement on the server's own database, to set up what a clock set back or
+/// requests finishing out of order would leave.
+fn poke(server: &Server, statement: String) {
+    let url = format!("sqlite://{}?mode=rw", server._dir.path().join("wmpass.sqlite3").display());
+    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    runtime.block_on(async {
+        sqlx::any::install_default_drivers();
+        let pool = sqlx::AnyPool::connect(&url).await.unwrap();
+        sqlx::raw_sql(sqlx::AssertSqlSafe(statement)).execute(&pool).await.unwrap();
+        pool.close().await;
+    });
+}
+
+#[test]
+fn revisions_only_move_forward_whatever_the_clock_says() {
+    let server = start(Signups::Open);
+    server.signup("me@example.com", "pw-pw-pw");
+    let (token, key) = server.session("me@example.com", "pw-pw-pw", "a");
+    let (_, created) = server.raw("POST", "/api/ciphers", Some(&token), Some(&json!({"type": 2, "name": key.encrypt(b"x").unwrap()})));
+    let id = created["id"].as_str().unwrap().to_owned();
+    // As if the last change had been stamped by a clock since set back by a day.
+    let ahead = wmpass_core::clock::parse_date(created["revisionDate"].as_str().unwrap()).unwrap() + 86_400_000;
+    poke(&server, format!("UPDATE ciphers SET revision = {ahead}"));
+    poke(&server, format!("UPDATE users SET revision = {ahead}"));
+    let stale_copy = wmpass_core::clock::format_date(ahead);
+
+    // Trashing moves the item's revision on, so the copy from before cannot be written over it.
+    assert_eq!(server.raw("PUT", &format!("/api/ciphers/{id}/delete"), Some(&token), None).0, 200);
+    let mut edit = json!({"type": 2, "name": key.encrypt(b"from before the trash").unwrap()});
+    edit["lastKnownRevisionDate"] = json!(stale_copy);
+    let (status, _) = server.raw("PUT", &format!("/api/ciphers/{id}"), Some(&token), Some(&edit));
+    assert_eq!(status, 400, "an edit from before the trash is out of date");
+
+    // And the account's revision moved on too, so other devices know to sync.
+    let (_, revision) = server.raw("GET", "/api/accounts/revision-date", Some(&token), None);
+    assert!(revision.as_i64().unwrap() > i64::try_from(ahead).unwrap());
+}
+
+#[test]
+fn sharing_an_old_copy_is_refused_like_editing_one() {
+    let server = start(Signups::Open);
+    server.signup("me@example.com", "pw-pw-pw");
+    let (token, key) = server.session("me@example.com", "pw-pw-pw", "a");
+    let (_, org) = server.raw("POST", "/api/organizations", Some(&token), Some(&json!({"name": "Family", "key": "2.x|y|z"})));
+    let org = org["id"].as_str().unwrap().to_owned();
+    let (_, collection) = server.raw("POST", &format!("/api/organizations/{org}/collections"), Some(&token), Some(&json!({"name": "2.a|b|c"})));
+    let collection = collection["id"].as_str().unwrap().to_owned();
+    let (_, created) = server.raw("POST", "/api/ciphers", Some(&token), Some(&json!({"type": 2, "name": key.encrypt(b"x").unwrap()})));
+    let id = created["id"].as_str().unwrap().to_owned();
+    // Another device edits it.
+    let mut edit = json!({"type": 2, "name": key.encrypt(b"edited elsewhere").unwrap()});
+    edit["lastKnownRevisionDate"] = created["revisionDate"].clone();
+    assert_eq!(server.raw("PUT", &format!("/api/ciphers/{id}"), Some(&token), Some(&edit)).0, 200);
+    // This device still holds the first copy and shares it.
+    let share = |cipher_name: &str, known: &Value| {
+        json!({
+            "cipher": {"type": 2, "name": cipher_name, "organizationId": org, "lastKnownRevisionDate": known},
+            "collectionIds": [collection],
+        })
+    };
+    let (status, answer) = server.raw("PUT", &format!("/api/ciphers/{id}/share"), Some(&token), Some(&share("2.old|old|old", &created["revisionDate"])));
+    assert_eq!(status, 400);
+    assert!(answer["message"].as_str().unwrap().contains("out of date"));
+    let (_, now) = server.raw("GET", &format!("/api/ciphers/{id}"), Some(&token), None);
+    assert_eq!(now["organizationId"], Value::Null, "nothing changed");
+    assert_eq!(server.raw("PUT", &format!("/api/ciphers/{id}/share"), Some(&token), Some(&share("2.new|new|new", &now["revisionDate"]))).0, 200);
+}
+
+#[test]
+fn an_item_moved_into_a_folder_deleted_meanwhile_shows_no_folder() {
+    let server = start(Signups::Open);
+    server.signup("me@example.com", "pw-pw-pw");
+    let (token, key) = server.session("me@example.com", "pw-pw-pw", "a");
+    let (_, folder) = server.raw("POST", "/api/folders", Some(&token), Some(&json!({"name": "2.f|f|f"})));
+    let folder = folder["id"].as_str().unwrap().to_owned();
+    let (_, created) = server.raw("POST", "/api/ciphers", Some(&token), Some(&json!({"type": 2, "name": key.encrypt(b"x").unwrap()})));
+    let id = created["id"].as_str().unwrap().to_owned();
+    assert_eq!(server.raw("DELETE", &format!("/api/folders/{folder}"), Some(&token), None).0, 200);
+    // The move checked the folder before the delete and wrote after it.
+    poke(&server, format!("UPDATE cipher_user SET folder_id = '{folder}' WHERE cipher_id = '{id}'"));
+    let (_, item) = server.raw("GET", &format!("/api/ciphers/{id}"), Some(&token), None);
+    assert_eq!(item["folderId"], Value::Null);
+    let (_, sync) = server.raw("GET", "/api/sync", Some(&token), None);
+    assert_eq!(sync["ciphers"][0]["folderId"], Value::Null);
+}
+
+#[test]
+fn adding_the_same_member_twice_at_once_never_fails() {
+    let server = start(Signups::Open);
+    server.signup("owner@example.com", "owner-pass");
+    server.signup("member@example.com", "member-pass");
+    let (owner, _) = server.session("owner@example.com", "owner-pass", "o");
+    for _ in 0..5 {
+        let (_, file) = server.raw("POST", "/wm/shared", Some(&owner), Some(&json!({"body": "c2VhbGVk"})));
+        let path = format!("/wm/shared/{}/members", file["id"].as_str().unwrap());
+        let statuses: Vec<u16> = std::thread::scope(|scope| {
+            let adds: Vec<_> = (0..6)
+                .map(|_| {
+                    let (server, owner, path) = (&server, &owner, &path);
+                    scope.spawn(move || server.raw("POST", path, Some(owner), Some(&json!({"email": "member@example.com"}))).0)
+                })
+                .collect();
+            adds.into_iter().map(|add| add.join().unwrap()).collect()
+        });
+        assert!(statuses.iter().all(|&s| s == 200), "{statuses:?}");
+    }
+}
+
+#[test]
+fn moving_an_item_or_starring_it_tells_devices_that_poll() {
+    let server = start(Signups::Open);
+    server.signup("me@example.com", "pw-pw-pw");
+    let (token, key) = server.session("me@example.com", "pw-pw-pw", "a");
+    let (_, created) = server.raw("POST", "/api/ciphers", Some(&token), Some(&json!({"type": 2, "name": key.encrypt(b"x").unwrap()})));
+    let id = created["id"].as_str().unwrap().to_owned();
+    let revision = |server: &Server| server.raw("GET", "/api/accounts/revision-date", Some(&token), None).1.as_i64().unwrap();
+    let before = revision(&server);
+    assert_eq!(server.raw("PUT", &format!("/api/ciphers/{id}/partial"), Some(&token), Some(&json!({"favorite": true}))).0, 200);
+    let starred = revision(&server);
+    assert!(starred > before);
+    assert_eq!(server.raw("PUT", "/api/ciphers/move", Some(&token), Some(&json!({"ids": [id], "folderId": null}))).0, 200);
+    assert!(revision(&server) > starred);
+}
+

@@ -40,7 +40,7 @@ The shape of the list: full rows, shorter rows, or a grid of tiles.
 | --- | --- |
 | List | Full rows, with the second line under the name if that is on. |
 | Compact | One line per item, with a small icon and the second line beside the name, so many more rows fit. |
-| Grid | Large tiles with the name under each. Pinned items, headings and folded sites are not used. |
+| Grid | Large tiles with the name under each, in the order you sort by. Pinned items, grouping, headings and folded sites are not used. |
 
 *The guide in the app shows this live, with your own settings.*
 
@@ -66,7 +66,7 @@ Whether the list runs as one, with logins for the same site folded together, or 
 | --- | --- |
 | By site | One list in the order you sort by. Several logins for one website fold into a single row when [Fold logins on one site](/guide/settings/list/#setting-group-sites) is on. |
 | By folder | Each folder is one row, in alphabetical order, that opens in place to show its items. Items in no folder come after the folders. Sites are not folded. |
-| Types, then folders | The default. A row for each type you have, with its count, then a row for each folder and **No folder**. Each opens in place. An item is under both its type and its folder. Picking a type chip above the list shows that type as one list. |
+| Types, then folders | A row for each type you have, with its count, then a row for each folder and **No folder**. Each opens in place. An item is under both its type and its folder. Picking a type chip above the list shows that type as one list. |
 
 See also [Section headings](/guide/settings/list/#setting-list-headings), [Sort by](/guide/settings/list/#setting-sort), [Folders](/guide/settings/folders/).
 
@@ -124,7 +124,7 @@ Useful when you keep more than one account on a site, such as a personal one and
 
 #### Limits
 
-Only logins fold, and only while the list is grouped by site.
+Only logins fold, only while the list is grouped by site, and not in the grid.
 
 See also [Grouping](/guide/settings/list/#setting-grouping).
 
@@ -132,7 +132,11 @@ See also [Grouping](/guide/settings/list/#setting-grouping).
 
 ## Section headings
 
-Shows a heading above each part of the list: **Pinned** and **All items** when you have pinned items, or each folder's name when the list is grouped by folder.
+Shows a heading above each part of the list: **Pinned** above pinned items, and the name of each folder or type when the list is grouped by folder or by type. Grouped by site, the items after the pinned ones sit under **All items**.
+
+#### On Android
+
+Shows a heading above each part of the list: **Pinned** above pinned items, and **Types** and **Folders** when the list is grouped by types, then folders. In the Standard style it also names **All items**, **Folders** and **No folder** where they follow another part.
 
 See also [Grouping](/guide/settings/list/#setting-grouping), [Pinned items first](/guide/settings/list/#setting-pinned-on-top).
 
@@ -202,6 +206,10 @@ A red timer means the item is set to delete itself. Its page says when.
 
 *The guide in the app shows this live, with your own settings.*
 
+#### On Android
+
+A red timer means the item is set to delete itself. Its page says when. In the Glass style a pin marks a pinned item too.
+
 <a id="setting-row-button"></a>
 
 ## Button on the row
@@ -213,8 +221,8 @@ A copy button at the end of each row, shown while the pointer is over it.
 | Choice | What it does |
 | --- | --- |
 | Copy password | Copies the item's password. An item with none copies its one-time code, or else its username. |
-| Copy username | Copies the username of a login or a database. |
-| Copy code | Copies the current one-time code. Only items with a code have the button. |
+| Copy username | Copies the username of a login or a database. An item without one copies its password, or else its one-time code. |
+| Copy code | Copies the current one-time code. An item with none copies its password, or else its username. |
 | None | Rows have no button. Right-click a row for the same choices. |
 
 *The guide in the app shows this live, with your own settings.*
@@ -234,8 +242,8 @@ When [Tap](/guide/settings/list/#setting-tap-action) is set to copy something, t
 | Choice | What it does |
 | --- | --- |
 | Copy password | Copies the item's password. An item with none copies its one-time code, or else its username. |
-| Copy username | Copies the username of a login or a database. |
-| Copy code | Copies the current one-time code. Only items with a code have the button. |
+| Copy username | Copies the username of a login or a database. An item without one copies its password, or else its one-time code. |
+| Copy code | Copies the current one-time code. An item with none copies its password, or else its username. |
 | None | Rows have no button. |
 
 See also [Click](/guide/settings/list/#setting-tap-action), [Clear the clipboard after](/guide/settings/security/#setting-clipboard-seconds).
@@ -248,7 +256,7 @@ What a single click on a row does.
 
 #### How it works
 
-An item with nothing to copy, such as a note, only opens.
+An item without what is chosen copies the next thing it has: its password, its one-time code or its username. An item with nothing to copy, such as a note, only opens.
 
 #### What each choice does
 
@@ -265,7 +273,7 @@ On the phone it is called Tap.
 
 What a tap on a row does.
 
-An item with nothing to copy, such as a note, opens instead.
+An item without what is chosen copies the next thing it has: its password, its one-time code or its username. An item with nothing to copy, such as a note, opens instead.
 
 | Choice | What it does |
 | --- | --- |
@@ -286,7 +294,7 @@ What a double-click on a row or a tile does.
 
 #### How it works
 
-A double-click starts with a click, so whatever **Click** is set to happens first.
+A double-click starts with a click, so whatever **Click** is set to happens first. Set to copy, it copies the next thing an item has when it lacks the one chosen, as **Click** does.
 
 #### What each choice does
 
@@ -310,7 +318,7 @@ What sliding a row to the right does.
 
 #### How it works
 
-An item without what the swipe needs, such as a code, is left as it is.
+Set to copy, a swipe copies the next thing an item has when it lacks the one chosen: its password, its one-time code or its username. An item with nothing to copy, such as a note, is left as it is.
 
 #### What each choice does
 
@@ -362,6 +370,8 @@ Drag a row by its handle to move it. The bin removes it, and its **Add** row bri
 
 #### Limits
 
-In the Standard style, Health shows only when something needs attention.
+In the Standard style, Health shows only when something needs attention. Its close button puts it away until something new does, or takes it out of this list for good.
+
+Codes shows only once you have a one-time code.
 
 See also [Health screen](/guide/screens/#screen-health), [Codes screen](/guide/screens/#screen-codes).

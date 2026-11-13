@@ -33,6 +33,7 @@ import com.wasimaster.wmpass.core.Pass
 import com.wasimaster.wmpass.core.SecretBytes
 import com.wasimaster.wmpass.core.SecureClipboard
 import com.wasimaster.wmpass.system.Lan
+import com.wasimaster.wmpass.ui.parts.announced
 import com.wasimaster.wmpass.ui.parts.Listening
 import com.wasimaster.wmpass.ui.parts.PrimaryButton
 import com.wasimaster.wmpass.ui.parts.QrCode
@@ -101,6 +102,10 @@ internal fun JoinSheet(onDismiss: () -> Unit) {
             arrived(Lan.joinWait(context, Build.MODEL, blobs))
         } catch (failure: NativeFailure) {
             if (failure.code != "cancelled") problem = failure.message
+        } catch (failure: Exception) {
+            // A dropped network or a bad reply is said here, with Try again, not a crash.
+            if (failure is kotlinx.coroutines.CancellationException) throw failure
+            problem = failure.message ?: "The connection to the other device failed."
         }
     }
 
@@ -109,7 +114,7 @@ internal fun JoinSheet(onDismiss: () -> Unit) {
             val text = problem
             when {
                 text != null -> {
-                    Text(text, color = colors.danger, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+                    Text(text, color = colors.danger, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, modifier = Modifier.announced())
                     PrimaryButton("Try again", Modifier.fillMaxWidth()) {
                         stop()
                         attempt++
@@ -118,7 +123,7 @@ internal fun JoinSheet(onDismiss: () -> Unit) {
                 phase == JoinPhase.STARTING -> Listening(PassIcons.Devices)
                 phase == JoinPhase.SHOWING -> {
                     Text(
-                        "On the device that has your vault, open Settings, then Sync and accounts, then Add a new device.",
+                        "On the device that has your vault, open Settings, then Sync and accounts, and add a device that has no vault yet.",
                         color = colors.text,
                         style = MaterialTheme.typography.bodyLarge,
                         textAlign = TextAlign.Center,
@@ -159,6 +164,9 @@ internal fun JoinSheet(onDismiss: () -> Unit) {
                                     arrived(Lan.joinFinish(accepted, blobs))
                                 } catch (failure: NativeFailure) {
                                     problem = if (accepted) failure.message else "Stopped. Nothing was sent."
+                                } catch (failure: Exception) {
+                                    if (failure is kotlinx.coroutines.CancellationException) throw failure
+                                    problem = if (accepted) failure.message ?: "The connection to the other device failed." else "Stopped. Nothing was sent."
                                 }
                             }
                         }

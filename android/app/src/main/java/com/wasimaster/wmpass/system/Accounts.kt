@@ -134,6 +134,15 @@ object Accounts {
     private fun cacheFile(context: Context, id: String) = File(folder(context), "$id.cache")
     private fun bakFile(context: Context, id: String) = File(folder(context), "$id.bak")
 
+    private fun writeWhole(target: File, bytes: ByteArray) {
+        val temp = File(target.parentFile, ".${target.name}.tmp")
+        temp.writeBytes(bytes)
+        if (!temp.renameTo(target)) {
+            temp.delete()
+            throw java.io.IOException("The offline copy could not be saved.")
+        }
+    }
+
     private fun deviceId(context: Context): String {
         val prefs = store(context)
         prefs.getString("device", null)?.let { return it }
@@ -156,7 +165,11 @@ object Accounts {
         answer: (suspend (ByteArray) -> ByteArray)? = null,
     ) {
         val uri = Uri.parse(ref.uri)
-        val data = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: throw NativeFailure("file\nThat file could not be read.")
+        // Off the main thread: a database on a cloud drive can take a while to arrive. A file whose
+        // permission was taken back says it could not be read, as a missing one does.
+        val data = withContext(Dispatchers.IO) {
+            runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
+        } ?: throw NativeFailure("file\nThat file could not be read.")
         val response = answer?.invoke(data)
         val reply = try {
             Engine.call(
@@ -175,7 +188,9 @@ object Accounts {
             // The last good copy stays here, encrypted as the file itself is, in case the
             // write below is cut off halfway.
             bakFile(context, ref.id).writeBytes(data)
-            context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(bytes) }
+            // A provider that hands back no stream wrote nothing: said, so the save is not taken as done.
+            val out = context.contentResolver.openOutputStream(uri, "wt") ?: throw java.io.IOException("The KeePass file can no longer be written. Open it again from where it is kept.")
+            out.use { it.write(bytes) }
         }
         markOpened(context, ref.id)
         // KDBX 3 is read but written as KDBX 4, which apps from before 2017 cannot open.
@@ -214,7 +229,8 @@ object Accounts {
         }
         val scope = CoroutineScope(Dispatchers.IO)
         markOpened(context, ref.id)
-        Pass.adoptAccount(ref.id, reply) { bytes -> cache.writeBytes(bytes) }
+        // Whole or not at all: a copy cut off part way would refuse to open, offline and on the next sign-in alike.
+        Pass.adoptAccount(ref.id, reply) { bytes -> writeWhole(cache, bytes) }
         Pass.afterAccountSave = {
             scope.launch { syncNow(context) }
         }
@@ -326,11 +342,27 @@ object Lan {
         return made
     }
 
-    fun peers(context: Context): List<LanPeer> =
-        Sealed.read(context, PEERS)?.let { runCatching { json.decodeFromString(peerList, it.decodeToString()) }.getOrNull() }.orEmpty()
+    /**
+     * The list as last read, by when its file was written. The background listener asks on the
+     * main thread at every change of state, and each read is a keystore decryption and a file
+     * read; a wipe, which deletes the file, shows as a change of time like any write.
+     */
+    @Volatile
+    private var peersRead: Pair<Long, List<LanPeer>>? = null
+
+    fun peers(context: Context): List<LanPeer> {
+        val at = Sealed.modified(context, PEERS)
+        if (at == 0L) return emptyList()
+        peersRead?.takeIf { it.first == at }?.let { return it.second }
+        val read = Sealed.read(context, PEERS)?.let { runCatching { json.decodeFromString(peerList, it.decodeToString()) }.getOrNull() }.orEmpty()
+        peersRead = at to read
+        return read
+    }
 
     private fun write(context: Context, all: List<LanPeer>) {
         Sealed.write(context, PEERS, json.encodeToString(peerList, all).encodeToByteArray())
+        // Not kept by time here: two writes within the file system's clock tick would share one.
+        peersRead = null
         mutableRevision.value++
     }
 
@@ -873,6 +905,15 @@ object Lan {
                     attempts = 0
                 } catch (failure: NativeFailure) {
                     if (failure.code == "cancelled" || generation != mine) break
+                    attempts++
+                    delay(minOf(2_000L * attempts, 60_000L))
+                } catch (failure: kotlinx.coroutines.CancellationException) {
+                    throw failure
+                } catch (failure: Exception) {
+                    // Anything else (a paired device's record that will not read, the identity
+                    // not there) waits and tries again, as a refused connection does: thrown out of
+                    // this background loop it would take the whole app down.
+                    if (generation != mine) break
                     attempts++
                     delay(minOf(2_000L * attempts, 60_000L))
                 }

@@ -60,6 +60,7 @@ async fn revoke_device(Extract(state): Extract<State>, auth: Auth, Path(id): Pat
     if done.rows_affected() == 0 {
         return Err(ApiError::NotFound);
     }
+    state.hub.close_device(&auth.user.id, &id);
     Ok(Json(json!({})))
 }
 
@@ -114,7 +115,8 @@ async fn shared_write(Extract(state): Extract<State>, auth: Auth, Path(id): Path
     }
     let content = field(&body, "body").ok_or(ApiError::Bad("A file is required."))?;
     let expected = body.get("revision").and_then(Value::as_i64).ok_or(ApiError::Bad("The revision it was based on is required."))?;
-    let now = now_ms().max(expected + 1);
+    // The revision comes from the client, so the step past it must not overflow.
+    let now = now_ms().max(expected.saturating_add(1));
     let done = sqlx::query("UPDATE shared_files SET body = $1, revision = $2 WHERE id = $3 AND revision = $4").bind(content).bind(now).bind(&id).bind(expected).execute(&state.db.pool).await?;
     if done.rows_affected() == 0 {
         return Err(ApiError::Bad("This file changed. Fetch it and try again."));
@@ -137,10 +139,13 @@ async fn shared_add_member(Extract(state): Extract<State>, auth: Auth, Path(id):
     }
     let email = field(&body, "email").ok_or(ApiError::Bad("An address is required."))?.trim().to_lowercase();
     let user = state.db.user_by_email(&email).await?.ok_or(ApiError::Bad("That address has no account here."))?;
-    let exists = can_reach(&state, &user.id, &id).await?;
-    if !exists {
-        sqlx::query("INSERT INTO shared_members (file_id, user_id) VALUES ($1, $2)").bind(&id).bind(&user.id).execute(&state.db.pool).await?;
-    }
+    // One statement: two adds of the same person at once would otherwise both find them
+    // missing, and the second insert fail on the key.
+    sqlx::query("INSERT INTO shared_members (file_id, user_id) VALUES ($1, $2) ON CONFLICT (file_id, user_id) DO NOTHING")
+        .bind(&id)
+        .bind(&user.id)
+        .execute(&state.db.pool)
+        .await?;
     Ok(Json(json!({"userId": user.id, "publicKey": user.public_key})))
 }
 

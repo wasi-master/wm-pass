@@ -189,6 +189,9 @@ object Destinations {
         Sealed.write(context, FILE, json.encodeToString(serializer, value).encodeToByteArray())
     }
 
+    // Every change under one lock: a token a sink rotates on its own thread, landing beside a save
+    // from the screen, must not be lost, since the old token no longer signs in.
+    @Synchronized
     fun put(context: Context, destination: Destination) {
         val rest = mutable.value.filter { it.id != destination.id }
         save(context, (rest + destination).sortedBy { it.label.lowercase() })
@@ -204,13 +207,19 @@ object Destinations {
         put(context, change(current))
     }
 
+    @Synchronized
     fun remove(context: Context, id: String) {
         save(context, mutable.value.filter { it.id != id })
         if (id.isNotEmpty()) context.getSharedPreferences("runs", Context.MODE_PRIVATE).edit().remove(id).apply()
     }
 
-    fun forget() {
+    /** On a wipe: the places, and what their runs said, which can name a server. */
+    @Synchronized
+    fun forget(context: Context) {
         mutable.value = emptyList()
+        context.getSharedPreferences("runs", Context.MODE_PRIVATE).edit().clear().apply()
+        // Which place holds each shared vault: names of vaults this phone was part of.
+        context.getSharedPreferences("shared_places", Context.MODE_PRIVATE).edit().clear().apply()
     }
 
     fun sink(context: Context, d: Destination): BackupSink = when (d.kind) {
@@ -389,7 +398,9 @@ object Backups {
         outcome.exceptionOrNull()?.let { if (it is CancellationException) throw it }
         val problem = outcome.exceptionOrNull()?.let(::sinkProblem)
         Destinations.noteRun(context, destination.id, RunResult(System.currentTimeMillis(), problem))
-        problem?.let { Result.failure(IllegalStateException(it)) } ?: Result.success(Unit)
+        // The failure itself goes along as the cause, so a scheduled run can tell one worth
+        // trying again soon from one that waits on the owner.
+        problem?.let { Result.failure(IllegalStateException(it, outcome.exceptionOrNull())) } ?: Result.success(Unit)
     }
 
     /** The copies at a place, newest first. */
@@ -412,7 +423,14 @@ class BackupWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         val places = Destinations.list.value.filter { it.backup }
         if (places.isEmpty()) return Result.success()
         val outcomes = places.map { Backups.to(applicationContext, it) }
-        return if (outcomes.all { it.isSuccess }) Result.success() else Result.retry()
+        // Tried again soon only for a failure that can pass by itself, a network or a phone short
+        // of memory. A place signed out, gone or full waits for the owner, and its failure is on
+        // the Backups screen and widget already: retrying it would only spend the battery.
+        val passing = outcomes.any { outcome ->
+            val failure = outcome.exceptionOrNull() ?: return@any false
+            sinkErrorOf(failure.cause ?: failure) in setOf(SinkError.IO, SinkError.OUT_OF_MEMORY)
+        }
+        return if (passing) Result.retry() else Result.success()
     }
 }
 
@@ -449,7 +467,7 @@ object FileSync {
         pending?.cancel()
         pending = scope.launch {
             delay(20_000)
-            now(context)
+            quietly { now(context) }
         }
     }
 
@@ -467,20 +485,20 @@ object FileSync {
                     merged.clear()
                     written.clear()
                     delay(5_000)
-                    now(app, auto = true)
+                    quietly { now(app, auto = true) }
                 }
             }
         }
         scope.launch {
             while (true) {
                 delay(5_000)
-                if (Pass.state.value is LockState.Unlocked && due(AUTO_SYNC_MS)) now(app, auto = true)
+                if (Pass.state.value is LockState.Unlocked && due(AUTO_SYNC_MS)) quietly { now(app, auto = true) }
             }
         }
         androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(
             object : androidx.lifecycle.DefaultLifecycleObserver {
                 override fun onStart(owner: androidx.lifecycle.LifecycleOwner) {
-                    if (Pass.state.value is LockState.Unlocked && due(60_000)) scope.launch { now(app, auto = true) }
+                    if (Pass.state.value is LockState.Unlocked && due(60_000)) scope.launch { quietly { now(app, auto = true) } }
                 }
             },
         )
@@ -510,6 +528,20 @@ object FileSync {
         }
         problem.value = failure
         trips
+    }
+
+    /**
+     * A run nobody asked for: a failure outside any one place (the list of places, a note that
+     * would not write) must not end the timer that runs it, or the app with it.
+     */
+    private suspend fun quietly(run: suspend () -> Unit) {
+        try {
+            run()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            problem.value = sinkProblem(failure)
+        }
     }
 
     private fun sha256(bytes: ByteArray): String =

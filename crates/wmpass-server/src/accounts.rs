@@ -112,16 +112,9 @@ async fn change_password(Extract(state): Extract<State>, auth: Auth, Json(body):
     let current = field(&body, "masterPasswordHash").ok_or(ApiError::Bad("The current password is required."))?;
     let new = field(&body, "newMasterPasswordHash").ok_or(ApiError::Bad("A new password is required."))?;
     let key = field(&body, "key").ok_or(ApiError::Bad("The account key is required."))?;
-    let throttle_key = format!("password:{}", auth.user.id);
-    if let Some(seconds) = state.throttle.wait(&throttle_key) {
-        return Err(ApiError::TooMany(seconds));
-    }
-    let actual = hash_password(&state, current, &auth.user.password_salt).await?;
-    if !same(&actual, &auth.user.password_hash) {
-        state.throttle.failed(&throttle_key);
+    if !password_matches(&state, &auth.user, current).await? {
         return Err(ApiError::Bad("The current password is not correct."));
     }
-    state.throttle.succeeded(&throttle_key);
     let salt = random_token()?;
     let hash = hash_password(&state, new, &salt).await?;
     sqlx::query("UPDATE users SET password_hash = $1, password_salt = $2, user_key = $3, security_stamp = $4 WHERE id = $5")
@@ -136,6 +129,21 @@ async fn change_password(Extract(state): Extract<State>, auth: Auth, Json(body):
     Ok(Json(json!({"object": "password"})))
 }
 
+/// Checks the password a signed-in user gives again, before something that cannot be undone.
+/// Throttled like logging in, so a session left open cannot be used to guess it.
+pub(crate) async fn password_matches(state: &State, user: &User, given: &str) -> ApiResult<bool> {
+    let throttle_key = format!("password:{}", user.id);
+    if let Some(seconds) = state.throttle.attempt(&throttle_key) {
+        return Err(ApiError::TooMany(seconds));
+    }
+    let actual = hash_password(state, given, &user.password_salt).await?;
+    let matches = same(&actual, &user.password_hash);
+    if matches {
+        state.throttle.succeeded(&throttle_key);
+    }
+    Ok(matches)
+}
+
 async fn rotate_stamp(Extract(state): Extract<State>, auth: Auth) -> ApiResult<Json<Value>> {
     sqlx::query("UPDATE users SET security_stamp = $1 WHERE id = $2").bind(random_token()?).bind(&auth.user.id).execute(&state.db.pool).await?;
     revoke_other_devices(&state, &auth.user.id, &auth.device_id).await?;
@@ -148,10 +156,19 @@ async fn user_key_id(_auth: Auth) -> Json<Value> {
     Json(json!({}))
 }
 
-async fn config(headers: HeaderMap) -> Json<Value> {
+/// The address clients should use. The configured public address when there is one, since
+/// `Host` and `X-Forwarded-Proto` come from the client and can say anything.
+fn base_url(state: &State, headers: &HeaderMap) -> String {
+    if let Some(url) = &state.config.public_url {
+        return url.trim_end_matches('/').to_owned();
+    }
     let host = headers.get(header::HOST).and_then(|h| h.to_str().ok()).unwrap_or("localhost");
     let scheme = headers.get("x-forwarded-proto").and_then(|h| h.to_str().ok()).unwrap_or("http");
-    let base = format!("{scheme}://{host}");
+    format!("{scheme}://{host}")
+}
+
+async fn config(Extract(state): Extract<State>, headers: HeaderMap) -> Json<Value> {
+    let base = base_url(&state, &headers);
     Json(json!({
         "version": "2026.10.0",
         "gitHash": "wmpass",

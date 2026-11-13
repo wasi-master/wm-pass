@@ -146,7 +146,9 @@ fun UsernameScreen() {
                     online -> answerOf(pageTurn.withLock { PageCheck.check(context, site.name, name) })
                     else -> Answer.Failed("Not checked: WM Pass may not use this network now")
                 }
-            } catch (failure: NativeFailure) {
+            } catch (failure: Exception) {
+                // A hidden page that fails, not only the core, gives this site no answer rather than closing the app.
+                if (failure is kotlinx.coroutines.CancellationException) throw failure
                 Answer.Failed(failure.message?.replaceFirstChar { it.uppercase() } ?: "No answer")
             }
             if (name in asked) answers[key(name, site)] = answer
@@ -281,7 +283,9 @@ private fun SiteLine(site: CheckSite, answer: Answer?, asked: String, onOpen: ()
                 },
                 color = if (answer is Answer.Failed) colors.danger else colors.textLow,
                 style = MaterialTheme.typography.bodySmall,
-                maxLines = 1,
+                // A reason can be long: two lines, then cut with an ellipsis rather than mid-letter.
+                maxLines = if (answer is Answer.Failed) 2 else 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             )
         }
         AnimatedContent(

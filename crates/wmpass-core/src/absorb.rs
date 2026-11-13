@@ -71,7 +71,8 @@ pub fn absorb(vault: &mut Vault, gift: Gift, now_ms: u64) -> Result<AbsorbReport
         observe(vault, &entry);
         let folder = entry.common.folder.v.as_ref().and_then(|id| folders.get(id)).cloned();
         entry.common.folder = Lww::new(folder, entry.common.folder.at);
-        let same = if vault.get(&entry.id).is_some_and(|e| !e.is_trashed()) {
+        let same_id = vault.get(&entry.id).is_some_and(|e| !e.is_trashed());
+        let same = if same_id {
             Some(entry.id.clone())
         } else {
             crate::io::identity_key(&entry).and_then(|key| known.get(&key).cloned())
@@ -79,12 +80,22 @@ pub fn absorb(vault: &mut Vault, gift: Gift, now_ms: u64) -> Result<AbsorbReport
         match same {
             Some(id) => {
                 entry.id.clone_from(&id);
-                vault.edit(&id, now_ms, |mine, _| mine.merge_from(&entry))?;
+                // A copy of the same item merges. A different item for the same login is
+                // folded in as clearing a duplicate does, so a field both wrote at the same
+                // moment, as two imports on one device can, does not drop the other's value.
+                vault.edit(&id, now_ms, |mine, at| {
+                    if same_id {
+                        mine.merge_from(&entry);
+                    } else {
+                        mine.absorb_item(&entry, at);
+                    }
+                })?;
                 report.matched += 1;
             }
             None => {
-                // An id this vault has in its trash would bring that item back as this one.
-                if vault.get(&entry.id).is_some() {
+                // An id this vault has in its trash would bring that item back as this one, and
+                // one it deleted for good would be dropped again by the next merge.
+                if vault.get(&entry.id).is_some() || vault.doc.tombstones.contains_key(&entry.id) {
                     entry.id = String::new();
                 }
                 let key = crate::io::identity_key(&entry);
@@ -147,6 +158,7 @@ fn map_one(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::clock::Hlc;
     use crate::vault::login_entry;
     use crate::vault::test_support::fast_vault;
 
@@ -162,6 +174,21 @@ mod tests {
         let report = absorb(&mut kept, Gift::of(&other), 3000).unwrap();
         assert_eq!(report, AbsorbReport { added: 1, matched: 1 });
         assert_eq!(kept.doc.entries.len(), 2);
+    }
+
+    #[test]
+    fn the_same_login_written_at_the_same_moment_keeps_what_only_the_other_held() {
+        let mut kept = fast_vault(1);
+        let mut other = fast_vault(1);
+        let at = Hlc { ms: 1000, counter: 0, device: 1 };
+        kept.add(login_entry("GitHub", "me", "pw1", at), 1000).unwrap();
+        let mut theirs = login_entry("GitHub", "me", "pw1", at);
+        theirs.common.notes = Lww::new(crate::Secret::new("recovery codes"), at);
+        other.add(theirs, 1000).unwrap();
+        let report = absorb(&mut kept, Gift::of(&other), 3000).unwrap();
+        assert_eq!(report.matched, 1);
+        let merged = kept.doc.entries.values().next().unwrap();
+        assert_eq!(merged.common.notes.v.expose(), "recovery codes");
     }
 
     #[test]
@@ -181,6 +208,23 @@ mod tests {
         assert_eq!(servers.name.v, "Servers");
         assert_eq!(servers.parent.v.as_deref(), Some(work.as_str()));
         assert_eq!(kept.doc.folders.len(), 2);
+    }
+
+    #[test]
+    fn an_item_whose_id_was_deleted_here_for_good_survives_the_next_merge() {
+        let mut kept = fast_vault(1);
+        let at = kept.tick(1000);
+        let id = kept.add(login_entry("Gone", "u", "p", at), 1000).unwrap();
+        let mut other = fast_vault(2);
+        let mut copy = login_entry("Kept there", "v", "q", Hlc { ms: 500, counter: 0, device: 2 });
+        copy.id.clone_from(&id);
+        other.add(copy, 500).unwrap();
+        kept.purge(&id, 4000);
+        let report = absorb(&mut kept, Gift::of(&other), 5000).unwrap();
+        assert_eq!(report.added, 1);
+        let again = kept.doc.clone();
+        kept.doc.merge_from(&again);
+        assert_eq!(kept.doc.entries.len(), 1, "the arrival must not fall to the old delete");
     }
 
     #[test]

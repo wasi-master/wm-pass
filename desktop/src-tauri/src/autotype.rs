@@ -10,6 +10,9 @@ pub fn type_login(first: &str, second: &Zeroizing<String>) -> Result<(), String>
     let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
     // Give the app behind a moment to take focus back.
     std::thread::sleep(Duration::from_millis(350));
+    // Quick search types on Shift+Enter, and a Shift still held would turn the Tab into Shift+Tab,
+    // which goes back a box and puts the password in the wrong one.
+    enigo.key(Key::Shift, Direction::Release).map_err(|e| e.to_string())?;
     if !first.is_empty() {
         enigo.text(first).map_err(|e| e.to_string())?;
         enigo.key(Key::Tab, Direction::Click).map_err(|e| e.to_string())?;

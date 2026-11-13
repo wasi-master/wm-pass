@@ -17,8 +17,8 @@ use interprocess::local_socket::traits::{Listener as _, Stream as _};
 use interprocess::local_socket::{ListenerNonblockingMode, ListenerOptions, Stream};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use wmpass_bridge::{BridgeError, Keys, Server, fingerprint};
-use tauri::{AppHandle, Emitter};
+use wmpass_bridge::{BridgeError, Keys, LARGEST_TO_BROWSER, Server, fingerprint, sealed_len};
+use tauri::{AppHandle, Emitter, Manager};
 use wmpass_core::matching;
 use wmpass_net::http::NativeHttp;
 use wmpass_net::{NetError, NetPolicy, usernames};
@@ -32,6 +32,9 @@ use crate::probe;
 use crate::sealed;
 use crate::store::Store;
 
+/// The longest frame taken from the extension. What goes the other way is held to
+/// [`LARGEST_TO_BROWSER`], which is less: the browser takes at most 1 MiB from the relay, and the
+/// relay hands frames over as base64.
 const LARGEST_FRAME: usize = 1024 * 1024;
 const MOST_CONNECTIONS: usize = 4;
 const STATE_FILE: &str = "settings/bridge.json";
@@ -120,14 +123,17 @@ impl Bridge {
         persist(&self.store, &saved)
     }
 
-    pub fn stop(&self) {
-        self.stop.store(true, Ordering::SeqCst);
+    /// Says whether the connection should be on, at once and in the order the page asked. Off
+    /// needs nothing more: the listening thread sees it. On is made so by [`Self::start`], which
+    /// may wait on the system's keychain. An on that comes while the listening thread is
+    /// leaving takes the stop back, and that thread carries on.
+    pub fn want(&self, on: bool) {
+        self.stop.store(!on, Ordering::SeqCst);
     }
 
+    /// Starts listening, when it should be on and is not already.
     pub fn start(&self, engine: Engine, socket_dir: &std::path::Path) -> Result<(), String> {
-        // A stop that the listening thread has not noticed yet is simply taken back.
-        self.stop.store(false, Ordering::SeqCst);
-        if self.running.swap(true, Ordering::SeqCst) {
+        if self.stop.load(Ordering::SeqCst) || self.running.swap(true, Ordering::SeqCst) {
             return Ok(());
         }
         let started = self.listen(engine, socket_dir);
@@ -140,14 +146,17 @@ impl Bridge {
     fn listen(&self, engine: Engine, socket_dir: &std::path::Path) -> Result<(), String> {
         let keys = keys(&self.store)?;
         let (name, shown) = socket_name(socket_dir)?;
-        let listener = ListenerOptions::new()
-            .name(name)
-            .nonblocking(ListenerNonblockingMode::Accept)
-            .try_overwrite(true)
+        let options = ListenerOptions::new().name(name).nonblocking(ListenerNonblockingMode::Accept).try_overwrite(true);
+        // Only this account may open the pipe on Windows. See `agent::owner_only`.
+        #[cfg(windows)]
+        let options = {
+            use interprocess::os::windows::local_socket::ListenerOptionsExt as _;
+            options.security_descriptor(crate::agent::owner_only()?)
+        };
+        let listener = options
             .create_sync()
             .map_err(|e| format!("the connection could not start: {e}"))?;
         restrict(&shown);
-        self.stop.store(false, Ordering::SeqCst);
         let conversation = Conversation {
             engine,
             secret: Arc::new(keys.secret),
@@ -159,32 +168,82 @@ impl Bridge {
         };
         let (stop, running, connections) = (Arc::clone(&self.stop), Arc::clone(&self.running), Arc::clone(&self.connections));
         std::thread::spawn(move || {
-            while !stop.load(Ordering::SeqCst) {
-                match listener.accept() {
-                    Ok(stream) => {
-                        if stream.set_nonblocking(false).is_err() || connections.load(Ordering::SeqCst) >= MOST_CONNECTIONS {
-                            continue;
+            // A bug that panics in here starts the listening again, a few times; after that the
+            // connection shows as off, and turning it on again starts it. Calls into the session
+            // are guarded by the engine itself.
+            let mut restarts = 0;
+            loop {
+                let accepted = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    while !stop.load(Ordering::SeqCst) {
+                        match listener.accept() {
+                            Ok(stream) => {
+                                if stream.set_nonblocking(false).is_err() || connections.load(Ordering::SeqCst) >= MOST_CONNECTIONS {
+                                    continue;
+                                }
+                                connections.fetch_add(1, Ordering::SeqCst);
+                                let conversation = conversation.clone();
+                                let slot = Slot(Arc::clone(&connections));
+                                std::thread::spawn(move || {
+                                    // Given back when the thread ends, even by a panic, or after four
+                                    // of those no extension could connect until a restart.
+                                    let _slot = slot;
+                                    let served = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| conversation.serve(stream)));
+                                    // The pairings it may have been changing are a plain list, still
+                                    // whole: the next extension to connect must not find them "busy".
+                                    if served.is_err() {
+                                        conversation.saved.clear_poison();
+                                    }
+                                });
+                            }
+                            Err(e) if e.kind() == io::ErrorKind::WouldBlock => std::thread::sleep(std::time::Duration::from_millis(120)),
+                            Err(_) => return false,
                         }
-                        connections.fetch_add(1, Ordering::SeqCst);
-                        let conversation = conversation.clone();
-                        let connections = Arc::clone(&connections);
-                        std::thread::spawn(move || {
-                            let _ = conversation.serve(stream);
-                            connections.fetch_sub(1, Ordering::SeqCst);
-                        });
                     }
-                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => std::thread::sleep(std::time::Duration::from_millis(120)),
-                    Err(_) => break,
+                    true
+                }));
+                match accepted {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        running.store(false, Ordering::SeqCst);
+                        return;
+                    }
+                    Err(_) if restarts < 3 => {
+                        restarts += 1;
+                        continue;
+                    }
+                    Err(_) => {
+                        running.store(false, Ordering::SeqCst);
+                        return;
+                    }
+                }
+                running.store(false, Ordering::SeqCst);
+                // An on that came after the stop was seen here, and found this still running,
+                // took the stop back and left the listening to this thread. Whichever of it and
+                // this marks running first listens; the other one leaves.
+                if stop.load(Ordering::SeqCst) || running.swap(true, Ordering::SeqCst) {
+                    return;
                 }
             }
-            running.store(false, Ordering::SeqCst);
         });
         Ok(())
     }
 }
 
+/// One of the [`MOST_CONNECTIONS`], taken while a conversation runs.
+struct Slot(Arc<AtomicUsize>);
+
+impl Drop for Slot {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 /// The app's key, made the first time it is needed. It lives sealed like other device secrets.
+/// One caller at a time, since the fingerprint and a start both run off the main thread and two
+/// at once on first use would each make a key.
 fn keys(store: &Store) -> Result<Keys, String> {
+    static MAKING: Mutex<()> = Mutex::new(());
+    let _one_at_a_time = MAKING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some(text) = sealed::load(store, KEY_NAME)? {
         let secret: Zeroizing<Vec<u8>> = Zeroizing::new(unhex(&text).ok_or("the connection key is damaged")?);
         let secret: [u8; 32] = secret.as_slice().try_into().map_err(|_| "the connection key is damaged")?;
@@ -455,7 +514,12 @@ impl Conversation {
                     return Ok(());
                 }
                 let reply = self.answer(&message, &key, &mut transfers);
-                write_frame(&mut stream, &server.seal(&reply).map_err(broken)?)?;
+                let sealed = server.seal(&reply).map_err(broken)?;
+                // Never past what the relay can pass on; `answer` keeps replies under it.
+                if sealed.len() > LARGEST_TO_BROWSER {
+                    return Err(io::ErrorKind::InvalidData.into());
+                }
+                write_frame(&mut stream, &sealed)?;
             }
         }
         Ok(())
@@ -476,10 +540,11 @@ impl Conversation {
             return reply_bytes(&json!({"id": 0, "error": "unreadable"}));
         };
         let id = request.id;
-        match self.handle(&request, key, transfers) {
+        let reply = match self.handle(&request, key, transfers) {
             Ok(reply) => reply,
             Err(error) => reply_bytes(&json!({"id": id, "error": error})),
-        }
+        };
+        fit_for_browser(id, reply)
     }
 
     #[allow(clippy::too_many_lines)]
@@ -490,6 +555,11 @@ impl Conversation {
             "status" => Ok(reply_bytes(&json!({"id": id, "unlocked": handle != 0}))),
             "lock" => {
                 self.engine.lock_all();
+                // The window and the widgets learn of it as they do of a lock on the timer.
+                let _ = self.app.emit("command", "lock");
+                if let Some(widgets) = self.app.try_state::<Arc<crate::widgets::Widgets>>() {
+                    widgets.nudge();
+                }
                 Ok(reply_bytes(&json!({"id": id})))
             }
             "match" => {
@@ -543,7 +613,10 @@ impl Conversation {
                 Ok(reply_bytes(&json!({"id": id, "links": links})))
             }
             // ---- backup places the browser cannot reach, for the extension's own vault ----
-            "places.kinds" => Ok(reply_bytes(&json!({"id": id, "kinds": crate::places::places_kinds()}))),
+            "places.kinds" => {
+                let kinds: Vec<&str> = crate::places::places_kinds().into_iter().filter(|kind| *kind != "folder").collect();
+                Ok(reply_bytes(&json!({"id": id, "kinds": kinds})))
+            }
             "places.put" => {
                 let part = Zeroizing::new(B64.decode(&request.part).map_err(|_| "an unreadable part")?);
                 Ok(reply_bytes(&json!({"id": id, "token": transfers.append(request.token, &part)?})))
@@ -567,7 +640,7 @@ impl Conversation {
                 // The network switch here holds for the extension's runs too.
                 let (done, update) = crate::places::run_for(&request.place, self.network_allowed(), op);
                 let value = match done? {
-                    Done::Files(files) => json!(files.into_iter().map(PlaceFile::from).collect::<Vec<_>>()),
+                    Done::Files(files) => json!(crate::places::listed(&request.place, files)),
                     Done::Bytes(bytes) => json!({"token": transfers.keep(bytes)?}),
                     Done::Nothing | Done::Stored(_) => Value::Null,
                 };
@@ -657,6 +730,12 @@ impl Conversation {
     /// A person says yes once per place and extension. The app then connects where the extension
     /// says, with the details it sends, and keeps none of them.
     fn approve_place(&self, place: &Value, key: &[u8; 32]) -> Result<(), String> {
+        // A folder here is any path on this computer, and the question could not say which: one
+        // yes would let the extension read and write files anywhere this account can. The
+        // extension keeps its folders itself and never sends one.
+        if place.get("kind").and_then(Value::as_str) == Some("folder") {
+            return Err("A folder on this computer cannot be reached through the desktop app.".to_owned());
+        }
         let (item, shown) = place_label(place);
         self.approve_once(key, &item, |name| {
             format!("Let {name} keep copies of its vault at {shown}, through WM Pass?\n\nWM Pass connects there with the details the extension sends, and keeps none of them. It will not ask again for this place.")
@@ -729,7 +808,7 @@ fn linked_method(method: &str) -> Option<bool> {
     ];
     const CHANGES: &[&str] = &[
         "entry.create", "entry.set", "entry.set_secret", "entry.common", "entry.convert",
-        "entry.custom_set", "entry.custom_meta", "entry.custom_remove", "entry.question_set", "entry.otp_set",
+        "entry.custom_set", "entry.custom_meta", "entry.custom_remove", "entry.question_set", "entry.question_remove", "entry.otp_set",
         "entry.trash", "entry.restore", "entry.purge", "entry.duplicate", "entries.bulk", "entries.merge",
         "health.merge_duplicates", "folder.add", "folder.rename", "folder.remove", "tags.set_icon",
         "otp.hotp_next", "categorise.all", "prefs.sync",
@@ -755,6 +834,16 @@ fn row(value: Value) -> Value {
     json!({"entry": shown, "level": value.get("level")})
 }
 
+/// A reply too long for the browser to take once sealed and relayed, said as an error rather than
+/// sent: the browser would drop the whole connection over it. Checked before sealing, since a
+/// frame sealed and then held back would leave every later one unreadable.
+fn fit_for_browser(id: u64, reply: Zeroizing<Vec<u8>>) -> Zeroizing<Vec<u8>> {
+    if sealed_len(reply.len()) <= LARGEST_TO_BROWSER {
+        return reply;
+    }
+    reply_bytes(&json!({"id": id, "error": "That answer is too large to send to the browser. Do this in the desktop app instead."}))
+}
+
 fn reply_bytes(value: &Value) -> Zeroizing<Vec<u8>> {
     Zeroizing::new(value.to_string().into_bytes())
 }
@@ -770,6 +859,7 @@ mod tests {
         assert_eq!(linked_method("breach.check"), Some(false));
         assert_eq!(linked_method("entry.set"), Some(true));
         assert_eq!(linked_method("entries.bulk"), Some(true));
+        assert_eq!(linked_method("entry.question_remove"), Some(true));
         for kept in ["vault.save", "vault.export_key", "vault.change_password", "vault.rekey", "slot.add", "export.file", "kdbx", "shared.create", "vault.open", "wipe", "ssh.agent_sign", "attachment.open", "remote.sync"] {
             assert_eq!(linked_method(kept), None, "{kept}");
         }
@@ -795,6 +885,27 @@ mod tests {
         }
         assert_eq!(back, big);
         assert!(transfers.part(token, 0).is_err(), "a finished read is not kept");
+    }
+
+    #[test]
+    fn a_reply_too_long_for_the_browser_becomes_an_error() {
+        let fits = Zeroizing::new(vec![b'x'; 1000]);
+        assert_eq!(fit_for_browser(7, fits.clone()).as_slice(), fits.as_slice());
+        let long = Zeroizing::new(vec![b'x'; LARGEST_TO_BROWSER]);
+        let said: Value = serde_json::from_slice(&fit_for_browser(7, long)).unwrap();
+        assert_eq!(said["id"], 7);
+        assert!(said["error"].as_str().unwrap().contains("too large"));
+    }
+
+    #[test]
+    fn a_full_part_still_fits_the_browser() {
+        // The largest replies sent on purpose: a part of a file, or a vault reply sent whole.
+        let part = reply_bytes(&json!({"id": u64::MAX, "part": B64.encode(vec![0u8; PART]), "done": false}));
+        assert!(sealed_len(part.len()) <= LARGEST_TO_BROWSER);
+        let mut frame = format!("{{\"id\":{},\"frame\":\"", u64::MAX).into_bytes();
+        frame.extend(B64.encode(vec![0u8; PART]).bytes());
+        frame.extend(b"\"}");
+        assert!(sealed_len(frame.len()) <= LARGEST_TO_BROWSER);
     }
 
     #[test]

@@ -1,5 +1,6 @@
 package com.wasimaster.wmpass.ui.vault
 
+import androidx.compose.ui.semantics.heading
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -30,12 +31,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.wasimaster.wmpass.core.OtpRow
 import com.wasimaster.wmpass.core.Pass
 import com.wasimaster.wmpass.ui.fx.rim
@@ -65,14 +70,28 @@ fun CodesTab() {
     val shell = LocalShell.current
     val revision by Pass.revision.collectAsStateWithLifecycle()
     var rows by remember { mutableStateOf<List<OtpRow>?>(null) }
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(revision) {
-        while (true) {
-            rows = runCatching { Pass.codes() }.getOrDefault(emptyList())
-            delay(1000 - System.currentTimeMillis() % 1000 + 10)
+        // Only while the app is on screen: every code read each second in the background, with
+        // the vault left open, is work nobody sees. Coming back reads them again at once.
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            while (true) {
+                // A read cut short by the vault changing is not an empty list: "No codes yet" would
+                // flash up until the next read lands.
+                rows = try {
+                    Pass.codes()
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    // A read that failed keeps the codes on show, which the next second reads again.
+                    rows ?: emptyList()
+                }
+                delay(1000 - System.currentTimeMillis() % 1000 + 10)
+            }
         }
     }
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val list = rows?.let { all -> if (shell.prefs.codeSort.value == "name") all.sortedBy { it.otp.issuer.ifEmpty { it.title }.lowercase() } else all }
+    val list = rows?.let { all -> if (shell.prefs.codeSort.value == "name") all.sortedBy { it.title.ifEmpty { it.otp.issuer }.lowercase() } else all }
     LazyColumn(
         state = rememberLazyListState(),
         modifier = Modifier.fillMaxSize(),
@@ -90,7 +109,7 @@ fun CodesTab() {
                         "Codes",
                         color = colors.text,
                         style = MaterialTheme.typography.headlineLarge.copy(fontSize = 32.sp),
-                        modifier = Modifier.weight(1f).padding(start = 6.dp, top = 12.dp, bottom = 10.dp),
+                        modifier = Modifier.semantics { heading() }.weight(1f).padding(start = 6.dp, top = 12.dp, bottom = 10.dp),
                     )
                     HelpAction("screen.codes", "Codes", tint = colors.text)
                 }
@@ -130,7 +149,18 @@ private fun CodeCard(row: OtpRow, modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
     val ink = remember { InkState(scope) }
     var hotp by remember { mutableStateOf<String?>(null) }
+    var advancing by remember { mutableStateOf(false) }
     val code = row.code ?: hotp
+    // A counter code on show was taken by advancing the counter, so asking the vault again would
+    // give the one after it: the code copied is the one shown.
+    fun copyCode() {
+        val shown = hotp
+        if (row.code == null && shown != null) {
+            shell.copySecret("Code") { com.wasimaster.wmpass.core.SecretBytes(shown.toByteArray()) }
+        } else {
+            shell.copySecret("Code") { Pass.code(row.id) }
+        }
+    }
     val prefs = shell.prefs
     // Hidden codes show for a short while after a tap, then go again.
     var shownAt by remember { mutableStateOf(0L) }
@@ -145,33 +175,48 @@ private fun CodeCard(row: OtpRow, modifier: Modifier = Modifier) {
     SwipeRow(
         modifier,
         if (colors.flat) androidx.compose.ui.graphics.RectangleShape else Shapes.card,
-        onCopy = if (code != null) ({ shell.copySecret("Code") { Pass.code(row.id) } }) else null,
+        onCopy = if (code != null) ({ copyCode() }) else null,
         onTrash = { shell.nav.navigate("edit/${row.id}") },
         rightIcon = PassIcons.ContentCopy,
         leftIcon = PassIcons.Edit,
+        rightLabel = "Copy code",
+        leftLabel = "Edit",
     ) {
+    // The swipes, less the copy a tap already does.
+    val swipes = LocalSwipeActions.current.filter { it.label != "Copy code" }
     Row(
         Modifier
             .fillMaxWidth()
             .then(if (colors.flat) Modifier.background(colors.ground) else Modifier.clip(Shapes.card).background(colors.surface1).rim(Shapes.card, colors))
+            // One focus stop for the card: its name, code and time left read together, with the
+            // tap, the long press and the swipes offered by name.
+            .semantics(mergeDescendants = true) { customActions = swipes }
             .inkSurface(ink, colors.primary)
-            .tapAt(onLongPress = { shell.open(row.id) }) { at ->
+            .tapAt(
+                onLongPress = { shell.open(row.id) },
+                tapLabel = if (code != null) "Copy code" else null,
+                longPressLabel = "Open",
+            ) { at ->
                 if (code != null) {
                     ink.splash(at)
                     shownAt = System.currentTimeMillis()
-                    shell.copySecret("Code") { Pass.code(row.id) }
+                    copyCode()
                 }
             }
             .padding(start = 16.dp, end = 18.dp, top = 15.dp, bottom = 15.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.padding(end = 14.dp)) {
-            SiteTile(row.otp.issuer.ifEmpty { row.title }, row.site, "otp", size = if (colors.flat) 40.dp else 46.dp, icon = row.icon)
+            SiteTile(row.title.ifEmpty { row.otp.issuer }, row.site, "otp", size = if (colors.flat) 40.dp else 46.dp, icon = row.icon)
         }
         Column(Modifier.weight(1f)) {
-            val account = row.otp.account
+            // The item's own name first, as everywhere else, so renaming the item renames the row;
+            // the issuer the code came with follows when it says something the name does not.
+            val name = row.title.ifEmpty { row.otp.issuer }
+            val issuer = row.otp.issuer.takeIf { it.isNotEmpty() && !it.equals(name, ignoreCase = true) }
+            val account = listOfNotNull(issuer, row.otp.account.takeIf { it.isNotEmpty() }).joinToString(" · ")
             Text(
-                row.otp.issuer.ifEmpty { row.title }.ifEmpty { "Code" },
+                name.ifEmpty { "Code" },
                 color = colors.text,
                 style = if (colors.flat) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
                 maxLines = 1,
@@ -182,14 +227,29 @@ private fun CodeCard(row: OtpRow, modifier: Modifier = Modifier) {
             }
             Spacer(Modifier.height(4.dp))
             if (code != null && hidden) {
-                Text("••• •••", color = colors.textLow, style = PassType.code)
+                // Read out as what it is, not as six dots.
+                Text(
+                    "••• •••",
+                    color = colors.textLow,
+                    style = PassType.code,
+                    modifier = Modifier.semantics { contentDescription = "Code hidden. Tap to show and copy it" },
+                )
             } else if (code != null) {
                 RollingCode(code)
             } else {
                 QuietButton("Show the next code", height = 40.dp, tint = colors.primary) {
+                    // Each tap moves the counter on, so a second tap before the first lands would skip a code.
+                    if (advancing) return@QuietButton
+                    advancing = true
                     shell.launch {
-                        val reply = Pass.change("otp.hotp_next") { put("id", row.id) }
-                        hotp = reply.secret?.consumeText()
+                        try {
+                            val reply = Pass.change("otp.hotp_next") { put("id", row.id) }
+                            hotp = reply.secret?.consumeText()
+                            // Asked for to be shown, so it is, even with codes hidden: dots would need a second tap.
+                            shownAt = System.currentTimeMillis()
+                        } finally {
+                            advancing = false
+                        }
                     }
                 }
             }

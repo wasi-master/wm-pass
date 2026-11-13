@@ -1,5 +1,16 @@
 package com.wasimaster.wmpass.ui.vault
 
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.border
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
 import com.wasimaster.wmpass.ui.theme.readableWidth
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
@@ -48,6 +59,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -213,6 +225,7 @@ class GenState {
         if (mode == "password" && !prefixIsWhole(buffer)) roll()
     }
 
+    /** A preset made elsewhere can ask for more than the dials here reach: it is held to their ranges, which the core accepts. */
     fun apply(preset: PresetView) {
         val obj = preset.recipe as? JsonObject
         val string = preset.recipe.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
@@ -232,22 +245,26 @@ class GenState {
             obj?.containsKey("Passphrase") == true -> {
                 val p = obj["Passphrase"]!!.jsonObject
                 mode = "passphrase"
-                words = p.int("words", 5)
+                words = p.int("words", 5).coerceIn(3, 12)
                 separator = p["separator"]?.jsonPrimitive?.content ?: "-"
                 capitalize = p.flag("capitalize", false)
                 includeDigit = p.flag("include_digit", true)
             }
             obj?.containsKey("Pronounceable") == true -> {
                 mode = "pronounceable"
-                syllables = obj["Pronounceable"]!!.jsonObject.int("syllables", 6)
+                syllables = obj["Pronounceable"]!!.jsonObject.int("syllables", 6).coerceIn(3, 14)
             }
             obj?.containsKey("LockPattern") == true -> {
                 mode = "lock"
                 dots = obj["LockPattern"]!!.jsonObject.int("dots", 6).coerceIn(4, 9)
             }
+            obj?.containsKey("Pattern") == true -> {
+                mode = "pattern"
+                pattern = obj["Pattern"]!!.jsonPrimitive.content
+            }
             obj?.containsKey("Pin") == true -> {
                 mode = "pin"
-                pin = obj["Pin"]!!.jsonObject.int("length", 6)
+                pin = obj["Pin"]!!.jsonObject.int("length", 6).coerceIn(4, 12)
             }
             string != null -> mode = "password"
         }
@@ -295,7 +312,7 @@ fun GeneratedValue(state: GenState, modifier: Modifier = Modifier, large: Boolea
                 androidx.compose.material3.IconButton(onClick = {
                     rolls++
                     shell.haptics.click()
-                    scope.launch { state.roll() }
+                    scope.launch { runCatching { state.roll() } }
                 }) {
                     Icon(PassIcons.Refresh, "Generate again", Modifier.graphicsLayer { rotationZ = spin })
                 }
@@ -307,7 +324,8 @@ fun GeneratedValue(state: GenState, modifier: Modifier = Modifier, large: Boolea
         modifier
             .fillMaxWidth()
             .heightIn(min = if (large) 168.dp else 120.dp)
-            .pointerInput(Unit) {
+            // Keyed to the state: one the shell replaces, after the defaults change, is the one a pull rolls.
+            .pointerInput(state) {
                 detectVerticalDragGestures(
                     onDragEnd = {
                         val fire = armed
@@ -315,7 +333,7 @@ fun GeneratedValue(state: GenState, modifier: Modifier = Modifier, large: Boolea
                         scope.launch { pull.animateTo(0f, Springs.lively()) }
                         if (fire) {
                             shell.haptics.confirm()
-                            scope.launch { state.roll() }
+                            scope.launch { runCatching { state.roll() } }
                         }
                     },
                     onDragCancel = {
@@ -377,7 +395,7 @@ private fun LockPatternValue(state: GenState, modifier: Modifier, large: Boolean
             if (colors.flat) {
                 androidx.compose.material3.IconButton(onClick = {
                     shell.haptics.click()
-                    scope.launch { state.roll() }
+                    scope.launch { runCatching { state.roll() } }
                 }) { Icon(PassIcons.Refresh, "Another pattern") }
             }
         }
@@ -453,6 +471,10 @@ fun StepDial(label: String, value: Int, range: IntRange, modifier: Modifier = Mo
     val shell = LocalShell.current
     var dragging by remember { mutableStateOf(false) }
     val lift by androidx.compose.animation.core.animateFloatAsState(if (dragging) 1f else 0f, Springs.snap(), label = "lift")
+    // Read by a drag already under way, which outlives the composition it started in.
+    val latestValue by rememberUpdatedState(value)
+    val latestChange by rememberUpdatedState(onChange)
+    val latestSettle by rememberUpdatedState(onSettle)
     if (colors.flat) {
         Column(modifier.fillMaxWidth()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -470,6 +492,8 @@ fun StepDial(label: String, value: Int, range: IntRange, modifier: Modifier = Mo
                 },
                 valueRange = range.first.toFloat()..range.last.toFloat(),
                 onValueChangeFinished = onSettle,
+                // Named: the label above is a separate line to a screen reader.
+                modifier = Modifier.semantics { contentDescription = label },
             )
         }
         return
@@ -484,30 +508,69 @@ fun StepDial(label: String, value: Int, range: IntRange, modifier: Modifier = Mo
             val fraction = (value - range.first).toFloat() / span
             fun fromX(x: Float): Int = range.first + (((x - thumb / 2) / travel).coerceIn(0f, 1f) * span).roundToInt()
             var current by remember { mutableFloatStateOf(0f) }
+            val keys = remember { MutableInteractionSource() }
+            val focused by keys.collectIsFocusedAsState()
+            // One step at a time from the keyboard or a screen reader's adjust gesture, settling as it goes.
+            fun step(by: Int) {
+                val next = (latestValue + by).coerceIn(range.first, range.last)
+                if (next != latestValue) {
+                    shell.haptics.tick()
+                    latestChange(next)
+                    latestSettle()
+                }
+            }
             Box(
                 Modifier
                     .fillMaxSize()
-                    .pointerInput(range) {
+                    // A slider to a screen reader, named and with its value and range, which it can
+                    // move; and to a keyboard, which moves it with the arrow keys.
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = label
+                        progressBarRangeInfo = androidx.compose.ui.semantics.ProgressBarRangeInfo(
+                            value.toFloat(),
+                            range.first.toFloat()..range.last.toFloat(),
+                            steps = (span - 1).coerceAtLeast(0),
+                        )
+                        setProgress { target ->
+                            val next = target.roundToInt().coerceIn(range.first, range.last)
+                            if (next != latestValue) {
+                                latestChange(next)
+                                latestSettle()
+                            }
+                            true
+                        }
+                    }
+                    .onKeyEvent { event ->
+                        if (event.type != androidx.compose.ui.input.key.KeyEventType.KeyDown) return@onKeyEvent false
+                        when (event.key) {
+                            androidx.compose.ui.input.key.Key.DirectionRight, androidx.compose.ui.input.key.Key.DirectionUp -> { step(1); true }
+                            androidx.compose.ui.input.key.Key.DirectionLeft, androidx.compose.ui.input.key.Key.DirectionDown -> { step(-1); true }
+                            else -> false
+                        }
+                    }
+                    .focusable(interactionSource = keys)
+                    // Keyed to the width too: turned on its side, the track is longer than it was.
+                    .pointerInput(range, travel) {
                         detectDragGestures(
                             onDragStart = {
                                 dragging = true
                                 current = it.x
                                 val next = fromX(it.x)
-                                if (next != value) onChange(next)
+                                if (next != latestValue) latestChange(next)
                             },
                             onDragEnd = {
                                 dragging = false
-                                onSettle()
+                                latestSettle()
                             },
                             onDragCancel = {
                                 dragging = false
-                                onSettle()
+                                latestSettle()
                             },
                         ) { change, delta ->
                             change.consume()
                             current += delta.x
                             val next = fromX(current)
-                            onChange(next)
+                            if (next != latestValue) latestChange(next)
                         }
                     },
             ) {
@@ -533,7 +596,9 @@ fun StepDial(label: String, value: Int, range: IntRange, modifier: Modifier = Mo
                         .size(44.dp)
                         .clip(CircleShape)
                         .background(colors.surface3)
-                        .rim(CircleShape, colors),
+                        .rim(CircleShape, colors)
+                        // Where keyboard focus is.
+                        .then(if (focused) Modifier.border(2.dp, colors.primary, CircleShape) else Modifier),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -554,7 +619,9 @@ fun StepDial(label: String, value: Int, range: IntRange, modifier: Modifier = Mo
 @Composable
 fun GeneratorControls(state: GenState, modesModifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
-    fun reroll() { scope.launch { state.roll() } }
+    // A pattern that cannot be made, such as an empty one, leaves the last value up rather than
+    // closing the app, as the pattern's own field already does.
+    fun reroll() { scope.launch { runCatching { state.roll() } } }
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         LazyRow(
             modesModifier.then(if (palette.flat) Modifier.bleed(16.dp) else Modifier.bleed(16.dp).fadeEdges(16.dp)),
@@ -570,13 +637,14 @@ fun GeneratorControls(state: GenState, modesModifier: Modifier = Modifier) {
         }
         when (state.mode) {
             "password" -> {
-                StepDial("Length", state.length, 8..BUFFER, onChange = { state.length = it }, onSettle = { scope.launch { state.settle() } })
+                StepDial("Length", state.length, 8..BUFFER, onChange = { state.length = it }, onSettle = { scope.launch { runCatching { state.settle() } } })
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Pill("a-z", state.lower) { state.lower = !state.lower; reroll() }
-                    Pill("A-Z", state.upper) { state.upper = !state.upper; reroll() }
-                    Pill("0-9", state.digits) { state.digits = !state.digits; reroll() }
-                    Pill("!@#", state.symbols) { state.symbols = !state.symbols; reroll() }
-                    Pill("Avoid look-alikes", state.noAmbiguous) { state.noAmbiguous = !state.noAmbiguous; reroll() }
+                    // Switches, named in words: "a-z" is read out as "a dash z", "!@#" as three symbols.
+                    Pill("a-z", state.lower, toggle = true, description = "Small letters") { state.lower = !state.lower; reroll() }
+                    Pill("A-Z", state.upper, toggle = true, description = "Capital letters") { state.upper = !state.upper; reroll() }
+                    Pill("0-9", state.digits, toggle = true, description = "Digits") { state.digits = !state.digits; reroll() }
+                    Pill("!@#", state.symbols, toggle = true, description = "Symbols") { state.symbols = !state.symbols; reroll() }
+                    Pill("Avoid look-alikes", state.noAmbiguous, toggle = true) { state.noAmbiguous = !state.noAmbiguous; reroll() }
                 }
             }
             "passphrase" -> {
@@ -585,8 +653,8 @@ fun GeneratorControls(state: GenState, modesModifier: Modifier = Modifier) {
                     listOf("-" to "Dash", " " to "Space", "." to "Dot", "_" to "Underscore").forEach { (sep, name) ->
                         Pill(name, state.separator == sep) { state.separator = sep; reroll() }
                     }
-                    Pill("Capitals", state.capitalize) { state.capitalize = !state.capitalize; reroll() }
-                    Pill("Number", state.includeDigit) { state.includeDigit = !state.includeDigit; reroll() }
+                    Pill("Capitals", state.capitalize, toggle = true) { state.capitalize = !state.capitalize; reroll() }
+                    Pill("Number", state.includeDigit, toggle = true) { state.includeDigit = !state.includeDigit; reroll() }
                 }
             }
             "pronounceable" -> StepDial("Syllables", state.syllables, 3..14, onChange = { state.syllables = it }, onSettle = { reroll() })
@@ -639,7 +707,7 @@ fun RollButton(onRoll: () -> Unit, modifier: Modifier = Modifier) {
             .clip(CircleShape)
             .background(colors.surface2)
             .rim(CircleShape, colors)
-            .clickable(source, androidx.compose.material3.ripple(), onClickLabel = "Roll again") {
+            .clickable(source, androidx.compose.material3.ripple(), role = androidx.compose.ui.semantics.Role.Button) {
                 shell.haptics.click()
                 onRoll()
                 scope.launch {
@@ -657,11 +725,12 @@ fun GeneratorTab() {
     val colors = palette
     val shell = LocalShell.current
     val prefs = LocalShell.current.prefs
-    val state = remember { GenState.fromPrefs(prefs) }
+    // Kept by the shell, so a trip to another tab and back keeps the settings and the value.
+    val state = shell.generator
     val scope = rememberCoroutineScope()
     var presets by remember { mutableStateOf<List<PresetView>>(emptyList()) }
-    LaunchedEffect(Unit) {
-        state.roll()
+    LaunchedEffect(state) {
+        if (state.value.isEmpty()) runCatching { state.roll() }
         presets = runCatching { Pass.presets() }.getOrDefault(emptyList())
     }
     Box(Modifier.fillMaxSize()) {
@@ -686,7 +755,7 @@ fun GeneratorTab() {
                         "Generate",
                         color = colors.text,
                         style = MaterialTheme.typography.headlineLarge.copy(fontSize = 32.sp),
-                        modifier = Modifier.weight(1f).padding(start = 6.dp, top = 20.dp, bottom = 6.dp),
+                        modifier = Modifier.semantics { heading() }.weight(1f).padding(start = 6.dp, top = 20.dp, bottom = 6.dp),
                     )
                     HelpAction("screen.generator", "the generator", Modifier.padding(top = 14.dp), tint = colors.text)
                 }
@@ -695,10 +764,11 @@ fun GeneratorTab() {
             GeneratedStrength(state, Modifier.padding(horizontal = if (colors.flat) 0.dp else 6.dp))
             Spacer(Modifier.height(20.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                PrimaryButton("Copy", Modifier.weight(1f), icon = PassIcons.ContentCopy) {
+                // Not before the first value is made: an empty copy would say it copied a password.
+                PrimaryButton("Copy", Modifier.weight(1f), icon = PassIcons.ContentCopy, enabled = state.value.isNotEmpty()) {
                     shell.copyGenerated(state.value)
                 }
-                if (!colors.flat) RollButton({ scope.launch { state.roll() } })
+                if (!colors.flat) RollButton({ scope.launch { runCatching { state.roll() } } })
                 val source = remember { MutableInteractionSource() }
                 if (colors.flat) {
                     com.wasimaster.wmpass.ui.parts.QuietButton("Save as login", Modifier.weight(1f).helpAnchor("generator.save"), PassIcons.Add, height = 48.dp) {
@@ -713,7 +783,7 @@ fun GeneratorTab() {
                         .clip(CircleShape)
                         .background(colors.surface2)
                         .rim(CircleShape, colors)
-                        .clickable(source, androidx.compose.material3.ripple(), onClickLabel = "Save as a new login") {
+                        .clickable(source, androidx.compose.material3.ripple(), role = androidx.compose.ui.semantics.Role.Button) {
                             shell.haptics.click()
                             shell.pendingPassword = state.value
                             shell.nav.navigate("new/login")
@@ -746,10 +816,11 @@ fun GeneratorTab() {
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(horizontal = 16.dp),
                 ) {
-                    items(presets, key = { it.name }) { preset ->
+                    // Not keyed by name: two presets may share one, and a repeated key closes the app.
+                    items(presets) { preset ->
                         Pill(preset.name, false) {
                             state.apply(preset)
-                            scope.launch { state.roll() }
+                            scope.launch { runCatching { state.roll() } }
                         }
                     }
                 }

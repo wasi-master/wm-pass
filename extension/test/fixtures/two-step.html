@@ -1,0 +1,17 @@
+<!doctype html><title>Two-step sign-in fixture</title>
+<div id="app">
+<div id="one"><input id="user" type="email" autocomplete="username" style="width:280px;height:32px;margin:40px"><button id="next" type="button">Next</button></div>
+<div id="two" hidden><input id="pass" type="password" autocomplete="current-password" style="width:280px;height:32px;margin:40px"><button id="go" type="button">Sign in</button></div>
+</div>
+<script>
+// The username goes on one step and the password on the next, and the password step has no
+// username box of its own, as on many large sites.
+document.getElementById('next').addEventListener('click', () => {
+  document.getElementById('one').remove();
+  document.getElementById('two').hidden = false;
+});
+document.getElementById('go').addEventListener('click', () => setTimeout(() => {
+  history.pushState({}, '', '/two-step.html#home');
+  document.getElementById('app').textContent = 'Welcome back.';
+}, 200));
+</script>

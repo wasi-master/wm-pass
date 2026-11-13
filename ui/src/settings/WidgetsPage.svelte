@@ -9,12 +9,13 @@
   import Choice from './Choice.svelte';
   import Reorder from './Reorder.svelte';
   import Toggle from './Toggle.svelte';
+  import { byName } from '../engine/text';
   import { WIDGET_BUTTONS } from './widgets.svelte';
 
   const MAX_CODES = 8;
   const buttons = $derived(prefs.listOf('widget_buttons').filter((b) => b in WIDGET_BUTTONS));
   const chosen = $derived(prefs.listOf('widget_codes'));
-  const withCodes = $derived(pass.entries.filter((e) => e.has_otp && !e.trashed).slice().sort((a, b) => a.title.localeCompare(b.title)));
+  const withCodes = $derived(pass.entries.filter((e) => e.has_otp && !e.trashed && !e.hidden).slice().sort((a, b) => byName(a.title, b.title)));
 
   function pick(id: string, on: boolean) {
     if (on && chosen.length >= MAX_CODES) return;
@@ -64,7 +65,8 @@
     <Row title="Which codes" sub={chosen.length ? `${chosen.length} chosen, up to ${MAX_CODES}` : 'None chosen: your favorites that have a code'} icon="pin" />
     {#each withCodes as entry (entry.id)}
       <Row title={entry.title}>
-        <Switch checked={chosen.includes(entry.id)} label="Show {entry.title} on the Codes widget" onchange={(on) => pick(entry.id, on)} />
+        <!-- At the limit, the rest wait until one is turned off rather than ignoring the click. -->
+        <Switch checked={chosen.includes(entry.id)} disabled={!chosen.includes(entry.id) && chosen.length >= MAX_CODES} label="Show {entry.title} on the Codes widget" onchange={(on) => pick(entry.id, on)} />
       </Row>
     {:else}
       <Row title="No item has a code yet." />

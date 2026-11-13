@@ -249,6 +249,79 @@ fn trash_undo_and_purge() {
 }
 
 #[test]
+fn a_health_search_leaves_out_what_the_health_screen_ignores() {
+    let mut s = Service::new(1);
+    let h = new_vault(&mut s);
+    let mut weak = Vec::new();
+    for title in ["One", "Two"] {
+        let id = json_of(&call(&mut s, "entry.create", h, json!({"kind": "login", "title": title})))["id"].as_str().unwrap().to_owned();
+        secret_call(&mut s, "entry.set_secret", h, json!({"id": id, "field": "password"}), b"password");
+        weak.push(id);
+    }
+    let listed = |s: &mut Service| -> Vec<String> {
+        json_of(&call(s, "entry.list", h, json!({"query": "weak"})))
+            .as_array().unwrap().iter().map(|row| row["id"].as_str().unwrap().to_owned()).collect()
+    };
+    assert_eq!(listed(&mut s).len(), 2);
+    call(&mut s, "health.report", h, json!({"ignored": {"weak": [weak[0]]}}));
+    assert_eq!(listed(&mut s), vec![weak[1].clone()]);
+    // An edit throws the report away; the next one keeps the same settings.
+    call(&mut s, "folder.add", h, json!({"name": "Any"}));
+    assert_eq!(listed(&mut s), vec![weak[1].clone()]);
+}
+
+#[test]
+fn a_code_is_renamed_without_its_seed() {
+    let mut s = Service::new(1);
+    let h = new_vault(&mut s);
+    let id = json_of(&call(&mut s, "entry.create", h, json!({"kind": "otp", "title": "Acme"})))["id"].as_str().unwrap().to_owned();
+    secret_call(&mut s, "entry.otp_set", h, json!({"id": id, "issuer": "Acme", "account": "me"}), b"JBSWY3DPEHPK3PXP");
+    let issuer = |s: &mut Service| json_of(&call(s, "otp.codes", h, json!({})))[0]["otp"]["issuer"].clone();
+    let code = |s: &mut Service| json_of(&call(s, "otp.codes", h, json!({})))[0]["code"].clone();
+    let before = code(&mut s);
+    // Renaming the item renames the issuer that was its name.
+    call(&mut s, "entry.common", h, json!({"id": id, "title": "Acme Corp"}));
+    assert_eq!(issuer(&mut s), "Acme Corp");
+    // The names alone can change, with no seed sent.
+    call(&mut s, "entry.otp_set", h, json!({"id": id, "issuer": "Acme Inc"}));
+    assert_eq!(issuer(&mut s), "Acme Inc");
+    assert_eq!(code(&mut s), before);
+    // An issuer of its own is left alone by a rename.
+    call(&mut s, "entry.common", h, json!({"id": id, "title": "Work"}));
+    assert_eq!(issuer(&mut s), "Acme Inc");
+}
+
+#[test]
+fn removing_a_folder_moves_the_folders_inside_it_up() {
+    let mut s = Service::new(1);
+    let h = new_vault(&mut s);
+    let id = |reply: Reply| json_of(&reply)["id"].as_str().unwrap().to_owned();
+    let work = id(call(&mut s, "folder.add", h, json!({"name": "Work"})));
+    let mail = id(call(&mut s, "folder.add", h, json!({"name": "Mail", "parent": work})));
+    let old = id(call(&mut s, "folder.add", h, json!({"name": "Old", "parent": mail})));
+    call(&mut s, "folder.remove", h, json!({"id": mail}));
+    let folders = json_of(&call(&mut s, "folder.list", h, json!({})));
+    let parent_of = |wanted: &str| folders.as_array().unwrap().iter().find(|f| f["id"] == wanted).map(|f| f["parent"].clone());
+    assert_eq!(parent_of(&old), Some(json!(work)));
+    assert_eq!(parent_of(&mail), None);
+}
+
+#[test]
+fn emptying_a_stale_trash_list_changes_nothing() {
+    let mut s = Service::new(1);
+    let h = new_vault(&mut s);
+    let kept = login(&mut s, h);
+    let gone = login(&mut s, h);
+    call(&mut s, "entries.bulk", h, json!({"ids": [kept, gone], "op": "trash"}));
+    call(&mut s, "entry.purge", h, json!({"id": gone}));
+    // The list still names the one already purged, as another device's emptying leaves it.
+    let args = json!({"ids": [kept, gone], "op": "purge"}).to_string();
+    assert!(s.call("entries.bulk", Call { handle: h, args: &args, ..Call::default() }).is_err());
+    let trash = json_of(&call(&mut s, "entry.list", h, json!({"query": "trashed"})));
+    assert_eq!(trash.as_array().unwrap().len(), 1, "the first item is still in the trash");
+}
+
+#[test]
 fn otp_seed_never_shows_and_codes_do() {
     let mut s = Service::new(1);
     let h = new_vault(&mut s);
@@ -264,6 +337,12 @@ fn otp_seed_never_shows_and_codes_do() {
     let args = json!({"id": id}).to_string();
     let err = s.call("entry.otp_set", Call { handle: h, args: &args, secret: b"not base32!!", ..Call::default() });
     assert!(err.is_err(), "a mistyped seed fails when it is entered");
+    let err = s.call("entry.otp_set", Call { handle: h, args: &args, secret: b"   ", ..Call::default() });
+    assert!(err.is_err(), "an empty seed is no code");
+    // As sites show it, in groups and lower case.
+    secret_call(&mut s, "entry.otp_set", h, json!({"id": id}), b"jbsw y3dp ehpk 3pxp");
+    let again = json_of(&call(&mut s, "otp.codes", h, json!({})));
+    assert_eq!(again[0]["code"], codes[0]["code"]);
 }
 
 #[test]
@@ -297,6 +376,29 @@ fn duress_password_reports_without_opening() {
     assert_eq!(reply["outcome"], "duress");
     assert_eq!(reply["action"], "wipe");
     assert!(s.open_handles().is_empty());
+}
+
+#[test]
+fn changing_a_second_password_leaves_the_first_alone() {
+    let mut s = Service::new(1);
+    let h = new_vault(&mut s);
+    let added = json_of(&secret_call(&mut s, "slot.add", h, json!({"label": "Second", "action": "open"}), b"second"))["index"].as_u64().unwrap();
+    assert_ne!(added, 0);
+    let wrong = json_of(&secret_call(&mut s, "vault.verify", h, json!({}), b"wrong"));
+    assert_eq!(wrong["ok"], false);
+    assert!(wrong["slot"].is_null());
+    let found = json_of(&secret_call(&mut s, "vault.verify", h, json!({}), b"second"));
+    assert_eq!(found["ok"], true);
+    assert_eq!(found["slot"].as_u64(), Some(added));
+    secret_call(&mut s, "vault.change_password", h, json!({"index": added}), b"renewed");
+    let file = call(&mut s, "vault.save", h, json!({})).blobs[0].clone();
+    s.lock_all();
+    let only: [&[u8]; 1] = [&file];
+    let outcome = |s: &mut Service, password: &[u8]| json_of(&s.call("vault.open", Call { secret: password, blobs: &only, ..Call::default() }).unwrap())["outcome"].clone();
+    assert_eq!(outcome(&mut s, b"master"), "opened", "the first password still opens");
+    assert_eq!(outcome(&mut s, b"renewed"), "opened");
+    assert_ne!(outcome(&mut s, b"second"), "opened");
+    s.lock_all();
 }
 
 #[test]
@@ -644,4 +746,399 @@ fn common_values_ride_with_the_fields() {
     assert!(field("document", "label")["suggestions"].as_array().unwrap().contains(&json!("Passport")));
     assert!(field("card", "issuer")["suggestions"].as_array().unwrap().contains(&json!("Visa")));
     assert!(field("login", "username").get("suggestions").is_none(), "a field without any leaves them out");
+}
+
+#[test]
+fn same_site_follows_the_public_suffix_list() {
+    let mut s = Service::new(1);
+    let h = new_vault(&mut s);
+    let same = |s: &mut Service, a: &str, b: &str| json_of(&call(s, "match.same_site", h, json!({"a": a, "b": b})))["same"] == json!(true);
+    assert!(same(&mut s, "accounts.example.com", "www.example.com"));
+    assert!(same(&mut s, "signin.aws.amazon.com", "console.aws.amazon.com"));
+    assert!(!same(&mut s, "example.co.uk", "other.co.uk"));
+    assert!(!same(&mut s, "example.com", "example.org"));
+    assert!(!same(&mut s, "", ""));
+}
+
+#[test]
+fn a_question_can_be_reworded_and_removed() {
+    let mut s = Service::new(1);
+    let h = new_vault(&mut s);
+    let id = login(&mut s, h);
+    secret_call(&mut s, "entry.question_set", h, json!({"id": id, "question": "First pet"}), b"Rex");
+    secret_call(&mut s, "entry.question_set", h, json!({"id": id, "question": "First school"}), b"Hill");
+    call(&mut s, "entry.question_set", h, json!({"id": id, "index": 1, "question": "First school's name", "keep_answer": true}));
+    call(&mut s, "entry.question_remove", h, json!({"id": id, "index": 0}));
+    let detail = json_of(&call(&mut s, "entry.get", h, json!({"id": id})));
+    assert_eq!(detail["questions"], json!(["First school's name"]));
+    let answer = call(&mut s, "entry.reveal_question", h, json!({"id": id, "index": 0}));
+    assert_eq!(answer.secret.as_deref().map(|b| b.to_vec()), Some(b"Hill".to_vec()));
+}
+
+#[test]
+fn a_health_filter_turned_around_leaves_out_what_it_names() {
+    let mut s = Service::new(1);
+    let h = new_vault(&mut s);
+    let add = |s: &mut Service, title: &str, password: &[u8]| {
+        let reply = call(s, "entry.create", h, json!({"kind": "login", "title": title}));
+        let id = json_of(&reply)["id"].as_str().unwrap().to_owned();
+        secret_call(s, "entry.set_secret", h, json!({"id": id, "field": "password"}), password);
+        id
+    };
+    let weak = add(&mut s, "Weak", b"password1");
+    let strong = add(&mut s, "Strong", b"xK9#mP2$vL7@qR4!tN8&");
+    let ids = |s: &mut Service, query: &str| -> Vec<String> {
+        json_of(&call(s, "entry.list", h, json!({"query": query})))
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["id"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    assert_eq!(ids(&mut s, "weak"), vec![weak.clone()]);
+    assert_eq!(ids(&mut s, "\"weak\""), vec![weak]);
+    assert_eq!(ids(&mut s, "-weak"), vec![strong]);
+}
+
+#[test]
+fn one_seed_that_makes_no_code_leaves_the_other_codes_alone() {
+    use wmpass_core::crypto::KdfParams;
+    use wmpass_core::format::KdfConfig;
+    use wmpass_core::model::Lww;
+    use wmpass_core::otp::OtpConfig;
+    use wmpass_core::vault::{Vault, login_entry};
+    let config = KdfConfig::new(KdfParams { m_kib: 65536, t: 3, p: 1 }).unwrap();
+    let mut vault = Vault::create("Test", b"master", &config, 1, 1000).unwrap();
+    // A sync from another app can bring a seed no code comes from.
+    for (title, seed) in [("Good", "JBSWY3DPEHPK3PXP"), ("Broken", "not base32!")] {
+        let at = vault.tick(1000);
+        let mut entry = login_entry(title, "me", "pw", at);
+        entry.login_mut().unwrap().otp = Lww::new(Some(OtpConfig::totp(seed)), at);
+        vault.add(entry, 1000).unwrap();
+    }
+    let file = vault.save().unwrap();
+    let mut s = Service::new(1);
+    let blobs: [&[u8]; 1] = [&file];
+    let open = s.call("vault.open", Call { secret: b"master", blobs: &blobs, ..Call::default() }).unwrap();
+    let h = json_of(&open)["handle"].as_u64().unwrap();
+    let codes = json_of(&call(&mut s, "otp.codes", h, json!({})));
+    let row = |title: &str| codes.as_array().unwrap().iter().find(|row| row["title"] == title).unwrap().clone();
+    assert_eq!(row("Good")["code"].as_str().unwrap().len(), 6);
+    assert!(row("Broken")["code"].is_null());
+    assert!(row("Broken")["error"].as_str().is_some_and(|e| !e.is_empty()));
+}
+
+#[test]
+fn a_copy_of_a_login_leaves_its_passkey_behind() {
+    let mut s = Service::new(1);
+    let h = new_vault(&mut s);
+    let made = call(&mut s, "passkey.create", h, json!({
+        "rp_id": "example.com",
+        "rp_name": "Example",
+        "user_handle": "dXNlcg",
+        "user_name": "me",
+        "origin_host": "example.com",
+    }));
+    let id = json_of(&made)["id"].as_str().unwrap().to_owned();
+    let copy = json_of(&call(&mut s, "entry.duplicate", h, json!({"id": id})))["id"].as_str().unwrap().to_owned();
+    assert_ne!(copy, id);
+    let keys = json_of(&call(&mut s, "passkey.list", h, json!({"rp_id": "example.com", "origin_host": "example.com"})));
+    let holders: Vec<&str> = keys.as_array().unwrap().iter().map(|k| k["id"].as_str().unwrap()).collect();
+    assert_eq!(holders, vec![id.as_str()], "only the original offers it");
+}
+
+fn fails(s: &mut Service, method: &str, handle: u64, args: Value) -> String {
+    let args = args.to_string();
+    s.call(method, Call { handle, args: &args, now_ms: 1_700_000_000_000, ..Call::default() })
+        .map(|_| ())
+        .expect_err(method)
+        .message
+}
+
+#[test]
+fn folders_and_tags_are_taken_as_typed_and_never_left_dangling() {
+    let mut s = Service::new(1);
+    let h = new_vault(&mut s);
+    let id = login(&mut s, h);
+    assert_eq!(fails(&mut s, "folder.add", h, json!({"name": "   "})), "a folder has a name");
+    assert_eq!(fails(&mut s, "folder.add", h, json!({"name": "Sub", "parent": "nope"})), "that folder is gone");
+    let work = json_of(&call(&mut s, "folder.add", h, json!({"name": "  Work "})))["id"].as_str().unwrap().to_owned();
+    let folders = json_of(&call(&mut s, "folder.list", h, json!({})));
+    assert_eq!(folders[0]["name"], "Work", "trimmed");
+    assert_eq!(fails(&mut s, "folder.rename", h, json!({"id": work, "name": ""})), "a folder has a name");
+    assert_eq!(fails(&mut s, "folder.remove", h, json!({"id": "nope"})), "no such folder");
+
+    // An item is never filed in a folder the vault does not have.
+    assert_eq!(fails(&mut s, "entry.common", h, json!({"id": id, "folder": "nope"})), "that folder is gone");
+    assert_eq!(fails(&mut s, "entries.bulk", h, json!({"ids": [id], "op": "folder", "folder": "nope"})), "that folder is gone");
+    assert_eq!(fails(&mut s, "entry.create", h, json!({"kind": "note", "title": "N", "folder": "nope"})), "that folder is gone");
+    call(&mut s, "entries.bulk", h, json!({"ids": [id], "op": "folder", "folder": work}));
+    call(&mut s, "entries.bulk", h, json!({"ids": [id], "op": "folder", "folder": null}));
+
+    // Tags: trimmed, without their #, each once, never empty.
+    call(&mut s, "entry.common", h, json!({"id": id, "tags": [" work", "#home", "work", "", "  "]}));
+    assert_eq!(json_of(&call(&mut s, "entry.get", h, json!({"id": id})))["tags"], json!(["work", "home"]));
+    assert_eq!(fails(&mut s, "entries.bulk", h, json!({"ids": [id], "op": "tag_add", "tag": " # "})), "a tag has a name");
+    call(&mut s, "entries.bulk", h, json!({"ids": [id], "op": "tag_add", "tag": " #work "}));
+    assert_eq!(json_of(&call(&mut s, "entry.get", h, json!({"id": id})))["tags"], json!(["work", "home"]));
+
+    // A custom field has a name.
+    let args = json!({"id": id, "name": "  ", "kind": "text"}).to_string();
+    let empty = s.call("entry.custom_set", Call { handle: h, args: &args, secret: b"v", ..Call::default() });
+    assert_eq!(empty.map(|_| ()).expect_err("no name").message, "a field has a name");
+}
+
+#[test]
+fn taking_a_tag_off_leaves_items_without_it_untouched() {
+    let mut s = Service::new(1);
+    let h = new_vault(&mut s);
+    let tagged = login(&mut s, h);
+    let other = login(&mut s, h);
+    call(&mut s, "entry.common", h, json!({"id": tagged, "tags": ["work"]}));
+    let before = json_of(&call(&mut s, "entry.get", h, json!({"id": other})))["modified_ms"].clone();
+    let args = json!({"ids": [tagged, other], "op": "tag_remove", "tag": "work"}).to_string();
+    s.call("entries.bulk", Call { handle: h, args: &args, now_ms: 1_800_000_000_000, ..Call::default() }).unwrap();
+    assert_eq!(json_of(&call(&mut s, "entry.get", h, json!({"id": other})))["modified_ms"], before);
+    assert_eq!(json_of(&call(&mut s, "entry.get", h, json!({"id": tagged})))["tags"], json!([]));
+}
+
+#[test]
+fn a_list_by_name_counts_numbers_as_people_do() {
+    let mut s = Service::new(1);
+    let h = new_vault(&mut s);
+    for title in ["Item 10", "item 2", "Item 1", "Écran 3"] {
+        call(&mut s, "entry.create", h, json!({"kind": "note", "title": title}));
+    }
+    let rows = json_of(&call(&mut s, "entry.list", h, json!({"query": "", "sort": "title"})));
+    let titles: Vec<&str> = rows.as_array().unwrap().iter().map(|r| r["title"].as_str().unwrap()).collect();
+    assert_eq!(titles, ["Écran 3", "Item 1", "item 2", "Item 10"]);
+}
+
+#[test]
+fn an_imported_passkey_counter_rises_with_each_sign_in_and_is_saved() {
+    use base64::Engine;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
+    let mut s = Service::new(1);
+    let h = new_vault(&mut s);
+    let made = wmpass_core::passkey::create("example.com", "Example", b"user", "me", true, 1000).unwrap().passkey;
+    let export = json!({"encrypted": false, "folders": [], "items": [{
+        "type": 1,
+        "name": "Example",
+        "login": {"username": "me", "fido2Credentials": [{
+            "credentialId": made.credential_id,
+            "rpId": "example.com",
+            "rpName": "Example",
+            "userHandle": made.user_handle,
+            "userName": "me",
+            "keyValue": made.private_key.expose(),
+            "counter": "7",
+        }]},
+    }]})
+    .to_string();
+    let blobs: [&[u8]; 1] = [export.as_bytes()];
+    s.call("import.read", Call { handle: h, args: "{}", blobs: &blobs, now_ms: 2000, ..Call::default() }).unwrap();
+    call(&mut s, "import.apply", h, json!({}));
+    let keys = json_of(&call(&mut s, "passkey.list", h, json!({"rp_id": "example.com", "origin_host": "example.com"})));
+    let id = keys[0]["id"].as_str().unwrap().to_owned();
+    call(&mut s, "vault.save", h, json!({}));
+    assert_eq!(json_of(&call(&mut s, "vault.info", h, json!({})))["dirty"], false);
+
+    let sign = |s: &mut Service| -> u32 {
+        let reply = json_of(&call(s, "passkey.sign", h, json!({
+            "id": id,
+            "credential_id": made.credential_id,
+            "client_data_hash": B64.encode([9u8; 32]),
+            "user_verified": true,
+            "origin_host": "example.com",
+        })));
+        let data = B64.decode(reply["authenticator_data"].as_str().unwrap()).unwrap();
+        u32::from_be_bytes(data[33..37].try_into().unwrap())
+    };
+    let first = sign(&mut s);
+    assert_eq!(first, 8, "never the imported number again");
+    assert_eq!(json_of(&call(&mut s, "vault.info", h, json!({})))["dirty"], true, "the new count waits to be saved");
+    let second = sign(&mut s);
+    assert!(second > first);
+
+    // Saved in the vault: a reopened copy goes on from there.
+    let file = call(&mut s, "vault.save", h, json!({})).blobs[0].clone();
+    s.lock_all();
+    let only: [&[u8]; 1] = [&file];
+    let opened = json_of(&s.call("vault.open", Call { secret: b"master", blobs: &only, ..Call::default() }).unwrap());
+    let h = opened["handle"].as_u64().unwrap();
+    let reply = json_of(&call(&mut s, "passkey.sign", h, json!({
+        "id": id,
+        "credential_id": made.credential_id,
+        "client_data_hash": B64.encode([9u8; 32]),
+        "origin_host": "example.com",
+    })));
+    let data = B64.decode(reply["authenticator_data"].as_str().unwrap()).unwrap();
+    assert_eq!(u32::from_be_bytes(data[33..37].try_into().unwrap()), second + 1);
+}
+
+#[test]
+fn a_passkey_made_here_keeps_a_counter_of_zero() {
+    use base64::Engine;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
+    let mut s = Service::new(1);
+    let h = new_vault(&mut s);
+    let made = json_of(&call(&mut s, "passkey.create", h, json!({
+        "rp_id": "example.com",
+        "rp_name": "Example",
+        "user_handle": "dXNlcg",
+        "user_name": "me",
+        "origin_host": "example.com",
+    })));
+    call(&mut s, "vault.save", h, json!({}));
+    for _ in 0..2 {
+        let reply = json_of(&call(&mut s, "passkey.sign", h, json!({
+            "id": made["id"],
+            "credential_id": made["credential_id"],
+            "client_data_hash": B64.encode([1u8; 32]),
+            "origin_host": "example.com",
+        })));
+        let data = B64.decode(reply["authenticator_data"].as_str().unwrap()).unwrap();
+        assert_eq!(&data[33..37], &[0, 0, 0, 0]);
+    }
+    assert_eq!(json_of(&call(&mut s, "vault.info", h, json!({})))["dirty"], false, "nothing to save");
+}
+
+#[test]
+fn a_changed_password_keeps_its_key_file() {
+    let mut s = Service::new(1);
+    let h = new_vault(&mut s);
+    let args = json!({"label": "Key file", "factor": {"kind": "key_file"}}).to_string();
+    let key_file: &[u8] = b"key file contents";
+    let contents: [&[u8]; 1] = [key_file];
+    let added = json_of(&s.call("slot.add", Call { handle: h, args: &args, secret: b"second", blobs: &contents, now_ms: 5 }).unwrap())["index"].as_u64().unwrap();
+
+    // Without a check first, the session cannot tell the slot needs a key file, so it refuses.
+    let index = json!({"index": added}).to_string();
+    let refused = s.call("vault.change_password", Call { handle: h, args: &index, secret: b"renewed", ..Call::default() });
+    assert!(refused.is_err());
+
+    let alone = json_of(&secret_call(&mut s, "vault.verify", h, json!({}), b"second"));
+    assert_eq!(alone["ok"], false);
+    assert_eq!(alone["needs_factor"][0]["kind"], "key_file");
+    let factors = json!({"factors": ["key_file"]}).to_string();
+    let found = json_of(&s.call("vault.verify", Call { handle: h, args: &factors, secret: b"second", blobs: &contents, ..Call::default() }).unwrap());
+    assert_eq!(found["ok"], true);
+    assert_eq!(found["slot"].as_u64(), Some(added));
+    secret_call(&mut s, "vault.change_password", h, json!({"index": added}), b"renewed");
+    assert!(
+        s.call("vault.change_password", Call { handle: h, args: &index, secret: b"again", ..Call::default() }).is_err(),
+        "one check, one change"
+    );
+
+    let file = call(&mut s, "vault.save", h, json!({})).blobs[0].clone();
+    s.lock_all();
+    let only: [&[u8]; 1] = [&file];
+    let reply = json_of(&s.call("vault.open", Call { secret: b"renewed", blobs: &only, ..Call::default() }).unwrap());
+    assert_eq!(reply["outcome"], "needs_factor", "the new password alone does not open it");
+    assert_eq!(reply["factors"][0]["kind"], "key_file");
+    let both: [&[u8]; 2] = [key_file, &file];
+    let reply = json_of(&s.call("vault.open", Call { args: &factors, secret: b"renewed", blobs: &both, ..Call::default() }).unwrap());
+    assert_eq!(reply["outcome"], "opened");
+    let reply = json_of(&s.call("vault.open", Call { args: &factors, secret: b"second", blobs: &both, ..Call::default() }).unwrap());
+    assert_eq!(reply["outcome"], "no_match");
+}
+
+#[test]
+fn a_recovered_vault_takes_a_new_password_without_the_old_one() {
+    let mut s = Service::new(1);
+    let h = new_vault(&mut s);
+    let shares = String::from_utf8(call(&mut s, "emergency.kit", h, json!({"threshold": 2, "total": 3})).secret.unwrap().to_vec()).unwrap();
+    let file = call(&mut s, "vault.save", h, json!({})).blobs[0].clone();
+    s.lock_all();
+    let picked: Vec<&str> = shares.lines().take(2).collect();
+    let only: [&[u8]; 1] = [&file];
+    let args = json!({"shares": picked}).to_string();
+    let h = json_of(&s.call("emergency.recover", Call { args: &args, blobs: &only, ..Call::default() }).unwrap())["handle"].as_u64().unwrap();
+    secret_call(&mut s, "vault.change_password", h, json!({"index": 0}), b"taken over");
+    let file = call(&mut s, "vault.save", h, json!({})).blobs[0].clone();
+    s.lock_all();
+    let only: [&[u8]; 1] = [&file];
+    let reply = json_of(&s.call("vault.open", Call { secret: b"taken over", blobs: &only, ..Call::default() }).unwrap());
+    assert_eq!(reply["outcome"], "opened");
+}
+
+#[test]
+fn the_ssh_agent_offers_only_keys_it_can_sign_with() {
+    let mut s = Service::new(1);
+    let h = new_vault(&mut s);
+    let made = |s: &mut Service, title: &str| {
+        let reply = call(s, "entry.create", h, json!({"kind": "ssh", "title": title, "fields": {"agent_allowed": true}}));
+        json_of(&reply)["id"].as_str().unwrap().to_owned()
+    };
+    let ed = made(&mut s, "Ed");
+    call(&mut s, "ssh.generate", h, json!({"id": ed, "comment": "ed"}));
+    let rsa = made(&mut s, "Rsa");
+    let line = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAAAgQC80wCoaLi59quPQ602uexTwQrvzb6dlfsqjakoMR18Dey88MeBxTNdT3/4gT/yt1/b/f42catXAEgWOYCR8bBC3Nh1TIBmItvcVtx+2gXNkWvPCEiHdE9tYIk0CTokCI2iG42Is1SXGhXad7HI6jdxqJGtCqM3nkiV3B5w6oUXDQ== me";
+    call(&mut s, "entry.set", h, json!({"id": rsa, "fields": {"public_key": line}}));
+    let offered = json_of(&call(&mut s, "ssh.agent_keys", h, json!({})));
+    let titles: Vec<&str> = offered.as_array().unwrap().iter().map(|k| k["title"].as_str().unwrap()).collect();
+    assert_eq!(titles, ["Ed"], "the RSA key is not offered");
+}
+
+fn open_on(s: &mut Service, file: &[u8], password: &[u8], now_ms: u64) -> Value {
+    let blobs: [&[u8]; 1] = [file];
+    json_of(&s.call("vault.open", Call { secret: password, blobs: &blobs, now_ms, ..Call::default() }).unwrap())
+}
+
+fn merge_in(s: &mut Service, handle: u64, file: &[u8], now_ms: u64) -> Value {
+    let blobs: [&[u8]; 1] = [file];
+    json_of(&s.call("vault.merge", Call { handle, args: "{}", blobs: &blobs, now_ms, ..Call::default() }).unwrap())
+}
+
+fn change_master(s: &mut Service, handle: u64, new: &[u8], now_ms: u64) {
+    let found = json_of(&s.call("vault.verify", Call { handle, args: "{}", secret: b"master", now_ms, ..Call::default() }).unwrap());
+    let index = json!({"index": found["slot"]}).to_string();
+    s.call("vault.change_password", Call { handle, args: &index, secret: new, now_ms, ..Call::default() }).unwrap();
+}
+
+#[test]
+fn a_password_changed_on_two_devices_at_once_is_shown_until_one_is_removed() {
+    let mut a = Service::new(1);
+    let h = new_vault(&mut a);
+    let file = call(&mut a, "vault.save", h, json!({})).blobs[0].clone();
+    assert!(json_of(&call(&mut a, "vault.notices", h, json!({})))["password_conflict"].is_null());
+    let mut b = Service::new(2);
+    let hb = open_on(&mut b, &file, b"master", 1500)["handle"].as_u64().unwrap();
+    change_master(&mut a, h, b"from-a", 2000);
+    change_master(&mut b, hb, b"from-b", 3000);
+    let from_b = call(&mut b, "vault.save", hb, json!({})).blobs[0].clone();
+    let merged = merge_in(&mut a, h, &from_b, 4000);
+    assert_eq!(merged["password_conflict"]["both_open"], true);
+    assert!(merged["password_conflict"]["message"].as_str().unwrap().contains("Both new passwords open this vault"));
+    let file = call(&mut a, "vault.save", h, json!({})).blobs[0].clone();
+    for password in [&b"from-a"[..], b"from-b"] {
+        let opened = open_on(&mut a, &file, password, 5000);
+        assert_eq!(opened["outcome"], "opened");
+        assert_eq!(opened["password_conflict"]["slots"].as_array().unwrap().len(), 2, "said on opening, too");
+    }
+    let slots = json_of(&call(&mut a, "slot.list", h, json!({})));
+    let marked: Vec<u64> = slots.as_array().unwrap().iter().filter(|s| s["conflict"] == true).map(|s| s["index"].as_u64().unwrap()).collect();
+    assert_eq!(marked.len(), 2);
+    call(&mut a, "slot.remove", h, json!({"index": marked[1]}));
+    assert!(json_of(&call(&mut a, "vault.notices", h, json!({})))["password_conflict"].is_null());
+}
+
+#[test]
+fn a_device_whose_clock_runs_ahead_is_named_in_a_warning() {
+    let day = 86_400_000;
+    let now = 1_700_000_000_000;
+    let mut a = Service::new(1);
+    let h = new_vault(&mut a);
+    let file = call(&mut a, "vault.save", h, json!({})).blobs[0].clone();
+    let mut b = Service::new(2);
+    let hb = open_on(&mut b, &file, b"master", now + 3 * day)["handle"].as_u64().unwrap();
+    let args = json!({"name": "Kitchen tablet"}).to_string();
+    b.call("vault.device_name", Call { handle: hb, args: &args, now_ms: now + 3 * day, ..Call::default() }).unwrap();
+    let from_b = call(&mut b, "vault.save", hb, json!({})).blobs[0].clone();
+    let merged = merge_in(&mut a, h, &from_b, now);
+    let warning = &merged["clock_warning"];
+    assert_eq!(warning["this_device"], false);
+    assert_eq!(warning["ahead_device"], "Kitchen tablet");
+    assert_eq!(warning["message"], "Another device's clock (Kitchen tablet) is about 3 days ahead. Fix the time on that device so changes sync in the right order.");
+    assert!(json_of(&b.call("vault.notices", Call { handle: hb, args: "{}", now_ms: now + 3 * day, ..Call::default() }).unwrap())["clock_warning"].is_null());
 }

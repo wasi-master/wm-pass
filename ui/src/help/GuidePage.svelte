@@ -4,11 +4,12 @@
   import Group from '../parts/Group.svelte';
   import Icon from '../parts/Icon.svelte';
   import Row from '../parts/Row.svelte';
-  import { host } from '../engine/host';
   import { GROUPS, PAGES, type PageInfo } from '../settings/pages';
+  import { available } from '../settings/shown';
   import Choice from '../settings/Choice.svelte';
   import Toggle from '../settings/Toggle.svelte';
   import { help } from './help.svelte';
+  import { plural } from '../engine/text';
 
   // Settings, Guide: every topic in one place. Tours first, then the screens, then how things
   // work, then each settings page and what is on it.
@@ -16,14 +17,12 @@
   let open = $state<string[]>([]);
 
   $effect(() => {
-    void help.load();
+    void help.load().catch(() => undefined);
   });
 
-  const kind = host().kind;
+  // The same pages the settings list has here: a Mac's widgets are not on Windows, for one.
   function shown(page: PageInfo) {
-    if (page.desktop && kind !== 'desktop') return false;
-    if (page.extension && kind !== 'extension') return false;
-    return page.id !== 'guide';
+    return available(page) && page.id !== 'guide';
   }
 
   const all = $derived.by<Topic[]>(() => {
@@ -63,7 +62,7 @@
 
     <Group title="Tours">
       {#each help.tours().filter((t) => t.id !== 'tour.window' && t.id !== 'tour.window_narrow') as tour (tour.id)}
-        <Row title={tour.title} sub={help.done(tour.id) ? 'Done' : `${tour.steps.length} steps`} icon={help.done(tour.id) ? 'check_circle' : 'touch_app'} chevron onclick={() => help.startTour(tour.id)} />
+        <Row title={tour.title} sub={help.done(tour.id) ? 'Done' : plural(tour.steps.length, 'step')} icon={help.done(tour.id) ? 'check_circle' : 'touch_app'} chevron onclick={() => help.startTour(tour.id)} />
       {/each}
     </Group>
 

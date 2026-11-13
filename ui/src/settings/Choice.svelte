@@ -39,7 +39,7 @@
 
 <Row {title} {sub} {icon} help={topic}>
   {#if options.length <= 3}
-    <Segmented value={current} {options} onchange={picked} />
+    <Segmented value={current} {options} label={title} onchange={picked} />
   {:else}
     <Select value={current} {options} label={title} onchange={picked} />
   {/if}

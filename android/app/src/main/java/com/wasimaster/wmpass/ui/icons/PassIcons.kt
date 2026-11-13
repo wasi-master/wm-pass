@@ -40,6 +40,12 @@ object PassIcons {
         else -> IconPathsOutlined.path(index)
     }
 
+    /**
+     * Glyphs that point along the line of text, by index: back, the row chevron, undo, sign out,
+     * lists and labels. They turn round in a right-to-left language, as the layout around them does.
+     */
+    private val mirrored = setOf(29, 60, 61, 66, 90, 94, 95, 97, 121, 163, 219)
+
     /** A few glyphs in a given style, to show what choosing it would look like. */
     fun sample(style: String): List<ImageVector> = listOf(0, 10, 21, 20, 43, 44, 23).map { glyph(it, style) }
 
@@ -56,6 +62,7 @@ object PassIcons {
             defaultHeight = 24.dp,
             viewportWidth = 960f,
             viewportHeight = 960f,
+            autoMirror = index in mirrored,
         )
             .addGroup(translationY = 960f)
             .addPath(

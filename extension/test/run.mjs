@@ -162,18 +162,61 @@ async function menuClick(page, field = '#user', wait = 600) {
 
 const value = (page, selector) => page.locator(selector).inputValue();
 
+// From the keyboard, a step at a time. On a busy machine the menu can open after Enter is pressed,
+// when Enter sends the form instead: the page is opened again and the keys pressed again, waiting
+// longer each time, as a person would try again.
+async function keyboardFill(page, open) {
+  for (let tries = 0, wait = 700; tries < 4; tries++, wait *= 2) {
+    await page.goto(site('login.html'));
+    await page.waitForSelector('#user');
+    await open(wait);
+    await page.keyboard.press('Enter');
+    await sleep(400);
+    // A form sent too early leaves no password box to read.
+    if ((await page.locator('#pass').count()) && (await value(page, '#pass')) === entryPassword) return;
+  }
+}
+
+// A click on a login in the menu. The menu takes a click only once its logins have been in sight
+// a moment, and how soon they come depends on how busy the machine is: a click let go for being
+// early is made again, as a person would, until the field is filled.
+async function pickRow(page, x, y, filled) {
+  for (let tries = 0; tries < 5; tries++) {
+    await page.mouse.click(x, y);
+    await sleep(400);
+    if (await filled()) return;
+  }
+}
+
+// Whether the content script runs on the page: it says at once that it heard a passkey request.
+const contentHere = (page) =>
+  page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const id = crypto.randomUUID();
+        const listen = (event) => {
+          if (event.data?.wmpassAck !== id) return;
+          window.removeEventListener('message', listen);
+          resolve(true);
+        };
+        window.addEventListener('message', listen);
+        window.postMessage({ wmpassAsk: id, op: 'get', options: {} }, location.origin);
+        setTimeout(() => resolve(false), 1000);
+      }),
+  );
+
 const page = await context.newPage();
 await page.goto(site('login.html'));
 await sleep(1200);
 check('nothing fills on load', (await value(page, '#pass')) === '' && (await value(page, '#user')) === '');
+check('the content script runs on a site', await contentHere(page));
 check('the page cannot read the menu', await page.evaluate(() => {
   document.querySelector('#user').focus();
   return new Promise((r) => setTimeout(() => r(document.querySelector('wm-pass-menu')?.shadowRoot === null), 200));
 }));
 const box = await menuClick(page);
 if (shots) await page.screenshot({ path: join(shots, 'menu.png') });
-await page.mouse.click(box.x + 60, box.y + box.height + 24);
-await sleep(400);
+await pickRow(page, box.x + 60, box.y + box.height + 24, async () => !!(await value(page, '#pass')));
 if (shots) await page.screenshot({ path: join(shots, 'after-fill.png') });
 check('a click on the menu fills the login', (await value(page, '#user')) === 'sample@example.com' && (await value(page, '#pass')) === entryPassword, `${(await value(page, '#user')).length} ${(await value(page, '#pass')).length}`);
 
@@ -198,6 +241,45 @@ await page.mouse.click(covered.x + 60, covered.y + covered.height + 24);
 await sleep(300);
 check('a covered field gets nothing', (await value(page, '#pass')) === '');
 
+// From the keyboard: ArrowDown in an empty field opens the menu, Enter fills.
+await keyboardFill(page, async (wait) => {
+  await page.click('#user');
+  await sleep(200);
+  await page.keyboard.press('ArrowDown');
+  await sleep(wait);
+});
+check('the menu works from the keyboard', (await page.locator('#pass').count()) > 0 && (await value(page, '#pass')) === entryPassword);
+
+// A menu opened with a click takes the arrow keys too.
+await keyboardFill(page, async (wait) => {
+  await menuClick(page, '#user', wait);
+  await page.keyboard.press('ArrowDown');
+});
+check('ArrowDown goes into a menu opened with a click', (await page.locator('#pass').count()) > 0 && (await value(page, '#pass')) === entryPassword);
+
+// Escape puts the menu away and leaves the key, so ArrowDown brings the menu back.
+await page.goto(site('login.html'));
+await page.waitForSelector('#user');
+await menuClick(page);
+await page.keyboard.press('Escape');
+await sleep(100);
+await page.keyboard.press('ArrowDown');
+await sleep(700);
+await page.keyboard.press('Enter');
+await sleep(400);
+check('after Escape the menu opens again from the keyboard', (await value(page, '#pass')) === entryPassword);
+
+// The key stays clear of a site's own button at the end of the field.
+await page.goto(site('eye.html'));
+await page.waitForSelector('#pass');
+await page.click('#pass');
+await sleep(300);
+const eyeFree = await page.evaluate(() => {
+  const eye = document.querySelector('#eye').getBoundingClientRect();
+  return document.elementFromPoint(eye.left + eye.width / 2, eye.top + eye.height / 2)?.id === 'eye';
+});
+check('the key leaves the site’s eye button alone', eyeFree);
+
 // The form inside another site's frame.
 await page.goto(site('framed.html'));
 const frame = page.frameLocator('#inner');
@@ -206,8 +288,7 @@ const frameBox = await frame.locator('#user').boundingBox();
 await page.mouse.click(frameBox.x + frameBox.width - 15, frameBox.y + frameBox.height / 2);
 await sleep(700);
 if (shots) await page.screenshot({ path: join(shots, 'foreign-frame.png') });
-await page.mouse.click(frameBox.x + 60, frameBox.y + frameBox.height + 70);
-await sleep(400);
+await pickRow(page, frameBox.x + 60, frameBox.y + frameBox.height + 70, async () => !!(await frame.locator('#pass').inputValue()));
 check('a form in a foreign frame fills only from a deliberate click', (await frame.locator('#pass').inputValue()) === entryPassword);
 
 // A stopped worker comes back with the vault still open.
@@ -218,17 +299,43 @@ await sleep(500);
 await page.goto(site('login.html'));
 await page.waitForSelector('#user');
 const again = await menuClick(page);
-await page.mouse.click(again.x + 60, again.y + again.height + 24);
-await sleep(600);
+await pickRow(page, again.x + 60, again.y + again.height + 24, async () => !!(await value(page, '#pass')));
 check('the session survives the worker being stopped', (await value(page, '#pass')) === entryPassword);
 
 // Multi-step.
 await page.goto(site('steps.html'));
 await page.waitForSelector('#user');
 const step = await menuClick(page);
-await page.mouse.click(step.x + 60, step.y + step.height + 24);
-await sleep(400);
+await pickRow(page, step.x + 60, step.y + step.height + 24, async () => !!(await value(page, '#user')));
 check('the first step of a two-step form fills', (await value(page, '#user')) === 'sample@example.com');
+
+// Each box in a shadow root of its own, as web components draw them.
+await page.goto(site('shadow.html'));
+await page.waitForSelector('#user');
+const shadowed = await menuClick(page);
+await pickRow(page, shadowed.x + 60, shadowed.y + shadowed.height + 24, async () => !!(await value(page, '#user')));
+check('a form in shadow roots fills', (await value(page, '#user')) === 'sample@example.com' && (await value(page, '#pass')) === entryPassword);
+
+// A modal dialog puts the rest of the page out of reach: the menu goes inside it.
+await page.goto(site('dialog.html'));
+await page.waitForSelector('#user');
+const modal = await menuClick(page);
+await pickRow(page, modal.x + 60, modal.y + modal.height + 24, async () => !!(await value(page, '#user')));
+check('a form in a modal dialog fills', (await value(page, '#user')) === 'sample@example.com' && (await value(page, '#pass')) === entryPassword);
+
+// A sign-up form: the email gets the username, not the phone box nearer the password, nor a box
+// for bots off the page's edge. A newsletter's email box gets no key.
+await page.goto(site('signup.html'));
+await page.waitForSelector('#pass');
+const signup = await menuClick(page, '#pass');
+await pickRow(page, signup.x + 60, signup.y + signup.height + 24, async () => !!(await value(page, '#pass')));
+check('a sign-up form fills the email, not the phone or a trap', (await value(page, '#user')) === 'sample@example.com' && (await value(page, '#phone')) === '' && (await value(page, '#trap')) === '' && (await value(page, '#pass')) === entryPassword, `${await value(page, '#phone')}|${await value(page, '#trap')}`);
+await page.click('#news');
+await sleep(300);
+check('a newsletter box gets no key', await page.evaluate(() => {
+  const box = document.querySelector('#news').getBoundingClientRect();
+  return document.elementFromPoint(box.right - 15, box.top + box.height / 2)?.id === 'news';
+}));
 
 // Offers to save.
 await page.goto(site('login.html'));
@@ -236,7 +343,8 @@ await page.fill('#user', 'new@example.com');
 await page.fill('#pass', 'a-new-password');
 await page.click('#go');
 await page.waitForURL(/done=1/);
-await sleep(800);
+// Save on the bar counts only once the bar has been up a moment, as the menu's choices do.
+await sleep(1300);
 if (shots) await page.screenshot({ path: join(shots, 'offer.png') });
 await page.mouse.click(1100 - 12 - 12 - 24, 12 + 10 + 18 + 8 + 13);
 await sleep(800);
@@ -251,6 +359,41 @@ await page.waitForURL(/done=1/);
 await sleep(800);
 const offered = await page.evaluate(() => !!document.querySelector('wm-pass-menu'));
 check('nothing is offered for the password already saved', !offered);
+
+// A wrong password brings the form back at the same page, with a note in its address: no offer.
+await page.goto(site('fail.html'));
+await page.fill('#user', 'sample@example.com');
+await page.fill('#pass', 'a-mistyped-password');
+await page.click('#go');
+await page.waitForURL(/error=1/);
+await sleep(2500);
+// Nor on the next page of the site, where the bar would offer the mistyped password.
+await page.goto(site('login.html?done=1'));
+await sleep(800);
+check('a failed sign-in is not offered', !(await page.evaluate(() => !!document.querySelector('wm-pass-menu'))));
+
+// A single-page app signs in without loading a page: the offer still comes.
+await page.goto(site('spa.html'));
+await page.fill('#user', 'spa@example.com');
+await page.fill('#pass', 'a-spa-password');
+await page.click('#go');
+await sleep(2500);
+await page.mouse.click(1100 - 12 - 12 - 24, 12 + 10 + 18 + 8 + 13);
+await sleep(800);
+const afterSpa = await call(vault, 'entry.list', { sort: 'title' });
+check('a sign-in that loads no page is offered too', afterSpa.some((e) => e.subtitle === 'spa@example.com'), `${afterSpa.length} entries`);
+
+// A two-step sign-in: the username from the first step goes with the password from the second.
+await page.goto(site('two-step.html'));
+await page.fill('#user', 'steps@example.com');
+await page.click('#next');
+await page.fill('#pass', 'a-two-step-password');
+await page.click('#go');
+await sleep(2500);
+await page.mouse.click(1100 - 12 - 12 - 24, 12 + 10 + 18 + 8 + 13);
+await sleep(800);
+const afterSteps = await call(vault, 'entry.list', { sort: 'title' });
+check('a two-step sign-in is saved with the first step’s username', afterSteps.some((e) => e.subtitle === 'steps@example.com'), `${afterSteps.length} entries`);
 
 // Passkeys, checked by the page itself the way a site's server would.
 const keyPage = await context.newPage();
@@ -274,6 +417,18 @@ const signedIn = await confirmed('Sign in', '#get');
 check('its signature verifies, without claiming verification', signedIn.signed === true && signedIn.challenge === true && signedIn.origin === true && signedIn.rp === true && signedIn.uv === false, JSON.stringify(signedIn));
 const verified = await confirmed('Sign in', '#get', true);
 check('the password makes it a verified signature', verified.signed === true && verified.uv === true, JSON.stringify(verified));
+const twice = await confirmed('Continue', '#again');
+check('a passkey the site already has is refused, after asking', twice.error === 'InvalidStateError', JSON.stringify(twice));
+{
+  const opening = context.waitForEvent('page');
+  await keyPage.click('#abort');
+  const box = await opening;
+  const closed = box.waitForEvent('close', { timeout: 10_000 }).then(() => true, () => false);
+  await keyPage.waitForFunction(() => document.querySelector('#out').textContent.length > 0, null, { timeout: 10_000 });
+  const given = JSON.parse(await keyPage.locator('#out').textContent());
+  await keyPage.evaluate(() => (document.querySelector('#out').textContent = ''));
+  check('a request the site aborts ends, and its window goes', given.error === 'AbortError' && (await closed), JSON.stringify(given));
+}
 await keyPage.close();
 
 // The popup as a page, for a look.
@@ -343,6 +498,7 @@ await vault.getByRole('button', { name: /^A FIDO2 security key/ }).click();
 check('a browser offers no YubiKey slot of its own', (await vault.getByText('A YubiKey with challenge-response').count()) === 0);
 await vault.getByPlaceholder('A name for the key').fill('Test key');
 await vault.getByPlaceholder('Password to use with it').fill(keyPassword);
+await vault.getByPlaceholder('The same password again').fill(keyPassword);
 await vault.getByRole('button', { name: 'Next' }).click();
 check('a security key is added through the browser', await vault.getByText('The key is added').waitFor({ timeout: 15_000 }).then(() => true, () => false), (await vault.locator('.danger-text').allTextContents()).join(' '));
 await vault.getByRole('button', { name: 'Done' }).click();
@@ -373,6 +529,7 @@ if (existsSync(webDist)) {
   });
   const site = await context.newPage();
   await site.goto('https://wmpass.pages.dev/vault/');
+  check('the content script stays out of the web vault', !(await contentHere(site)));
   await site.getByRole('button', { name: 'Open in the extension' }).click({ timeout: 15_000 });
   check('the web vault hands over to the extension', await site.waitForURL(`chrome-extension://${id}/vault.html`, { timeout: 10_000 }).then(() => true, () => false), site.url());
   await site.close();

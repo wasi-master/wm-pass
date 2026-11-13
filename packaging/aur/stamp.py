@@ -14,7 +14,7 @@ from pathlib import Path
 REPO = "https://github.com/wasi-master/wm-pass"
 ARCHES = [("x86_64", "amd64"), ("aarch64", "arm64")]
 DEPENDS = ["gtk3", "webkit2gtk-4.1", "libayatana-appindicator", "hicolor-icon-theme"]
-OPTDEPENDS = ["org.freedesktop.secrets: quick unlock and sealed destinations", "wtype: auto-type on Wayland"]
+OPTDEPENDS = ["org.freedesktop.secrets: quick unlock and sealed destinations"]
 
 args = argparse.ArgumentParser(description=__doc__)
 args.add_argument("--version", required=True)

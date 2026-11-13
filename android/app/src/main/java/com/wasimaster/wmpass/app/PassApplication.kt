@@ -11,7 +11,12 @@ class PassApplication : Application() {
         Pass.init(this)
         SettingsSync.start(Prefs.of(this))
         AutoLock.install(this)
+        // The watch asks this before each answer, as autofill and the keyboard check the timer.
+        com.wasimaster.wmpass.system.WatchGate.install(this)
         Thread { com.wasimaster.wmpass.ui.parts.Brands.warm(this) }.start()
+        // Panic apps chosen before their certificates were kept get them now, as installed at
+        // this start, the same trust Settings would give them, so their panic signal keeps working.
+        Thread { runCatching { com.wasimaster.wmpass.system.PanicPins.pinMissing(this, Prefs.of(this)) } }.start()
         // Only where to read it from: the guide is parsed the first time it is needed.
         com.wasimaster.wmpass.ui.help.Help.attach(this)
         com.wasimaster.wmpass.system.Accounts.load(this)
@@ -36,7 +41,7 @@ class PassApplication : Application() {
         // the addresses of the backups and accounts behind.
         Pass.onWipe += {
             com.wasimaster.wmpass.system.Sealed.wipe(this)
-            com.wasimaster.wmpass.system.Destinations.forget()
+            com.wasimaster.wmpass.system.Destinations.forget(this)
             com.wasimaster.wmpass.system.Accounts.forget(this)
             com.wasimaster.wmpass.system.widgets.WidgetFeed.forget(this)
             androidx.work.WorkManager.getInstance(this).cancelAllWork()

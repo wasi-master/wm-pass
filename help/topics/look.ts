@@ -222,11 +222,11 @@ export const look = [
     page: 'themes',
     what: 'Themes you made or imported. The built-in ones are listed below them.',
     how: [
-      'They are kept in this device\'s settings, outside the vault. A [[page.file|settings file]] carries them to another device, and each theme in it goes through the same checks as an import.',
+      'They are kept with this device\'s settings. With [[setting.sync_settings]] on, they also travel inside the vault to your other devices that open it. A [[page.file|settings file]] carries them too, and each theme in it goes through the same checks as an import.',
       '**Reset all customization** keeps your own themes.',
     ],
     caveats: 'A theme in a settings file you import replaces one of yours with the same name.',
-    related: ['page.file', 'action.theme_share'],
+    related: ['page.file', 'action.theme_share', 'setting.sync_settings'],
   },
   {
     id: 'action.theme_new',
@@ -243,8 +243,8 @@ export const look = [
     caveats: [
       'Changing the accent resets the colors worked out from it, such as the tint behind selected things, so they follow the new one.',
       'Text that falls under a readable contrast with its background is darkened or lightened when the theme is drawn, so a faint color may come out stronger than you picked.',
-      'Words on the accent, as on the main button, use white or black, whichever reads better, unless the theme names a color for them that reads at 4.5:1.',
-      'A font file stays on the device it was added on. A theme shared or synced to another device uses the system font there unless that device has the same file.',
+      'Words on the accent, as on the main button, use the color the theme names for them when it reads at 4.5:1. A theme that names none uses its background color where that reads, and otherwise white or black, whichever reads better.',
+      'A font file stays on the device it was added on. A theme synced to another device uses the system font there unless that device has the same file, and a theme shared as a code or a file arrives with the system font.',
     ],
     related: ['action.theme_edit', 'action.theme_copy', 'action.theme_share'],
     words: 'create custom theme editor colors',
@@ -333,11 +333,13 @@ export const look = [
   {
     id: 'action.theme_delete',
     kind: 'action',
-    title: 'Delete',
+    title: 'Delete…',
     page: 'themes',
-    what: 'Removes one of your themes from this device. If it was in use, WM Pass goes back to its default theme.',
+    what: 'Removes one of your themes. If it was in use, WM Pass goes back to its default theme.',
+    how: 'With [[setting.sync_settings]] on, it goes from your other devices that sync settings with this vault too.',
     caveats: 'Built-in themes cannot be deleted. Share a theme first if you might want it again.',
     related: ['group.themes.yours', 'action.theme_share'],
+    on: { android: { title: 'Delete' } },
   },
 
   // ---- icons ----
@@ -403,7 +405,6 @@ export const look = [
     title: 'Pictures, in order',
     page: 'icons',
     pref: 'icon_sources',
-    shells: ['android', 'desktop'],
     what: 'Where the picture beside each item comes from, tried from the top down until one has a picture.',
     how: [
       '**Brand marks** are the logos that ship with the app. **App icons** are the icons of apps installed on this phone, for items saved for an app. **Website icons** are fetched from each site.',
@@ -417,10 +418,18 @@ export const look = [
       desktop: {
         how: [
           '**Brand marks** are the logos that ship with the app. **Website icons** are fetched from each site.',
-          'Use the arrows to change the order, and remove any you do not want. An item none of them has a picture for shows its first letter, in a soft color of its own when [[setting.site_icon_style|Site icons]] is on brand colors.',
+          'Drag a row or use its arrows to change the order, and remove any you do not want. An item none of them has a picture for shows its first letter, in a soft color of its own when [[setting.site_icon_style|Site icons]] is on brand colors.',
           'A color or symbol you chose for one item always wins.',
         ],
-        caveats: 'Website icons are the only pictures that go online. They are fetched once per site through the same network switch as everything else, kept in memory until the vault locks, and never asked for addresses on your own network. The browser extension has no network features, so it shows brand marks only.',
+        caveats: 'Website icons are the only pictures that go online. They are fetched once per site through the same network switch as everything else, kept in memory until the vault locks, and never asked for addresses on your own network.',
+      },
+      extension: {
+        how: [
+          '**Brand marks** are the logos that ship with the app. **Website icons** are fetched from each site.',
+          'Drag a row or use its arrows to change the order, and remove any you do not want. An item none of them has a picture for shows its first letter, in a soft color of its own when [[setting.site_icon_style|Site icons]] is on brand colors.',
+          'A color or symbol you chose for one item always wins.',
+        ],
+        caveats: 'Website icons are the only pictures that go online. They are fetched once per site through the same network switch as everything else, kept in memory until the vault locks, and never asked for addresses on your own network.',
       },
     },
   },
@@ -430,7 +439,6 @@ export const look = [
     title: 'Website icons from',
     page: 'icons',
     pref: 'site_icon_from',
-    shells: ['android', 'desktop'],
     what: 'Who is asked for a website\'s icon, when website icons are in [[setting.icon_sources|the order]].',
     effects: [
       { value: 'site', label: 'Each site', text: 'Asks each site for its own icon, so only that site learns that it was asked.' },

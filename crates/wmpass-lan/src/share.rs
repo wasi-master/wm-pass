@@ -80,7 +80,8 @@ impl ShareReceiver {
         if now_ms > self.expires_ms {
             return Err(LanError::Expired);
         }
-        let body = decode(text.strip_prefix(SEALED).ok_or(LanError::BadCode)?)?;
+        // A code copied or pasted often brings a line break or a space with it.
+        let body = decode(text.trim().strip_prefix(SEALED).ok_or(LanError::BadCode)?)?;
         let (sender, sealed) = body.split_at_checked(32).ok_or(LanError::BadCode)?;
         let sender: [u8; 32] = sender.try_into().map_err(|_| LanError::BadCode)?;
         let shared = self.secret.diffie_hellman(&PublicKey::from(sender));
@@ -96,7 +97,7 @@ impl ShareReceiver {
 /// Seals an entry to a scanned offer, giving the text to show back. Refuses one too large
 /// for a code, which then goes through [`ShareInvite`] instead.
 pub fn seal_to_offer(offer: &str, entry: &Entry, now_ms: u64) -> Result<String> {
-    let body = offer.strip_prefix(OFFER).ok_or(LanError::BadCode)?;
+    let body = offer.trim().strip_prefix(OFFER).ok_or(LanError::BadCode)?;
     let (public, expires) = body.split_once(':').ok_or(LanError::BadCode)?;
     let expires: u64 = expires.parse().map_err(|_| LanError::BadCode)?;
     if now_ms > expires.saturating_add(SKEW_MS) {
@@ -154,7 +155,8 @@ impl ShareInvite {
 
     /// Reads a scanned invitation.
     pub fn parse(text: &str, now_ms: u64) -> Result<Self> {
-        let body = text.strip_prefix(INVITE).ok_or(LanError::BadCode)?;
+        // A code copied or pasted often brings a line break or a space with it.
+        let body = text.trim().strip_prefix(INVITE).ok_or(LanError::BadCode)?;
         let mut parts = body.split(':');
         let secret: [u8; 32] = decode(parts.next().ok_or(LanError::BadCode)?)?.as_slice().try_into().map_err(|_| LanError::BadCode)?;
         let expires_ms: u64 = parts.next().ok_or(LanError::BadCode)?.parse().map_err(|_| LanError::BadCode)?;
