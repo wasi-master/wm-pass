@@ -41,7 +41,7 @@ android {
         applicationId = "com.wasimaster.wmpass"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
+        versionCode = 4
         versionName = "0.1.0"
         // Only for measuring the card readers on a phone (CardCorpusTest); run with am instrument.
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
