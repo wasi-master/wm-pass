@@ -48,7 +48,8 @@ jobs:
       - run: cargo test -p wmpass-desktop -p wmpass-host -p wmpass-bridge
 
   extension:
-    runs-on: ubuntu-latest
+    # Playwright has no Chromium build for Ubuntu 26.04 yet, which ubuntu-latest now is.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
