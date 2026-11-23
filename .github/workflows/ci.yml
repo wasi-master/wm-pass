@@ -72,21 +72,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # WM Suite (android/vendor/wm-suite) is a private repository this workflow's own token
-      # cannot read. It comes in with a read-only deploy key of its own, at the submodule's commit.
-      - id: suite
-        env:
-          KEY: ${{ secrets.WM_SUITE_DEPLOY_KEY }}
-        run: |
-          test -n "$KEY" || { echo "::error::Add a WM_SUITE_DEPLOY_KEY secret: the private half of a read-only deploy key of wasi-master/wm-suite"; exit 1; }
-          echo "commit=$(git rev-parse HEAD:android/vendor/wm-suite)" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v4
-        with:
-          repository: wasi-master/wm-suite
-          ref: ${{ steps.suite.outputs.commit }}
-          path: android/vendor/wm-suite
-          ssh-key: ${{ secrets.WM_SUITE_DEPLOY_KEY }}
-          persist-credentials: false
+        with: { submodules: true }
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: 21 }
