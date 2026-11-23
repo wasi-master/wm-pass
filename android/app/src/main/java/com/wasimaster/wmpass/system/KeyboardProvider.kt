@@ -335,7 +335,7 @@ class KeyboardProvider : ContentProvider() {
         val field = extras?.getString("field")?.takeIf { it == API_KEY || it == API_SECRET }
         val value = extras?.getString("value")?.trim().orEmpty()
         if (title.isEmpty() || value.isEmpty() || field == null) return
-        val existing = Pass.entries.value.firstOrNull { it.kind == "api" && !it.trashed && it.title == title }
+        val existing = Pass.entries.value.firstOrNull { it.kind == "api" && !it.trashed && !it.hidden && it.title == title }
         val id = existing?.id ?: Pass.change("entry.create") {
             put("kind", "api")
             put("title", title)
