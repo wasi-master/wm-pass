@@ -27,6 +27,8 @@
         <package android:name="com.wasimaster.wmkeyboard" />
         <package android:name="com.wasimaster.wmkeyboard.debug" />
         <package android:name="com.wasimaster.wmkeyboard.fast" />
+        <!-- WM Translate, whose key fields fill from API key items. -->
+        <package android:name="com.wasimaster.wmtranslate" />
         <!-- Chrome and the browsers built on it, to ask each whether it hands its forms to
              autofill (BrowserAutofill). The list is the same there. -->
         <package android:name="com.android.chrome" />

@@ -706,6 +706,32 @@ The keyboard types and copies nothing into a field that asks it not to learn, su
 
 See also [Autofill service](/guide/settings/security/#action-autofill-service), [Inline suggestions](/guide/settings/security/#setting-autofill-inline), [Buttons on WM Keyboard's strip](/guide/settings/security/#feature-keyboard-chips).
 
+<a id="setting-translate-access"></a>
+
+## Let WM Translate fill
+
+*Only in Android.*
+
+Lets WM Translate fill its provider keys from your API key items, and save a key you type there as one.
+
+#### How it works
+
+WM Translate sees only API key items: their names and the service each is for. It never sees logins, notes, cards or any other kind of item.
+
+A key or secret is sent when you press the button beside a key field in WM Translate, one value per press, and only while the vault is open here.
+
+Saving from WM Translate makes an API key item, or gives a new value to the one already called the same. The value it held before stays in the item's history.
+
+Each app checks the other's signing certificate on every call, so another app using WM Translate's name is refused.
+
+It is off until you turn it on.
+
+#### Limits
+
+A key WM Translate fills is kept there, in its own encrypted store, as one you typed would be.
+
+See also [Let WM Keyboard fill](/guide/settings/security/#setting-keyboard-access).
+
 <a id="feature-keyboard-chips"></a>
 
 ## Buttons on WM Keyboard's strip

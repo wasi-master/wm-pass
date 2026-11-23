@@ -497,6 +497,15 @@ private fun SecurityScreen() {
             }
             item {
                 ToggleSetting(
+                    "Let WM Translate fill",
+                    "WM Translate can list your API key items and fill a provider key from one, or save a key you type there. It sees no other kind of item. Off until you turn it on.",
+                    prefs.translateAccess.value,
+                    info = infoFor("translate_access"),
+                    icon = PassIcons.Key,
+                ) { prefs.translateAccess.set(it) }
+            }
+            item {
+                ToggleSetting(
                     "Show on widgets",
                     "While the vault is open, the Codes and Favorites widgets on your home screen show codes and the names of favorites. Locked, they show nothing.",
                     prefs.widgetAccess.value,

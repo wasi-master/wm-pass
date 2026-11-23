@@ -44,7 +44,8 @@ class KeyboardProvider : ContentProvider() {
 
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle {
         val context = context ?: return Bundle()
-        if (!callerIsKeyboard()) throw SecurityException("Only WM Keyboard may ask.")
+        val caller = caller() ?: throw SecurityException("Only WM Keyboard or WM Translate may ask.")
+        if (caller == Caller.TRANSLATE) return translateCall(context, method, arg, extras)
         // A button on one of this app's own screens: nothing leaves the vault, and a screen with
         // fields to tag shows only while the vault is open.
         if (method == FieldWire.ACTION_CALL) {
@@ -81,16 +82,41 @@ class KeyboardProvider : ContentProvider() {
 
     private fun status(state: String) = Bundle().apply { putString(VaultWire.STATE, state) }
 
-    private fun callerIsKeyboard(): Boolean {
-        val context = context ?: return false
+    /** Which of the family's apps is asking, by package name and signing certificate; null for anyone else. */
+    private fun caller(): Caller? {
+        val context = context ?: return null
         val uid = Binder.getCallingUid()
-        if (uid == Process.myUid()) return false
-        val packages = context.packageManager.getPackagesForUid(uid) ?: return false
+        if (uid == Process.myUid()) return null
+        val packages = context.packageManager.getPackagesForUid(uid) ?: return null
         val own = Trust.certOf(context, context.packageName)
-        return packages.any { name ->
-            if (name !in KEYBOARD_PACKAGES) return@any false
-            val cert = Trust.certOf(context, name) ?: return@any false
-            cert in KEYBOARD_CERTS || cert == own
+        fun signed(name: String) = Trust.certOf(context, name)?.let { it in KEYBOARD_CERTS || it == own } == true
+        packages.firstOrNull { it in KEYBOARD_PACKAGES && signed(it) }?.let { return Caller.KEYBOARD }
+        packages.firstOrNull { it in TRANSLATE_PACKAGES && signed(it) }?.let { return Caller.TRANSLATE }
+        return null
+    }
+
+    /**
+     * WM Translate's calls: the vault's state, its API key items, and one key or secret of one of
+     * them, nothing else. Without this narrowing it could read any password by item id.
+     */
+    private fun translateCall(context: android.content.Context, method: String, arg: String?, extras: Bundle?): Bundle {
+        if (!CallerPolicy.methodAllowed(Caller.TRANSLATE, method)) throw IllegalArgumentException("Unknown call.")
+        val prefs = Prefs(context)
+        if (!prefs.translateAccess.value) return status("off")
+        if (Pass.state.value == LockState.NoVault) return status("none")
+        if (Pass.state.value !is LockState.Unlocked) return status("locked")
+        return runBlocking {
+            when (method) {
+                VaultWire.STATUS -> status("open")
+                "api_keys" -> status("open").apply { putString("rows", apiKeys(arg.orEmpty())) }
+                "save_api_key" -> status("open").apply { saveApiKey(extras, this) }
+                VaultWire.VALUE -> status("open").apply {
+                    val id = arg.orEmpty()
+                    val field = extras?.getString(VaultWire.FIELD).orEmpty()
+                    if (CallerPolicy.valueAllowed(Caller.TRANSLATE, visible(id)?.kind, field)) value(id, field)?.let { putString(VaultWire.VALUE, it.text()) }
+                }
+                else -> throw IllegalArgumentException("Unknown call.")
+            }
         }
     }
 
@@ -350,6 +376,8 @@ class KeyboardProvider : ContentProvider() {
         private const val MOST_ROWS = 200
         private const val API_KEY = "key"
         private const val API_SECRET = "secret"
+        /** WM Translate is signed with WM Keyboard's keys, so the same certificates vouch for it. */
+        val TRANSLATE_PACKAGES = setOf("com.wasimaster.wmtranslate")
         val KEYBOARD_PACKAGES = setOf("com.wasimaster.wmkeyboard", "com.wasimaster.wmkeyboard.debug", "com.wasimaster.wmkeyboard.fast")
 
         /** WM Keyboard's signers, from its published assetlinks.json. */
@@ -377,5 +405,25 @@ class KeyboardProvider : ContentProvider() {
             val cert = Trust.certOf(context, packageName) ?: return false
             return cert in KEYBOARD_CERTS || cert == Trust.certOf(context, context.packageName)
         }
+    }
+}
+
+/** The family's apps that may call [KeyboardProvider]. */
+internal enum class Caller { KEYBOARD, TRANSLATE }
+
+/** What each caller may ask. The keyboard may ask everything; WM Translate only about API keys. */
+internal object CallerPolicy {
+    private val TRANSLATE_METHODS = setOf(VaultWire.STATUS, "api_keys", "save_api_key", VaultWire.VALUE)
+    private val API_FIELDS = setOf("key", "secret")
+
+    fun methodAllowed(caller: Caller, method: String): Boolean = when (caller) {
+        Caller.KEYBOARD -> true
+        Caller.TRANSLATE -> method in TRANSLATE_METHODS
+    }
+
+    /** Whether [caller] may read [field] of an item of [kind] (null when the item is not there to see). */
+    fun valueAllowed(caller: Caller, kind: String?, field: String): Boolean = when (caller) {
+        Caller.KEYBOARD -> kind != null
+        Caller.TRANSLATE -> kind == "api" && field in API_FIELDS
     }
 }

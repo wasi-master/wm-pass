@@ -111,6 +111,7 @@ export type AndroidPref =
   | 'autofill_inline'
   | 'autofill_save'
   | 'keyboard_access'
+  | 'translate_access'
   | 'wear_access'
   | 'panic_action'
   | 'panic_app'

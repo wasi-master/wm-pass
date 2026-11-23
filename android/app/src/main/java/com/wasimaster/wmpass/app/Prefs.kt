@@ -269,6 +269,8 @@ class Prefs(context: Context) {
     val autofillInline = flag("autofill_inline", true, portable = false)
     val autofillSave = flag("autofill_save", true, portable = false)
     val keyboardAccess = flag("keyboard_access", false, portable = false)
+    /** WM Translate may fill its provider keys from API key items. Off until the person turns it on. */
+    val translateAccess = flag("translate_access", false, portable = false)
     val wearAccess = flag("wear_access", false, portable = false)
     val autofillNudge = flag("autofill_nudge", true)
     /** Whether the vault list may still ask, once, about a browser that fills from its own manager. */
