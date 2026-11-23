@@ -13,7 +13,8 @@ permissions:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    # Playwright has no Chromium build for Ubuntu 26.04 yet, which ubuntu-latest now is.
+    runs-on: ubuntu-24.04
     environment: site
     steps:
       - uses: actions/checkout@v4

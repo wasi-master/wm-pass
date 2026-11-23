@@ -385,9 +385,12 @@ fn blob<'a>(call: &Call<'a>, at: usize) -> Result<&'a [u8], SessionError> {
         .ok_or_else(|| invalid("a file is missing"))
 }
 
+/// A KeePass key file and YubiKey answer, either of which may be absent.
+type KdbxKeys<'a> = (Option<&'a [u8]>, Option<&'a [u8]>);
+
 /// A KeePass database's key file and YubiKey answer, after the database itself: the key
 /// file next when there is one, the answer last when `response` says there is one.
-fn kdbx_keys<'a>(call: &Call<'a>, response: bool) -> Result<(Option<&'a [u8]>, Option<&'a [u8]>), SessionError> {
+fn kdbx_keys<'a>(call: &Call<'a>, response: bool) -> Result<KdbxKeys<'a>, SessionError> {
     let rest = call.blobs.get(1..).unwrap_or_default();
     match (rest, response) {
         ([], false) => Ok((None, None)),
