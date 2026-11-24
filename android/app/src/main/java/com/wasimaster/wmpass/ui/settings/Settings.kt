@@ -48,7 +48,7 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraphBuilder
-import androidx.navigation.compose.composable
+import com.wasimaster.wmpass.ui.vault.page
 import com.wasimaster.wmpass.core.ImportPreview
 import com.wasimaster.wmpass.core.NativeFailure
 import com.wasimaster.wmpass.core.Pass
@@ -87,49 +87,49 @@ import kotlinx.serialization.json.put
 
 /** Every page behind the gear. */
 fun NavGraphBuilder.settingsGraph() {
-    composable("settings") { SettingsRoot() }
-    composable("settings/security") { SecurityScreen() }
-    composable("settings/look") { LookScreen() }
-    composable("settings/appearance") { AppearanceHub() }
-    composable("settings/editing") { EditingHub() }
-    composable("settings/tools") { ToolsHub() }
-    composable("settings/trash") { TrashScreen() }
-    composable("settings/shelf") { ShelfScreen() }
-    composable("settings/folders") { FoldersScreen() }
-    composable("settings/import") { ImportScreen() }
-    composable("settings/export") { ExportScreen() }
-    composable("settings/compare") { CompareScreen() }
-    composable("settings/about") { AboutScreen() }
-    composable("settings/breaches") { BreachScreen() }
-    composable("settings/backup") { BackupScreen() }
-    composable("settings/sync") { SyncScreen() }
-    composable("settings/aliases") { AliasScreen() }
-    composable("settings/usernames") { UsernameScreen() }
-    composable("settings/inbox") { InboxScreen() }
-    composable("settings/inbox/{id}") { entry -> InboxSessionScreen(entry.arguments?.getString("id").orEmpty()) }
-    composable("settings/inbox/{id}/{message}") { entry ->
+    page("settings") { SettingsRoot() }
+    page("settings/security") { SecurityScreen() }
+    page("settings/look") { LookScreen() }
+    page("settings/appearance") { AppearanceHub() }
+    page("settings/editing") { EditingHub() }
+    page("settings/tools") { ToolsHub() }
+    page("settings/trash") { TrashScreen() }
+    page("settings/shelf") { ShelfScreen() }
+    page("settings/folders") { FoldersScreen() }
+    page("settings/import") { ImportScreen() }
+    page("settings/export") { ExportScreen() }
+    page("settings/compare") { CompareScreen() }
+    page("settings/about") { AboutScreen() }
+    page("settings/breaches") { BreachScreen() }
+    page("settings/backup") { BackupScreen() }
+    page("settings/sync") { SyncScreen() }
+    page("settings/aliases") { AliasScreen() }
+    page("settings/usernames") { UsernameScreen() }
+    page("settings/inbox") { InboxScreen() }
+    page("settings/inbox/{id}") { entry -> InboxSessionScreen(entry.arguments?.getString("id").orEmpty()) }
+    page("settings/inbox/{id}/{message}") { entry ->
         MailScreen(entry.arguments?.getString("id").orEmpty(), entry.arguments?.getString("message").orEmpty())
     }
-    composable("settings/hardware") { HardwareScreen() }
-    composable("settings/vaults") { VaultsScreen() }
-    composable("settings/receive") { ReceiveScreen() }
-    composable("settings/shortcuts") { ShortcutsScreen() }
-    composable("settings/themes") { ThemesScreen() }
-    composable("settings/icons") { IconsScreen() }
-    composable("settings/list") { ListSettingsScreen() }
-    composable("settings/navigation") { NavigationSettingsScreen() }
-    composable("settings/add") { AddMenuScreen() }
-    composable("settings/editor") { EditorSettingsScreen() }
-    composable("settings/tags") { BulkTagsScreen() }
-    composable("settings/entry") { EntrySettingsScreen() }
-    composable("settings/codes") { CodesSettingsScreen() }
-    composable("settings/widgets") { WidgetSettingsScreen() }
-    composable("settings/generator") { GeneratorSettingsScreen() }
-    composable("settings/health") { HealthSettingsScreen() }
-    composable("settings/file") { SettingsFileScreen() }
-    composable("settings/search") { SettingsSearchScreen() }
-    composable("settings/guide") { com.wasimaster.wmpass.ui.help.GuideScreen() }
-    composable("settings/theme_edit/{id}") { entry -> ThemeEditor(entry.arguments?.getString("id").orEmpty()) }
+    page("settings/hardware") { HardwareScreen() }
+    page("settings/vaults") { VaultsScreen() }
+    page("settings/receive") { ReceiveScreen() }
+    page("settings/shortcuts") { ShortcutsScreen() }
+    page("settings/themes") { ThemesScreen() }
+    page("settings/icons") { IconsScreen() }
+    page("settings/list") { ListSettingsScreen() }
+    page("settings/navigation") { NavigationSettingsScreen() }
+    page("settings/add") { AddMenuScreen() }
+    page("settings/editor") { EditorSettingsScreen() }
+    page("settings/tags") { BulkTagsScreen() }
+    page("settings/entry") { EntrySettingsScreen() }
+    page("settings/codes") { CodesSettingsScreen() }
+    page("settings/widgets") { WidgetSettingsScreen() }
+    page("settings/generator") { GeneratorSettingsScreen() }
+    page("settings/health") { HealthSettingsScreen() }
+    page("settings/file") { SettingsFileScreen() }
+    page("settings/search") { SettingsSearchScreen() }
+    page("settings/guide") { com.wasimaster.wmpass.ui.help.GuideScreen() }
+    page("settings/theme_edit/{id}") { entry -> ThemeEditor(entry.arguments?.getString("id").orEmpty()) }
 }
 
 @Composable

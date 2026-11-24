@@ -4,11 +4,17 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
+import androidx.activity.BackEventCompat
+import androidx.compose.animation.AnimatedContentScope
+import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -54,6 +60,9 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NamedNavArgument
+import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -388,6 +397,30 @@ private fun KeepItemAcrossShapes(shell: Shell, wide: Boolean) {
     }
 }
 
+/**
+ * A destination that draws its own ground. Pages slide during a push, a pop and the back gesture;
+ * drawn straight onto the shell's ground, a page would move its text but not its backdrop.
+ */
+fun NavGraphBuilder.page(
+    route: String,
+    arguments: List<NamedNavArgument> = emptyList(),
+    enterTransition: (AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition?)? = null,
+    exitTransition: (AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition?)? = null,
+    popEnterTransition: (AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition?)? = enterTransition,
+    popExitTransition: (AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition?)? = exitTransition,
+    content: @Composable AnimatedContentScope.(NavBackStackEntry) -> Unit,
+) = composable(
+    route,
+    arguments,
+    enterTransition = enterTransition,
+    exitTransition = exitTransition,
+    popEnterTransition = popEnterTransition,
+    popExitTransition = popExitTransition,
+) { entry ->
+    val scope = this
+    Box(Modifier.fillMaxSize().background(palette.ground)) { scope.content(entry) }
+}
+
 @OptIn(ExperimentalSharedTransitionApi::class)
 val LocalShared = compositionLocalOf<SharedTransitionScope?> { null }
 val LocalRouteScope = compositionLocalOf<AnimatedVisibilityScope?> { null }
@@ -404,7 +437,10 @@ fun VaultShell(prefs: Prefs) {
     val shell = remember(nav) { Shell(nav, prefs, scope, context, haptics) }
     val backdrop = rememberBackdrop()
     // WM Keyboard's push, collapsed to a cut when motion is reduced.
-    val push = tween<IntOffset>(if (LocalReduceMotion.current) 0 else 340, easing = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f))
+    val ms = if (LocalReduceMotion.current) 0 else 340
+    val curve = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
+    val push = tween<IntOffset>(ms, easing = curve)
+    val dim = tween<Float>(ms, easing = curve)
     // Runs as the vault's first frame is put together, before the render thread gets it.
     DisposableEffect(Unit) {
         LaunchGuard.arm()
@@ -441,21 +477,32 @@ fun VaultShell(prefs: Prefs) {
                     NavHost(
                         nav,
                         startDestination = "home",
-                        // A push, as in WM Keyboard: the new page comes the whole way in from the
-                        // right while the one behind drifts a third of the way left. Pages are opaque,
-                        // so nothing fades. A back gesture plays the same pair in reverse; left to
-                        // itself, navigation-compose shrinks the page from every side instead.
-                        enterTransition = { slideInHorizontally(push) { it } },
-                        exitTransition = { slideOutHorizontally(push) { -it / 3 } },
-                        popEnterTransition = { slideInHorizontally(push) { -it / 3 } },
-                        popExitTransition = { slideOutHorizontally(push) { it } },
-                        predictivePopEnterTransition = { slideInHorizontally(push) { -it / 3 } },
-                        predictivePopExitTransition = { slideOutHorizontally(push) { it } },
+                        // A push: the new page slides in from the right a quarter of the way
+                        // while the one under it eases left and dims; a pop is the same pair
+                        // reversed. Each page draws its own ground (see page()), so the backdrop
+                        // travels with it.
+                        enterTransition = { slideInHorizontally(push) { it / 4 } + fadeIn(dim) },
+                        exitTransition = { slideOutHorizontally(push) { -it / 12 } + fadeOut(dim, targetAlpha = 0.6f) },
+                        popEnterTransition = { slideInHorizontally(push) { -it / 12 } + fadeIn(dim, initialAlpha = 0.6f) },
+                        popExitTransition = { slideOutHorizontally(push) { it / 4 } + fadeOut(dim) },
+                        // While the back gesture is held these replace the pop pair (left alone,
+                        // navigation-compose shrinks the page to 70% and fades it). Linear, so the
+                        // page follows the finger; the edge picks the direction.
+                        predictivePopEnterTransition = { edge ->
+                            val dir = if (edge == BackEventCompat.EDGE_RIGHT) 1 else -1
+                            slideInHorizontally(tween(ms, easing = LinearEasing)) { dir * it / 12 } +
+                                fadeIn(tween(ms, easing = LinearEasing), initialAlpha = 0.6f)
+                        },
+                        predictivePopExitTransition = { edge ->
+                            val dir = if (edge == BackEventCompat.EDGE_RIGHT) -1 else 1
+                            slideOutHorizontally(tween(ms, easing = LinearEasing)) { dir * it / 3 } +
+                                fadeOut(tween(ms / 2, delayMillis = ms / 2, easing = LinearEasing))
+                        },
                     ) {
-                        composable("home") {
+                        page("home") {
                             CompositionLocalProvider(LocalRouteScope provides this) { HomeScreen() }
                         }
-                        composable(
+                        page(
                             "entry/{id}",
                             listOf(navArgument("id") { type = NavType.StringType }),
                             enterTransition = if (colors.flat) null else ({ fadeIn(tween(220, 40)) + scaleIn(tween(340), 0.97f) + slideInVertically(tween(340)) { it / 24 } }),
@@ -467,13 +514,13 @@ fun VaultShell(prefs: Prefs) {
                                 EntryScreen(entry.arguments?.getString("id").orEmpty())
                             }
                         }
-                        composable(
+                        page(
                             "edit/{id}",
                             listOf(navArgument("id") { type = NavType.StringType }),
                             enterTransition = if (colors.flat) ({ fadeIn(tween(210)) + slideInVertically(tween(300)) { it / 12 } }) else null,
                             popExitTransition = if (colors.flat) ({ fadeOut(tween(150)) + slideOutVertically(tween(220)) { it / 12 } }) else null,
                         ) { entry -> EditorScreen(entryId = entry.arguments?.getString("id").orEmpty(), newKind = null) }
-                        composable(
+                        page(
                             "new/{kind}?title={title}",
                             listOf(
                                 navArgument("kind") { type = NavType.StringType },
