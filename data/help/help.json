@@ -21355,7 +21355,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "WM Translate sees only API key items: their names and the service each is for. It never sees logins, notes, cards or any other kind of item."
+       "s": "WM Translate sees only API key items: their names and the service each is for. It never sees logins, notes, cards or any other kind of item, nor anything in the trash or on the hidden shelf."
       }
      ]
     },
@@ -21373,7 +21373,7 @@
      "runs": [
       {
        "t": "text",
-       "s": "Saving from WM Translate makes an API key item, or gives a new value to the one already called the same. The value it held before stays in the item's history."
+       "s": "Saving from WM Translate makes an API key item, or gives a new value to the visible one already called the same. The value it held before stays in the item's history. A hidden item with that name is left alone, and a new item is made beside it."
       }
      ]
     },

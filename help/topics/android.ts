@@ -115,9 +115,9 @@ export const android = [
     shells: ['android'],
     what: 'Lets WM Translate fill its provider keys from your API key items, and save a key you type there as one.',
     how: [
-      'WM Translate sees only API key items: their names and the service each is for. It never sees logins, notes, cards or any other kind of item.',
+      'WM Translate sees only API key items: their names and the service each is for. It never sees logins, notes, cards or any other kind of item, nor anything in the trash or on the hidden shelf.',
       'A key or secret is sent when you press the button beside a key field in WM Translate, one value per press, and only while the vault is open here.',
-      'Saving from WM Translate makes an API key item, or gives a new value to the one already called the same. The value it held before stays in the item\'s history.',
+      'Saving from WM Translate makes an API key item, or gives a new value to the visible one already called the same. The value it held before stays in the item\'s history. A hidden item with that name is left alone, and a new item is made beside it.',
       'Each app checks the other\'s signing certificate on every call, so another app using WM Translate\'s name is refused.',
       'It is off until you turn it on.',
     ],
