@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/public/wm-pass-256.png" alt="WM Pass" width="128">
+<img src="assets/icon/wm-pass-256.png" alt="WM Pass" width="128">
 
 # WM Pass
 
